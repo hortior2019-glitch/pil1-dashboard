@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ingreso de Material — PIL 1</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Source+Sans+3:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#f8f7f4; --white:#fff; --ink:#1a1a1a; --ink-m:#4a4a4a; --ink-l:#8a8a8a;
+  --rule:#d8d4cc; --rule-l:#ede9e2; --s2:#f2f2f0;
+  --navy:#1a3a5c; --blue:#2d5f8a; --blue-l:#e8f0f8;
+  --gold:#8b6914; --gold-l:#f5eed8;
+  --green:#1a5c35; --green-l:#e8f5ee;
+  --red:#8b1a1a; --red-l:#f5e8e8;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-serif;font-weight:300;min-height:100vh}
+
+.header{background:var(--navy);color:white;padding:24px 40px;border-bottom:4px solid var(--gold)}
+.header-org{font-size:10px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,.5);margin-bottom:4px}
+.header-title{font-family:'Playfair Display',serif;font-size:24px;font-weight:700}
+.header-sub{font-size:11px;color:rgba(255,255,255,.5);margin-top:3px}
+
+.wrapper{max-width:860px;margin:0 auto;padding:36px 24px 60px}
+
+.section{background:var(--white);border:1px solid var(--rule);margin-bottom:20px}
+.section-hdr{padding:16px 24px;border-bottom:1px solid var(--rule-l);display:flex;align-items:center;gap:12px}
+.section-num{width:26px;height:26px;background:var(--navy);color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+.section-title{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy)}
+.section-body{padding:20px 24px}
+
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.form-row.three{grid-template-columns:1fr 1fr 1fr}
+.form-row.single{grid-template-columns:1fr}
+.form-row:last-child{margin-bottom:0}
+.form-group{display:flex;flex-direction:column;gap:5px}
+.form-group label{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l)}
+.form-group input,
+.form-group select,
+.form-group textarea{
+  padding:10px 12px;font-size:13px;
+  font-family:'Source Sans 3',sans-serif;font-weight:300;
+  border:1px solid var(--rule);background:var(--bg);
+  color:var(--ink);outline:none;transition:.2s;width:100%;
+}
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus{border-color:var(--navy);background:var(--white)}
+.form-group textarea{resize:vertical;min-height:80px}
+.required{color:var(--red)}
+
+/* PESO NETO */
+.peso-neto-box{background:var(--blue-l);border:1px solid #c5d8ec;padding:14px 16px;margin-top:12px;display:flex;justify-content:space-between;align-items:center}
+.peso-neto-lbl{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--blue)}
+.peso-neto-val{font-family:'Playfair Display',serif;font-size:24px;font-weight:700;color:var(--navy)}
+
+/* ALERTA TIQUETE */
+.tiquete-alert{display:none;padding:10px 14px;margin-top:8px;border-left:3px solid var(--red);background:var(--red-l);font-size:11px;color:var(--red);font-weight:600}
+.tiquete-ok{display:none;padding:10px 14px;margin-top:8px;border-left:3px solid var(--green);background:var(--green-l);font-size:11px;color:var(--green);font-weight:600}
+
+/* SUBMIT */
+.btn-submit{width:100%;padding:16px;font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;background:var(--navy);color:white;border:none;cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:.2s}
+.btn-submit:hover{background:var(--blue)}
+.btn-submit:disabled{opacity:.5;pointer-events:none}
+
+.status{display:none;padding:16px 20px;margin-top:16px;border-left:4px solid var(--navy)}
+.status.loading{background:var(--blue-l);border-color:var(--navy);display:block}
+.status.success{background:var(--green-l);border-color:var(--green);display:block}
+.status.error{background:var(--red-l);border-color:var(--red);display:block}
+.status-title{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
+.status.loading .status-title{color:var(--navy)}
+.status.success .status-title{color:var(--green)}
+.status.error .status-title{color:var(--red)}
+.status-text{font-size:12px;color:var(--ink-m);line-height:1.6}
+
+.spinner{display:inline-block;width:12px;height:12px;border:2px solid rgba(26,58,92,.3);border-top-color:var(--navy);border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* NOTICE */
+.notice{padding:14px 18px;margin-bottom:20px;border-left:3px solid var(--red);background:var(--red-l)}
+.notice-title{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--red);margin-bottom:4px}
+.notice-text{font-size:12px;color:var(--ink-m);line-height:1.6}
+
+/* SEARCH SELECT */
+.search-wrap{position:relative}
+.search-input{width:100%;padding:10px 12px;font-size:13px;font-family:'Source Sans 3',sans-serif;font-weight:300;border:1px solid var(--rule);background:var(--bg);color:var(--ink);outline:none;transition:.2s}
+.search-input:focus{border-color:var(--navy);background:var(--white)}
+.dropdown{display:none;position:absolute;top:100%;left:0;right:0;background:var(--white);border:1px solid var(--navy);border-top:none;max-height:200px;overflow-y:auto;z-index:100}
+.dropdown.open{display:block}
+.dropdown-item{padding:9px 12px;font-size:12px;cursor:pointer;color:var(--ink-m);border-bottom:1px solid var(--rule-l);transition:.1s}
+.dropdown-item:last-child{border-bottom:none}
+.dropdown-item:hover,.dropdown-item.selected{background:var(--blue-l);color:var(--navy)}
+.dropdown-item.no-results{color:var(--ink-l);font-style:italic;cursor:default}
+.dropdown-item.no-results:hover{background:none}
+
+@media(max-width:600px){
+  .header{padding:18px 20px}
+  .wrapper{padding:20px 12px 48px}
+  .form-row,.form-row.three{grid-template-columns:1fr}
+  .section-body{padding:16px}
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-org">Planta PIL 1 — Control de Ingreso</div>
+  <div class="header-title">Formulario de Ingreso de Material</div>
+  <div class="header-sub">Complete todos los campos requeridos. El registro se guarda automaticamente en el sistema.</div>
+</div>
+
+<div class="wrapper">
+
+  <div class="notice">
+    <div class="notice-title">Instruccion importante — Numero de tiquete</div>
+    <div class="notice-text">El numero de tiquete debe registrarse con sus digitos completos tal como aparece en el documento fisico del cliente. No registre unicamente los ultimos cuatro digitos.</div>
+  </div>
+
+  <!-- 1. TIQUETE Y FECHA -->
+  <div class="section">
+    <div class="section-hdr">
+      <div class="section-num">1</div>
+      <div class="section-title">Identificacion del Ingreso</div>
+    </div>
+    <div class="section-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Numero de tiquete <span class="required">*</span></label>
+          <input type="text" id="numero_tiquete" placeholder="Digitos completos del tiquete del cliente" oninput="validarTiquete(this)">
+          <div class="tiquete-alert" id="tiquete-alert">Solo 4 digitos — ingrese el numero completo del tiquete</div>
+          <div class="tiquete-ok" id="tiquete-ok">Tiquete registrado correctamente</div>
+        </div>
+        <div class="form-group">
+          <label>Fecha de disposicion en planta <span class="required">*</span></label>
+          <input type="date" id="fecha_disposicion">
+        </div>
+      </div>
+      <div class="form-row single">
+        <div class="form-group">
+          <label>Hora de disposicion en planta <span class="required">*</span></label>
+          <input type="time" id="hora_disposicion">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. VEHICULO Y CONDUCTOR -->
+  <div class="section">
+    <div class="section-hdr">
+      <div class="section-num">2</div>
+      <div class="section-title">Vehiculo y Conductor</div>
+    </div>
+    <div class="section-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Placa del vehiculo <span class="required">*</span></label>
+          <input type="text" id="placa" placeholder="Ej: ABC123" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
+        </div>
+        <div class="form-group">
+          <label>Conductor — Primer nombre y primer apellido <span class="required">*</span></label>
+          <input type="text" id="conductor" placeholder="Nombre completo del conductor">
+        </div>
+      </div>
+      <div class="form-row single">
+        <div class="form-group">
+          <label>Ultimos cuatro digitos de cedula del conductor <span class="required">*</span></label>
+          <input type="text" id="ultimos_cuatro_cedula" placeholder="Solo los ultimos 4 digitos" maxlength="4" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. PESOS -->
+  <div class="section">
+    <div class="section-hdr">
+      <div class="section-num">3</div>
+      <div class="section-title">Pesos Segun Ticket</div>
+    </div>
+    <div class="section-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Peso de entrada (kg) <span class="required">*</span></label>
+          <input type="number" id="peso_entrada" placeholder="Peso del vehiculo cargado" min="0" step="0.01" oninput="calcularPesoNeto()">
+        </div>
+        <div class="form-group">
+          <label>Peso de salida (kg) <span class="required">*</span></label>
+          <input type="number" id="peso_salida" placeholder="Peso del vehiculo vacio" min="0" step="0.01" oninput="calcularPesoNeto()">
+        </div>
+      </div>
+      <div class="peso-neto-box">
+        <span class="peso-neto-lbl">Peso neto de material</span>
+        <span class="peso-neto-val" id="peso-neto-val">— kg</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. OPERACION Y RESIDUO -->
+  <div class="section">
+    <div class="section-hdr">
+      <div class="section-num">4</div>
+      <div class="section-title">Operacion y Material</div>
+    </div>
+    <div class="section-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Operacion (cliente) <span class="required">*</span></label>
+          <div class="search-wrap">
+            <input type="text" class="search-input" id="operacion-search" placeholder="Buscar operacion..." oninput="filtrarOpciones('operacion')" onfocus="abrirDropdown('operacion')" autocomplete="off">
+            <input type="hidden" id="operacion">
+            <div class="dropdown" id="operacion-dropdown"></div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Residuo / Material <span class="required">*</span></label>
+          <div class="search-wrap">
+            <input type="text" class="search-input" id="residuo-search" placeholder="Buscar residuo..." oninput="filtrarOpciones('residuo')" onfocus="abrirDropdown('residuo')" autocomplete="off">
+            <input type="hidden" id="residuo">
+            <div class="dropdown" id="residuo-dropdown"></div>
+          </div>
+        </div>
+      </div>
+      <div class="form-row single">
+        <div class="form-group">
+          <label>Observacion</label>
+          <textarea id="observacion" placeholder="Novedades del proceso, condiciones del material, etc."></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUBMIT -->
+  <button class="btn-submit" id="btn-submit" type="button" onclick="enviarFormulario()">
+    Registrar Ingreso de Material
+  </button>
+  <div class="status" id="status">
+    <div class="status-title" id="status-title"></div>
+    <div class="status-text" id="status-text"></div>
+  </div>
+
+</div>
+
+<script>
+const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbz1CznJcepKoBIJXwnQ6yc82n7fFX7q20kCxes5Na4OgPQUoe3xe5AllPhXUAe2JNg/exec';
+
+const OPERACIONES = [
+  '3R','Alpina','Bavaria','Alquería CV','Emsepopo','Emsertenjo','EPC','EPZ','EPT',
+  'Familia','Frigorífico','Funrecol','Gloria','Guillermo Clink','Pesebreras',
+  'Puerta Azul','Tía Lola','Mc Cain','Pomar',
+  'Prodensa - Centro Chía','Prodensa - Corona','Prodensa - CPNS','Prodensa - Casanare',
+  'Prodensa - Saufel','Prodensa - Toptex','Prodensa - Tanktechs',
+  'Reciclene','Recreo','Sábana Larga',
+  'Samsa - Ducto','Samsa - Industria Nacional','Samsa - Pomar','Samsa - Veolia / Sanilia',
+  'Samsa - Quala','Samsa - Finca','Samsa - Urbaser','Softys','Zasiago'
+];
+
+const RESIDUOS = [
+  'Aglomerado','Aguas residuales','Compostaje','Contenido ruminal','Destrucción de marca',
+  'Equinaza','Gourmet orgánicos','Jarabes','Lodo Bavaria','Lodo láctico',
+  'Lodo orgánico biodegradable','Lodo papelero','Mantenimiento',
+  'Mixto (orgánicos y ollejo)','Ollejo','Orgánicos y podas','PNC','Podas',
+  'PTAP','PTAR','Retal madera','Retal madera aglomerado','Suero','Suero lácteo',
+  'Tierras filtrantes','Tromel'
+];
+
+// Fecha y hora actuales
+document.getElementById('fecha_disposicion').value = new Date().toISOString().slice(0,10);
+const ahora = new Date();
+document.getElementById('hora_disposicion').value =
+  String(ahora.getHours()).padStart(2,'0') + ':' + String(ahora.getMinutes()).padStart(2,'0');
+
+// ── SEARCH DROPDOWNS ─────────────────────────────
+function renderDropdown(tipo, lista) {
+  const dropdown = document.getElementById(tipo + '-dropdown');
+  if (lista.length === 0) {
+    dropdown.innerHTML = '<div class="dropdown-item no-results">Sin resultados</div>';
+  } else {
+    dropdown.innerHTML = lista.map(item =>
+      `<div class="dropdown-item" onclick="seleccionarOpcion('${tipo}','${item.replace(/'/g,"\\'")}')">
+        ${item}
+      </div>`
+    ).join('');
+  }
+}
+
+function abrirDropdown(tipo) {
+  const q = document.getElementById(tipo + '-search').value.toLowerCase();
+  const lista = tipo === 'operacion' ? OPERACIONES : RESIDUOS;
+  renderDropdown(tipo, lista.filter(i => i.toLowerCase().includes(q)));
+  document.getElementById(tipo + '-dropdown').classList.add('open');
+}
+
+function filtrarOpciones(tipo) {
+  const q = document.getElementById(tipo + '-search').value.toLowerCase();
+  const lista = tipo === 'operacion' ? OPERACIONES : RESIDUOS;
+  renderDropdown(tipo, lista.filter(i => i.toLowerCase().includes(q)));
+  document.getElementById(tipo + '-dropdown').classList.add('open');
+  document.getElementById(tipo).value = '';
+}
+
+function seleccionarOpcion(tipo, valor) {
+  document.getElementById(tipo + '-search').value = valor;
+  document.getElementById(tipo).value = valor;
+  document.getElementById(tipo + '-dropdown').classList.remove('open');
+}
+
+document.addEventListener('click', function(e) {
+  ['operacion','residuo'].forEach(tipo => {
+    const wrap = document.getElementById(tipo + '-search').closest('.search-wrap');
+    if (!wrap.contains(e.target)) {
+      document.getElementById(tipo + '-dropdown').classList.remove('open');
+    }
+  });
+});
+
+// ── VALIDACION TIQUETE ────────────────────────────
+function validarTiquete(input) {
+  const val = input.value.replace(/\s/g,'');
+  const alertEl = document.getElementById('tiquete-alert');
+  const okEl = document.getElementById('tiquete-ok');
+  if (val.length === 0) {
+    alertEl.style.display = 'none';
+    okEl.style.display = 'none';
+  } else if (val.length <= 4) {
+    alertEl.style.display = 'block';
+    okEl.style.display = 'none';
+  } else {
+    alertEl.style.display = 'none';
+    okEl.style.display = 'block';
+  }
+}
+
+// ── PESO NETO ─────────────────────────────────────
+function calcularPesoNeto() {
+  const e = parseFloat(document.getElementById('peso_entrada').value) || 0;
+  const s = parseFloat(document.getElementById('peso_salida').value) || 0;
+  const neto = e - s;
+  const el = document.getElementById('peso-neto-val');
+  if (e > 0 && s > 0) {
+    el.textContent = neto.toLocaleString('es-CO') + ' kg';
+    el.style.color = neto >= 0 ? 'var(--navy)' : 'var(--red)';
+  } else {
+    el.textContent = '— kg';
+    el.style.color = 'var(--navy)';
+  }
+}
+
+// ── STATUS ────────────────────────────────────────
+function mostrarStatus(tipo, titulo, texto) {
+  const el = document.getElementById('status');
+  el.className = 'status ' + tipo;
+  document.getElementById('status-title').textContent = titulo;
+  document.getElementById('status-text').innerHTML = tipo === 'loading'
+    ? '<span class="spinner"></span>' + texto : texto;
+  el.scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+
+// ── ENVIO ─────────────────────────────────────────
+async function enviarFormulario() {
+  const tiquete    = document.getElementById('numero_tiquete').value.trim();
+  const fecha      = document.getElementById('fecha_disposicion').value;
+  const hora       = document.getElementById('hora_disposicion').value;
+  const placa      = document.getElementById('placa').value.trim();
+  const conductor  = document.getElementById('conductor').value.trim();
+  const cedula     = document.getElementById('ultimos_cuatro_cedula').value.trim();
+  const pesoE      = document.getElementById('peso_entrada').value;
+  const pesoS      = document.getElementById('peso_salida').value;
+  const operacion  = document.getElementById('operacion').value;
+  const residuo    = document.getElementById('residuo').value;
+
+  if (!tiquete)   { mostrarStatus('error','Campo requerido','Ingrese el numero de tiquete.'); return; }
+  if (tiquete.replace(/\s/g,'').length <= 4) { mostrarStatus('error','Tiquete incompleto','El numero de tiquete debe tener mas de 4 digitos. Ingrese el numero completo.'); return; }
+  if (!fecha)     { mostrarStatus('error','Campo requerido','Seleccione la fecha de disposicion.'); return; }
+  if (!hora)      { mostrarStatus('error','Campo requerido','Ingrese la hora de disposicion.'); return; }
+  if (!placa)     { mostrarStatus('error','Campo requerido','Ingrese la placa del vehiculo.'); return; }
+  if (!conductor) { mostrarStatus('error','Campo requerido','Ingrese el nombre del conductor.'); return; }
+  if (!cedula || cedula.length !== 4) { mostrarStatus('error','Campo requerido','Ingrese exactamente los ultimos 4 digitos de la cedula del conductor.'); return; }
+  if (!pesoE)     { mostrarStatus('error','Campo requerido','Ingrese el peso de entrada.'); return; }
+  if (!pesoS)     { mostrarStatus('error','Campo requerido','Ingrese el peso de salida.'); return; }
+  if (!operacion) { mostrarStatus('error','Campo requerido','Seleccione la operacion (cliente).'); return; }
+  if (!residuo)   { mostrarStatus('error','Campo requerido','Seleccione el tipo de residuo o material.'); return; }
+
+  const datos = {
+    numero_tiquete:       tiquete,
+    fecha_disposicion:    fecha,
+    hora_disposicion:     hora,
+    placa:                placa,
+    conductor:            conductor,
+    ultimos_cuatro_cedula: cedula,
+    peso_entrada:         pesoE,
+    peso_salida:          pesoS,
+    observacion:          document.getElementById('observacion').value,
+    operacion:            operacion,
+    residuo:              residuo
+  };
+
+  document.getElementById('btn-submit').disabled = true;
+  mostrarStatus('loading','Guardando registro...','Enviando datos al sistema. Por favor espere.');
+
+  try {
+    await fetch(WEBAPP_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+
+    mostrarStatus('success','Registro guardado correctamente',
+      `El ingreso del vehiculo <strong>${placa}</strong> — conductor <strong>${conductor}</strong> fue registrado en el sistema. Puede cerrar esta pagina o registrar un nuevo ingreso.`);
+    setTimeout(() => resetFormulario(), 4000);
+
+  } catch(e) {
+    mostrarStatus('error','Error de conexion','No se pudo conectar con el servidor. Verifique su conexion a internet e intente nuevamente.');
+    document.getElementById('btn-submit').disabled = false;
+  }
+}
+
+// ── RESET ─────────────────────────────────────────
+function resetFormulario() {
+  ['numero_tiquete','placa','conductor','ultimos_cuatro_cedula','peso_entrada','peso_salida','observacion'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('operacion-search').value = '';
+  document.getElementById('operacion').value = '';
+  document.getElementById('residuo-search').value = '';
+  document.getElementById('residuo').value = '';
+  document.getElementById('tiquete-alert').style.display = 'none';
+  document.getElementById('tiquete-ok').style.display = 'none';
+  document.getElementById('peso-neto-val').textContent = '— kg';
+  document.getElementById('fecha_disposicion').value = new Date().toISOString().slice(0,10);
+  const ahora = new Date();
+  document.getElementById('hora_disposicion').value =
+    String(ahora.getHours()).padStart(2,'0') + ':' + String(ahora.getMinutes()).padStart(2,'0');
+  document.getElementById('btn-submit').disabled = false;
+  document.getElementById('status').className = 'status';
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+</script>
+</body>
+</html>
