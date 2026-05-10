@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reporte Horas Extras — PIL 1</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Source+Sans+3:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#f8f7f4; --white:#fff; --ink:#1a1a1a; --ink-m:#4a4a4a; --ink-l:#8a8a8a;
+  --rule:#d8d4cc; --rule-l:#ede9e2; --s2:#f2f2f0;
+  --navy:#1a3a5c; --blue:#2d5f8a; --blue-l:#e8f0f8;
+  --gold:#8b6914; --gold-l:#f5eed8;
+  --green:#1a5c35; --green-l:#e8f5ee;
+  --red:#8b1a1a; --red-l:#f5e8e8;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-serif;font-weight:300;min-height:100vh}
+
+.header{background:var(--navy);color:white;padding:24px 40px;border-bottom:4px solid var(--gold)}
+.header-org{font-size:10px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,.5);margin-bottom:4px}
+.header-title{font-family:'Playfair Display',serif;font-size:24px;font-weight:700}
+.header-sub{font-size:11px;color:rgba(255,255,255,.5);margin-top:3px}
+
+.wrapper{max-width:860px;margin:0 auto;padding:36px 24px 60px}
+
+.section{background:var(--white);border:1px solid var(--rule);margin-bottom:20px}
+.section-hdr{padding:16px 24px;border-bottom:1px solid var(--rule-l);display:flex;align-items:center;gap:12px}
+.section-num{width:26px;height:26px;background:var(--navy);color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+.section-title{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy)}
+.section-body{padding:20px 24px}
+
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.form-row.three{grid-template-columns:1fr 1fr 1fr}
+.form-row.single{grid-template-columns:1fr}
+.form-row:last-child{margin-bottom:0}
+.form-group{display:flex;flex-direction:column;gap:5px}
+.form-group label{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l)}
+.form-group input,
+.form-group select{padding:10px 12px;font-size:13px;font-family:'Source Sans 3',sans-serif;font-weight:300;border:1px solid var(--rule);background:var(--bg);color:var(--ink);outline:none;transition:.2s;width:100%}
+.form-group input:focus,
+.form-group select:focus{border-color:var(--navy);background:var(--white)}
+.required{color:var(--red)}
+
+/* EMPLEADO CARD */
+.empleado-card{display:none;background:var(--blue-l);border:1px solid #c5d8ec;border-left:4px solid var(--navy);padding:16px 20px;margin-top:12px}
+.empleado-card.visible{display:block}
+.emp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:8px}
+.emp-field{display:flex;flex-direction:column;gap:3px}
+.emp-lbl{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--blue)}
+.emp-val{font-size:13px;font-weight:600;color:var(--navy)}
+
+/* FILTROS */
+.filtros-bar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.filtro-btn{padding:5px 14px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);cursor:pointer;transition:.2s;font-family:'Source Sans 3',sans-serif}
+.filtro-btn:hover{border-color:var(--navy);color:var(--navy)}
+.filtro-btn.active{background:var(--navy);border-color:var(--navy);color:white}
+
+/* SEARCH DROPDOWN */
+.search-wrap{position:relative}
+.search-input{width:100%;padding:10px 12px;font-size:13px;font-family:'Source Sans 3',sans-serif;font-weight:300;border:1px solid var(--rule);background:var(--bg);color:var(--ink);outline:none;transition:.2s}
+.search-input:focus{border-color:var(--navy);background:var(--white)}
+.dropdown{display:none;position:absolute;top:100%;left:0;right:0;background:var(--white);border:1px solid var(--navy);border-top:none;max-height:220px;overflow-y:auto;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,.1)}
+.dropdown.open{display:block}
+.dropdown-item{padding:10px 12px;font-size:12px;cursor:pointer;color:var(--ink-m);border-bottom:1px solid var(--rule-l);transition:.1s}
+.dropdown-item:last-child{border-bottom:none}
+.dropdown-item:hover{background:var(--blue-l);color:var(--navy)}
+.emp-nombre{font-weight:600;color:var(--ink);display:block;margin-bottom:2px}
+.emp-meta{font-size:10px;color:var(--ink-l)}
+.no-results{color:var(--ink-l);font-style:italic;cursor:default}
+.no-results:hover{background:none !important}
+
+/* HORAS */
+.horas-box{background:var(--gold-l);border:1px solid #d4b896;border-left:4px solid var(--gold);padding:14px 20px;margin-top:12px;display:flex;justify-content:space-between;align-items:center}
+.horas-lbl{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold)}
+.horas-val{font-family:'Playfair Display',serif;font-size:28px;font-weight:700;color:var(--navy)}
+
+/* ACTIVIDAD */
+.act-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:4px}
+.act-btn{padding:14px 8px;border:2px solid var(--rule);background:var(--bg);color:var(--ink-m);cursor:pointer;font-size:12px;font-weight:700;font-family:'Source Sans 3',sans-serif;text-align:center;transition:.2s;letter-spacing:.5px;text-transform:uppercase}
+.act-btn:hover{border-color:var(--navy);color:var(--navy);background:var(--blue-l)}
+.act-btn.active{border-color:var(--navy);background:var(--navy);color:white}
+
+/* SUBMIT */
+.btn-submit{width:100%;padding:16px;font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;background:var(--navy);color:white;border:none;cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:.2s}
+.btn-submit:hover{background:var(--blue)}
+.btn-submit:disabled{opacity:.5;pointer-events:none}
+
+.status{display:none;padding:16px 20px;margin-top:16px;border-left:4px solid var(--navy)}
+.status.loading{background:var(--blue-l);border-color:var(--navy);display:block}
+.status.success{background:var(--green-l);border-color:var(--green);display:block}
+.status.error{background:var(--red-l);border-color:var(--red);display:block}
+.status-title{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
+.status.loading .status-title{color:var(--navy)}
+.status.success .status-title{color:var(--green)}
+.status.error .status-title{color:var(--red)}
+.status-text{font-size:12px;color:var(--ink-m);line-height:1.6}
+
+.spinner{display:inline-block;width:12px;height:12px;border:2px solid rgba(26,58,92,.3);border-top-color:var(--navy);border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+@media(max-width:600px){
+  .header{padding:18px 20px}
+  .wrapper{padding:20px 12px 48px}
+  .form-row,.form-row.three{grid-template-columns:1fr}
+  .section-body{padding:16px}
+  .act-grid{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-org">Planta PIL 1 — Gestion de Personal</div>
+  <div class="header-title">Reporte de Horas Extras</div>
+  <div class="header-sub">Registro de horas adicionales por empleado y actividad</div>
+</div>
+
+<div class="wrapper">
+
+  <!-- 1. EMPLEADO -->
+  <div class="section">
+    <div class="section-hdr">
+      <div class="section-num">1</div>
+      <div class="section-title">Identificacion del Empleado</div>
+    </div>
+    <div class="section-body">
+
+      <div class="form-group" style="margin-bottom:14px">
+        <label>Filtrar por area o cargo</label>
+        <div class="filtros-bar">
+          <button class="filtro-btn active" onclick="filtrarPor('todos',this)">Todos</button>
+          <button class="filtro-btn" onclick="filtrarPor('Planta',this)">Planta</button>
+          <button class="filtro-btn" onclick="filtrarPor('Administrativa',this)">Administrativa</button>
+          <button class="filtro-btn" onclick="filtrarPor('Bavaria',this)">Bavaria</button>
+          <button class="filtro-btn" onclick="filtrarPor('Finca',this)">Finca</button>
+          <button class="filtro-btn" onclick="filtrarPor('Conductor',this)">Conductores</button>
+          <button class="filtro-btn" onclick="filtrarPor('Operario',this)">Operarios</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Buscar empleado <span class="required">*</span></label>
+        <div class="search-wrap">
+          <input type="text" class="search-input" id="emp-search"
+            placeholder="Escriba nombre, apellido o cedula..."
+            oninput="filtrarEmpleados(this.value)"
+            onfocus="abrirDropdown()"
+            autocomplete="off">
+          <input type="hidden" id="emp-nombre-val">
+          <input type="hidden" id="emp-cedula-val">
+          <input type="hidden" id="emp-cargo-val">
+          <input type="hidden" id="emp-area-val">
+          <input type="hidden" id="emp-contrato-val">
+          <div class="dropdown" id="emp-dropdown"></div>
+        </div>
+      </div>
+
+      <div class="empleado-card" id="emp-card">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--navy);margin-bottom:10px">Empleado seleccionado</div>
+        <div class="emp-grid">
+          <div class="emp-field"><span class="emp-lbl">Nombre completo</span><span class="emp-val" id="disp-nombre">—</span></div>
+          <div class="emp-field"><span class="emp-lbl">Cedula</span><span class="emp-val" id="disp-cedula">—</span></div>
+          <div class="emp-field"><span class="emp-lbl">Cargo</span><span class="emp-val" id="disp-cargo">—</span></div>
+          <div class="emp-field"><span class="emp-lbl">Area</span><span class="emp-val" id="disp-area">—</span></div>
+          <div class="emp-field"><span class="emp-lbl">Tipo contrato</span><span class="emp-val" id="disp-contrato">—</span></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 2. FECHA Y HORAS -->
+  <div class="section">
+    <div class="section-hdr">
+      <div class="section-num">2</div>
+      <div class="section-title">Fecha y Duracion</div>
+    </div>
+    <div class="section-body">
+      <div class="form-row three">
+        <div class="form-group">
+          <label>Fecha <span class="required">*</span></label>
+          <input type="date" id="fecha">
+        </div>
+        <div class="form-group">
+          <label>Hora de inicio <span class="required">*</span></label>
+          <input type="time" id="hora_inicio" oninput="calcularHoras()">
+        </div>
+        <div class="form-group">
+          <label>Hora final <span class="required">*</span></label>
+          <input type="time" id="hora_final" oninput="calcularHoras()">
+        </div>
+      </div>
+      <div class="horas-box">
+        <span class="horas-lbl">Total horas extras</span>
+        <span class="horas-val" id="total-horas">— h</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. ACTIVIDAD -->
+  <div class="section">
+    <div class="section-hdr">
+      <div class="section-num">3</div>
+      <div class="section-title">Actividad Realizada</div>
+    </div>
+    <div class="section-body">
+      <div class="form-group">
+        <label>Seleccione la actividad <span class="required">*</span></label>
+        <div class="act-grid">
+          <button class="act-btn" onclick="selAct('Volqueta',this)">Volqueta</button>
+          <button class="act-btn" onclick="selAct('Recepcion',this)">Recepcion</button>
+          <button class="act-btn" onclick="selAct('Ganaderia',this)">Ganaderia</button>
+          <button class="act-btn" onclick="selAct('Cargador',this)">Cargador</button>
+          <button class="act-btn" onclick="selAct('Tractor',this)">Tractor</button>
+          <button class="act-btn" onclick="selAct('Otra',this)" style="border-color:var(--gold);color:var(--gold)">Otra</button>
+        </div>
+        <input type="hidden" id="actividad">
+      </div>
+      <div class="form-group" id="otra-wrap" style="display:none;margin-top:12px">
+        <label>Describa la actividad <span class="required">*</span></label>
+        <input type="text" id="otra-actividad" placeholder="Escriba la actividad realizada..." oninput="actualizarOtra(this.value)">
+      </div>
+    </div>
+  </div>
+
+  <!-- SUBMIT -->
+  <button class="btn-submit" id="btn-submit" type="button" onclick="enviar()">
+    Registrar Horas Extras
+  </button>
+  <div class="status" id="status">
+    <div class="status-title" id="status-title"></div>
+    <div class="status-text" id="status-text"></div>
+  </div>
+
+</div>
+
+<script>
+const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbyg573aJjXzH58eVmaZIJe5HmmxQ88Z_wHTtmfLBkpfOXl96jui7KfW25asDZUXQbXvcw/exec';
+
+// BASE DE EMPLEADOS — excluye tipo de contrato "x"
+const EMPLEADOS = [
+  {cedula:'1075680310', nombres:'Alejandra', apellidos:'Sierra Alarcón', cargo:'Analista contable', area:'Administrativa', contrato:'Quincenal'},
+  {cedula:'35419984', nombres:'Licet Nayive', apellidos:'Sánchez Camargo', cargo:'Auditor Interno', area:'Administrativa', contrato:'Quincenal'},
+  {cedula:'1020722646', nombres:'Fabio Felipe', apellidos:'Sanchez Garzon', cargo:'Gerente', area:'Administrativa', contrato:'x'},
+  {cedula:'1075685374', nombres:'Dilan', apellidos:'Archila', cargo:'Operario', area:'Bavaria', contrato:'Quincenal'},
+  {cedula:'19340266', nombres:'Fabio', apellidos:'Sanchez Melendez', cargo:'Director logistico', area:'Administrativa', contrato:'x'},
+  {cedula:'1001058237', nombres:'Johan Ferney', apellidos:'Rojas Tirado', cargo:'Operario', area:'Bavaria', contrato:'Quincenal'},
+  {cedula:'1070304480', nombres:'Johana Lucia', apellidos:'Poveda Rodríguez', cargo:'Coordinador SST', area:'Bavaria', contrato:'Quincenal'},
+  {cedula:'3102961', nombres:'Orlando', apellidos:'Guzmán forero', cargo:'Operario', area:'Bavaria', contrato:'Quincenal'},
+  {cedula:'11339970', nombres:'Victor Emilio', apellidos:'Rodriguez Navarrete', cargo:'Conductor', area:'Planta', contrato:'Quincenal'},
+  {cedula:'18951787', nombres:'Antony René', apellidos:'López piñango', cargo:'Operario de cargador', area:'Planta', contrato:'Contratista'},
+  {cedula:'3027070', nombres:'Elbert Alirio', apellidos:'Beltrán Reyes', cargo:'Operario ganaderia', area:'Finca', contrato:'Contratista'},
+  {cedula:'83088335', nombres:'Eleuterio', apellidos:'Cruz Pastrana', cargo:'Operario de huerta', area:'Finca', contrato:'Quincenal'},
+  {cedula:'11343383', nombres:'Henry', apellidos:'Otalora Martinez', cargo:'Conductor', area:'Planta', contrato:'Contratista'},
+  {cedula:'52890786', nombres:'Lina Paola', apellidos:'Scholl Barbosa', cargo:'Subgerente', area:'Administrativa', contrato:'Quincenal'},
+  {cedula:'79303801', nombres:'Luis Alfonso', apellidos:'Achury', cargo:'Operario', area:'Planta', contrato:'Contratista'},
+  {cedula:'35414575', nombres:'Luz Maribel', apellidos:'Rodríguez Ortiz', cargo:'Servicios generales', area:'Administrativa', contrato:'Contratista'},
+  {cedula:'1237439828', nombres:'Maikol', apellidos:'Vislan Torres', cargo:'Operario', area:'Planta', contrato:'Contratista'},
+  {cedula:'91102164', nombres:'Saúl', apellidos:'García Sandoval', cargo:'Operario-recepción', area:'Planta', contrato:'Contratista'},
+  {cedula:'13066934', nombres:'Edgar Alfredo', apellidos:'Benavides Riascos', cargo:'Operario', area:'Planta', contrato:'Quincenal'},
+  {cedula:'1073599904', nombres:'Hugo Alejandro', apellidos:'Herrera Cubillos', cargo:'Operario-liquidos', area:'Planta', contrato:'Quincenal'},
+  {cedula:'6622980', nombres:'Jesús David', apellidos:'Becerra Rivero', cargo:'Operario-molino', area:'Planta', contrato:'Quincenal'},
+  {cedula:'1075668423', nombres:'Leidy Yuliana', apellidos:'Cuéllar Gómez', cargo:'Coordinador ambiental', area:'Administrativa', contrato:'Contratista'},
+  {cedula:'12233361', nombres:'Oliverio', apellidos:'Hoyos Muñoz', cargo:'Operario-guadaña', area:'Planta', contrato:'Quincenal'},
+  {cedula:'1003252591', nombres:'Deivi José', apellidos:'Oliveros Peinado', cargo:'Operario-recepción', area:'Planta', contrato:'Quincenal'},
+  {cedula:'79772208', nombres:'Jorge Alexander', apellidos:'Velásquez Benavides', cargo:'Operario-recepción', area:'Planta', contrato:'Quincenal'},
+  {cedula:'1005087171', nombres:'Michael Estiven', apellidos:'Medina Benavides', cargo:'Operario de cargador', area:'Planta', contrato:'Quincenal'},
+  {cedula:'3196703', nombres:'Jorge Eliecer', apellidos:'Angarita Garzon', cargo:'Conductor', area:'Planta', contrato:'Quincenal'},
+  {cedula:'51695195', nombres:'Martha Liliana', apellidos:'Garzon Rojas', cargo:'Representante Legal', area:'Administrativa', contrato:'x'},
+  {cedula:'9289620', nombres:'Idaldo', apellidos:'Madrid Lara', cargo:'Operario-recepción', area:'Planta', contrato:'Quincenal'},
+  {cedula:'83224775', nombres:'Edgar', apellidos:'Medina Barrios', cargo:'Supervisor y mantenimiento', area:'Planta', contrato:'Quincenal'},
+  {cedula:'1075654715', nombres:'Manuel Antonio', apellidos:'Camacho', cargo:'Operario de cargador', area:'Planta', contrato:'Quincenal'},
+  {cedula:'80549640', nombres:'Carlos Arturo', apellidos:'Tunjo Ballen', cargo:'Operario de tractor', area:'Planta', contrato:'Quincenal'},
+  {cedula:'1003880411', nombres:'Diego Alexis', apellidos:'Cañon Garzon', cargo:'Conductor', area:'Planta', contrato:'Quincenal'},
+  {cedula:'1077295963', nombres:'Juan David', apellidos:'Lote Garzon', cargo:'Conductor', area:'Planta', contrato:'Quincenal'},
+  {cedula:'1075681451', nombres:'Angie Ximena', apellidos:'Vargas Rodriguez', cargo:'Coordinador SST', area:'Administrativa', contrato:'Quincenal'},
+  {cedula:'1070306047', nombres:'Jheison Fabian', apellidos:'Castro Castiblanco', cargo:'Lider Cadena de suministro', area:'Administrativa', contrato:'Quincenal'},
+  {cedula:'1002769870', nombres:'Juan Sebastian', apellidos:'Castiilo Araque', cargo:'Operario', area:'Planta', contrato:'Contratista'},
+  {cedula:'1237439831', nombres:'Luis Efrain', apellidos:'Vislan Torres', cargo:'Operario', area:'Planta', contrato:'Contratista'},
+  {cedula:'1069432118', nombres:'Wilson', apellidos:'Rodriguez Cano', cargo:'Operario', area:'Planta', contrato:'Contratista'},
+  {cedula:'11519195', nombres:'Orlando', apellidos:'Herrera', cargo:'Operario', area:'Planta', contrato:'Contratista'},
+  {cedula:'27696742', nombres:'Fran David', apellidos:'Amaya Paz', cargo:'Operario', area:'Planta', contrato:'Contratista'},
+  {cedula:'24815560', nombres:'Lina', apellidos:'Benavides', cargo:'Servicios generales', area:'Planta', contrato:'Contratista'},
+  {cedula:'1075678015', nombres:'Estefania', apellidos:'Medina', cargo:'Servicios generales', area:'Planta', contrato:'Contratista'},
+  {cedula:'1076907192', nombres:'Jhon Eduar', apellidos:'Castiblanco', cargo:'Operario', area:'Planta', contrato:'Contratista'},
+];
+
+// Excluir tipo x del formulario de horas extras
+const EMPLEADOS_HE = EMPLEADOS.filter(e => e.contrato.toLowerCase().trim() !== 'x');
+
+let filtroActual = 'todos';
+let empSeleccionado = null;
+let actividadSel = null;
+
+// Fecha hoy
+document.getElementById('fecha').value = new Date().toISOString().slice(0,10);
+
+// ── FILTROS ───────────────────────────────────────
+function filtrarPor(tipo, btn) {
+  filtroActual = tipo;
+  document.querySelectorAll('.filtro-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const q = document.getElementById('emp-search').value;
+  filtrarEmpleados(q);
+}
+
+function getEmpleadosFiltrados(q) {
+  let lista = EMPLEADOS_HE;
+  if (filtroActual !== 'todos') {
+    lista = lista.filter(e =>
+      e.area.toLowerCase().includes(filtroActual.toLowerCase()) ||
+      e.cargo.toLowerCase().includes(filtroActual.toLowerCase())
+    );
+  }
+  if (q && q.length > 0) {
+    const qLow = q.toLowerCase();
+    lista = lista.filter(e =>
+      e.nombres.toLowerCase().includes(qLow) ||
+      e.apellidos.toLowerCase().includes(qLow) ||
+      (e.nombres + ' ' + e.apellidos).toLowerCase().includes(qLow) ||
+      e.cedula.includes(q)
+    );
+  }
+  return lista;
+}
+
+// ── DROPDOWN ──────────────────────────────────────
+function renderDropdown(lista) {
+  const dd = document.getElementById('emp-dropdown');
+  if (lista.length === 0) {
+    dd.innerHTML = '<div class="dropdown-item no-results">Sin resultados</div>';
+  } else {
+    dd.innerHTML = lista.map(e => `
+      <div class="dropdown-item" onclick="seleccionarEmp(${JSON.stringify(e).replace(/"/g,'&quot;')})">
+        <span class="emp-nombre">${e.nombres} ${e.apellidos}</span>
+        <span class="emp-meta">${e.cargo} · ${e.area} · CC ${e.cedula}</span>
+      </div>`).join('');
+  }
+  dd.classList.add('open');
+}
+
+function abrirDropdown() {
+  const lista = getEmpleadosFiltrados(document.getElementById('emp-search').value);
+  renderDropdown(lista);
+}
+
+function filtrarEmpleados(q) {
+  empSeleccionado = null;
+  document.getElementById('emp-card').classList.remove('visible');
+  renderDropdown(getEmpleadosFiltrados(q));
+}
+
+function seleccionarEmp(e) {
+  empSeleccionado = e;
+  document.getElementById('emp-search').value = e.nombres + ' ' + e.apellidos;
+  document.getElementById('emp-nombre-val').value = e.nombres + ' ' + e.apellidos;
+  document.getElementById('emp-cedula-val').value = e.cedula;
+  document.getElementById('emp-cargo-val').value = e.cargo;
+  document.getElementById('emp-area-val').value = e.area;
+  document.getElementById('emp-contrato-val').value = e.contrato;
+  document.getElementById('emp-dropdown').classList.remove('open');
+  // Mostrar card
+  document.getElementById('disp-nombre').textContent = e.nombres + ' ' + e.apellidos;
+  document.getElementById('disp-cedula').textContent = e.cedula;
+  document.getElementById('disp-cargo').textContent = e.cargo;
+  document.getElementById('disp-area').textContent = e.area;
+  document.getElementById('disp-contrato').textContent = e.contrato;
+  document.getElementById('emp-card').classList.add('visible');
+}
+
+document.addEventListener('click', function(e) {
+  const wrap = document.getElementById('emp-search').closest('.search-wrap');
+  if (!wrap.contains(e.target)) {
+    document.getElementById('emp-dropdown').classList.remove('open');
+  }
+});
+
+// ── CALCULAR HORAS ────────────────────────────────
+function calcularHoras() {
+  const ini = document.getElementById('hora_inicio').value;
+  const fin = document.getElementById('hora_final').value;
+  if (!ini || !fin) { document.getElementById('total-horas').textContent = '— h'; return; }
+  const [ih, im] = ini.split(':').map(Number);
+  const [fh, fm] = fin.split(':').map(Number);
+  let mins = (fh * 60 + fm) - (ih * 60 + im);
+  if (mins < 0) mins += 1440;
+  const horas = Math.floor(mins / 60);
+  const minutos = mins % 60;
+  document.getElementById('total-horas').textContent =
+    horas + 'h ' + (minutos > 0 ? minutos + 'min' : '');
+}
+
+// ── ACTIVIDAD ─────────────────────────────────────
+function selAct(act, btn) {
+  actividadSel = act;
+  document.querySelectorAll('.act-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const otraWrap = document.getElementById('otra-wrap');
+  if (act === 'Otra') {
+    otraWrap.style.display = 'block';
+    document.getElementById('actividad').value = '';
+    document.getElementById('otra-actividad').focus();
+  } else {
+    otraWrap.style.display = 'none';
+    document.getElementById('otra-actividad').value = '';
+    document.getElementById('actividad').value = act;
+  }
+}
+
+function actualizarOtra(val) {
+  document.getElementById('actividad').value = val.trim() ? 'Otra: ' + val.trim() : '';
+}
+
+// ── STATUS ────────────────────────────────────────
+function mostrarStatus(tipo, titulo, texto) {
+  const el = document.getElementById('status');
+  el.className = 'status ' + tipo;
+  document.getElementById('status-title').textContent = titulo;
+  document.getElementById('status-text').innerHTML = tipo === 'loading'
+    ? '<span class="spinner"></span>' + texto : texto;
+  el.scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+
+// ── ENVIO ─────────────────────────────────────────
+async function enviar() {
+  const nombre   = document.getElementById('emp-nombre-val').value;
+  const cedula   = document.getElementById('emp-cedula-val').value;
+  const fecha    = document.getElementById('fecha').value;
+  const inicio   = document.getElementById('hora_inicio').value;
+  const final    = document.getElementById('hora_final').value;
+  const actividad= document.getElementById('actividad').value;
+
+  if (!nombre)   { mostrarStatus('error','Campo requerido','Seleccione un empleado de la lista.'); return; }
+  if (!fecha)    { mostrarStatus('error','Campo requerido','Seleccione la fecha.'); return; }
+  if (!inicio)   { mostrarStatus('error','Campo requerido','Ingrese la hora de inicio.'); return; }
+  if (!final)    { mostrarStatus('error','Campo requerido','Ingrese la hora final.'); return; }
+  if (!actividad){ mostrarStatus('error','Campo requerido','Seleccione la actividad realizada.'); return; }
+
+  const datos = {
+    nombre,
+    cedula,
+    cargo:     document.getElementById('emp-cargo-val').value,
+    area:      document.getElementById('emp-area-val').value,
+    contrato:  document.getElementById('emp-contrato-val').value,
+    fecha,
+    hora_inicio: inicio,
+    hora_final:  final,
+    actividad
+  };
+
+  document.getElementById('btn-submit').disabled = true;
+  mostrarStatus('loading','Guardando registro...','Enviando datos al sistema. Por favor espere.');
+
+  try {
+    const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(WEBAPP_URL);
+    const res = await fetch(proxyUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    const json = await res.json();
+    if (json.success) {
+      mostrarStatus('success','Registro guardado correctamente',
+        `Horas extras de <strong>${nombre}</strong> registradas correctamente. Cedula: ${cedula}.`);
+      setTimeout(() => resetFormulario(), 4000);
+    } else {
+      mostrarStatus('error','Error al guardar', json.error || 'Error desconocido.');
+      document.getElementById('btn-submit').disabled = false;
+    }
+  } catch(e) {
+    try {
+      await fetch(WEBAPP_URL, {
+        method: 'POST', mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datos)
+      });
+      mostrarStatus('success','Registro enviado',
+        `Horas extras de <strong>${nombre}</strong> enviadas al sistema.`);
+      setTimeout(() => resetFormulario(), 4000);
+    } catch(e2) {
+      mostrarStatus('error','Error de conexion','Verifique su conexion a internet.');
+      document.getElementById('btn-submit').disabled = false;
+    }
+  }
+}
+
+// ── RESET ─────────────────────────────────────────
+function resetFormulario() {
+  empSeleccionado = null; actividadSel = null;
+  document.getElementById('emp-search').value = '';
+  document.getElementById('emp-nombre-val').value = '';
+  document.getElementById('emp-cedula-val').value = '';
+  document.getElementById('emp-cargo-val').value = '';
+  document.getElementById('emp-area-val').value = '';
+  document.getElementById('emp-contrato-val').value = '';
+  document.getElementById('emp-card').classList.remove('visible');
+  document.getElementById('hora_inicio').value = '';
+  document.getElementById('hora_final').value = '';
+  document.getElementById('total-horas').textContent = '— h';
+  document.getElementById('actividad').value = '';
+  document.getElementById('otra-actividad').value = '';
+  document.getElementById('otra-wrap').style.display = 'none';
+  document.querySelectorAll('.act-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('fecha').value = new Date().toISOString().slice(0,10);
+  document.getElementById('btn-submit').disabled = false;
+  document.getElementById('status').className = 'status';
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+</script>
+</body>
+</html>
