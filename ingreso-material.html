@@ -94,7 +94,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 .dropdown-item.no-results{color:var(--ink-l);font-style:italic;cursor:default}
 .dropdown-item.no-results:hover{background:none}
 
-  
 @media(max-width:600px){
   .header{padding:18px 20px}
   .wrapper{padding:20px 12px 48px}
@@ -113,11 +112,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 
 <div class="wrapper">
 
-  <div class="notice">
-    <div class="notice-title">Instruccion importante — Numero de tiquete</div>
-    <div class="notice-text">El numero de tiquete debe registrarse con sus digitos completos tal como aparece en el documento fisico del cliente. No registre unicamente los ultimos cuatro digitos.</div>
-  </div>
-
   <!-- 1. TIQUETE Y FECHA -->
   <div class="section">
     <div class="section-hdr">
@@ -135,12 +129,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
         <div class="form-group">
           <label>Fecha de disposicion en planta <span class="required">*</span></label>
           <input type="date" id="fecha_disposicion">
-        </div>
-      </div>
-      <div class="form-row single">
-        <div class="form-group">
-          <label>Hora de disposicion en planta <span class="required">*</span></label>
-          <input type="time" id="hora_disposicion">
         </div>
       </div>
     </div>
@@ -165,8 +153,8 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
       </div>
       <div class="form-row single">
         <div class="form-group">
-          <label>Ultimos cuatro digitos de cedula del conductor <span class="required">*</span></label>
-          <input type="text" id="ultimos_cuatro_cedula" placeholder="Solo los ultimos 4 digitos" maxlength="4" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+          <label>Ultimos cuatro digitos de cedula del conductor</label>
+          <input type="text" id="ultimos_cuatro_cedula" placeholder="Opcional — ultimos 4 digitos" maxlength="4" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
         </div>
       </div>
     </div>
@@ -181,11 +169,11 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
     <div class="section-body">
       <div class="form-row">
         <div class="form-group">
-          <label>Peso de entrada (kg) <span class="required">*</span></label>
-          <input type="number" id="peso_entrada" placeholder="Peso del vehiculo cargado" min="0" step="0.01" oninput="calcularPesoNeto()">
+          <label>Peso vehiculo cargado (kg) <span class="required">*</span></label>
+          <input type="number" id="peso_entrada" placeholder="Peso del vehiculo con carga" min="0" step="0.01" oninput="calcularPesoNeto()">
         </div>
         <div class="form-group">
-          <label>Peso de salida (kg) <span class="required">*</span></label>
+          <label>Peso vehiculo sin carga (kg) <span class="required">*</span></label>
           <input type="number" id="peso_salida" placeholder="Peso del vehiculo vacio" min="0" step="0.01" oninput="calcularPesoNeto()">
         </div>
       </div>
@@ -264,11 +252,8 @@ const RESIDUOS = [
   'Tierras filtrantes','Tromel'
 ];
 
-// Fecha y hora actuales
+// Fecha de hoy
 document.getElementById('fecha_disposicion').value = new Date().toISOString().slice(0,10);
-const ahora = new Date();
-document.getElementById('hora_disposicion').value =
-  String(ahora.getHours()).padStart(2,'0') + ':' + String(ahora.getMinutes()).padStart(2,'0');
 
 // ── SEARCH DROPDOWNS ─────────────────────────────
 function renderDropdown(tipo, lista) {
@@ -360,7 +345,6 @@ function mostrarStatus(tipo, titulo, texto) {
 async function enviarFormulario() {
   const tiquete    = document.getElementById('numero_tiquete').value.trim();
   const fecha      = document.getElementById('fecha_disposicion').value;
-  const hora       = document.getElementById('hora_disposicion').value;
   const placa      = document.getElementById('placa').value.trim();
   const conductor  = document.getElementById('conductor').value.trim();
   const cedula     = document.getElementById('ultimos_cuatro_cedula').value.trim();
@@ -372,27 +356,29 @@ async function enviarFormulario() {
   if (!tiquete)   { mostrarStatus('error','Campo requerido','Ingrese el numero de tiquete.'); return; }
   if (tiquete.replace(/\s/g,'').length <= 4) { mostrarStatus('error','Tiquete incompleto','El numero de tiquete debe tener mas de 4 digitos. Ingrese el numero completo.'); return; }
   if (!fecha)     { mostrarStatus('error','Campo requerido','Seleccione la fecha de disposicion.'); return; }
-  if (!hora)      { mostrarStatus('error','Campo requerido','Ingrese la hora de disposicion.'); return; }
   if (!placa)     { mostrarStatus('error','Campo requerido','Ingrese la placa del vehiculo.'); return; }
   if (!conductor) { mostrarStatus('error','Campo requerido','Ingrese el nombre del conductor.'); return; }
-  if (!cedula || cedula.length !== 4) { mostrarStatus('error','Campo requerido','Ingrese exactamente los ultimos 4 digitos de la cedula del conductor.'); return; }
-  if (!pesoE)     { mostrarStatus('error','Campo requerido','Ingrese el peso de entrada.'); return; }
-  if (!pesoS)     { mostrarStatus('error','Campo requerido','Ingrese el peso de salida.'); return; }
+  if (!pesoE)     { mostrarStatus('error','Campo requerido','Ingrese el peso del vehiculo cargado.'); return; }
+  if (!pesoS)     { mostrarStatus('error','Campo requerido','Ingrese el peso del vehiculo sin carga.'); return; }
   if (!operacion) { mostrarStatus('error','Campo requerido','Seleccione la operacion (cliente).'); return; }
   if (!residuo)   { mostrarStatus('error','Campo requerido','Seleccione el tipo de residuo o material.'); return; }
 
+  // Hora actual automatica
+  const ahora = new Date();
+  const horaAuto = String(ahora.getHours()).padStart(2,'0') + ':' + String(ahora.getMinutes()).padStart(2,'0');
+
   const datos = {
-    numero_tiquete:       tiquete,
-    fecha_disposicion:    fecha,
-    hora_disposicion:     hora,
-    placa:                placa,
-    conductor:            conductor,
+    numero_tiquete:        tiquete,
+    fecha_disposicion:     fecha,
+    hora_disposicion:      horaAuto,
+    placa:                 placa,
+    conductor:             conductor,
     ultimos_cuatro_cedula: cedula,
-    peso_entrada:         pesoE,
-    peso_salida:          pesoS,
-    observacion:          document.getElementById('observacion').value,
-    operacion:            operacion,
-    residuo:              residuo
+    peso_entrada:          pesoE,
+    peso_salida:           pesoS,
+    observacion:           document.getElementById('observacion').value,
+    operacion:             operacion,
+    residuo:               residuo
   };
 
   document.getElementById('btn-submit').disabled = true;
@@ -451,9 +437,6 @@ function resetFormulario() {
   document.getElementById('tiquete-ok').style.display = 'none';
   document.getElementById('peso-neto-val').textContent = '— kg';
   document.getElementById('fecha_disposicion').value = new Date().toISOString().slice(0,10);
-  const ahora = new Date();
-  document.getElementById('hora_disposicion').value =
-    String(ahora.getHours()).padStart(2,'0') + ':' + String(ahora.getMinutes()).padStart(2,'0');
   document.getElementById('btn-submit').disabled = false;
   document.getElementById('status').className = 'status';
   window.scrollTo({top:0, behavior:'smooth'});
