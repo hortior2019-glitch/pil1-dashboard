@@ -347,9 +347,39 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
     <div class="sec-sub" id="clientes-period">Hoy</div>
   </div>
 
-  <div class="notice" style="--ac:var(--navy);--ac-l:var(--blue-l)">
-    <div class="notice-title">Lectura del panel</div>
-    <div class="notice-text">Cada cliente u operacion se identifica por el color de su arista izquierda. Los datos se calculan en tiempo real desde el formulario de ingreso segun el campo Operacion registrado por el operario.</div>
+  <!-- KPIs resumen -->
+  <div class="kpi-grid" id="kpi-clientes" style="margin-bottom:24px;"></div>
+
+  <!-- GRAFICOS -->
+  <div class="g2" style="margin-bottom:20px;">
+    <div class="card">
+      <div class="card-hdr">Distribucion de registros por cliente</div>
+      <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+        <canvas id="chart-clientes-pie" width="200" height="200" style="flex-shrink:0"></canvas>
+        <div id="legend-clientes-pie" style="flex:1;min-width:140px;display:flex;flex-direction:column;gap:6px"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-hdr">Distribucion de peso neto por cliente (kg)</div>
+      <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+        <canvas id="chart-peso-pie" width="200" height="200" style="flex-shrink:0"></canvas>
+        <div id="legend-peso-pie" style="flex:1;min-width:140px;display:flex;flex-direction:column;gap:6px"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="g2" style="margin-bottom:20px;">
+    <div class="card">
+      <div class="card-hdr">Distribucion de residuos / materiales</div>
+      <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+        <canvas id="chart-residuos-pie" width="200" height="200" style="flex-shrink:0"></canvas>
+        <div id="legend-residuos-pie" style="flex:1;min-width:140px;display:flex;flex-direction:column;gap:6px"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-hdr">Ingresos por dia de la semana</div>
+      <canvas id="chart-dias-bar" width="100%" height="200"></canvas>
+    </div>
   </div>
 
   <!-- Leyenda de colores -->
@@ -358,10 +388,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
     <div id="leyenda-clientes" style="display:flex;flex-wrap:wrap;gap:10px 24px;"></div>
   </div>
 
-  <!-- KPIs resumen -->
-  <div class="kpi-grid" id="kpi-clientes" style="margin-bottom:24px;"></div>
-
-  <!-- Tabla por cliente -->
+  <!-- Cards por cliente -->
   <div id="cards-clientes"></div>
 </div>
 
@@ -385,8 +412,11 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 
   <div class="g2">
     <div class="card">
-      <div class="card-hdr">Horas extras por actividad</div>
-      <div id="he-act-bars"><div class="empty">Cargando...</div></div>
+      <div class="card-hdr">Distribucion por actividad</div>
+      <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+        <canvas id="chart-he-act-pie" width="200" height="200" style="flex-shrink:0"></canvas>
+        <div id="legend-he-act" style="flex:1;min-width:140px;display:flex;flex-direction:column;gap:6px"></div>
+      </div>
     </div>
     <div class="card">
       <div class="card-hdr">Horas extras por empleado — Top 10</div>
@@ -911,8 +941,10 @@ function renderClientes(data, filter) {
   // Cards por cliente
   if (sorted.length === 0) {
     document.getElementById('cards-clientes').innerHTML = '<div class="card"><div class="empty">Sin registros para el periodo seleccionado</div></div>';
+    renderChartClientes([]);
     return;
   }
+  renderChartClientes(filtered);
 
   document.getElementById('cards-clientes').innerHTML = sorted.map(([op, registros]) => {
     const color = getClientColor(op);
@@ -1013,6 +1045,149 @@ function renderClientes(data, filter) {
   }).join('');
 }
 
+// ── GRAFICOS ──────────────────────────────────────
+function drawPie(canvasId, legendId, data, colors) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const cx = W/2, cy = H/2, r = Math.min(W,H)/2 - 8;
+  ctx.clearRect(0,0,W,H);
+
+  const total = data.reduce((s,[,v])=>s+v,0);
+  if (total === 0) {
+    ctx.fillStyle = '#d8d4cc';
+    ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fill();
+    return;
+  }
+
+  let angle = -Math.PI/2;
+  data.forEach(([label,val],i) => {
+    const slice = (val/total) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(cx,cy);
+    ctx.arc(cx,cy,r,angle,angle+slice);
+    ctx.closePath();
+    ctx.fillStyle = colors[i % colors.length];
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    angle += slice;
+  });
+
+  // Leyenda
+  const leg = document.getElementById(legendId);
+  if (!leg) return;
+  leg.innerHTML = data.slice(0,10).map(([label,val],i) => {
+    const pct = ((val/total)*100).toFixed(1);
+    return `<div style="display:flex;align-items:center;gap:6px;">
+      <div style="width:10px;height:10px;border-radius:2px;background:${colors[i%colors.length]};flex-shrink:0"></div>
+      <span style="font-size:10px;color:var(--ink-m);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</span>
+      <span style="font-size:10px;font-weight:700;color:var(--ink)">${pct}%</span>
+    </div>`;
+  }).join('');
+}
+
+function drawBar(canvasId, labels, values, color) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.offsetWidth || 400;
+  canvas.width = W;
+  const H = 180;
+  canvas.height = H;
+  ctx.clearRect(0,0,W,H);
+
+  const pad = { top:16, right:16, bottom:32, left:36 };
+  const chartW = W - pad.left - pad.right;
+  const chartH = H - pad.top - pad.bottom;
+  const max = Math.max(...values, 1);
+  const barW = chartW / labels.length * 0.6;
+  const gap  = chartW / labels.length;
+
+  // Lineas guia
+  ctx.strokeStyle = '#ede9e2'; ctx.lineWidth = 1;
+  [0.25,0.5,0.75,1].forEach(f => {
+    const y = pad.top + chartH * (1-f);
+    ctx.beginPath(); ctx.moveTo(pad.left,y); ctx.lineTo(W-pad.right,y); ctx.stroke();
+    ctx.fillStyle='#8a8a8a'; ctx.font='9px Source Sans 3';
+    ctx.textAlign='right';
+    ctx.fillText(Math.round(max*f), pad.left-4, y+3);
+  });
+
+  // Barras
+  labels.forEach((lbl,i) => {
+    const x = pad.left + gap*i + (gap-barW)/2;
+    const barH = (values[i]/max) * chartH;
+    const y = pad.top + chartH - barH;
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, barW, barH);
+    // Label
+    ctx.fillStyle='#4a4a4a'; ctx.font='10px Source Sans 3';
+    ctx.textAlign='center';
+    ctx.fillText(lbl, x+barW/2, H-pad.bottom+14);
+    if (values[i] > 0) {
+      ctx.fillStyle='#1a1a1a'; ctx.font='bold 10px Source Sans 3';
+      ctx.fillText(values[i], x+barW/2, y-4);
+    }
+  });
+}
+
+const CHART_COLORS = [
+  '#1a3a5c','#2d5f8a','#1a5c35','#8b6914','#8b1a1a',
+  '#2563eb','#dc2626','#d97706','#7c3aed','#059669',
+  '#0891b2','#65a30d','#c026d3','#e11d48','#ea580c',
+  '#be123c','#854d0e','#166534','#1d4ed8','#4f46e5',
+  '#b45309','#0f766e','#6d28d9','#0369a1','#9d174d',
+];
+
+function renderChartClientes(data) {
+  const grupos = {}, pesos = {};
+  const residuosCnt = {};
+  const diasCnt = {'Dom':0,'Lun':0,'Mar':0,'Mie':0,'Jue':0,'Vie':0,'Sab':0};
+  const diasNombres = ['Dom','Lun','Mar','Mie','Jue','Vie','Sab'];
+
+  data.forEach(r => {
+    const op = r['OPERACION'] || 'Sin operacion';
+    grupos[op] = (grupos[op]||0) + 1;
+    const e = parseFloat((r['PESO ENTRADA  Según ticket']||r['PESO ENTRADA']||'0').replace(/[^0-9.]/g,''))||0;
+    const s = parseFloat((r['PESO SALIDA  Según ticket']||r['PESO SALIDA']||'0').replace(/[^0-9.]/g,''))||0;
+    pesos[op] = (pesos[op]||0) + Math.max(e-s,0);
+    const res = r['RESIDUO'] || 'Sin clasificar';
+    residuosCnt[res] = (residuosCnt[res]||0) + 1;
+    const fecha = parseDate(r['FECHA DISPOSICION PLANTA']||r['Marca temporal']||'');
+    if (fecha) diasCnt[diasNombres[fecha.getDay()]]++;
+  });
+
+  const sortedGrupos = Object.entries(grupos).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const sortedPesos  = Object.entries(pesos).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const sortedRes    = Object.entries(residuosCnt).sort((a,b)=>b[1]-a[1]).slice(0,10);
+
+  // Colores por cliente
+  const coloresCliente = sortedGrupos.map(([op]) => getClientColor(op));
+  const coloresPeso    = sortedPesos.map(([op]) => getClientColor(op));
+
+  setTimeout(() => {
+    drawPie('chart-clientes-pie','legend-clientes-pie', sortedGrupos, coloresCliente);
+    drawPie('chart-peso-pie','legend-peso-pie', sortedPesos.map(([k,v])=>[k,Math.round(v)]), coloresPeso);
+    drawPie('chart-residuos-pie','legend-residuos-pie', sortedRes, CHART_COLORS);
+    drawBar('chart-dias-bar', Object.keys(diasCnt), Object.values(diasCnt), '#1a3a5c');
+  }, 100);
+}
+
+function renderChartHE(data) {
+  const actHoras = {};
+  data.forEach(r => {
+    const act = r['Actividad'] || '—';
+    actHoras[act] = (actHoras[act]||0) + calcHoras(r['Hora de inicio'], r['Hora Final']);
+  });
+  const sorted = Object.entries(actHoras).sort((a,b)=>b[1]-a[1]);
+  setTimeout(() => {
+    drawPie('chart-he-act-pie','legend-he-act', sorted.map(([k,v])=>[k,parseFloat(v.toFixed(1))]), CHART_COLORS);
+  }, 100);
+}
+
 // ── RENDER HORAS EXTRAS ───────────────────────────
 function calcHoras(inicio, final) {
   if (!inicio || !final) return 0;
@@ -1033,8 +1208,8 @@ function renderHE(data, filter) {
     const h = calcHoras(r['Hora de inicio'], r['Hora Final']);
     totalHoras += h;
     const emp = r['Nombre '] || r['Nombre'] || '—';
-    const ced = r['Cedula'] || r['cedula'] || '—';
-    const cargo = r['Cargo'] || r['cargo'] || '—';
+    const ced = r['Cedula'] || '—';
+    const cargo = r['Cargo'] || '—';
     if (!empleados[emp]) empleados[emp] = { horas:0, count:0, cedula:ced, cargo };
     empleados[emp].horas += h;
     empleados[emp].count++;
@@ -1063,13 +1238,15 @@ function renderHE(data, filter) {
 
   // Barras actividad
   const maxAct = Math.max(...Object.values(actividades), 1);
-  document.getElementById('he-act-bars').innerHTML = Object.entries(actividades)
+  document.getElementById('he-act-bars') && (document.getElementById('he-act-bars').innerHTML = Object.entries(actividades)
     .sort((a,b)=>b[1]-a[1])
     .map(([act,h]) => `
       <div class="prog-item">
         <div class="prog-hdr"><span class="prog-lbl">${act}</span><span class="prog-val">${h.toFixed(1)} h</span></div>
         <div class="prog-track"><div class="prog-fill" style="width:${(h/maxAct*100)}%;background:var(--navy)"></div></div>
-      </div>`).join('') || '<div class="empty">Sin registros</div>';
+      </div>`).join('') || '<div class="empty">Sin registros</div>');
+
+  renderChartHE(filtered);
 
   // Top empleados
   const topEmp = Object.entries(empleados).sort((a,b)=>b[1].horas-a[1].horas).slice(0,10);
@@ -1091,9 +1268,9 @@ function renderHE(data, filter) {
         return `<tr>
           <td>${r['Fecha']||'—'}</td>
           <td class="bold">${r['Nombre ']||r['Nombre']||'—'}</td>
-          <td>${r['Cedula']||r['cedula']||'—'}</td>
-          <td>${r['Cargo']||r['cargo']||'—'}</td>
-          <td>${r['Area']||r['area']||'—'}</td>
+          <td>${r['Cedula']||'—'}</td>
+          <td>${r['Cargo']||'—'}</td>
+          <td>${r['Area']||'—'}</td>
           <td>${r['Actividad']||'—'}</td>
           <td class="num">${r['Hora de inicio']||'—'}</td>
           <td class="num">${r['Hora Final']||'—'}</td>
