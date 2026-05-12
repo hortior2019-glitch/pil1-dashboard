@@ -101,7 +101,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   <div class="tab" id="tab-consulta" onclick="showTab('consulta')">Consultar Registros</div>
 </div>
 
-  
 <!-- NUEVO REGISTRO -->
 <div class="panel active" id="panel-registro">
 <div class="wrapper">
@@ -305,13 +304,29 @@ window.addEventListener('load', function() {
 });
 
 // ── TABS ──────────────────────────────────────────
+var refreshInterval = null;
+
 function showTab(id) {
   document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});
   document.querySelectorAll('.panel').forEach(function(p){p.classList.remove('active');});
   document.getElementById('tab-'+id).classList.add('active');
   document.getElementById('panel-'+id).classList.add('active');
-  if (id === 'consulta') cargarRegistros();
+  if (id === 'consulta') {
+    cargarRegistros();
+    if (!refreshInterval) {
+      refreshInterval = setInterval(cargarRegistros, 2 * 60 * 1000); // cada 2 min
+    }
+  } else {
+    if (refreshInterval) { clearInterval(refreshInterval); refreshInterval = null; }
+  }
 }
+
+// Auto-refresh cada 2 minutos cuando la pestaña consulta esta activa
+setInterval(function() {
+  if (document.getElementById('panel-consulta').classList.contains('active')) {
+    cargarRegistros();
+  }
+}, 120000);
 
 // ── DROPDOWNS ─────────────────────────────────────
 function setupDropdown(tipo, lista) {
@@ -427,6 +442,7 @@ async function enviarFormulario() {
     var json = await res.json();
     if (json.success) {
       mostrarStatus('success','Registro guardado','Ingreso de <strong>'+placa+'</strong> — '+operacion+' registrado.');
+      registrosData = []; // limpiar cache
       setTimeout(resetFormulario, 3500);
     } else {
       mostrarStatus('error','Error al guardar', json.error || 'Error desconocido.');
@@ -560,14 +576,18 @@ function renderConsulta() {
 
 async function cargarRegistros() {
   document.getElementById('tbody-consulta').innerHTML = '<tr><td colspan="11" class="empty"><span class="spinner"></span>Cargando...</td></tr>';
+  var bust = '&nocache=' + Date.now() + Math.floor(Math.random()*100000);
   var urls = [
-    'https://corsproxy.io/?' + encodeURIComponent(CSV_URL + '&t=' + Date.now()),
-    'https://api.allorigins.win/raw?url=' + encodeURIComponent(CSV_URL)
+    'https://corsproxy.io/?' + encodeURIComponent(CSV_URL + bust),
+    'https://api.allorigins.win/raw?url=' + encodeURIComponent(CSV_URL + bust),
   ];
   for (var i=0; i<urls.length; i++) {
     try {
-      var res = await fetch(urls[i], {cache:'no-store'});
-      if (res.ok) { registrosData = parseCSV(await res.text()); renderConsulta(); return; }
+      var res = await fetch(urls[i], {cache:'no-store', headers:{'Cache-Control':'no-cache','Pragma':'no-cache'}});
+      if (res.ok) {
+        var text = await res.text();
+        if (text.length > 10) { registrosData = parseCSV(text); renderConsulta(); return; }
+      }
     } catch(e) {}
   }
   document.getElementById('tbody-consulta').innerHTML = '<tr><td colspan="11" class="empty">No se pudieron cargar los registros.</td></tr>';
