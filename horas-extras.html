@@ -96,8 +96,31 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 .status.error .status-title{color:var(--red)}
 .status-text{font-size:12px;color:var(--ink-m);line-height:1.6}
 
-.spinner{display:inline-block;width:12px;height:12px;border:2px solid rgba(26,58,92,.3);border-top-color:var(--navy);border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:6px}
-@keyframes spin{to{transform:rotate(360deg)}}
+.tabs{background:var(--white);border-bottom:1px solid var(--rule);display:flex}
+.tab{padding:13px 24px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);border-bottom:2px solid transparent;cursor:pointer;transition:.2s}
+.tab.active{color:var(--navy);border-bottom-color:var(--navy)}
+.panel{display:none}.panel.active{display:block}
+.filter-bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+.fbtn{padding:6px 14px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);cursor:pointer;transition:.2s;font-family:'Source Sans 3',sans-serif}
+.fbtn.active{background:var(--navy);border-color:var(--navy);color:white}
+.refresh-btn{margin-left:auto;padding:6px 14px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--navy);background:transparent;color:var(--navy);cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:.2s}
+.refresh-btn:hover{background:var(--navy);color:white}
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);margin-bottom:16px}
+.kpi-box{background:var(--white);padding:14px 16px}
+.kpi-lbl{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);margin-bottom:6px}
+.kpi-val{font-family:'Playfair Display',serif;font-size:24px;font-weight:700;color:var(--navy)}
+.kpi-desc{font-size:10px;color:var(--ink-l)}
+.card{background:var(--white);border:1px solid var(--rule);padding:18px 20px}
+.card-hdr{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink-l);margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--rule-l)}
+.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl thead tr{border-bottom:2px solid var(--ink)}
+.tbl th{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-m);padding:8px 10px;text-align:left}
+.tbl td{padding:9px 10px;color:var(--ink-m);border-bottom:1px solid var(--rule-l);font-weight:300;vertical-align:top}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr:hover td{background:var(--s2)}
+.tbl .bold{font-weight:600;color:var(--ink)}
+.tbl .num{text-align:right;font-weight:600}
+.empty{text-align:center;padding:32px;color:var(--ink-l);font-style:italic;font-size:12px}
 
 @media(max-width:600px){
   .header{padding:18px 20px}
@@ -116,6 +139,12 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   <div class="header-sub">Registro de horas adicionales por empleado y actividad</div>
 </div>
 
+<div class="tabs">
+  <div class="tab active" id="tab-registro" onclick="showTab('registro')">Nuevo Reporte</div>
+  <div class="tab" id="tab-consulta" onclick="showTab('consulta')">Consultar Registros</div>
+</div>
+
+<div class="panel active" id="panel-registro">
 <div class="wrapper">
 
   <!-- 1. EMPLEADO -->
@@ -234,6 +263,43 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   </div>
 
 </div>
+</div><!-- /panel-registro -->
+
+<!-- CONSULTA -->
+<div class="panel" id="panel-consulta">
+<div class="wrapper">
+
+  <div class="filter-bar">
+    <button class="he-fbtn fbtn active" onclick="setHEFiltro('hoy',this)">Hoy</button>
+    <button class="he-fbtn fbtn" onclick="setHEFiltro('hora',this)">Ultima hora</button>
+    <button class="he-fbtn fbtn" onclick="setHEFiltro('semana',this)">Esta semana</button>
+    <button class="he-fbtn fbtn" onclick="setHEFiltro('mes',this)">Este mes</button>
+    <button class="he-fbtn fbtn" onclick="setHEFiltro('total',this)">Total</button>
+    <button class="refresh-btn" onclick="cargarHE()">Actualizar</button>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi-box"><div class="kpi-lbl">Registros</div><div class="kpi-val" id="he-c-total">—</div><div class="kpi-desc">en el periodo</div></div>
+    <div class="kpi-box"><div class="kpi-lbl">Total Horas</div><div class="kpi-val" id="he-c-horas">—</div><div class="kpi-desc">horas acumuladas</div></div>
+    <div class="kpi-box"><div class="kpi-lbl">Empleados</div><div class="kpi-val" id="he-c-emp">—</div><div class="kpi-desc">personas distintas</div></div>
+    <div class="kpi-box"><div class="kpi-lbl">Actividades</div><div class="kpi-val" id="he-c-act">—</div><div class="kpi-desc">tipos distintos</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr">Registros de horas extras en tiempo real</div>
+    <div style="overflow-x:auto">
+      <table class="tbl">
+        <thead><tr>
+          <th>Fecha</th><th>Empleado</th><th>Cedula</th><th>Cargo</th>
+          <th>Actividad</th><th class="num">Horario</th><th class="num">Horas</th>
+        </tr></thead>
+        <tbody id="tbody-he-consulta"><tr><td colspan="7" class="empty">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+</div><!-- /panel-consulta -->
 
 <script>
 const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbyg573aJjXzH58eVmaZIJe5HmmxQ88Z_wHTtmfLBkpfOXl96jui7KfW25asDZUXQbXvcw/exec';
@@ -506,6 +572,123 @@ function resetFormulario() {
   document.getElementById('btn-submit').disabled = false;
   document.getElementById('status').className = 'status';
   window.scrollTo({top:0, behavior:'smooth'});
+}
+
+// ── TABS ──────────────────────────────────────────
+var heRefreshInterval = null;
+
+function showTab(id) {
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});
+  document.querySelectorAll('.panel').forEach(function(p){p.classList.remove('active');});
+  document.getElementById('tab-'+id).classList.add('active');
+  document.getElementById('panel-'+id).classList.add('active');
+  if (id === 'consulta') {
+    cargarHE();
+    if (!heRefreshInterval) heRefreshInterval = setInterval(cargarHE, 2*60*1000);
+  } else {
+    if (heRefreshInterval) { clearInterval(heRefreshInterval); heRefreshInterval = null; }
+  }
+}
+
+// ── CONSULTA HE ───────────────────────────────────
+var heData = [];
+var heFiltro = 'hoy';
+const HE_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQr9CSrS9FVO9VE_rC-wJ844xxe4VOMn9CFJymwROtQPHVOd_lgHs6jktuAaqVrl-nuMqpqMavwn2EW/pub?gid=244095645&single=true&output=csv';
+
+function parseDT(str) {
+  if (!str) return null;
+  var s = str.trim();
+  var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (m) return new Date(+m[3],+m[2]-1,+m[1],+m[4],+m[5],+(m[6]||0));
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(+m[1],+m[2]-1,+m[3]);
+  return null;
+}
+function inPer(str, f) {
+  var d = parseDT(str);
+  if (!d) return f==='total';
+  var now=new Date(), today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  if(f==='total') return true;
+  if(f==='hora')  return (now-d)<=3600000;
+  if(f==='hoy')   return d>=today;
+  if(f==='semana'){var wk=new Date(today);wk.setDate(today.getDate()-today.getDay());return d>=wk;}
+  if(f==='mes')   return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();
+  return true;
+}
+function parseCSV2(text) {
+  var lines=text.trim().split('\n');
+  var headers=lines[0].split(',').map(function(h){return h.trim().replace(/^"|"$/g,'');});
+  return lines.slice(1).map(function(line){
+    var vals=[],cur='',inQ=false;
+    for(var i=0;i<line.length;i++){var c=line[i];if(c==='"')inQ=!inQ;else if(c===','&&!inQ){vals.push(cur.trim());cur='';}else cur+=c;}
+    vals.push(cur.trim());
+    var obj={};headers.forEach(function(h,i){obj[h]=(vals[i]||'').replace(/^"|"$/g,'');});
+    return obj;
+  }).filter(function(r){return Object.values(r).some(function(v){return v;});});
+}
+function calcH(ini, fin) {
+  if (!ini||!fin) return 0;
+  var ih=+ini.split(':')[0],im=+ini.split(':')[1];
+  var fh=+fin.split(':')[0],fm=+fin.split(':')[1];
+  var mins=(fh*60+fm)-(ih*60+im);
+  if(mins<0) mins+=1440;
+  return mins/60;
+}
+function fmtN(n){return Math.round(n).toLocaleString('es-CO');}
+
+function setHEFiltro(f, el) {
+  heFiltro = f;
+  document.querySelectorAll('.he-fbtn').forEach(function(b){b.classList.remove('active');});
+  el.classList.add('active');
+  renderHE();
+}
+
+function renderHE() {
+  var filtered = heData.filter(function(r){return inPer(r['Marca temporal']||'', heFiltro);});
+  var emps = new Set(filtered.map(function(r){return r['Nombre ']||r['Nombre']||'';}).filter(Boolean));
+  var acts = new Set(filtered.map(function(r){return r['Actividad']||'';}).filter(Boolean));
+  var totalH = 0;
+  filtered.forEach(function(r){totalH+=calcH(r['Hora de inicio'],r['Hora Final']);});
+
+  document.getElementById('he-c-total').textContent = filtered.length;
+  document.getElementById('he-c-horas').textContent = totalH.toFixed(1)+'h';
+  document.getElementById('he-c-emp').textContent   = emps.size;
+  document.getElementById('he-c-act').textContent   = acts.size;
+
+  if (filtered.length===0) {
+    document.getElementById('tbody-he-consulta').innerHTML='<tr><td colspan="7" class="empty">Sin registros para el periodo seleccionado</td></tr>';
+    return;
+  }
+  document.getElementById('tbody-he-consulta').innerHTML = filtered.slice().reverse().map(function(r){
+    var h = calcH(r['Hora de inicio'],r['Hora Final']);
+    var ts = r['Marca temporal']||'';
+    var fecha = ts.split(' ')[0]||'—';
+    return '<tr>'
+      +'<td>'+fecha+'</td>'
+      +'<td class="bold">'+(r['Nombre ']||r['Nombre']||'—')+'</td>'
+      +'<td>'+(r['Cedula']||'—')+'</td>'
+      +'<td>'+(r['Cargo']||'—')+'</td>'
+      +'<td>'+(r['Actividad']||'—')+'</td>'
+      +'<td class="num">'+(r['Hora de inicio']||'—')+' — '+(r['Hora Final']||'—')+'</td>'
+      +'<td class="num" style="color:var(--navy);font-weight:700">'+(h>0?h.toFixed(1)+' h':'—')+'</td>'
+      +'</tr>';
+  }).join('');
+}
+
+async function cargarHE() {
+  document.getElementById('tbody-he-consulta').innerHTML='<tr><td colspan="7" class="empty"><span class="spinner"></span>Cargando...</td></tr>';
+  var bust='&nocache='+Date.now()+Math.floor(Math.random()*100000);
+  var urls=[
+    'https://corsproxy.io/?'+encodeURIComponent(HE_CSV+bust),
+    'https://api.allorigins.win/raw?url='+encodeURIComponent(HE_CSV)
+  ];
+  for(var i=0;i<urls.length;i++){
+    try{
+      var res=await fetch(urls[i],{cache:'no-store'});
+      if(res.ok){var t=await res.text();if(t.length>10){heData=parseCSV2(t);renderHE();return;}}
+    }catch(e){}
+  }
+  document.getElementById('tbody-he-consulta').innerHTML='<tr><td colspan="7" class="empty">No se pudieron cargar los registros.</td></tr>';
 }
 </script>
 </body>
