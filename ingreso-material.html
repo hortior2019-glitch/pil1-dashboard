@@ -29,7 +29,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 .form-row.single{grid-template-columns:1fr}
 .form-row:last-child{margin-bottom:0}
 .form-group{display:flex;flex-direction:column;gap:4px}
-.form-group label{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l)}
+.form-group label{font-size:10px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-m)}
 .form-group input,.form-group select,.form-group textarea{padding:9px 11px;font-size:13px;font-family:'Source Sans 3',sans-serif;font-weight:300;border:2px solid #2a2a2a;background:#e8f5ee;color:var(--ink);outline:none;transition:.2s;width:100%}
 .form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:var(--navy);background:var(--white);box-shadow:0 0 0 2px rgba(26,58,92,0.15)}
 .form-group textarea{resize:vertical;min-height:65px}
@@ -38,7 +38,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 .field-warn{font-size:10px;color:var(--orange);margin-top:2px;font-weight:600;display:none}
 .field-err{font-size:10px;color:var(--red);margin-top:2px;font-weight:600;display:none}
 
-  
 /* NOTICE */
 .notice{padding:11px 14px;margin-bottom:12px;border-left:3px solid var(--navy);background:var(--blue-l)}
 .notice.warn{border-color:var(--orange);background:var(--orange-l)}
@@ -957,35 +956,8 @@ function checkPlacaFlota(placa) {
 
 // ── BAVARIA ───────────────────────────────────────
 function validarBavaria() {
-  var baucher    = document.getElementById('bav-baucher').value.trim();
-  var horaSalida = document.getElementById('bav-hora-salida').value;
-  var pesoE      = document.getElementById('peso_entrada').value;
-  var fecha      = document.getElementById('fecha_disposicion').value;
-  if (!baucher && !horaSalida) return Promise.resolve(true);
-
-  return fetch('https://corsproxy.io/?'+encodeURIComponent(CSV_URL+'&t='+Date.now()), {cache:'no-store'})
-    .then(function(r){ return r.text(); })
-    .then(function(text) {
-      var rows = parseCSV(text);
-      var hoy = fecha || new Date().toISOString().slice(0,10);
-      var dup = rows.filter(function(r) {
-        var ts = r['Marca temporal']||'';
-        var fechaR = ts.split(' ')[0]||'';
-        // Convertir D/M/YYYY a YYYY-MM-DD para comparar
-        var partes = fechaR.split('/');
-        if (partes.length===3) fechaR = partes[2]+'-'+partes[1].padStart(2,'0')+'-'+partes[0].padStart(2,'0');
-        var tiqR = (r['NUMERO TIQUETE']||'').trim();
-        var pesoR = (r['PESO ENTRADA  Según ticket']||'').toString().trim();
-        return fechaR === hoy && tiqR === baucher && pesoR === pesoE.toString();
-      });
-      if (dup.length > 0) {
-        document.getElementById('modal-bav-texto').textContent =
-          'Se encontro un registro del dia de hoy con el mismo baucher ('+baucher+') y peso ('+pesoE+' kg). Si es el mismo viaje NO registre. Si es un viaje diferente con el mismo baucher, confirme abajo para registrar con alerta.';
-        document.getElementById('modal-bavaria').classList.add('open');
-        return false;
-      }
-      return true;
-    }).catch(function(){ return true; }); // Si falla la consulta, permite continuar
+  // Verificacion desactivada — pasa directo al envio
+  return Promise.resolve(true);
 }
 
 function bavConfirmarDiferente() {
@@ -1153,7 +1125,6 @@ async function enviarFormulario() {
   // Validacion Bavaria
   if (opLow.includes('bavaria') && !bavConfirmado) {
     document.getElementById('btn-submit').disabled = true;
-    mostrarStatus('loading','Verificando Bavaria...','Consultando registros del dia...');
     var ok = await validarBavaria();
     if (!ok) {
       mostrarStatus('','','');
