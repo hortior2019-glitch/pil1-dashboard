@@ -193,8 +193,8 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
       </div>
       <div class="form-row single">
         <div class="form-group">
-          <label>Ultimos 4 digitos de cedula</label>
-          <input type="text" id="ultimos_cuatro_cedula" placeholder="Opcional" maxlength="4" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+          <label>Cedula del conductor</label>
+          <input type="text" id="ultimos_cuatro_cedula" placeholder="Opcional" oninput="this.value=this.value.replace(/[^0-9]/g,'')" maxlength="12">
         </div>
       </div>
       <!-- Checkbox conductor solo - aplica a todas las operaciones -->
@@ -235,6 +235,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
           <div class="otro-field" id="residuo-otra-wrap">
             <input type="text" id="residuo-otro" placeholder="Escriba el tipo de residuo...">
           </div>
+          <div id="residuo-op-hint" style="display:none;font-size:10px;color:var(--blue);margin-top:3px;font-style:italic"></div>
         </div>
       </div>
       <div class="form-row single">
@@ -343,11 +344,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
       <span class="section-badge" style="background:var(--blue-l);color:var(--blue)">Bascula ticket</span>
     </div>
     <div class="section-body">
-      <div class="form-row">
-        <div class="form-group">
-          <label>Hora de entrada a planta</label>
-          <input type="time" id="fam-hora-entrada">
-        </div>
+      <div class="form-row single">
         <div class="form-group">
           <label>Fecha de salida (si difiere)</label>
           <input type="date" id="fam-fecha-salida">
@@ -577,13 +574,13 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
     <div class="section-body">
       <div class="form-row">
         <div class="form-group">
-          <label>Peso vehiculo cargado (kg) <span class="required">*</span></label>
-          <input type="number" id="peso_entrada" placeholder="Peso con carga" min="0" step="0.01">
-        </div>
-        <div class="form-group">
           <label>Peso vehiculo sin carga (kg)</label>
           <input type="number" id="peso_salida" placeholder="0" min="0" step="0.01" value="0">
           <div class="field-hint">Si el ticket no trae este dato, dejar en 0</div>
+        </div>
+        <div class="form-group">
+          <label>Peso vehiculo cargado (kg) <span class="required">*</span></label>
+          <input type="number" id="peso_entrada" placeholder="Peso con carga" min="0" step="0.01">
         </div>
       </div>
       <div class="peso-neto-box">
@@ -694,7 +691,48 @@ const CSV_URL    = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSWdFqaD1Is
 const FLOTA_INTERNA = ['OGN522','SMO346','TDS941','TAY245','XGD873','WOB048'];
 
 const OPERACIONES = ['3R','Alpina','Bavaria','Alquería CV','Emsersopo','Emsertenjo','EPC','EPZ','EPT','Familia','Frigorífico','Funrecol','Gloria','Guillermo Clink','HortiOrganic','Pesebreras','Puerta Azul','Tía Lola','Mc Cain','Pomar','Prodensa - Centro Chía','Prodensa - Corona','Prodensa - CPNS','Prodensa - Casanare','Prodensa - Saufel','Prodensa - Toptex','Prodensa - Tanktechs','Reciclene','Recreo','Sábana Larga','Samsa - Ducto','Samsa - Industria Nacional','Samsa - Pomar','Samsa - Veolia / Sanilia','Samsa - Quala','Samsa - Finca','Samsa - Urbaser','Softys','Ubaser','Zasiago','Otro'];
-const RESIDUOS    = ['Aglomerado','Aguas residuales','Compostaje','Contenido ruminal','Destrucción de marca','Equinaza','Gourmet orgánicos','Jarabes','Lodo Bavaria','Lodo láctico','Lodo orgánico biodegradable','Lodo papelero','Mantenimiento','Mixto (orgánicos y ollejo)','Ollejo','Orgánicos y podas','PNC','Podas','PTAP','PTAR','Retal madera','Retal madera aglomerado','Suero','Suero lácteo','Tierras filtrantes','Tromel','Otro'];
+
+// Materiales por operacion
+const RESIDUOS_POR_OP = {
+  'bavaria':      ['Lodo Bavaria','Tierras filtrantes','Aguas residuales'],
+  'alpina':       ['Lodo láctico','Suero','Destrucción de marca'],
+  '3r':           ['Orgánicos y podas'],
+  'alquier':      ['Destrucción de marca','Gourmet orgánicos','Lodo láctico','Mantenimiento','PNC','Suero lácteo'],
+  'emsersopo':    ['PTAR'],
+  'emsertenjo':   ['PTAR','Orgánicos y podas'],
+  'epc':          ['Orgánicos y podas'],
+  'epz':          ['Orgánicos y podas'],
+  'ept':          ['Orgánicos y podas'],
+  'familia':      ['Lodo papelero'],
+  'hortiorganic': ['Lodo papelero'],
+  'frigorifico':  ['Contenido ruminal'],
+  'funrecol':     ['Lodo láctico','Lodo orgánico biodegradable','Destrucción de marca'],
+  'gloria':       ['Lodo láctico'],
+  'guillermo':    ['Equinaza'],
+  'pesebreras':   ['Equinaza'],
+  'puerta azul':  ['Equinaza'],
+  'tia lola':     ['Equinaza'],
+  'mc cain':      ['Orgánicos y podas','Ollejo','Mixto (orgánicos y ollejo)'],
+  'pomar':        ['Suero lácteo'],
+  'prodensa':     ['PTAR','Retal madera','Retal madera aglomerado','Compostaje'],
+  'reciclene':    ['PTAR'],
+  'ubaser':       ['PTAR'],
+  'recreo':       ['Suero','Lodo orgánico biodegradable','Mixto (orgánicos y ollejo)'],
+  'sabana larga': ['Aguas residuales','PTAR'],
+  'samsa':        ['Lodo orgánico biodegradable','Jarabes','PTAR','Orgánicos y podas','Aguas residuales'],
+  'softys':       ['Lodo orgánico biodegradable','Tromel'],
+  'zasiago':      ['Lodo láctico','Lodo orgánico biodegradable'],
+};
+const RESIDUOS_DEFAULT = ['Aglomerado','Aguas residuales','Compostaje','Contenido ruminal','Destrucción de marca','Equinaza','Gourmet orgánicos','Jarabes','Lodo Bavaria','Lodo láctico','Lodo orgánico biodegradable','Lodo papelero','Mantenimiento','Mixto (orgánicos y ollejo)','Ollejo','Orgánicos y podas','PNC','Podas','PTAP','PTAR','Retal madera','Retal madera aglomerado','Suero','Suero lácteo','Tierras filtrantes','Tromel'];
+
+function getResiduesByOp(op) {
+  if (!op) return RESIDUOS_DEFAULT;
+  var opN = op.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  for (var key in RESIDUOS_POR_OP) {
+    if (opN.includes(key)) return RESIDUOS_POR_OP[key].concat(['Otro']);
+  }
+  return RESIDUOS_DEFAULT.concat(['Otro']);
+}
 
 // Operaciones que requieren conductor solo
 const OPS_CONDUCTOR_SOLO = ['familia','hortiorganic'];
@@ -730,7 +768,7 @@ window.addEventListener('load', function() {
   document.getElementById('fam-fecha-salida').value = '';
 
   setupDropdown('operacion', OPERACIONES);
-  setupDropdown('residuo', RESIDUOS);
+  setupDropdown('residuo', RESIDUOS_DEFAULT.concat(['Otro']));
 
   document.getElementById('peso_entrada').addEventListener('input', calcularPesoNeto);
   document.getElementById('peso_salida').addEventListener('input', calcularPesoNeto);
@@ -768,13 +806,16 @@ function showTab(id) {
 // ── DROPDOWNS ─────────────────────────────────────
 function setupDropdown(tipo, lista) {
   var searchEl = document.getElementById(tipo+'-search');
+  searchEl._lista = lista;
   searchEl.addEventListener('focus', function() {
+    var currentLista = this._lista || lista;
     var q = this.value.toLowerCase();
-    renderDropdown(tipo, lista.filter(function(i){ return i.toLowerCase().includes(q); }));
+    renderDropdown(tipo, currentLista.filter(function(i){ return i.toLowerCase().includes(q); }));
   });
   searchEl.addEventListener('input', function() {
+    var currentLista = this._lista || lista;
     var q = this.value.toLowerCase();
-    renderDropdown(tipo, lista.filter(function(i){ return i.toLowerCase().includes(q); }));
+    renderDropdown(tipo, currentLista.filter(function(i){ return i.toLowerCase().includes(q); }));
     document.getElementById(tipo).value = '';
     document.getElementById(tipo+'-otra-wrap').style.display = 'none';
     if (tipo === 'operacion') onOperacionChange('');
@@ -831,12 +872,28 @@ function onOperacionChange(op) {
   }
   if (secId) document.getElementById(secId).classList.add('visible');
 
-  // Alerta conductor solo
-  var needsSolo = OPS_CONDUCTOR_SOLO.some(function(k){ return opLow.includes(k); });
-  document.getElementById('alerta-conductor-solo').style.display = needsSolo ? 'block' : 'none';
-
   // Cargar consecutivos Alqueria si aplica
   if (opLow.includes('alquer')) cargarConsecutivosAlqueria();
+
+  // Actualizar lista de residuos segun operacion
+  var residuosOp = getResiduesByOp(op);
+  // Limpiar seleccion actual de residuo
+  document.getElementById('residuo-search').value = '';
+  document.getElementById('residuo').value = '';
+  document.getElementById('residuo-otra-wrap').style.display = 'none';
+  // Actualizar el dropdown configurado con nueva lista
+  var searchEl = document.getElementById('residuo-search');
+  searchEl._lista = residuosOp;
+  // Mostrar hint de materiales disponibles
+  var hint = document.getElementById('residuo-op-hint');
+  if (hint) {
+    if (op && op !== 'Otro') {
+      hint.textContent = residuosOp.filter(function(r){return r!=='Otro';}).join(' · ');
+      hint.style.display = 'block';
+    } else {
+      hint.style.display = 'none';
+    }
+  }
 }
 
 // ── FLOTA ─────────────────────────────────────────
