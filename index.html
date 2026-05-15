@@ -18,7 +18,6 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-serif;font-weight:300;min-height:100vh}
 
-  
 /* TOPBAR */
 .topbar{background:var(--navy);color:white;padding:20px 40px;border-bottom:4px solid var(--gold);display:flex;justify-content:space-between;align-items:flex-start;position:sticky;top:0;z-index:100}
 .tb-org{font-size:10px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,.5);margin-bottom:4px}
@@ -170,7 +169,8 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 
 <!-- NAV -->
 <div class="nav">
-  <div class="nav-tab active" onclick="showPanel('ingreso',this)">Ingreso de Material</div>
+  <div class="nav-tab active" onclick="showPanel('kpi',this)">KPIs Operarios</div>
+  <div class="nav-tab" onclick="showPanel('ingreso',this)">Ingreso de Material</div>
   <div class="nav-tab" onclick="showPanel('clientes',this)">Ingreso por Cliente</div>
   <div class="nav-tab" onclick="showPanel('solicitudes',this)">Solicitudes de Compra</div>
   <div class="nav-tab" onclick="showPanel('horasextras',this)">Horas Extras</div>
@@ -196,9 +196,33 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 <div class="wrapper">
 
 <!-- ═══════════════════════════════════ -->
+<!-- PANEL: KPIs OPERARIOS -->
+<!-- ═══════════════════════════════════ -->
+<div class="panel active" id="panel-kpi">
+  <div class="sec-hdr">
+    <div class="sec-title">Desempeno por Operario</div>
+    <div class="sec-sub" id="kpi-op-period">Total acumulado</div>
+  </div>
+
+  <div id="kpi-operarios-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:20px;margin-bottom:24px"></div>
+
+  <div class="sec-hdr" style="margin-top:8px">
+    <div class="sec-title">Resumen General</div>
+  </div>
+  <div class="kpi-grid" style="margin-bottom:20px">
+    <div class="kpi" style="--ac:var(--navy)"><div class="kpi-lbl">Total Registros</div><div class="kpi-val" id="kpi-gen-total">—</div><div class="kpi-desc">todos los operarios</div></div>
+    <div class="kpi" style="--ac:var(--green)"><div class="kpi-lbl">Tiquetes Completos</div><div class="kpi-val" id="kpi-gen-tiq">—</div><div class="kpi-desc">mas de 4 digitos</div></div>
+    <div class="kpi" style="--ac:var(--gold)"><div class="kpi-lbl">Con Alerta</div><div class="kpi-val" id="kpi-gen-alert">—</div><div class="kpi-desc">registros con novedad</div></div>
+    <div class="kpi" style="--ac:var(--blue)"><div class="kpi-lbl">Operaciones Distintas</div><div class="kpi-val" id="kpi-gen-ops">—</div><div class="kpi-desc">clientes registrados</div></div>
+    <div class="kpi" style="--ac:var(--green)"><div class="kpi-lbl">Peso Neto Total</div><div class="kpi-val" id="kpi-gen-peso">—</div><div class="kpi-desc">kg acumulados</div></div>
+    <div class="kpi" style="--ac:var(--navy)"><div class="kpi-lbl">Vehiculos Distintos</div><div class="kpi-val" id="kpi-gen-veh">—</div><div class="kpi-desc">placas unicas</div></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ -->
 <!-- PANEL: INGRESO MATERIAL -->
 <!-- ═══════════════════════════════════ -->
-<div class="panel active" id="panel-ingreso">
+<div class="panel" id="panel-ingreso">
 
   <div class="sec-hdr">
     <div class="sec-title">Ingreso de Material</div>
@@ -818,6 +842,7 @@ async function loadAllData() {
     dataIngreso = await fetchCSV(SHEETS.ingreso);
     renderIngreso(dataIngreso, currentFilter);
     renderClientes(dataIngreso, currentFilter);
+    renderKPI(dataIngreso);
     document.getElementById('footer-ingreso').textContent = 'Ingreso: '+fmt(dataIngreso.length)+' registros';
     ok++;
   } catch(e) { errors.push('Ingreso Material'); console.error('Ingreso:', e); }
@@ -866,6 +891,7 @@ function setFilter(f, el) {
   renderSolicitudes(dataSolicitudes, f);
   renderClientes(dataIngreso, f);
   renderHE(dataHE, f);
+  renderKPI(dataIngreso);
 }
 
 // ── RELOJ ─────────────────────────────────────────
@@ -1397,6 +1423,143 @@ function filtrarTablaEmp(q) {
     return matchQ && matchA && matchC;
   });
   renderTablaEmp(lista);
+}
+
+// ── RENDER KPI OPERARIOS ──────────────────────────
+const OPERARIOS_DEF = [
+  { key: 'alexander', label: 'Alexander Velásquez', color: 'var(--navy)' },
+  { key: 'idaldo',    label: 'Idaldo Madrid (Hidalgo)', color: 'var(--blue)' },
+  { key: 'deivi',     label: 'Deivi José Oliveros', color: 'var(--green)' },
+  { key: 'saul',      label: 'Saúl García Sandoval', color: 'var(--gold)' },
+];
+
+function renderKPI(data) {
+  const total = data.length;
+  const ops   = new Set(data.map(r=>r['OPERACION']).filter(Boolean));
+  const vehs  = new Set(data.map(r=>r['PLACA']).filter(Boolean));
+  let pesoTotal = 0, tiqOkTotal = 0, alertTotal = 0;
+
+  data.forEach(r => {
+    const e = parseFloat((r['PESO ENTRADA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
+    const s = parseFloat((r['PESO SALIDA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
+    pesoTotal += (e-s);
+    if ((r['NUMERO TIQUETE']||'').replace(/\s/g,'').length > 4) tiqOkTotal++;
+    const al = r['ALERTAS '] || r['ALERTAS'] || '';
+    if (al.trim()) alertTotal++;
+  });
+
+  document.getElementById('kpi-gen-total').textContent = fmt(total);
+  document.getElementById('kpi-gen-tiq').textContent   = fmt(tiqOkTotal);
+  document.getElementById('kpi-gen-alert').textContent = fmt(alertTotal);
+  document.getElementById('kpi-gen-ops').textContent   = fmt(ops.size);
+  document.getElementById('kpi-gen-peso').textContent  = fmtPeso(pesoTotal);
+  document.getElementById('kpi-gen-veh').textContent   = fmt(vehs.size);
+
+  const grid = document.getElementById('kpi-operarios-grid');
+  grid.innerHTML = OPERARIOS_DEF.map(op => {
+    const filas = data.filter(r => {
+      const reg = (r['OPERARIO registra']||r['OPERARIO']||'').toLowerCase();
+      return reg.includes(op.key);
+    });
+
+    if (filas.length === 0) {
+      return `<div class="card" style="border-left:4px solid ${op.color};opacity:.6">
+        <div class="card-hdr" style="color:${op.color}">${op.label}</div>
+        <div class="empty" style="padding:16px">Sin registros en el periodo</div>
+      </div>`;
+    }
+
+    // Calcular KPIs del operario
+    let pesoNeto = 0, tiqOk = 0, alertas = 0;
+    let fechas = [], minutos = [];
+
+    filas.forEach(r => {
+      const e = parseFloat((r['PESO ENTRADA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
+      const s = parseFloat((r['PESO SALIDA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
+      pesoNeto += (e-s);
+      if ((r['NUMERO TIQUETE']||'').replace(/\s/g,'').length > 4) tiqOk++;
+      const al = r['ALERTAS '] || r['ALERTAS'] || '';
+      if (al.trim()) alertas++;
+
+      // Tiempo de disposicion: diferencia entre Marca temporal y FECHA+HORA DISPOSICION
+      const ts = parseDateTime(r['Marca temporal']||'');
+      const fd = r['FECHA DISPOSICION PLANTA']||'';
+      const hd = r['HORA DISPOSICION PLANTA']||'';
+      if (ts && fd && hd) {
+        const dispStr = fd + ' ' + hd;
+        const disp = parseDateTime(dispStr);
+        if (disp && ts > disp) {
+          const diffMin = Math.round((ts - disp) / 60000);
+          if (diffMin >= 0 && diffMin < 240) minutos.push(diffMin);
+        }
+      }
+      if (ts) fechas.push(ts);
+    });
+
+    const pctTiq = filas.length > 0 ? Math.round((tiqOk/filas.length)*100) : 0;
+    const promMin = minutos.length > 0 ? Math.round(minutos.reduce((a,b)=>a+b,0)/minutos.length) : null;
+    fechas.sort((a,b)=>a-b);
+    const primero = fechas.length > 0 ? fechas[0].toLocaleDateString('es-CO') + ' ' + fechas[0].toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}) : '—';
+    const ultimo  = fechas.length > 0 ? fechas[fechas.length-1].toLocaleDateString('es-CO') + ' ' + fechas[fechas.length-1].toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}) : '—';
+
+    // Operaciones del operario
+    const opsOp = {};
+    filas.forEach(r => { const o = r['OPERACION']||'Sin op'; opsOp[o]=(opsOp[o]||0)+1; });
+    const topOps = Object.entries(opsOp).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k,v])=>k+' ('+v+')').join(' · ');
+
+    const tiqColor = pctTiq===100?'var(--green)':pctTiq>=80?'var(--gold)':'var(--red)';
+
+    return `<div class="card" style="border-left:4px solid ${op.color}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--rule-l)">
+        <div>
+          <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:${op.color}">Operario</div>
+          <div style="font-family:'Playfair Display',serif;font-size:17px;font-weight:600;color:var(--ink)">${op.label}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-family:'Playfair Display',serif;font-size:32px;font-weight:700;color:${op.color};line-height:1">${fmt(filas.length)}</div>
+          <div style="font-size:10px;color:var(--ink-l)">registros</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--rule);margin-bottom:12px">
+        <div style="background:var(--white);padding:10px 12px">
+          <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px">Tiquetes OK</div>
+          <div style="font-size:20px;font-weight:700;color:${tiqColor}">${pctTiq}%</div>
+          <div style="font-size:10px;color:var(--ink-l)">${tiqOk} de ${filas.length}</div>
+        </div>
+        <div style="background:var(--white);padding:10px 12px">
+          <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px">Peso Neto</div>
+          <div style="font-size:20px;font-weight:700;color:var(--green)">${fmtPeso(pesoNeto)}</div>
+          <div style="font-size:10px;color:var(--ink-l)">material dispuesto</div>
+        </div>
+        <div style="background:var(--white);padding:10px 12px">
+          <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px">Tiempo promedio</div>
+          <div style="font-size:20px;font-weight:700;color:var(--navy)">${promMin !== null ? promMin+' min' : '—'}</div>
+          <div style="font-size:10px;color:var(--ink-l)">disposicion → registro</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--rule);margin-bottom:12px">
+        <div style="background:var(--white);padding:8px 12px">
+          <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">Primer registro</div>
+          <div style="font-size:11px;color:var(--ink-m)">${primero}</div>
+        </div>
+        <div style="background:var(--white);padding:8px 12px">
+          <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">Ultimo registro</div>
+          <div style="font-size:11px;color:var(--ink-m)">${ultimo}</div>
+        </div>
+      </div>
+
+      <div style="background:var(--white);padding:8px 12px;border:1px solid var(--rule-l)">
+        <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">Principales operaciones</div>
+        <div style="font-size:11px;color:var(--ink-m)">${topOps||'—'}</div>
+      </div>
+
+      ${alertas > 0 ? `<div style="margin-top:8px;padding:6px 12px;background:var(--red-l);border-left:3px solid var(--red)">
+        <span style="font-size:10px;font-weight:700;color:var(--red)">ALERTAS: ${alertas} registro${alertas>1?'s':''} con novedad</span>
+      </div>` : ''}
+    </div>`;
+  }).join('');
 }
 
 // ── INICIO ────────────────────────────────────────
