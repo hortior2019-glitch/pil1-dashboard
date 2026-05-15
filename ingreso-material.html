@@ -38,7 +38,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 .field-warn{font-size:10px;color:var(--orange);margin-top:2px;font-weight:600;display:none}
 .field-err{font-size:10px;color:var(--red);margin-top:2px;font-weight:600;display:none}
 
-  
 /* NOTICE */
 .notice{padding:11px 14px;margin-bottom:12px;border-left:3px solid var(--navy);background:var(--blue-l)}
 .notice.warn{border-color:var(--orange);background:var(--orange-l)}
@@ -1111,101 +1110,110 @@ async function enviarFormulario() {
   var ahora = new Date();
   var horaAuto = String(ahora.getHours()).padStart(2,'0')+':'+String(ahora.getMinutes()).padStart(2,'0');
 
-  // Construir observacion extendida con datos especificos
-  var obsExtra = [];
-  // Conductor acompañado
+  // ── ALERTAS (columna O) ───────────────────────────
+  var alertas = [];
+
   if (document.getElementById('conductor-solo').value === 'si') {
-    var acompNombre = document.getElementById('acomp-nombre').value.trim();
-    var acompCedula = document.getElementById('acomp-cedula').value.trim();
-    var acompCargo  = document.getElementById('acomp-cargo').value.trim();
-    obsExtra.push('[ALERTA: Conductor viene acompañado en la cabina]'
-      + (acompNombre ? ' Acompañante: '+acompNombre : '')
+    var acompNombre = document.getElementById('acomp-nombre') ? document.getElementById('acomp-nombre').value.trim() : '';
+    var acompCedula = document.getElementById('acomp-cedula') ? document.getElementById('acomp-cedula').value.trim() : '';
+    var acompCargo  = document.getElementById('acomp-cargo')  ? document.getElementById('acomp-cargo').value.trim()  : '';
+    alertas.push('CONDUCTOR ACOMPAÑADO'
+      + (acompNombre ? ' | '+acompNombre : '')
       + (acompCedula ? ' | CC: '+acompCedula : '')
-      + (acompCargo  ? ' | Cargo: '+acompCargo  : ''));
+      + (acompCargo  ? ' | '+acompCargo : ''));
   }
+  if (bavEsDiferente) alertas.push('VIAJE DIFERENTE MISMO BAUCHER');
+
+  // ── DATOS OPERACION (columna N) ───────────────────
+  var datosOp = [];
 
   if (opLow.includes('bavaria')) {
-    if (document.getElementById('bav-hora-salida').value) obsExtra.push('Hora salida baucher: '+document.getElementById('bav-hora-salida').value);
-    if (bavEsDiferente) obsExtra.push('[VIAJE DIFERENTE MISMO BAUCHER]');
+    var bavHora = document.getElementById('bav-hora-salida') ? document.getElementById('bav-hora-salida').value : '';
+    if (bavHora) datosOp.push('Hora salida baucher: '+bavHora);
   }
   if (opLow.includes('pomar')) {
-    if (document.getElementById('pom-hora-salida').value) obsExtra.push('Hora salida ticket: '+document.getElementById('pom-hora-salida').value);
+    var pomHora = document.getElementById('pom-hora-salida') ? document.getElementById('pom-hora-salida').value : '';
+    if (pomHora) datosOp.push('Hora salida ticket: '+pomHora);
   }
   if (opLow.includes('alquer')) {
-    var alqTipo = document.getElementById('alq-tipo') ? document.getElementById('alq-tipo').value : '';
+    var alqTipo = document.getElementById('alq-tipo')         ? document.getElementById('alq-tipo').value         : '';
     var alqPE   = document.getElementById('alq-peso-entrada') ? document.getElementById('alq-peso-entrada').value : '';
-    var alqPS   = document.getElementById('alq-peso-salida') ? document.getElementById('alq-peso-salida').value : '';
-    var alqHora = document.getElementById('alq-hora-envio') ? document.getElementById('alq-hora-envio').value : '';
-    if (alqTipo)  obsExtra.push('Recibo tipo: '+alqTipo);
-    if (alqPE)    obsExtra.push('Peso entrada ticket: '+alqPE+' kg');
-    if (alqPS)    obsExtra.push('Peso salida ticket: '+alqPS+' kg');
-    if (alqHora)  obsExtra.push('Hora envio ticket: '+alqHora);
+    var alqPS   = document.getElementById('alq-peso-salida')  ? document.getElementById('alq-peso-salida').value  : '';
+    var alqHora = document.getElementById('alq-hora-envio')   ? document.getElementById('alq-hora-envio').value   : '';
+    if (alqTipo) datosOp.push('Recibo tipo: '+alqTipo);
+    if (alqPE)   datosOp.push('Peso entrada ticket: '+alqPE+' kg');
+    if (alqPS)   datosOp.push('Peso salida ticket: '+alqPS+' kg');
+    if (alqHora) datosOp.push('Hora envio ticket: '+alqHora);
   }
   if (opLow.includes('familia')||opLow.includes('horti')) {
-    var famSalida= document.getElementById('fam-fecha-salida') ? document.getElementById('fam-fecha-salida').value : '';
-    var famDest  = document.getElementById('fam-destino') ? document.getElementById('fam-destino').value : '';
-    if (famSalida) obsExtra.push('Fecha salida: '+famSalida);
-    if (famDest)   obsExtra.push('Destino: '+famDest);
+    var famSalida = document.getElementById('fam-fecha-salida') ? document.getElementById('fam-fecha-salida').value : '';
+    var famDest   = document.getElementById('fam-destino')      ? document.getElementById('fam-destino').value      : '';
+    if (famSalida) datosOp.push('Fecha salida: '+famSalida);
+    if (famDest)   datosOp.push('Destino: '+famDest);
   }
   if (opLow.includes('mc cain')||opLow.includes('mccain')) {
-    var n = parseInt(document.getElementById('mc-num-cargas').value)||1;
-    for (var i=1;i<=Math.min(n,4);i++) {
+    var nCargas = parseInt(document.getElementById('mc-num-cargas') ? document.getElementById('mc-num-cargas').value : 1)||1;
+    for (var i=1;i<=Math.min(nCargas,4);i++) {
       var horEl = document.getElementById('mc-hora-'+i);
-      if (horEl && horEl.value) obsExtra.push('Carga '+i+' | Hora salida: '+horEl.value);
+      if (horEl && horEl.value) datosOp.push('Carga '+i+' hora salida: '+horEl.value);
     }
   }
   if (opLow.includes('recreo')) {
-    var recTipo  = document.getElementById('rec-tipo') ? document.getElementById('rec-tipo').value : '';
-    var recHora  = document.getElementById('rec-hora-salida') ? document.getElementById('rec-hora-salida').value : '';
-    if (recHora)  obsExtra.push('Hora salida: '+recHora);
-    if (recTipo)  obsExtra.push('Tipo material: '+recTipo);
+    var recTipo = document.getElementById('rec-tipo')        ? document.getElementById('rec-tipo').value        : '';
+    var recHora = document.getElementById('rec-hora-salida') ? document.getElementById('rec-hora-salida').value : '';
+    if (recHora) datosOp.push('Hora salida: '+recHora);
+    if (recTipo) datosOp.push('Tipo material: '+recTipo);
     if (recTipo==='Mixto') {
-      obsExtra.push('kg Suero (R): '+((document.getElementById('rec-kg-suero') ? document.getElementById('rec-kg-suero').value : '')||'0'));
-      obsExtra.push('kg Lodos (L): '+((document.getElementById('rec-kg-lodos') ? document.getElementById('rec-kg-lodos').value : '')||'0'));
+      datosOp.push('kg Suero (R): '+((document.getElementById('rec-kg-suero') ? document.getElementById('rec-kg-suero').value : '')||'0'));
+      datosOp.push('kg Lodos (L): '+((document.getElementById('rec-kg-lodos') ? document.getElementById('rec-kg-lodos').value : '')||'0'));
     }
   }
   if (opLow.includes('ubaser')||opLow.includes('peldar')) {
-    var ubaDest = document.getElementById('uba-destino').value;
-    if (ubaDest) obsExtra.push('Destino segun ticket: '+ubaDest);
+    var ubaDest = document.getElementById('uba-destino') ? document.getElementById('uba-destino').value : '';
+    if (ubaDest) datosOp.push('Destino segun ticket: '+ubaDest);
   }
   if (opLow.includes('funrecol')) {
-    var funTipo = document.getElementById('fun-tipo').value;
-    obsExtra.push('Funrecol tipo: '+funTipo);
+    var funTipo = document.getElementById('fun-tipo') ? document.getElementById('fun-tipo').value : '';
+    if (funTipo) datosOp.push('Funrecol tipo: '+funTipo);
     if (funTipo==='A') {
-      if (document.getElementById('fun-fecha-entrada').value) obsExtra.push('Fecha entrada: '+document.getElementById('fun-fecha-entrada').value);
-      if (document.getElementById('fun-fecha-salida').value)  obsExtra.push('Fecha salida: '+document.getElementById('fun-fecha-salida').value);
-      if (document.getElementById('fun-peso-entrada').value)  obsExtra.push('Peso entrada: '+document.getElementById('fun-peso-entrada').value+' kg');
-      if (document.getElementById('fun-peso-salida').value)   obsExtra.push('Peso salida: '+document.getElementById('fun-peso-salida').value+' kg');
+      var funFE = document.getElementById('fun-fecha-entrada') ? document.getElementById('fun-fecha-entrada').value : '';
+      var funFS = document.getElementById('fun-fecha-salida')  ? document.getElementById('fun-fecha-salida').value  : '';
+      var funPE = document.getElementById('fun-peso-entrada')  ? document.getElementById('fun-peso-entrada').value  : '';
+      var funPS = document.getElementById('fun-peso-salida')   ? document.getElementById('fun-peso-salida').value   : '';
+      if (funFE) datosOp.push('Fecha entrada: '+funFE);
+      if (funFS) datosOp.push('Fecha salida: '+funFS);
+      if (funPE) datosOp.push('Peso entrada: '+funPE+' kg');
+      if (funPS) datosOp.push('Peso salida: '+funPS+' kg');
     }
     if (funTipo==='B') {
-      var apr = document.getElementById('fun-apreciacion').value;
-      if (apr) obsExtra.push('Apreciacion: '+apr);
+      var apr = document.getElementById('fun-apreciacion') ? document.getElementById('fun-apreciacion').value : '';
+      if (apr) datosOp.push('Apreciacion: '+apr);
     }
   }
   if (opLow.includes('softys')) {
-    if (document.getElementById('sof-fecha-salida').value) obsExtra.push('Fecha salida Softys: '+document.getElementById('sof-fecha-salida').value);
+    var sofFS = document.getElementById('sof-fecha-salida') ? document.getElementById('sof-fecha-salida').value : '';
+    if (sofFS) datosOp.push('Fecha salida: '+sofFS);
   }
-
-  var obsBase = document.getElementById('observacion').value;
-  var obsTotal = (obsBase + (obsExtra.length ? '\n| '+obsExtra.join(' | ') : '')).trim();
 
   var tipoFlota = FLOTA_INTERNA.indexOf(placa.toUpperCase()) >= 0 ? 'Flota interna' : 'Flota tercera';
 
   var datos = {
-    operario: operario,
-    numero_tiquete: tiquete,
-    fecha_disposicion: fecha,
-    hora_disposicion: horaAuto,
-    placa: placa,
-    tipo_flota: tipoFlota,
-    conductor: conductor,
+    operario:              operario,
+    numero_tiquete:        tiquete,
+    fecha_disposicion:     fecha,
+    hora_disposicion:      horaAuto,
+    placa:                 placa,
+    tipo_flota:            tipoFlota,
+    conductor:             conductor,
     ultimos_cuatro_cedula: document.getElementById('ultimos_cuatro_cedula').value,
-    peso_entrada: pesoE,
-    peso_salida: document.getElementById('peso_salida').value||'0',
-    observacion: obsTotal,
-    operacion: operacion,
-    residuo: residuo,
-    seccion_depositaria: document.getElementById('seccion_depositaria').value.trim()
+    peso_entrada:          pesoE,
+    peso_salida:           document.getElementById('peso_salida').value||'0',
+    observacion:           document.getElementById('observacion').value.trim(),
+    operacion:             operacion,
+    residuo:               residuo,
+    seccion_depositaria:   document.getElementById('seccion_depositaria') ? document.getElementById('seccion_depositaria').value.trim() : '',
+    datos_operacion:       datosOp.join(' | '),
+    alertas:               alertas.join(' | ')
   };
 
   document.getElementById('btn-submit').disabled = true;
