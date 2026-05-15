@@ -38,7 +38,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 .field-warn{font-size:10px;color:var(--orange);margin-top:2px;font-weight:600;display:none}
 .field-err{font-size:10px;color:var(--red);margin-top:2px;font-weight:600;display:none}
 
-  
 /* NOTICE */
 .notice{padding:11px 14px;margin-bottom:12px;border-left:3px solid var(--navy);background:var(--blue-l)}
 .notice.warn{border-color:var(--orange);background:var(--orange-l)}
@@ -299,30 +298,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   </div>
 
   <!-- ══ SECCIONES ESPECIFICAS POR OPERACION (debajo del punto 3) ══ -->
-
-  <!-- BAVARIA -->
-  <div class="op-section" id="op-bavaria">
-    <div class="section-hdr">
-      <span class="section-badge" style="background:var(--gold-l);color:var(--gold)">Recibo unico por viaje</span>
-    </div>
-    <div class="section-body">
-      <div class="form-row single">
-        <div class="form-group">
-          <label>Hora de salida del baucher <span class="required">*</span></label>
-          <input type="time" id="bav-hora-salida">
-          <div class="field-hint">Hora que aparece en el recibo fisico — se usara para detectar duplicados</div>
-        </div>
-      </div>
-      <div id="bav-alerta" class="notice warn" style="display:none">
-        <div class="notice-title">Posible registro duplicado</div>
-        <div class="notice-text" id="bav-alerta-texto"></div>
-        <div style="display:flex;gap:8px;margin-top:10px">
-          <button onclick="bavConfirmarDiferente()" style="padding:7px 14px;font-size:10px;font-weight:700;text-transform:uppercase;border:none;background:var(--navy);color:white;cursor:pointer;font-family:'Source Sans 3',sans-serif">Es un viaje diferente — Confirmar</button>
-          <button onclick="bavCancelar()" style="padding:7px 14px;font-size:10px;font-weight:700;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);cursor:pointer;font-family:'Source Sans 3',sans-serif">Cancelar</button>
-        </div>
-      </div>
-    </div>
-  </div>
 
   <!-- POMAR -->
   <div class="op-section" id="op-pomar">
@@ -975,17 +950,24 @@ function validarTiqueteOp() {
 
 // ── MC CAIN ───────────────────────────────────────
 function renderMcCargas() {
-  var n = parseInt(document.getElementById('mc-num-cargas').value) || 1;
-  if (n > 3) n = 4;
+  var n = parseInt(document.getElementById('mc-num-cargas') ? document.getElementById('mc-num-cargas').value : 1) || 1;
+  if (n > 4) n = 4;
   var container = document.getElementById('mc-cargas-container');
   var html = '';
-  for (var i=1; i<=n; i++) {
+  for (var i = 2; i <= n; i++) {
     html += '<div style="background:var(--s2);border:1px solid var(--rule-l);padding:12px;margin-top:10px">'
-      +'<div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:8px">Carga '+i+(i===1?' — (recibo principal en campo 4)':' — recibo adicional')+'</div>'
-      +'<div class="form-group"><label>Hora de salida de la carga '+i+'</label><input type="time" id="mc-hora-'+i+'"></div>'
-      +'</div>';
+      + '<div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:8px">Baucher ' + i + ' — carga adicional</div>'
+      + '<div class="form-row">'
+      + '<div class="form-group"><label>Numero de baucher ' + i + '</label><input type="text" id="mc-baucher-' + i + '" placeholder="Numero del baucher #' + i + '"></div>'
+      + '<div class="form-group"><label>Hora de salida carga ' + i + '</label><input type="time" id="mc-hora-' + i + '"></div>'
+      + '</div></div>';
   }
-  container.innerHTML = html;
+  // Carga 1 siempre va en el campo principal (campo 4)
+  if (n > 1) {
+    container.innerHTML = '<div class="notice" style="margin-bottom:0"><div class="notice-title">Baucher 1</div><div class="notice-text">El numero del primer baucher va en el campo 4 — Identificacion del Ingreso.</div></div>' + html;
+  } else {
+    container.innerHTML = '';
+  }
 }
 
 // ── RECREO ────────────────────────────────────────
@@ -1148,9 +1130,14 @@ async function enviarFormulario() {
   }
   if (opLow.includes('mc cain')||opLow.includes('mccain')) {
     var nCargas = parseInt(document.getElementById('mc-num-cargas') ? document.getElementById('mc-num-cargas').value : 1)||1;
-    for (var i=1;i<=Math.min(nCargas,4);i++) {
-      var horEl = document.getElementById('mc-hora-'+i);
-      if (horEl && horEl.value) datosOp.push('Carga '+i+' hora salida: '+horEl.value);
+    datosOp.push('Total cargas: '+nCargas);
+    datosOp.push('Baucher 1: en campo tiquete principal');
+    for (var i=2;i<=Math.min(nCargas,4);i++) {
+      var bauEl  = document.getElementById('mc-baucher-'+i);
+      var horEl2 = document.getElementById('mc-hora-'+i);
+      var bauNum = bauEl ? bauEl.value.trim() : '';
+      var horVal = horEl2 ? horEl2.value : '';
+      datosOp.push('Baucher '+i+': '+(bauNum||'sin numero')+' | Hora salida: '+(horVal||'sin hora'));
     }
   }
   if (opLow.includes('recreo')) {
@@ -1270,7 +1257,6 @@ function resetFormulario() {
   if (btnNo) { btnNo.style.background='#e8f5ee'; btnNo.style.color='var(--ink)'; btnNo.style.borderColor='#2a2a2a'; }
   ['acomp-nombre','acomp-cedula','acomp-cargo'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
   document.querySelectorAll('.op-section').forEach(function(s){s.classList.remove('visible');});
-  document.getElementById('bav-alerta').style.display='none';
   document.getElementById('fun-apreciacion').value='';
   document.querySelectorAll('.apr-btn').forEach(function(b){b.classList.remove('active');});
   bavConfirmado=false; bavEsDiferente=false;
