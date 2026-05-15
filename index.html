@@ -18,7 +18,6 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-serif;font-weight:300;min-height:100vh}
 
-  
 /* TOPBAR */
 .topbar{background:var(--navy);color:white;padding:20px 40px;border-bottom:4px solid var(--gold);display:flex;justify-content:space-between;align-items:flex-start;position:sticky;top:0;z-index:100}
 .tb-org{font-size:10px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,.5);margin-bottom:4px}
@@ -1114,7 +1113,8 @@ function renderClientes(data, filter) {
 }
 
 // ── GRAFICOS ──────────────────────────────────────
-function drawPie(canvasId, legendId, data, colors) {
+function drawPie(canvasId, legendId, data, colors, labelFormat) {
+  // labelFormat: 'pct' (default), 'pct+count', 'pct+kg'
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
@@ -1150,10 +1150,13 @@ function drawPie(canvasId, legendId, data, colors) {
   if (!leg) return;
   leg.innerHTML = data.slice(0,10).map(([label,val],i) => {
     const pct = ((val/total)*100).toFixed(1);
+    let suffix = pct + '%';
+    if (labelFormat === 'pct+count') suffix = pct + '%  &nbsp;<span style="color:var(--ink-l)">' + Math.round(val) + ' viajes</span>';
+    if (labelFormat === 'pct+kg')    suffix = pct + '%  &nbsp;<span style="color:var(--ink-l)">' + Math.round(val).toLocaleString('es-CO') + ' kg</span>';
     return `<div style="display:flex;align-items:center;gap:6px;">
       <div style="width:10px;height:10px;border-radius:2px;background:${colors[i%colors.length]};flex-shrink:0"></div>
       <span style="font-size:10px;color:var(--ink-m);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</span>
-      <span style="font-size:10px;font-weight:700;color:var(--ink)">${pct}%</span>
+      <span style="font-size:10px;font-weight:700;color:var(--ink)">${suffix}</span>
     </div>`;
   }).join('');
 }
@@ -1239,8 +1242,8 @@ function renderChartClientes(data) {
   const coloresPeso    = sortedPesos.map(([op]) => getClientColor(op));
 
   setTimeout(() => {
-    drawPie('chart-clientes-pie','legend-clientes-pie', sortedGrupos, coloresCliente);
-    drawPie('chart-peso-pie','legend-peso-pie', sortedPesos.map(([k,v])=>[k,Math.round(v)]), coloresPeso);
+    drawPie('chart-clientes-pie','legend-clientes-pie', sortedGrupos, coloresCliente, 'pct+count');
+    drawPie('chart-peso-pie','legend-peso-pie', sortedPesos.map(([k,v])=>[k,Math.round(v)]), coloresPeso, 'pct+kg');
     drawPie('chart-residuos-pie','legend-residuos-pie', sortedRes, CHART_COLORS);
     drawBar('chart-dias-bar', Object.keys(diasCnt), Object.values(diasCnt), '#1a3a5c');
   }, 100);
@@ -1510,12 +1513,31 @@ function renderKPI(data) {
 
     const tiqColor = pctTiq===100?'var(--green)':pctTiq>=80?'var(--gold)':'var(--red)';
 
+    // Tabla de registros del operario
+    const tablaFilas = filas.slice().sort((a,b)=>{
+      const da = parseDateTime(a['Marca temporal']||'');
+      const db = parseDateTime(b['Marca temporal']||'');
+      return (db||0)-(da||0);
+    }).slice(0,20).map(r => {
+      const ts  = r['Marca temporal']||'';
+      const fecha = ts.split(' ')[0]||'—';
+      const hora  = (ts.split(' ')[1]||'').slice(0,5)||'—';
+      const e = parseFloat((r['PESO ENTRADA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
+      const s = parseFloat((r['PESO SALIDA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
+      const neto = e - s;
+      return `<tr>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--rule-l);font-size:11px">${fecha}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--rule-l);font-size:11px">${hora}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--rule-l);font-size:11px;font-weight:600">${r['NUMERO TIQUETE']||'—'}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--rule-l);font-size:11px">${r['PLACA']||'—'}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--rule-l);font-size:11px">${r['OPERACION']||'—'}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--rule-l);font-size:11px;text-align:right;font-weight:600;color:var(--navy)">${neto>0?Math.round(neto).toLocaleString('es-CO')+' kg':'—'}</td>
+      </tr>`;
+    }).join('');
+
     return `<div class="card" style="border-left:4px solid ${op.color}">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--rule-l)">
-        <div>
-          <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:${op.color}">Operario</div>
-          <div style="font-family:'Playfair Display',serif;font-size:17px;font-weight:600;color:var(--ink)">${op.label}</div>
-        </div>
+        <div style="font-family:'Playfair Display',serif;font-size:18px;font-weight:600;color:var(--ink)">${op.label}</div>
         <div style="text-align:right">
           <div style="font-family:'Playfair Display',serif;font-size:32px;font-weight:700;color:${op.color};line-height:1">${fmt(filas.length)}</div>
           <div style="font-size:10px;color:var(--ink-l)">registros</div>
@@ -1551,14 +1573,30 @@ function renderKPI(data) {
         </div>
       </div>
 
-      <div style="background:var(--white);padding:8px 12px;border:1px solid var(--rule-l)">
+      <div style="background:var(--white);padding:8px 12px;border:1px solid var(--rule-l);margin-bottom:12px">
         <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">Principales operaciones</div>
         <div style="font-size:11px;color:var(--ink-m)">${topOps||'—'}</div>
       </div>
 
-      ${alertas > 0 ? `<div style="margin-top:8px;padding:6px 12px;background:var(--red-l);border-left:3px solid var(--red)">
+      ${alertas > 0 ? `<div style="margin-bottom:12px;padding:6px 12px;background:var(--red-l);border-left:3px solid var(--red)">
         <span style="font-size:10px;font-weight:700;color:var(--red)">ALERTAS: ${alertas} registro${alertas>1?'s':''} con novedad</span>
       </div>` : ''}
+
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="border-bottom:2px solid var(--ink)">
+              <th style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);padding:6px 8px;text-align:left">Fecha</th>
+              <th style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);padding:6px 8px;text-align:left">Hora</th>
+              <th style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);padding:6px 8px;text-align:left">Tiquete</th>
+              <th style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);padding:6px 8px;text-align:left">Placa</th>
+              <th style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);padding:6px 8px;text-align:left">Operacion</th>
+              <th style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);padding:6px 8px;text-align:right">Neto kg</th>
+            </tr>
+          </thead>
+          <tbody>${tablaFilas||'<tr><td colspan="6" style="text-align:center;padding:16px;color:var(--ink-l);font-style:italic">Sin registros</td></tr>'}</tbody>
+        </table>
+      </div>
     </div>`;
   }).join('');
 }
