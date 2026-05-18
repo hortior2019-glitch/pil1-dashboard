@@ -18,7 +18,6 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-serif;font-weight:300;min-height:100vh}
 
-  
 /* TOPBAR */
 .topbar{background:var(--navy);color:white;padding:20px 40px;border-bottom:4px solid var(--gold);display:flex;justify-content:space-between;align-items:flex-start;position:sticky;top:0;z-index:100}
 .tb-org{font-size:10px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,.5);margin-bottom:4px}
@@ -218,6 +217,13 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
     <div class="kpi" style="--ac:var(--green)"><div class="kpi-lbl">Peso Neto Total</div><div class="kpi-val" id="kpi-gen-peso">—</div><div class="kpi-desc">kg acumulados</div></div>
     <div class="kpi" style="--ac:var(--navy)"><div class="kpi-lbl">Vehiculos Distintos</div><div class="kpi-val" id="kpi-gen-veh">—</div><div class="kpi-desc">placas unicas</div></div>
   </div>
+
+  <!-- CAMPOS DE OPORTUNIDAD -->
+  <div class="sec-hdr" style="margin-top:8px">
+    <div class="sec-title">Campos de Oportunidad</div>
+    <div class="sec-sub">Comportamientos identificados en produccion</div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;margin-bottom:24px" id="oportunidad-grid"></div>
 </div>
 
 <!-- ═══════════════════════════════════ -->
@@ -844,6 +850,7 @@ async function loadAllData() {
     renderIngreso(dataIngreso, currentFilter);
     renderClientes(dataIngreso, currentFilter);
     renderKPI(dataIngreso);
+    renderOportunidades(dataIngreso);
     document.getElementById('footer-ingreso').textContent = 'Ingreso: '+fmt(dataIngreso.length)+' registros';
     ok++;
   } catch(e) { errors.push('Ingreso Material'); console.error('Ingreso:', e); }
@@ -893,6 +900,7 @@ function setFilter(f, el) {
   renderClientes(dataIngreso, f);
   renderHE(dataHE, f);
   renderKPI(dataIngreso);
+  renderOportunidades(dataIngreso);
 }
 
 // ── RELOJ ─────────────────────────────────────────
@@ -1433,7 +1441,7 @@ function filtrarTablaEmp(q) {
 // ── RENDER KPI OPERARIOS ──────────────────────────
 const OPERARIOS_DEF = [
   { key: 'alexander', label: 'Alexander Velásquez', color: 'var(--navy)' },
-  { key: 'idaldo',    label: 'Idaldo Madrid ', color: 'var(--blue)' },
+  { key: 'idaldo',    label: 'Idaldo Madrid (Hidalgo)', color: 'var(--blue)' },
   { key: 'deivi',     label: 'Deivi José Oliveros', color: 'var(--green)' },
   { key: 'saul',      label: 'Saúl García Sandoval', color: 'var(--gold)' },
 ];
@@ -1600,6 +1608,125 @@ function renderKPI(data) {
       </div>
     </div>`;
   }).join('');
+}
+
+// ── RENDER CAMPOS DE OPORTUNIDAD ─────────────────
+function renderOportunidades(data) {
+  const total = data.length;
+  if (total === 0) { document.getElementById('oportunidad-grid').innerHTML = ''; return; }
+
+  // 1. Tiquetes incompletos (<=4 digitos)
+  const tiqIncompletos = data.filter(r => (r['NUMERO TIQUETE']||'').replace(/\s/g,'').length <= 4);
+  const pctTiqInc = total > 0 ? ((tiqIncompletos.length/total)*100).toFixed(1) : 0;
+
+  // 2. Registros sin conductor identificado
+  const sinConductor = data.filter(r => !(r['CONDUCTOR -  PRIME NOMBRE Y PRIMER APELLIDO']||'').trim());
+  const pctSinCond = total > 0 ? ((sinConductor.length/total)*100).toFixed(1) : 0;
+
+  // 3. Registros sin cedula
+  const sinCedula = data.filter(r => !(r['CEDULA']||'').trim());
+  const pctSinCed = total > 0 ? ((sinCedula.length/total)*100).toFixed(1) : 0;
+
+  // 4. Registros sin operacion
+  const sinOp = data.filter(r => !(r['OPERACION']||'').trim());
+
+  // 5. Registros sin peso de salida (=0 o vacio)
+  const sinPesoSalida = data.filter(r => {
+    const s = parseFloat((r['PESO SALIDA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
+    return s === 0;
+  });
+  const pctSinPS = total > 0 ? ((sinPesoSalida.length/total)*100).toFixed(1) : 0;
+
+  // 6. Conductores acompanados
+  const acompanados = data.filter(r => (r['ALERTAS ']||r['ALERTAS']||'').includes('ACOMPA'));
+
+  // 7. Registros con alerta general
+  const conAlerta = data.filter(r => {
+    const al = r['ALERTAS ']||r['ALERTAS']||'';
+    return al.trim().length > 0;
+  });
+
+  // 8. Hora pico — hora con mas registros
+  const porHora = {};
+  data.forEach(r => {
+    const ts = r['Marca temporal']||'';
+    const h = ts.split(' ')[1]?.slice(0,2);
+    if (h) porHora[h] = (porHora[h]||0)+1;
+  });
+  const horaPico = Object.entries(porHora).sort((a,b)=>b[1]-a[1])[0];
+
+  // 9. Operacion con mas registros
+  const porOp = {};
+  data.forEach(r => { const o=r['OPERACION']||''; if(o) porOp[o]=(porOp[o]||0)+1; });
+  const topOp = Object.entries(porOp).sort((a,b)=>b[1]-a[1])[0];
+
+  // 10. Flota interna vs tercera
+  const flotaInterna = ['OGN522','SMO346','TDS941','TAY245','XGD873','WOB048'];
+  const interna = data.filter(r => flotaInterna.includes((r['PLACA']||'').toUpperCase())).length;
+  const tercera = total - interna;
+
+  function card(titulo, valor, desc, color, detalle) {
+    const colorMap = {
+      red:   { bg:'#f5e8e8', border:'#8b1a1a', text:'#8b1a1a' },
+      gold:  { bg:'#f5eed8', border:'#8b6914', text:'#8b6914' },
+      green: { bg:'#e8f5ee', border:'#1a5c35', text:'#1a5c35' },
+      navy:  { bg:'#e8f0f8', border:'#1a3a5c', text:'#1a3a5c' },
+    };
+    const c = colorMap[color]||colorMap.navy;
+    return `<div style="background:var(--white);border:1px solid var(--rule);border-left:4px solid ${c.border};padding:16px 18px">
+      <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:${c.text};margin-bottom:6px">${titulo}</div>
+      <div style="font-family:'Playfair Display',serif;font-size:28px;font-weight:700;color:${c.border};line-height:1;margin-bottom:4px">${valor}</div>
+      <div style="font-size:11px;color:var(--ink-l);margin-bottom:${detalle?'6px':'0'}">${desc}</div>
+      ${detalle?`<div style="font-size:10px;color:var(--ink-m);padding:5px 8px;background:${c.bg};border-left:2px solid ${c.border}">${detalle}</div>`:''}
+    </div>`;
+  }
+
+  document.getElementById('oportunidad-grid').innerHTML = [
+    card('Tiquetes incompletos', tiqIncompletos.length,
+      pctTiqInc+'% de los registros tienen 4 digitos o menos',
+      tiqIncompletos.length > 0 ? 'red' : 'green',
+      tiqIncompletos.length > 0 ? 'Operarios deben ingresar el codigo completo del ticket fisico' : 'Sin tiquetes incompletos en este periodo'),
+
+    card('Sin conductor identificado', sinConductor.length,
+      pctSinCond+'% de registros sin nombre del conductor',
+      sinConductor.length > 0 ? 'gold' : 'green',
+      sinConductor.length > 0 ? 'El campo conductor es obligatorio para trazabilidad de incidentes' : null),
+
+    card('Sin cedula registrada', sinCedula.length,
+      pctSinCed+'% de registros sin cedula del conductor',
+      sinCedula.length > 0 ? 'gold' : 'green',
+      sinCedula.length > 0 ? 'La cedula permite identificar conductores en caso de incidentes' : null),
+
+    card('Vehiculos sin peso de salida', sinPesoSalida.length,
+      pctSinPS+'% de registros con peso vacio en 0',
+      'navy',
+      'Normal en operaciones sin bascula. Pendiente definicion con operaciones'),
+
+    card('Conductores con acompanante', acompanados.length,
+      acompanados.length === 0 ? 'Sin alertas en el periodo' : 'Alerta activa registrada en el sistema',
+      acompanados.length > 0 ? 'gold' : 'green',
+      acompanados.length > 0 ? 'Revisar protocolo de conductor unico en operaciones que lo requieren' : null),
+
+    card('Alertas totales del sistema', conAlerta.length,
+      ((conAlerta.length/total)*100).toFixed(1)+'% de registros con novedad',
+      conAlerta.length > 5 ? 'red' : conAlerta.length > 0 ? 'gold' : 'green',
+      conAlerta.length > 0 ? 'Incluye conductores acompanados, viajes duplicados y otras novedades' : null),
+
+    card('Hora pico de operacion', horaPico ? horaPico[0]+':00h' : '—',
+      horaPico ? horaPico[1]+' registros en esa hora' : 'Sin datos suficientes',
+      'navy',
+      'Hora con mayor concentracion de ingresos — planear refuerzos en ese horario'),
+
+    card('Operacion mas frecuente', topOp ? topOp[0] : '—',
+      topOp ? topOp[1]+' registros ('+((topOp[1]/total)*100).toFixed(0)+'% del total)' : '',
+      'navy',
+      'Cliente con mayor volumen de ingresos en el periodo seleccionado'),
+
+    card('Flota interna PIL 1', interna,
+      tercera+' registros de flota tercera en el periodo',
+      'navy',
+      'Flota interna: OGN522, SMO346, TDS941, TAY245, XGD873, WOB048'),
+  ].join('');
 }
 
 // ── INICIO ────────────────────────────────────────
