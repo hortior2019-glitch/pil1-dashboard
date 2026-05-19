@@ -18,7 +18,6 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-serif;font-weight:300;min-height:100vh}
 
-  
 /* TOPBAR */
 .topbar{background:var(--navy);color:white;padding:20px 40px;border-bottom:4px solid var(--gold);display:flex;justify-content:space-between;align-items:flex-start;position:sticky;top:0;z-index:100}
 .tb-org{font-size:10px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,.5);margin-bottom:4px}
@@ -540,10 +539,17 @@ const AUTO_REFRESH_MS = 5 * 60 * 1000;
 let currentFilter = 'hoy';
 let dataIngreso = [], dataSolicitudes = [], dataHE = [];
 
-// ── UTILIDADES ────────────────────────────────────
-function parseCSV(text) {
+function getPesoNeto(r) {
+  // Intentar columna PESO NETO primero
+  var n = parseFloat((r['PESO NETO']||r['PESO NETO ']||'').toString().replace(/[^0-9.]/g,''));
+  if (!isNaN(n) && n > 0) return n;
+  // Calcular de entrada - salida
+  var e = parseFloat((r['PESO ENTRADA  SEGÚN TICKET']||r['PESO ENTRADA  Según ticket']||r['PESO ENTRADA']||'0').toString().replace(/[^0-9.]/g,''))||0;
+  var s = parseFloat((r['PESO SALIDA  SEGÚN TICKET']||r['PESO SALIDA  Según ticket']||r['PESO SALIDA']||'0').toString().replace(/[^0-9.]/g,''))||0;
+  return e - s;
+}
   const lines = text.trim().split('\n');
-  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g,''));
+  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g,'').toUpperCase());
   return lines.slice(1).map(line => {
     const vals = [];
     let cur = '', inQ = false;
@@ -658,8 +664,8 @@ function renderIngreso(data, filter) {
 
   let pesoE = 0, pesoS = 0, tiqOk = 0, condOk = 0;
   filtered.forEach(r => {
-    const e = parseFloat((r['PESO ENTRADA  Según ticket'] || r['PESO ENTRADA'] || '0').replace(/[^0-9.]/g,'')) || 0;
-    const s = parseFloat((r['PESO SALIDA  Según ticket'] || r['PESO SALIDA'] || '0').replace(/[^0-9.]/g,'')) || 0;
+    const e = getPesoNeto(r);
+    const s = 0;
     pesoE += e; pesoS += s;
     const tiq = r['NUMERO TIQUETE'] || '';
     if (tiq.replace(/\s/g,'').length > 4) tiqOk++;
@@ -709,8 +715,8 @@ function renderIngreso(data, filter) {
     const tiq = r['NUMERO TIQUETE'] || '—';
     const tiqOk2 = tiq.replace(/\s/g,'').length > 4;
     const estado = tiqOk2 ? '<span class="badge b-green">Completo</span>' : '<span class="badge b-red">Incompleto</span>';
-    const pe = parseFloat((r['PESO ENTRADA  Según ticket'] || r['PESO ENTRADA'] || '0').replace(/[^0-9.]/g,'')) || 0;
-    const ps = parseFloat((r['PESO SALIDA  Según ticket'] || r['PESO SALIDA'] || '0').replace(/[^0-9.]/g,'')) || 0;
+    const pe = getPesoNeto(r);
+    const ps = 0;
     return `<tr>
       <td>${r['FECHA DISPOSICION PLANTA']||r['Marca temporal']||'—'}</td>
       <td>${r['HORA DISPOSICION PLANTA']||'—'}</td>
@@ -1002,8 +1008,8 @@ function renderClientes(data, filter) {
   const totalClientes = Object.keys(grupos).length;
   let totalPesoNeto = 0;
   filtered.forEach(r => {
-    const e = parseFloat((r['PESO ENTRADA  Según ticket'] || r['PESO ENTRADA'] || '0').replace(/[^0-9.]/g,'')) || 0;
-    const s = parseFloat((r['PESO SALIDA  Según ticket'] || r['PESO SALIDA'] || '0').replace(/[^0-9.]/g,'')) || 0;
+    const e = getPesoNeto(r);
+    const s = 0;
     totalPesoNeto += (e - s);
   });
 
@@ -1029,8 +1035,8 @@ function renderClientes(data, filter) {
     const placas = new Set(), conductores = new Set(), residuos = new Set();
 
     registros.forEach(r => {
-      const e = parseFloat((r['PESO ENTRADA  Según ticket'] || r['PESO ENTRADA'] || '0').replace(/[^0-9.]/g,'')) || 0;
-      const s = parseFloat((r['PESO SALIDA  Según ticket'] || r['PESO SALIDA'] || '0').replace(/[^0-9.]/g,'')) || 0;
+      const e = getPesoNeto(r);
+      const s = 0;
       pesoE += e; pesoS += s;
       const tiq = r['NUMERO TIQUETE'] || '';
       if (tiq.replace(/\s/g,'').length > 4) tiqOk++;
@@ -1050,8 +1056,8 @@ function renderClientes(data, filter) {
 
     // Tabla de ultimos registros
     const filas = registros.slice().reverse().slice(0,5).map(r => {
-      const pe = parseFloat((r['PESO ENTRADA  Según ticket'] || r['PESO ENTRADA'] || '0').replace(/[^0-9.]/g,'')) || 0;
-      const ps = parseFloat((r['PESO SALIDA  Según ticket'] || r['PESO SALIDA'] || '0').replace(/[^0-9.]/g,'')) || 0;
+      const pe = getPesoNeto(r);
+      const ps = 0;
       const tiq = r['NUMERO TIQUETE'] || '—';
       const tiqOk2 = tiq.replace(/\s/g,'').length > 4;
       return `<tr>
@@ -1235,8 +1241,8 @@ function renderChartClientes(data) {
     const op = r['OPERACION'] || '';
     if (!op) return; // ignorar sin operacion
     grupos[op] = (grupos[op]||0) + 1;
-    const e = parseFloat((r['PESO ENTRADA  Según ticket']||r['PESO ENTRADA']||'0').replace(/[^0-9.]/g,''))||0;
-    const s = parseFloat((r['PESO SALIDA  Según ticket']||r['PESO SALIDA']||'0').replace(/[^0-9.]/g,''))||0;
+    const e = getPesoNeto(r);
+    const s = 0;
     pesos[op] = (pesos[op]||0) + Math.max(e-s,0);
     const res = r['RESIDUO'] || 'Sin clasificar';
     residuosCnt[res] = (residuosCnt[res]||0) + 1;
@@ -1455,8 +1461,8 @@ function renderKPI(data) {
   let pesoTotal = 0, tiqOkTotal = 0, alertTotal = 0;
 
   data.forEach(r => {
-    const e = parseFloat((r['PESO ENTRADA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
-    const s = parseFloat((r['PESO SALIDA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
+    const e = getPesoNeto(r);
+    const s = 0;
     pesoTotal += (e-s);
     if ((r['NUMERO TIQUETE']||'').replace(/\s/g,'').length > 4) tiqOkTotal++;
     const al = r['ALERTAS '] || r['ALERTAS'] || '';
@@ -1489,8 +1495,8 @@ function renderKPI(data) {
     let fechas = [], minutos = [];
 
     filas.forEach(r => {
-      const e = parseFloat((r['PESO ENTRADA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
-      const s = parseFloat((r['PESO SALIDA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
+      const e = getPesoNeto(r);
+      const s = 0;
       pesoNeto += (e-s);
       if ((r['NUMERO TIQUETE']||'').replace(/\s/g,'').length > 4) tiqOk++;
       const al = r['ALERTAS '] || r['ALERTAS'] || '';
@@ -1533,8 +1539,8 @@ function renderKPI(data) {
       const ts  = r['Marca temporal']||'';
       const fecha = ts.split(' ')[0]||'—';
       const hora  = (ts.split(' ')[1]||'').slice(0,5)||'—';
-      const e = parseFloat((r['PESO ENTRADA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
-      const s = parseFloat((r['PESO SALIDA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
+      const e = getPesoNeto(r);
+      const s = 0;
       const neto = e - s;
       return `<tr>
         <td style="padding:6px 8px;border-bottom:1px solid var(--rule-l);font-size:11px">${fecha}</td>
@@ -1634,7 +1640,7 @@ function renderOportunidades(data) {
 
   // 5. Registros sin peso de salida (=0 o vacio)
   const sinPesoSalida = data.filter(r => {
-    const s = parseFloat((r['PESO SALIDA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
+    const s = 0;
     return s === 0;
   });
   const pctSinPS = total > 0 ? ((sinPesoSalida.length/total)*100).toFixed(1) : 0;
