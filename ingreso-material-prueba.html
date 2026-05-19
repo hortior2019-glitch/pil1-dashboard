@@ -10,7 +10,6 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-serif;font-weight:300;min-height:100vh}
 
-  
 /* ── LOGIN ─────────────────────────────────────── */
 #pantalla-login{position:fixed;top:0;left:0;right:0;bottom:0;background:var(--navy);display:flex;align-items:center;justify-content:center;z-index:1000;flex-direction:column;padding:24px;overflow-y:auto}
 #pantalla-bienvenida{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:900;overflow-y:auto}
@@ -1344,34 +1343,28 @@ function resetFormulario() {
 // ── CONSULTA ──────────────────────────────────────
 function parseDateTime(str) {
   if (!str) return null;
-  var s=str.trim();
-  var m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
-  if(m) return new Date(+m[3],+m[2]-1,+m[1],+m[4],+m[5],+(m[6]||0));
-  m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if(m) return new Date(+m[1],+m[2]-1,+m[3]);
+  var s = str.trim();
+  // DD/MM/YYYY HH:MM:SS o D/M/YYYY H:MM (con o sin segundos)
+  var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (m) return new Date(+m[3], +m[2]-1, +m[1], +(m[4]||0), +(m[5]||0), +(m[6]||0));
+  // YYYY-MM-DD HH:MM
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{1,2}):(\d{2}))?/);
+  if (m) return new Date(+m[1], +m[2]-1, +m[3], +(m[4]||0), +(m[5]||0));
   return null;
 }
-function inPeriodo(str,f) {
-  var s = String(str||'').trim();
-  var d;
-  // Formato doGet: dd/MM/yyyy HH:mm:ss
-  if (s.match(/^\d{2}\/\d{2}\/\d{4}/)) {
-    var p = s.split(/[\s\/\:]/);
-    d = new Date(+p[2], +p[1]-1, +p[0], +(p[3]||0), +(p[4]||0), +(p[5]||0));
-  } else {
-    d = parseDateTime(s);
+function inPeriodo(str, f) {
+  var d = parseDateTime(String(str||'').trim());
+  if (!d || isNaN(d)) return f === 'total';
+  var now = new Date(), today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (f === 'fecha' && filtroFechaEsp) {
+    var fd = new Date(filtroFechaEsp + 'T00:00:00');
+    return d >= fd && d < new Date(fd.getTime() + 86400000);
   }
-  if(!d||isNaN(d)) return f==='total';
-  var now=new Date(),today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
-  if(f==='fecha'&&filtroFechaEsp){
-    var fd=new Date(filtroFechaEsp+'T00:00:00');
-    return d>=fd&&d<new Date(fd.getTime()+86400000);
-  }
-  if(f==='total') return true;
-  if(f==='hora')  return (now-d)<=3600000;
-  if(f==='hoy')   return d>=today;
-  if(f==='semana'){var wk=new Date(today);wk.setDate(today.getDate()-today.getDay());return d>=wk;}
-  if(f==='mes')   return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();
+  if (f === 'total')  return true;
+  if (f === 'hora')   return (now - d) <= 3600000;
+  if (f === 'hoy')    return d >= today;
+  if (f === 'semana') { var wk = new Date(today); wk.setDate(today.getDate() - today.getDay()); return d >= wk; }
+  if (f === 'mes')    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   return true;
 }
 function parseCSV(text) {
@@ -1426,7 +1419,7 @@ function renderConsulta() {
   var filtroOp = document.getElementById('filtro-operario') ? document.getElementById('filtro-operario').value : '';
 
   var filtered = registrosData.filter(function(r) {
-    var ts = getField(r,['Marca temporal','MARCA TEMPORAL']);
+    var ts = getField(r,['FECHA DISPOSICION PLANTA','Marca temporal','MARCA TEMPORAL']);
     if (!inPeriodo(ts, filtroActual)) return false;
     if (filtroOp) {
       var operario = getField(r,['OPERARIO registra','OPERARIO REGISTRA','OPERARIO']).toLowerCase();
