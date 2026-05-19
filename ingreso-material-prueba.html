@@ -10,7 +10,6 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-serif;font-weight:300;min-height:100vh}
 
-  
 /* ── LOGIN ─────────────────────────────────────── */
 #pantalla-login{position:fixed;top:0;left:0;right:0;bottom:0;background:var(--navy);display:flex;align-items:center;justify-content:center;z-index:1000;flex-direction:column;padding:24px;overflow-y:auto}
 #pantalla-bienvenida{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:900;overflow-y:auto}
@@ -852,26 +851,37 @@ let alqueriaCodigos = [];
 
 // ── INIT ──────────────────────────────────────────
 window.addEventListener('load', function() {
-  document.getElementById('fecha_disposicion').value = new Date().toISOString().slice(0,10);
-  document.getElementById('sof-fecha-ingreso').value = new Date().toISOString().slice(0,10);
-  document.getElementById('fam-fecha-salida').value = '';
+  // Guard: solo inicializar campos del formulario si existen en el DOM
+  var elFecha    = document.getElementById('fecha_disposicion');
+  var elSofFecha = document.getElementById('sof-fecha-ingreso');
+  var elFamFecha = document.getElementById('fam-fecha-salida');
+  var elPesoE    = document.getElementById('peso_entrada');
+  var elPesoS    = document.getElementById('peso_salida');
+  var elSubmit   = document.getElementById('btn-submit');
 
-  // Select nativo — no requiere inicializacion de dropdown
+  if (elFecha)    elFecha.value    = new Date().toISOString().slice(0,10);
+  if (elSofFecha) elSofFecha.value = new Date().toISOString().slice(0,10);
+  if (elFamFecha) elFamFecha.value = '';
 
-  document.getElementById('peso_entrada').addEventListener('input', calcularPesoNeto);
-  document.getElementById('peso_salida').addEventListener('input', calcularPesoNeto);
-  document.getElementById('btn-submit').addEventListener('click', enviarFormulario);
-  document.getElementById('btn-cancelar-modal') && document.getElementById('btn-cancelar-modal').addEventListener('click', cerrarModalError);
+  if (elPesoE)  elPesoE.addEventListener('input', calcularPesoNeto);
+  if (elPesoS)  elPesoS.addEventListener('input', calcularPesoNeto);
+  if (elSubmit) elSubmit.addEventListener('click', enviarFormulario);
+
+  var elCancelarModal = document.getElementById('btn-cancelar-modal');
+  if (elCancelarModal) elCancelarModal.addEventListener('click', cerrarModalError);
 
   document.addEventListener('click', function(e) {
     ['operacion','residuo'].forEach(function(t) {
       var wrap = document.getElementById('wrap-'+t);
-      if (wrap && !wrap.contains(e.target)) document.getElementById(t+'-dropdown').classList.remove('open');
+      if (wrap && !wrap.contains(e.target)) {
+        var dd = document.getElementById(t+'-dropdown');
+        if (dd) dd.classList.remove('open');
+      }
     });
     var mBav = document.getElementById('modal-bavaria');
-    if (e.target === mBav) bavCancelar();
+    if (mBav && e.target === mBav) bavCancelar();
     var mErr = document.getElementById('modal-error');
-    if (e.target === mErr) cerrarModalError();
+    if (mErr && e.target === mErr) cerrarModalError();
   });
 
   renderMcCargas();
@@ -1678,6 +1688,12 @@ function abrirFormulario() {
   if (sesionUsuario) document.getElementById('operario').value = sesionUsuario.nombre;
   var lbl = document.getElementById('app-usuario-label');
   if (lbl && sesionUsuario) lbl.textContent = 'Sesion: ' + sesionUsuario.nombre;
+  // Asegurar fechas por defecto al abrir el formulario
+  var hoy = new Date().toISOString().slice(0,10);
+  var elFecha = document.getElementById('fecha_disposicion');
+  if (elFecha && !elFecha.value) elFecha.value = hoy;
+  var elSof = document.getElementById('sof-fecha-ingreso');
+  if (elSof && !elSof.value) elSof.value = hoy;
   iniciarAHT();
 }
 
