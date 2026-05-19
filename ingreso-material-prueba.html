@@ -10,7 +10,6 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-serif;font-weight:300;min-height:100vh}
 
-  
 /* ── LOGIN ─────────────────────────────────────── */
 #pantalla-login{position:fixed;top:0;left:0;right:0;bottom:0;background:var(--navy);display:flex;align-items:center;justify-content:center;z-index:1000;flex-direction:column;padding:24px;overflow-y:auto}
 #pantalla-bienvenida{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:900;overflow-y:auto}
@@ -981,7 +980,7 @@ function validarCodigoPomar(input) {
 
 // ── ALQUERIA CONSECUTIVOS ─────────────────────────
 function cargarConsecutivosAlqueria() {
-  fetch('https://corsproxy.io/?'+encodeURIComponent(CSV_URL+'&t='+Date.now()), {cache:'no-store'})
+  fetch('https://api.allorigins.win/raw?url='+encodeURIComponent(CSV_URL+'&t='+Date.now()), {cache:'no-store'})
     .then(function(r){return r.text();})
     .then(function(text){
       var rows = parseCSV(text);
@@ -1272,7 +1271,7 @@ async function enviarFormulario() {
   mostrarStatus('loading','Guardando registro...','Enviando datos al sistema. Por favor espere.');
 
   try {
-    var res = await fetch('https://corsproxy.io/?'+encodeURIComponent(WEBAPP_URL), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(datos)});
+    var res = await fetch(WEBAPP_URL, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(datos)});
     var json = await res.json();
     if (json.success) {
       mostrarStatus('success','Registro guardado','Ingreso de <strong>'+placa+'</strong> — '+operacion+' registrado por '+operario+'.');
@@ -1436,18 +1435,18 @@ async function cargarRegistros() {
   var tbody = document.getElementById('tbody-consulta');
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="11" class="empty"><span class="spinner"></span>Cargando...</td></tr>';
-  var bust = '&nocache=' + Date.now() + Math.floor(Math.random()*100000);
+  var bust = '&nocache=' + Date.now();
   var urls = [
-    'https://corsproxy.io/?' + encodeURIComponent(CSV_URL + bust),
     'https://api.allorigins.win/raw?url=' + encodeURIComponent(CSV_URL + bust),
-    'https://cors-anywhere.herokuapp.com/' + CSV_URL
+    'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(CSV_URL),
+    'https://thingproxy.freeboard.io/fetch/' + CSV_URL,
   ];
   for (var i = 0; i < urls.length; i++) {
     try {
       var res = await fetch(urls[i], {cache:'no-store'});
       if (res.ok) {
         var text = await res.text();
-        if (text.length > 10) {
+        if (text.length > 10 && text.indexOf(',') > -1) {
           registrosData = parseCSV(text);
           renderConsulta();
           return;
@@ -1457,7 +1456,7 @@ async function cargarRegistros() {
       console.log('Proxy ' + i + ' fallo:', e.message);
     }
   }
-  tbody.innerHTML = '<tr><td colspan="11" class="empty">No se pudieron cargar los registros. Verifique su conexion y presione Actualizar.</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="11" class="empty">No se pudieron cargar los registros. Presione Actualizar.</td></tr>';
 }
 
 // ── MODAL ERROR ───────────────────────────────────
@@ -1474,7 +1473,7 @@ async function enviarReporte(){
   if(!desc){document.getElementById('modal-descripcion').style.borderColor='var(--red)';return;}
   document.getElementById('modal-descripcion').style.borderColor='var(--rule)';
   var datos={numero_tiquete:'ERROR: '+reporteActual.tiquete,fecha_disposicion:new Date().toISOString().slice(0,10),hora_disposicion:new Date().toTimeString().slice(0,5),placa:reporteActual.placa,conductor:'',ultimos_cuatro_cedula:'',peso_entrada:'',peso_salida:'',observacion:'REPORTE DE ERROR — Registro: '+reporteActual.marcaTemporal+' | Tiquete: '+reporteActual.tiquete+' | Placa: '+reporteActual.placa+' | Operacion: '+reporteActual.operacion+' | Error: '+desc,operacion:reporteActual.operacion,residuo:'',seccion_depositaria:''};
-  try{await fetch('https://corsproxy.io/?'+encodeURIComponent(WEBAPP_URL),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(datos)});}
+  try{await fetch(WEBAPP_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(datos)});}
   catch(e){try{await fetch(WEBAPP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(datos)});}catch(e2){}}
   var st=document.getElementById('modal-status');
   st.style.display='block';st.textContent='Reporte enviado correctamente.';
@@ -1497,7 +1496,7 @@ window.addEventListener('load', function() {
   // Verificar bloqueo activo
   verificarBloqueo();
   // Cargar CSV de usuarios
-  fetch('https://corsproxy.io/?'+encodeURIComponent(USUARIOS_CSV), {cache:'no-store'})
+  fetch('https://api.allorigins.win/raw?url='+encodeURIComponent(USUARIOS_CSV), {cache:'no-store'})
     .then(function(r){return r.text();})
     .then(function(t){
       var lines = t.trim().split('\n').slice(1);
