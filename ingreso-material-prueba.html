@@ -10,7 +10,6 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-serif;font-weight:300;min-height:100vh}
 
-  
 /* ── LOGIN ─────────────────────────────────────── */
 #pantalla-login{position:fixed;top:0;left:0;right:0;bottom:0;background:var(--navy);display:flex;align-items:center;justify-content:center;z-index:1000;flex-direction:column;padding:24px;overflow-y:auto}
 #pantalla-bienvenida{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:900;overflow-y:auto}
@@ -988,8 +987,7 @@ function validarCodigoPomar(input) {
 
 // ── ALQUERIA CONSECUTIVOS ─────────────────────────
 function cargarConsecutivosAlqueria() {
-  fetch('https://api.allorigins.win/raw?url='+encodeURIComponent(CSV_URL+'&t='+Date.now()), {cache:'no-store'})
-    .then(function(r){return r.text();})
+  fetchCSVMultiProxy(CSV_URL)
     .then(function(text){
       var rows = parseCSV(text);
       alqueriaCodigos = rows
@@ -1488,29 +1486,42 @@ function renderConsulta() {
   }).join('');
 }
 
+async function fetchCSVMultiProxy(url) {
+  var bust = '&nocache=' + Date.now();
+  var proxies = [
+    function(u) { return u + bust; },
+    function(u) { return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u + bust); },
+    function(u) { return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); },
+    function(u) { return 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u); },
+    function(u) { return u; },
+  ];
+  for (var i = 0; i < proxies.length; i++) {
+    try {
+      var proxyUrl = proxies[i](url);
+      var res = await fetch(proxyUrl, {cache:'no-store'});
+      if (res.ok) {
+        var text = await res.text();
+        if (text.length > 10 && text.indexOf(',') > -1 && !text.includes('<html')) {
+          return text;
+        }
+      }
+    } catch(e) { console.log('Proxy ' + i + ' fallo:', e.message); }
+  }
+  throw new Error('Todos los proxies fallaron');
+}
+
 async function cargarRegistros() {
   var tbody = document.getElementById('tbody-consulta');
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="11" class="empty"><span class="spinner"></span>Cargando...</td></tr>';
-  var bust = '&nocache=' + Date.now();
-  var urls = [
-    'https://api.allorigins.win/raw?url=' + encodeURIComponent(CSV_URL + bust),
-    'https://api.allorigins.win/raw?url=' + encodeURIComponent(CSV_URL),
-  ];
-  for (var i = 0; i < urls.length; i++) {
-    try {
-      var res = await fetch(urls[i], {cache:'no-store'});
-      if (res.ok) {
-        var text = await res.text();
-        if (text.length > 10 && text.indexOf(',') > -1 && !text.includes('<html')) {
-          registrosData = parseCSV(text);
-          renderConsulta();
-          return;
-        }
-      }
-    } catch(e) { console.log('Proxy fallo:', e.message); }
+  try {
+    var text = await fetchCSVMultiProxy(CSV_URL);
+    registrosData = parseCSV(text);
+    renderConsulta();
+  } catch(e) {
+    console.log('cargarRegistros error:', e.message);
+    tbody.innerHTML = '<tr><td colspan="11" class="empty">No se pudieron cargar los registros. Presione Actualizar.</td></tr>';
   }
-  tbody.innerHTML = '<tr><td colspan="11" class="empty">No se pudieron cargar los registros. Presione Actualizar.</td></tr>';
 }
 
 // ── MODAL ERROR ───────────────────────────────────
@@ -1550,8 +1561,7 @@ window.addEventListener('load', function() {
   // Verificar bloqueo activo
   verificarBloqueo();
   // Cargar CSV de usuarios
-  fetch('https://api.allorigins.win/raw?url='+encodeURIComponent(USUARIOS_CSV), {cache:'no-store'})
-    .then(function(r){return r.text();})
+  fetchCSVMultiProxy(USUARIOS_CSV)
     .then(function(t){
       var lines = t.trim().split('\n').slice(1);
       usuariosDB = lines.map(function(l){
