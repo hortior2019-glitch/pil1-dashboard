@@ -10,7 +10,6 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-serif;font-weight:300;min-height:100vh}
 
-  
 /* ── LOGIN ─────────────────────────────────────── */
 #pantalla-login{position:fixed;top:0;left:0;right:0;bottom:0;background:var(--navy);display:flex;align-items:center;justify-content:center;z-index:1000;flex-direction:column;padding:24px;overflow-y:auto}
 #pantalla-bienvenida{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:900;overflow-y:auto}
@@ -313,7 +312,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
             <option>EPT</option>
             <option>Familia</option>
             <option>Frigorífico</option>
-            <option>Funredcol</option>
+            <option>Funrecol</option>
             <option>Gloria</option>
             <option>Guillermo Clink</option>
             <option>HortiOrganic</option>
@@ -685,8 +684,15 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
     <button class="fbtn" onclick="setFiltro('mes',this)">Este mes</button>
     <button class="fbtn" onclick="setFiltro('total',this)">Total</button>
     <div class="date-filter-wrap">
-      <input type="date" id="filtro-fecha-cal" onchange="setFiltroFecha(this.value)" title="Filtrar por fecha especifica">
+      <input type="date" id="filtro-fecha-cal" onchange="setFiltroFecha(this.value)" title="Fecha especifica">
     </div>
+    <select id="filtro-operario" onchange="renderConsulta()" style="padding:5px 9px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);font-family:'Source Sans 3',sans-serif;cursor:pointer">
+      <option value="">Todos los operarios</option>
+      <option value="Alexander">Alexander</option>
+      <option value="Idaldo">Idaldo (Hidalgo)</option>
+      <option value="Deivi">Deivi</option>
+      <option value="Saul">Saúl</option>
+    </select>
     <button class="refresh-btn" onclick="cargarRegistros()">Actualizar</button>
   </div>
 
@@ -1346,8 +1352,16 @@ function parseDateTime(str) {
   return null;
 }
 function inPeriodo(str,f) {
-  var d=parseDateTime(str);
-  if(!d) return f==='total';
+  var s = String(str||'').trim();
+  var d;
+  // Formato doGet: dd/MM/yyyy HH:mm:ss
+  if (s.match(/^\d{2}\/\d{2}\/\d{4}/)) {
+    var p = s.split(/[\s\/\:]/);
+    d = new Date(+p[2], +p[1]-1, +p[0], +(p[3]||0), +(p[4]||0), +(p[5]||0));
+  } else {
+    d = parseDateTime(s);
+  }
+  if(!d||isNaN(d)) return f==='total';
   var now=new Date(),today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
   if(f==='fecha'&&filtroFechaEsp){
     var fd=new Date(filtroFechaEsp+'T00:00:00');
@@ -1387,46 +1401,88 @@ function setFiltroFecha(val) {
   renderConsulta();
 }
 
-function renderConsulta() {
-  var filtered=registrosData.filter(function(r){return inPeriodo(r['Marca temporal']||'',filtroActual);});
-  var placas=new Set(filtered.map(function(r){return r['PLACA'];}).filter(Boolean));
-  var ops=new Set(filtered.map(function(r){return r['OPERACION'];}).filter(Boolean));
-  var pesoNeto=0;
-  filtered.forEach(function(r){
-    var n=parseFloat(String(r['PESO NETO']||r['PESO NETO ']||0))||0;
-    pesoNeto+=n;
-  });
-  document.getElementById('c-total').textContent=filtered.length;
-  document.getElementById('c-peso').textContent=fmt(pesoNeto);
-  document.getElementById('c-veh').textContent=placas.size;
-  document.getElementById('c-ops').textContent=ops.size;
+function getField(r, keys) {
+  for (var i=0;i<keys.length;i++) {
+    if (r[keys[i]]!==undefined && r[keys[i]]!==null && r[keys[i]]!=='') return r[keys[i]];
+  }
+  return '';
+}
 
-  if(filtered.length===0){
-    document.getElementById('tbody-consulta').innerHTML='<tr><td colspan="11" class="empty">Sin registros para el periodo seleccionado</td></tr>';
+function limpiarTiquete(tiq) {
+  if (!tiq) return '—';
+  var s = String(tiq);
+  // Si tiene formato ISO o dd/mm/yyyy hh:mm — es una fecha mal guardada
+  if (s.match(/\d{4}-\d{2}-\d{2}T/) || s.match(/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}/)) {
+    var d = new Date(s.includes('T') ? s : s.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$2-$1'));
+    if (!isNaN(d)) {
+      var serial = Math.round((d.getTime() - new Date('1899-12-30T00:00:00Z').getTime()) / 86400000);
+      return serial.toString();
+    }
+  }
+  return s;
+}
+
+function renderConsulta() {
+  var filtroOp = document.getElementById('filtro-operario') ? document.getElementById('filtro-operario').value : '';
+
+  var filtered = registrosData.filter(function(r) {
+    var ts = getField(r,['Marca temporal','MARCA TEMPORAL']);
+    if (!inPeriodo(ts, filtroActual)) return false;
+    if (filtroOp) {
+      var operario = getField(r,['OPERARIO registra','OPERARIO REGISTRA','OPERARIO']).toLowerCase();
+      if (!operario.includes(filtroOp.toLowerCase())) return false;
+    }
+    return true;
+  });
+
+  var placas = new Set(filtered.map(function(r){return getField(r,['PLACA']);}).filter(Boolean));
+  var ops    = new Set(filtered.map(function(r){return getField(r,['operacion','OPERACION']);}).filter(Boolean));
+  var pesoNeto = 0;
+  filtered.forEach(function(r){
+    var n = parseFloat(getField(r,['PESO NETO','peso neto','PESO NETO '])) || 0;
+    if (!n) {
+      var e = parseFloat(getField(r,['PESO ENTRADA  Según ticket','PESO ENTRADA'])) || 0;
+      var s = parseFloat(getField(r,['PESO SALIDA  Según ticket','PESO SALIDA'])) || 0;
+      n = e - s;
+    }
+    pesoNeto += n;
+  });
+
+  document.getElementById('c-total').textContent = filtered.length;
+  document.getElementById('c-peso').textContent  = fmt(pesoNeto);
+  document.getElementById('c-veh').textContent   = placas.size;
+  document.getElementById('c-ops').textContent   = ops.size;
+
+  if (filtered.length === 0) {
+    document.getElementById('tbody-consulta').innerHTML = '<tr><td colspan="11" class="empty">Sin registros para el periodo seleccionado</td></tr>';
     return;
   }
-  document.getElementById('tbody-consulta').innerHTML=filtered.slice().reverse().map(function(r){
-    var ts=r['Marca temporal']||'';
-    var fecha=ts.split(' ')[0]||'—';
-    var hora=(ts.split(' ')[1]||'').slice(0,5)||'—';
-    var e=parseFloat(String(r['PESO ENTRADA  Según ticket']||r['PESO ENTRADA']||0))||0;
-    var s=parseFloat(String(r['PESO SALIDA  Según ticket']||r['PESO SALIDA']||0))||0;
-    var neto=parseFloat(String(r['PESO NETO']||r['PESO NETO ']||0))||(e-s);
-    var tiq=(r['NUMERO TIQUETE']||'').replace(/'/g,"\\'");
-    var plc=(r['PLACA']||'').replace(/'/g,"\\'");
-    var opc=(r['OPERACION']||'').replace(/'/g,"\\'");
-    var mts=(r['Marca temporal']||'').replace(/'/g,"\\'");
+
+  document.getElementById('tbody-consulta').innerHTML = filtered.slice().reverse().map(function(r) {
+    var ts       = getField(r,['Marca temporal','MARCA TEMPORAL']);
+    var fecha    = ts.split(' ')[0] || '—';
+    var hora     = (ts.split(' ')[1]||'').slice(0,5) || '—';
+    var tiq      = limpiarTiquete(getField(r,['NUMERO TIQUETE','numero tiquete']));
+    var placa    = getField(r,['PLACA']) || '—';
+    var operacion= getField(r,['operacion','OPERACION']) || '—';
+    var residuo  = getField(r,['RESIDUO','residuo']) || '—';
+    var operario = getField(r,['OPERARIO registra','OPERARIO REGISTRA','OPERARIO']) || '—';
+    var n  = parseFloat(getField(r,['PESO NETO','peso neto'])) || 0;
+    var e  = parseFloat(getField(r,['PESO ENTRADA  Según ticket','PESO ENTRADA'])) || 0;
+    var s  = parseFloat(getField(r,['PESO SALIDA  Según ticket','PESO SALIDA'])) || 0;
+    var neto = n || (e-s);
+    var mts = ts.replace(/'/g,"\\'");
     return '<tr>'
       +'<td>'+fecha+'</td><td>'+hora+'</td>'
-      +'<td style="font-size:11px;color:var(--ink-l)">'+(r['OPERARIO']||'—')+'</td>'
-      +'<td class="bold">'+(r['NUMERO TIQUETE']||'—')+'</td>'
-      +'<td>'+(r['PLACA']||'—')+'</td>'
-      +'<td>'+(r['OPERACION']||'—')+'</td>'
-      +'<td>'+(r['RESIDUO']||'—')+'</td>'
+      +'<td style="font-size:11px;color:var(--ink-l)">'+operario+'</td>'
+      +'<td class="bold">'+tiq+'</td>'
+      +'<td>'+placa+'</td>'
+      +'<td>'+operacion+'</td>'
+      +'<td>'+residuo+'</td>'
       +'<td class="num">'+(e>0?fmt(e)+' kg':'—')+'</td>'
       +'<td class="num">'+(s>0?fmt(s)+' kg':'0')+'</td>'
       +'<td class="num" style="color:var(--navy);font-weight:700">'+(neto>0?fmt(neto)+' kg':'—')+'</td>'
-      +'<td><button onclick="abrirModalError(\''+fecha+' '+hora+'\',\''+tiq+'\',\''+plc+'\',\''+opc+'\',\''+mts+'\')" style="padding:3px 9px;font-size:10px;font-weight:700;text-transform:uppercase;border:1px solid var(--red);background:transparent;color:var(--red);cursor:pointer;font-family:\'Source Sans 3\',sans-serif;white-space:nowrap">Error</button></td>'
+      +'<td><button onclick="abrirModalError(\''+fecha+' '+hora+'\',\''+tiq.replace(/'/g,"\\'")+'\',\''+placa.replace(/'/g,"\\'")+'\',\''+operacion.replace(/'/g,"\\'")+'\',\''+mts+'\')" style="padding:3px 9px;font-size:10px;font-weight:700;text-transform:uppercase;border:1px solid var(--red);background:transparent;color:var(--red);cursor:pointer;font-family:\'Source Sans 3\',sans-serif;white-space:nowrap">Error</button></td>'
       +'</tr>';
   }).join('');
 }
