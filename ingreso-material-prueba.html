@@ -10,7 +10,6 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-serif;font-weight:300;min-height:100vh}
 
-  
 /* ── LOGIN ─────────────────────────────────────── */
 #pantalla-login{position:fixed;top:0;left:0;right:0;bottom:0;background:var(--navy);display:flex;align-items:center;justify-content:center;z-index:1000;flex-direction:column;padding:24px;overflow-y:auto}
 #pantalla-bienvenida{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:900;overflow-y:auto}
@@ -1433,14 +1432,31 @@ function renderConsulta() {
 }
 
 async function cargarRegistros() {
-  document.getElementById('tbody-consulta').innerHTML='<tr><td colspan="11" class="empty"><span class="spinner"></span>Cargando...</td></tr>';
-  var bust='&nocache='+Date.now()+Math.floor(Math.random()*100000);
-  var urls=['https://corsproxy.io/?'+encodeURIComponent(CSV_URL+bust),'https://api.allorigins.win/raw?url='+encodeURIComponent(CSV_URL)];
-  for(var i=0;i<urls.length;i++){
-    try{var res=await fetch(urls[i],{cache:'no-store'});if(res.ok){var t=await res.text();if(t.length>10){registrosData=parseCSV(t);renderConsulta();return;}}}
-    catch(e){}
+  var tbody = document.getElementById('tbody-consulta');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="11" class="empty"><span class="spinner"></span>Cargando...</td></tr>';
+  var bust = '&nocache=' + Date.now() + Math.floor(Math.random()*100000);
+  var urls = [
+    'https://corsproxy.io/?' + encodeURIComponent(CSV_URL + bust),
+    'https://api.allorigins.win/raw?url=' + encodeURIComponent(CSV_URL + bust),
+    'https://cors-anywhere.herokuapp.com/' + CSV_URL
+  ];
+  for (var i = 0; i < urls.length; i++) {
+    try {
+      var res = await fetch(urls[i], {cache:'no-store'});
+      if (res.ok) {
+        var text = await res.text();
+        if (text.length > 10) {
+          registrosData = parseCSV(text);
+          renderConsulta();
+          return;
+        }
+      }
+    } catch(e) {
+      console.log('Proxy ' + i + ' fallo:', e.message);
+    }
   }
-  document.getElementById('tbody-consulta').innerHTML='<tr><td colspan="11" class="empty">No se pudieron cargar los registros.</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="11" class="empty">No se pudieron cargar los registros. Verifique su conexion y presione Actualizar.</td></tr>';
 }
 
 // ── MODAL ERROR ───────────────────────────────────
