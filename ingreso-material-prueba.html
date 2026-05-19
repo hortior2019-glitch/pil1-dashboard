@@ -10,8 +10,6 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-serif;font-weight:300;min-height:100vh}
 
-  
-  
 /* ── LOGIN ─────────────────────────────────────── */
 #pantalla-login{position:fixed;top:0;left:0;right:0;bottom:0;background:var(--navy);display:flex;align-items:center;justify-content:center;z-index:1000;flex-direction:column;padding:24px;overflow-y:auto}
 #pantalla-bienvenida{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:900;overflow-y:auto}
@@ -1394,9 +1392,8 @@ function renderConsulta() {
   var ops=new Set(filtered.map(function(r){return r['OPERACION'];}).filter(Boolean));
   var pesoNeto=0;
   filtered.forEach(function(r){
-    var e=parseFloat((r['PESO ENTRADA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
-    var s=parseFloat((r['PESO SALIDA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
-    pesoNeto+=(e-s);
+    var n=parseFloat(String(r['PESO NETO']||r['PESO NETO ']||0))||0;
+    pesoNeto+=n;
   });
   document.getElementById('c-total').textContent=filtered.length;
   document.getElementById('c-peso').textContent=fmt(pesoNeto);
@@ -1411,9 +1408,9 @@ function renderConsulta() {
     var ts=r['Marca temporal']||'';
     var fecha=ts.split(' ')[0]||'—';
     var hora=(ts.split(' ')[1]||'').slice(0,5)||'—';
-    var e=parseFloat((r['PESO ENTRADA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
-    var s=parseFloat((r['PESO SALIDA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
-    var neto=e-s;
+    var e=parseFloat(String(r['PESO ENTRADA  Según ticket']||r['PESO ENTRADA']||0))||0;
+    var s=parseFloat(String(r['PESO SALIDA  Según ticket']||r['PESO SALIDA']||0))||0;
+    var neto=parseFloat(String(r['PESO NETO']||r['PESO NETO ']||0))||(e-s);
     var tiq=(r['NUMERO TIQUETE']||'').replace(/'/g,"\\'");
     var plc=(r['PLACA']||'').replace(/'/g,"\\'");
     var opc=(r['OPERACION']||'').replace(/'/g,"\\'");
@@ -1442,18 +1439,19 @@ async function cargarRegistros() {
     var json = await res.json();
     if (json.success && json.data) {
       registrosData = json.data.map(function(r) {
-        // Mapear campos del JSON a los nombres que usa renderConsulta
         return {
-          'Marca temporal': r['Marca temporal']||'',
-          'NUMERO TIQUETE': r['NUMERO TIQUETE']||'',
-          'PLACA': r['PLACA']||'',
+          'Marca temporal':       r['Marca temporal']||'',
+          'NUMERO TIQUETE':       r['NUMERO TIQUETE']||'',
+          'PLACA':                r['PLACA']||'',
           'CONDUCTOR -  PRIME NOMBRE Y PRIMER APELLIDO': r['CONDUCTOR -  PRIME NOMBRE Y PRIMER APELLIDO']||'',
-          'OPERACION': r['OPERACION']||'',
-          'RESIDUO': r['RESIDUO']||'',
-          'PESO ENTRADA  Según ticket': r['PESO ENTRADA  Según ticket']||'0',
-          'PESO SALIDA  Según ticket': r['PESO SALIDA  Según ticket']||'0',
-          'OPERARIO registra': r['OPERARIO registra']||'',
-          'ALERTAS ': r['ALERTAS ']||r['ALERTAS']||''
+          'OPERACION':            r['OPERACION']||'',
+          'RESIDUO':              r['RESIDUO']||'',
+          'PESO ENTRADA  Según ticket': r['PESO ENTRADA  Según ticket']||0,
+          'PESO SALIDA  Según ticket':  r['PESO SALIDA  Según ticket']||0,
+          'PESO NETO':            r['PESO NETO']||0,
+          'OPERARIO registra':    r['OPERARIO registra']||'',
+          'OPERARIO':             r['OPERARIO registra']||r['OPERARIO']||'',
+          'ALERTAS ':             r['ALERTAS ']||r['ALERTAS']||''
         };
       });
       renderConsulta();
