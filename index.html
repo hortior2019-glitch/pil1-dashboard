@@ -18,7 +18,6 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-serif;font-weight:300;min-height:100vh}
 
-  
 /* TOPBAR */
 .topbar{background:var(--navy);color:white;padding:20px 40px;border-bottom:4px solid var(--gold);display:flex;justify-content:space-between;align-items:flex-start;position:sticky;top:0;z-index:100}
 .tb-org{font-size:10px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,.5);margin-bottom:4px}
@@ -660,27 +659,25 @@ async function cargarUsuariosDash() {
   try {
     const rows = await fetchCSV(USUARIOS_CSV_DASH);
     dashUsuariosDB = rows.map(r => ({
-      usuario:    (r['USUARIO']       || r['usuario']    || '').trim().toLowerCase(),
-      contrasena: (r['CONTRASENA']    || r['contrasena'] || '').trim(),
-      nombre:     (r['NOMBRE_COMPLETO']|| r['NOMBRE']    || r['nombre'] || '').trim(),
-      activo:     ['si','true','yes','1'].includes((r['ACTIVO'] || r['activo'] || '').toString().trim().toLowerCase()),
+      usuario:    (r['USUARIO']        || r['usuario']    || '').trim().toLowerCase(),
+      contrasena: (r['CONTRASENA']     || r['contrasena'] || '').toString().trim(),
+      nombre:     (r['NOMBRE_COMPLETO']|| r['NOMBRE']     || r['nombre'] || '').trim(),
+      activo:     ['si','true','yes','1'].includes((r['ACTIVO']   || r['activo']   || '').toString().trim().toLowerCase()),
       dashboard:  ['si','true','yes','1'].includes((r['ACTIVO-I'] || r['activo-i'] || '').toString().trim().toLowerCase())
     }));
     console.log('Usuarios cargados:', dashUsuariosDB);
   } catch(e) {
     console.error('Error cargando usuarios:', e);
     dashUsuariosDB = [
-      {usuario:'alexander', contrasena:'pil2026', nombre:'Alexander Velásquez Benavides', activo:true, dashboard:false},
-      {usuario:'hidalgo',   contrasena:'pil2026', nombre:'Idaldo Madrid Lara',           activo:true, dashboard:false},
-      {usuario:'deivi',     contrasena:'pil2026', nombre:'Deivi José Oliveros Peinado',  activo:true, dashboard:false},
-      {usuario:'saul',      contrasena:'pil2026', nombre:'Saúl García Sandoval',         activo:true, dashboard:true}
+      {usuario:'saul',     contrasena:'pil2026',      nombre:'Saúl García Sandoval', activo:true, dashboard:true},
+      {usuario:'gerencia', contrasena:'Empathy2026*', nombre:'Felipe Sanchez',        activo:true, dashboard:true}
     ];
   }
 }
 
 function intentarLoginDash() {
   const usuario    = (document.getElementById('dash-usuario').value||'').replace(/^[\s\u00A0\u200B]+|[\s\u00A0\u200B]+$/g,'').toLowerCase();
-  const contrasena = (document.getElementById('dash-pass').value||'').trim();
+  const contrasena = (document.getElementById('dash-pass').value||'').toString().trim();
   const errEl      = document.getElementById('dash-login-error');
 
   if (!usuario || !contrasena) {
@@ -688,6 +685,16 @@ function intentarLoginDash() {
     errEl.style.display = 'block';
     return;
   }
+
+  // Si los usuarios aún no cargaron, reintentar en 500ms
+  if (dashUsuariosDB.length === 0) {
+    errEl.textContent = 'Cargando datos, intente de nuevo...';
+    errEl.style.display = 'block';
+    setTimeout(intentarLoginDash, 800);
+    return;
+  }
+
+  console.log('Intentando login:', usuario, '| DB:', dashUsuariosDB.map(u=>u.usuario+'='+u.contrasena+'|activo:'+u.activo+'|dash:'+u.dashboard));
 
   const user = dashUsuariosDB.find(u => u.usuario === usuario && u.contrasena === contrasena && u.activo);
 
