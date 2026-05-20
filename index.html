@@ -18,7 +18,6 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-serif;font-weight:300;min-height:100vh}
 
-  
 /* TOPBAR */
 .topbar{background:var(--navy);color:white;padding:20px 40px;border-bottom:4px solid var(--gold);display:flex;justify-content:space-between;align-items:flex-start;position:sticky;top:0;z-index:100}
 .tb-org{font-size:10px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,.5);margin-bottom:4px}
@@ -380,7 +379,28 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
     <div class="sec-sub" id="clientes-period">Hoy</div>
   </div>
 
-  <!-- KPIs resumen -->
+  <!-- FILTROS EXTRA: rango horario + operacion -->
+  <div style="background:var(--s2);border:1px solid var(--rule-l);padding:14px 18px;margin-bottom:20px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <label style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-m)">Día específico</label>
+      <input type="date" id="cli-fecha" onchange="renderClientesFiltro()" style="padding:6px 10px;font-size:12px;border:1px solid var(--rule);background:var(--white);font-family:'Source Sans 3',sans-serif;color:var(--ink)">
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <label style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-m)">Hora desde</label>
+      <input type="time" id="cli-hora-desde" onchange="renderClientesFiltro()" style="padding:6px 10px;font-size:12px;border:1px solid var(--rule);background:var(--white);font-family:'Source Sans 3',sans-serif;color:var(--ink)">
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <label style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-m)">Hora hasta</label>
+      <input type="time" id="cli-hora-hasta" onchange="renderClientesFiltro()" style="padding:6px 10px;font-size:12px;border:1px solid var(--rule);background:var(--white);font-family:'Source Sans 3',sans-serif;color:var(--ink)">
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <label style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-m)">Operación</label>
+      <select id="cli-operacion" onchange="renderClientesFiltro()" style="padding:6px 10px;font-size:12px;border:1px solid var(--rule);background:var(--white);font-family:'Source Sans 3',sans-serif;color:var(--ink);min-width:160px">
+        <option value="">Todas las operaciones</option>
+      </select>
+    </div>
+    <button onclick="limpiarFiltrosCliente()" style="padding:6px 14px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--rule);background:var(--white);color:var(--ink-m);cursor:pointer;font-family:'Source Sans 3',sans-serif;align-self:flex-end">Limpiar</button>
+  </div>
   <div class="kpi-grid" id="kpi-clientes" style="margin-bottom:24px;"></div>
 
   <!-- GRAFICOS -->
@@ -901,6 +921,29 @@ function showPanel(id, el) {
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('panel-'+id).classList.add('active');
   el.classList.add('active');
+  // Al salir de clientes, restaurar botones de periodo
+  if (id !== 'clientes') restaurarBotonesPeriodo();
+}
+
+function desactivarBotonesPeriodo() {
+  document.querySelectorAll('.fbtn').forEach(b => {
+    b.style.opacity = '0.35';
+    b.style.pointerEvents = 'none';
+  });
+}
+
+function restaurarBotonesPeriodo() {
+  document.querySelectorAll('.fbtn').forEach(b => {
+    b.style.opacity = '';
+    b.style.pointerEvents = '';
+  });
+}
+
+function hayFiltroExtraActivo() {
+  return document.getElementById('cli-fecha').value ||
+         document.getElementById('cli-hora-desde').value ||
+         document.getElementById('cli-hora-hasta').value ||
+         document.getElementById('cli-operacion').value;
 }
 
 // ── FILTROS ───────────────────────────────────────
@@ -976,13 +1019,84 @@ function hexToRgba(hex, alpha) {
 }
 
 // ── RENDER CLIENTES ───────────────────────────────
+function limpiarFiltrosCliente() {
+  document.getElementById('cli-fecha').value = '';
+  document.getElementById('cli-hora-desde').value = '';
+  document.getElementById('cli-hora-hasta').value = '';
+  document.getElementById('cli-operacion').value = '';
+  restaurarBotonesPeriodo();
+  renderClientesFiltro();
+}
+
+function renderClientesFiltro() {
+  if (hayFiltroExtraActivo()) {
+    desactivarBotonesPeriodo();
+  } else {
+    restaurarBotonesPeriodo();
+  }
+  renderClientes(dataIngreso, currentFilter);
+}
+
+function poblarSelectOperaciones(data) {
+  const sel = document.getElementById('cli-operacion');
+  const current = sel.value;
+  const ops = [...new Set(data.map(r => r['OPERACION']).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">Todas las operaciones</option>' +
+    ops.map(op => `<option value="${op}"${op===current?' selected':''}>${op}</option>`).join('');
+}
+
 function renderClientes(data, filter) {
-  const filtered = data.filter(r => {
+  // Filtro de periodo global
+  let filtered = data.filter(r => {
     const dateField = r['Marca temporal'] || r['FECHA DISPOSICION PLANTA'] || '';
     return inPeriod(dateField, filter);
   });
 
-  const lbl = { hora:'Ultima hora', hoy:'Hoy', semana:'Esta semana', mes:'Este mes', total:'Total acumulado' }[filter];
+  // Poblar select de operaciones con datos del periodo
+  poblarSelectOperaciones(filtered);
+
+  // Filtros extra
+  const fechaFiltro   = document.getElementById('cli-fecha').value;       // 'YYYY-MM-DD'
+  const horaDesde     = document.getElementById('cli-hora-desde').value;  // 'HH:MM'
+  const horaHasta     = document.getElementById('cli-hora-hasta').value;  // 'HH:MM'
+  const opFiltro      = document.getElementById('cli-operacion').value;
+
+  if (fechaFiltro || horaDesde || horaHasta) {
+    filtered = filtered.filter(r => {
+      const marcaTemporal = r['Marca temporal'] || '';
+      if (!marcaTemporal) return false;
+      const dt = new Date(marcaTemporal);
+      if (isNaN(dt)) return false;
+
+      // Filtro por día
+      if (fechaFiltro) {
+        const yyyy = dt.getFullYear();
+        const mm   = String(dt.getMonth()+1).padStart(2,'0');
+        const dd   = String(dt.getDate()).padStart(2,'0');
+        if (`${yyyy}-${mm}-${dd}` !== fechaFiltro) return false;
+      }
+
+      // Filtro por rango horario
+      if (horaDesde || horaHasta) {
+        const hh = String(dt.getHours()).padStart(2,'0');
+        const mi = String(dt.getMinutes()).padStart(2,'0');
+        const horaReg = `${hh}:${mi}`;
+        if (horaDesde && horaReg < horaDesde) return false;
+        if (horaHasta && horaReg > horaHasta) return false;
+      }
+
+      return true;
+    });
+  }
+
+  if (opFiltro) {
+    filtered = filtered.filter(r => (r['OPERACION'] || '') === opFiltro);
+  }
+
+  const hayFiltroExtra = fechaFiltro || horaDesde || horaHasta || opFiltro;
+  const lbl = hayFiltroExtra
+    ? (fechaFiltro ? fechaFiltro : '') + (horaDesde||horaHasta ? ` ${horaDesde||'00:00'}–${horaHasta||'23:59'}` : '') + (opFiltro ? ` · ${opFiltro}` : '')
+    : { hora:'Ultima hora', hoy:'Hoy', semana:'Esta semana', mes:'Este mes', total:'Total acumulado' }[filter];
   document.getElementById('clientes-period').textContent = lbl;
 
   // Agrupar por operacion
