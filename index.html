@@ -1040,20 +1040,25 @@ function poblarSelectOperaciones(data) {
 }
 
 function renderClientes(data, filter) {
-  // Filtro de periodo global
-  let filtered = data.filter(r => {
-    const dateField = r['Marca temporal'] || r['FECHA DISPOSICION PLANTA'] || '';
-    return inPeriod(dateField, filter);
-  });
+  // Filtros extra (leerlos primero)
+  const fechaFiltro   = document.getElementById('cli-fecha').value;
+  const horaDesde     = document.getElementById('cli-hora-desde').value;
+  const horaHasta     = document.getElementById('cli-hora-hasta').value;
+  const opFiltro      = document.getElementById('cli-operacion').value;
+
+  // Si hay fecha específica, ignorar el filtro de periodo global
+  let filtered;
+  if (fechaFiltro) {
+    filtered = data.slice(); // todos los datos
+  } else {
+    filtered = data.filter(r => {
+      const dateField = r['Marca temporal'] || r['FECHA DISPOSICION PLANTA'] || '';
+      return inPeriod(dateField, filter);
+    });
+  }
 
   // Poblar select de operaciones con datos del periodo
   poblarSelectOperaciones(filtered);
-
-  // Filtros extra
-  const fechaFiltro   = document.getElementById('cli-fecha').value;       // 'YYYY-MM-DD'
-  const horaDesde     = document.getElementById('cli-hora-desde').value;  // 'HH:MM'
-  const horaHasta     = document.getElementById('cli-hora-hasta').value;  // 'HH:MM'
-  const opFiltro      = document.getElementById('cli-operacion').value;
 
   if (fechaFiltro || horaDesde || horaHasta) {
     filtered = filtered.filter(r => {
@@ -1372,11 +1377,15 @@ function renderChartClientes(data) {
   const coloresPeso    = sortedPesos.map(([op]) => getClientColor(op));
 
   setTimeout(() => {
+    ['chart-clientes-pie','chart-peso-pie','chart-residuos-pie'].forEach(id => {
+      const c = document.getElementById(id);
+      if (c) { c.width = 200; c.height = 200; }
+    });
     drawPie('chart-clientes-pie','legend-clientes-pie', sortedGrupos, coloresCliente, 'pct+count');
     drawPie('chart-peso-pie','legend-peso-pie', sortedPesos.map(([k,v])=>[k,Math.round(v)]), coloresPeso, 'pct+kg');
     drawPie('chart-residuos-pie','legend-residuos-pie', sortedRes, CHART_COLORS);
     drawBar('chart-dias-bar', Object.keys(diasCnt), Object.values(diasCnt), '#1a5c35');
-  }, 100);
+  }, 250);
 }
 
 function renderChartHE(data) {
