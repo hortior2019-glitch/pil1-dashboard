@@ -38,8 +38,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 .field-warn{font-size:10px;color:var(--orange);margin-top:2px;font-weight:600;display:none}
 .field-err{font-size:10px;color:var(--red);margin-top:2px;font-weight:600;display:none}
 
-  
-  
 /* NOTICE */
 .notice{padding:11px 14px;margin-bottom:12px;border-left:3px solid var(--navy);background:var(--blue-l)}
 .notice.warn{border-color:var(--orange);background:var(--orange-l)}
@@ -199,6 +197,13 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
           <input type="text" id="ultimos_cuatro_cedula" placeholder="" oninput="this.value=this.value.replace(/[^0-9]/g,'')" maxlength="12">
         </div>
       </div>
+      <div class="form-row single">
+        <div class="form-group">
+          <label>Celular del conductor <span class="required">*</span></label>
+          <input type="tel" id="conductor_celular" placeholder="Ej: 3001234567" oninput="this.value=this.value.replace(/[^0-9]/g,'')" maxlength="10">
+          <div class="field-hint">Numero de 10 digitos sin espacios</div>
+        </div>
+      </div>
       <!-- Conductor acompañado - SI/NO -->
       <div style="margin-top:10px;padding:12px 14px;background:var(--s2);border:2px solid #2a2a2a;">
         <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);margin-bottom:8px">El conductor viene acompañado en la cabina</div>
@@ -265,7 +270,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
             <option>Tía Lola</option>
             <option>Mc Cain</option>
             <option>Pomar</option>
-            <option>Pomar NEW</option>
+            <option>Pomar Horti</option>
             <option>Prodensa - Centro Chía</option>
             <option>Prodensa - Corona</option>
             <option>Prodensa - CPNS</option>
@@ -324,6 +329,29 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
           <label>Hora de salida del ticket <span class="required">*</span></label>
           <input type="time" id="pom-hora-salida">
           <div class="field-hint">Se usa para detectar viajes distintos con mismo peso y placa</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- POMAR HORTI -->
+  <div class="op-section" id="op-pomar-horti">
+    <div class="section-hdr">
+      <span class="section-badge" style="background:var(--green-l);color:var(--green)">Pomar Horti — Lodos PTAR</span>
+    </div>
+    <div class="section-body">
+      <div class="notice warn" style="margin-bottom:12px">
+        <div class="notice-title">Hora del baucher</div>
+        <div class="notice-text">Registre la hora inicial y final que aparece en el baucher de Pomar Horti.</div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Hora inicial del baucher <span class="required">*</span></label>
+          <input type="time" id="pomar-horti-hora-ini">
+        </div>
+        <div class="form-group">
+          <label>Hora final del baucher <span class="required">*</span></label>
+          <input type="time" id="pomar-horti-hora-fin">
         </div>
       </div>
     </div>
@@ -736,7 +764,7 @@ const RESIDUOS_POR_OP = {
   'tia lola':     ['Equinaza'],
   'mc cain':      ['Orgánicos y podas','Hollejo','Mixto (orgánicos y ollejo)'],
   'pomar':        ['Suero lácteo'],
-  'pomar new':    ['Aguas residuales','Lodo orgánico biodegradable'],
+  'pomar horti': ['Lodos PTAR','Otro'],
   'brinsa':       ['Lodo orgánico biodegradable'],
   'prodensa':     ['PTAR','Retal madera','Retal madera aglomerado','Compostaje'],
   'reciclene':    ['PTAR'],
@@ -753,7 +781,7 @@ const RESIDUOS_DEFAULT = ['Aglomerado','Aguas residuales','Compostaje','Contenid
 function getResiduesByOp(op) {
   if (!op) return RESIDUOS_DEFAULT;
   var opN = op.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
-  // Verificar primero claves mas especificas (pomar new antes que pomar)
+  // Verificar primero claves mas especificas (pomar horti antes que pomar)
   var keys = Object.keys(RESIDUOS_POR_OP).sort(function(a,b){ return b.length - a.length; });
   for (var i=0; i<keys.length; i++) {
     if (opN.includes(keys[i])) return RESIDUOS_POR_OP[keys[i]].concat(['Otro']);
@@ -767,6 +795,7 @@ const OPS_CONDUCTOR_SOLO = ['familia','hortiorganic'];
 const OP_MAP = {
   'bavaria': 'op-bavaria',
   'pomar': 'op-pomar',
+  'pomar horti': 'op-pomar-horti',
   'alquería cv': 'op-alqueria',
   'alqueria cv': 'op-alqueria',
   'familia': 'op-familia',
@@ -1112,6 +1141,9 @@ async function enviarFormulario() {
   if (!fecha)     { mostrarStatus('error','Campo requerido','Seleccione la fecha.'); return; }
   if (!placa)     { mostrarStatus('error','Campo requerido','Ingrese la placa del vehiculo.'); return; }
   if (!conductor) { mostrarStatus('error','Campo requerido','Ingrese el nombre del conductor.'); return; }
+
+  var conductorCelular = document.getElementById('conductor_celular').value.trim();
+  if (!conductorCelular || conductorCelular.length < 10) { mostrarStatus('error','Campo requerido','Ingrese el celular del conductor (10 digitos).'); return; }
   if (!pesoE)     { mostrarStatus('error','Campo requerido','Ingrese el peso del vehiculo cargado.'); return; }
   if (!operacion) { mostrarStatus('error','Campo requerido','Seleccione la operacion de la lista.'); return; }
   if (!residuo)   { mostrarStatus('error','Campo requerido','Seleccione el tipo de residuo de la lista.'); return; }
@@ -1167,9 +1199,16 @@ async function enviarFormulario() {
     var bavHora = document.getElementById('bav-hora-salida') ? document.getElementById('bav-hora-salida').value : '';
     if (bavHora) datosOp.push('Hora salida baucher: '+bavHora);
   }
-  if (opLow.includes('pomar')) {
+  if (opLow.includes('pomar') && !opLow.includes('horti')) {
     var pomHora = document.getElementById('pom-hora-salida') ? document.getElementById('pom-hora-salida').value : '';
     if (pomHora) datosOp.push('Hora salida ticket: '+pomHora);
+  }
+  if (opLow.includes('pomar horti')) {
+    var phIni = document.getElementById('pomar-horti-hora-ini') ? document.getElementById('pomar-horti-hora-ini').value : '';
+    var phFin = document.getElementById('pomar-horti-hora-fin') ? document.getElementById('pomar-horti-hora-fin').value : '';
+    if (!phIni || !phFin) { mostrarStatus('error','Campo requerido','Ingrese la hora inicial y final del baucher Pomar Horti.'); return; }
+    datosOp.push('Hora inicial baucher: '+phIni);
+    datosOp.push('Hora final baucher: '+phFin);
   }
   if (opLow.includes('alquer')) {
     var alqTipo = document.getElementById('alq-tipo')         ? document.getElementById('alq-tipo').value         : '';
@@ -1246,6 +1285,7 @@ async function enviarFormulario() {
     placa:                 placa,
     tipo_flota:            tipoFlota,
     conductor:             conductor,
+    conductor_celular:     conductorCelular,
     ultimos_cuatro_cedula: document.getElementById('ultimos_cuatro_cedula').value,
     peso_entrada:          pesoE,
     peso_salida:           document.getElementById('peso_salida').value||'0',
@@ -1286,7 +1326,7 @@ async function enviarFormulario() {
 
 // ── RESET ─────────────────────────────────────────
 function resetFormulario() {
-  ['numero_tiquete','placa','conductor','ultimos_cuatro_cedula','peso_entrada','observacion','seccion_depositaria'].forEach(function(id){
+  ['numero_tiquete','placa','conductor','conductor_celular','ultimos_cuatro_cedula','peso_entrada','observacion','seccion_depositaria'].forEach(function(id){
     var el=document.getElementById(id); if(el) el.value='';
   });
   document.getElementById('peso_salida').value='';
