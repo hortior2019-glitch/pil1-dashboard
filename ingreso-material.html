@@ -38,7 +38,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 .field-warn{font-size:10px;color:var(--orange);margin-top:2px;font-weight:600;display:none}
 .field-err{font-size:10px;color:var(--red);margin-top:2px;font-weight:600;display:none}
 
-  
 /* NOTICE */
 .notice{padding:11px 14px;margin-bottom:12px;border-left:3px solid var(--navy);background:var(--blue-l)}
 .notice.warn{border-color:var(--orange);background:var(--orange-l)}
@@ -347,11 +346,11 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label>Hora inicial del baucher <span class="required">*</span></label>
+          <label>Hora inicial del baucher</label>
           <input type="time" id="pomar-horti-hora-ini">
         </div>
         <div class="form-group">
-          <label>Hora final del baucher <span class="required">*</span></label>
+          <label>Hora final del baucher</label>
           <input type="time" id="pomar-horti-hora-fin">
         </div>
       </div>
@@ -877,11 +876,20 @@ function onOperacionChange(op) {
     + residuosOp.map(function(r){ return '<option value="'+r+'">'+r+'</option>'; }).join('');
   document.getElementById('residuo-otra-wrap').style.display = 'none';
 
-  // Secciones especificas por operacion
+  // Secciones especificas por operacion — buscar clave mas especifica primero
   var opLow = op ? op.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"") : '';
   document.querySelectorAll('.op-section').forEach(function(s){ s.classList.remove('visible'); });
-  for (var key in OP_MAP) {
-    if (opLow.includes(key)) { document.getElementById(OP_MAP[key]).classList.add('visible'); break; }
+  // Pomar Horti tiene prioridad explícita sobre Pomar
+  if (opLow.includes('pomar horti') || opLow.includes('pomar horti')) {
+    document.getElementById('op-pomar-horti').classList.add('visible');
+  } else {
+    var keysSorted = Object.keys(OP_MAP).sort(function(a,b){ return b.length - a.length; });
+    for (var i = 0; i < keysSorted.length; i++) {
+      if (opLow.includes(keysSorted[i])) {
+        document.getElementById(OP_MAP[keysSorted[i]]).classList.add('visible');
+        break;
+      }
+    }
   }
   if (opLow.includes('alquer')) cargarConsecutivosAlqueria();
 }
@@ -1025,7 +1033,7 @@ function validarTiqueteOp() {
   var val = document.getElementById('numero_tiquete').value;
   var warn = document.getElementById('tiquete-warn');
   warn.style.display = 'none';
-  if (op.includes('pomar') && val.replace(/\D/g,'').length < 6) {
+  if (op.includes('pomar') && !op.includes('horti') && val.replace(/\D/g,'').length < 6) {
     warn.textContent = 'Pomar requiere codigo de 6 digitos — verifique el recibo';
     warn.style.display = 'block';
   }
@@ -1152,7 +1160,7 @@ async function enviarFormulario() {
   var opLow = operacion.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
 
   // Pomar: tiquete debe tener 6 digitos
-  if (opLow.includes('pomar') && tiquete.replace(/\D/g,'').length < 6) {
+  if (opLow.includes('pomar') && !opLow.includes('horti') && tiquete.replace(/\D/g,'').length < 6) {
     mostrarStatus('error','Codigo Pomar incompleto','El codigo de Pomar debe tener 6 digitos completos. Verifique el ticket fisico y no ingrese solo los ultimos 4.');
     return;
   }
@@ -1207,9 +1215,8 @@ async function enviarFormulario() {
   if (opLow.includes('pomar horti')) {
     var phIni = document.getElementById('pomar-horti-hora-ini') ? document.getElementById('pomar-horti-hora-ini').value : '';
     var phFin = document.getElementById('pomar-horti-hora-fin') ? document.getElementById('pomar-horti-hora-fin').value : '';
-    if (!phIni || !phFin) { mostrarStatus('error','Campo requerido','Ingrese la hora inicial y final del baucher Pomar Horti.'); return; }
-    datosOp.push('Hora inicial baucher: '+phIni);
-    datosOp.push('Hora final baucher: '+phFin);
+    if (phIni) datosOp.push('Hora inicial baucher: '+phIni);
+    if (phFin) datosOp.push('Hora final baucher: '+phFin);
   }
   if (opLow.includes('alquer')) {
     var alqTipo = document.getElementById('alq-tipo')         ? document.getElementById('alq-tipo').value         : '';
