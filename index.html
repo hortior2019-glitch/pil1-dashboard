@@ -682,19 +682,39 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 // ── LOGIN DASHBOARD ───────────────────────────────
 const LOG_ACCESOS_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTyPle5xdPlmQX9NMV_your_published_csv/pub?gid=0&single=true&output=csv';
 const LOG_ACCESOS_URL = 'https://script.google.com/macros/s/AKfycbxZpFHLbmGpE9LuASyf-0iWvFWtzUO3HZPjk6u68Yp76E9Fip2wrviCF6z2iAuWMMqZHA/exec';
+const USUARIOS_CSV_DASH = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSU6sHBRI35p5dMo7JlkeWW9Wn648agSah05G-mD6xqA-NUjLAgg7TBynyZaBdQ3WNNXTFINsRNhgQ-/pub?gid=0&single=true&output=csv';
+let dashUsuariosDB = [];
 
-const DASH_USUARIOS = [
-  {usuario:'alexander', contrasena:'pil2026', nombre:'Alexander Velásquez Benavides'},
-  {usuario:'hidalgo',   contrasena:'pil2026', nombre:'Idaldo Madrid Lara'},
-  {usuario:'deivi',     contrasena:'pil2026', nombre:'Deivi José Oliveros Peinado'},
-  {usuario:'saul',      contrasena:'pil2026', nombre:'Saúl García Sandoval'}
-];
+async function cargarUsuariosDash() {
+  try {
+    const res  = await fetch(USUARIOS_CSV_DASH, {cache:'no-store'});
+    const text = await res.text();
+    const rows = parseCSV(text);
+    dashUsuariosDB = rows.map(r => ({
+      usuario:    (r['USUARIO']        || '').toString().trim().toLowerCase(),
+      contrasena: (r['CONTRASENA']     || '').toString().trim(),
+      nombre:     (r['NOMBRE_COMPLETO']|| r['NOMBRE'] || '').trim(),
+      activo:     ['si','true','yes','1'].includes((r['ACTIVO']   ||'').toString().trim().toLowerCase()),
+      dashboard:  ['si','true','yes','1'].includes((r['ACTIVO-I'] ||'').toString().trim().toLowerCase())
+    }));
+    console.log('Usuarios cargados:', dashUsuariosDB);
+  } catch(e) {
+    console.error('Error cargando usuarios:', e);
+    dashUsuariosDB = [
+      {usuario:'saul',         contrasena:'pil2026',      nombre:'Saúl García Sandoval',  activo:true, dashboard:true},
+      {usuario:'juan',         contrasena:'1',            nombre:'Juan Camilo Gomez',      activo:true, dashboard:true},
+      {usuario:'gerencia',     contrasena:'Empathy2026*', nombre:'Felipe Sanchez',         activo:true, dashboard:true},
+      {usuario:'sub-gerencia', contrasena:'Empathy2026*', nombre:'Lina Paola Scholl',      activo:true, dashboard:true},
+      {usuario:'auditoria',    contrasena:'Empathy2026*', nombre:'Lizet Sanchez',          activo:true, dashboard:true}
+    ];
+  }
+}
 
 let dataAccesos = [];
 
 function intentarLoginDash() {
   const usuario    = (document.getElementById('dash-usuario').value||'').replace(/^[\s\u00A0\u200B]+|[\s\u00A0\u200B]+$/g,'').toLowerCase();
-  const contrasena = (document.getElementById('dash-pass').value||'').trim();
+  const contrasena = (document.getElementById('dash-pass').value||'').toString().trim();
   const errEl      = document.getElementById('dash-login-error');
 
   if (!usuario || !contrasena) {
@@ -703,16 +723,33 @@ function intentarLoginDash() {
     return;
   }
 
-  const user = DASH_USUARIOS.find(u => u.usuario === usuario && u.contrasena === contrasena);
-  if (user) {
-    errEl.style.display = 'none';
-    document.getElementById('dash-login').style.display = 'none';
-    document.getElementById('dash-app').style.display = 'block';
-    loadAllData();
-  } else {
+  if (dashUsuariosDB.length === 0) {
+    errEl.textContent = 'Cargando datos, intente de nuevo...';
+    errEl.style.display = 'block';
+    setTimeout(intentarLoginDash, 800);
+    return;
+  }
+
+  console.log('Intentando login:', usuario, '| DB:', dashUsuariosDB.map(u=>u.usuario+'='+u.contrasena+'|dash:'+u.dashboard));
+
+  const user = dashUsuariosDB.find(u => u.usuario === usuario && u.contrasena === contrasena && u.activo);
+
+  if (!user) {
     errEl.textContent = 'Usuario o contraseña incorrectos.';
     errEl.style.display = 'block';
+    return;
   }
+
+  if (!user.dashboard) {
+    errEl.textContent = 'No tienes permiso para acceder al dashboard.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  errEl.style.display = 'none';
+  document.getElementById('dash-login').style.display = 'none';
+  document.getElementById('dash-app').style.display = 'block';
+  loadAllData();
 }
 
 // ── CONTROL ACCESOS ───────────────────────────────
@@ -2187,6 +2224,7 @@ function renderOportunidades(data) {
 // ── INICIO ────────────────────────────────────────
 renderOps(OPS);
 renderTablaEmp(EMPLEADOS_DB);
+cargarUsuariosDash();
 loadAllData();
 setInterval(loadAllData, AUTO_REFRESH_MS);
 </script>
