@@ -197,13 +197,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
           <input type="text" id="ultimos_cuatro_cedula" placeholder="" oninput="this.value=this.value.replace(/[^0-9]/g,'')" maxlength="12">
         </div>
       </div>
-      <div class="form-row single">
-        <div class="form-group">
-          <label>Celular del conductor <span class="required">*</span></label>
-          <input type="tel" id="conductor_celular" placeholder="Ej: 3001234567" oninput="this.value=this.value.replace(/[^0-9]/g,'')" maxlength="10">
-          <div class="field-hint">Numero de 10 digitos sin espacios</div>
-        </div>
-      </div>
       <!-- Conductor acompañado - SI/NO -->
       <div style="margin-top:10px;padding:12px 14px;background:var(--s2);border:2px solid #2a2a2a;">
         <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);margin-bottom:8px">El conductor viene acompañado en la cabina</div>
@@ -270,7 +263,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
             <option>Tía Lola</option>
             <option>Mc Cain</option>
             <option>Pomar</option>
-            <option>Pomar Horti</option>
+            <option>Pomar NEW</option>
             <option>Prodensa - Centro Chía</option>
             <option>Prodensa - Corona</option>
             <option>Prodensa - CPNS</option>
@@ -329,29 +322,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
           <label>Hora de salida del ticket <span class="required">*</span></label>
           <input type="time" id="pom-hora-salida">
           <div class="field-hint">Se usa para detectar viajes distintos con mismo peso y placa</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- POMAR HORTI -->
-  <div class="op-section" id="op-pomar-horti">
-    <div class="section-hdr">
-      <span class="section-badge" style="background:var(--green-l);color:var(--green)">Pomar Horti — Lodos PTAR</span>
-    </div>
-    <div class="section-body">
-      <div class="notice warn" style="margin-bottom:12px">
-        <div class="notice-title">Hora del baucher</div>
-        <div class="notice-text">Registre la hora inicial y final que aparece en el baucher de Pomar Horti.</div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Hora inicial del baucher</label>
-          <input type="time" id="pomar-horti-hora-ini">
-        </div>
-        <div class="form-group">
-          <label>Hora final del baucher</label>
-          <input type="time" id="pomar-horti-hora-fin">
         </div>
       </div>
     </div>
@@ -764,7 +734,7 @@ const RESIDUOS_POR_OP = {
   'tia lola':     ['Equinaza'],
   'mc cain':      ['Orgánicos y podas','Hollejo','Mixto (orgánicos y ollejo)'],
   'pomar':        ['Suero lácteo'],
-  'pomar horti': ['Lodos PTAR','Otro'],
+  'pomar new':    ['Aguas residuales','Lodo orgánico biodegradable'],
   'brinsa':       ['Lodo orgánico biodegradable'],
   'prodensa':     ['PTAR','Retal madera','Retal madera aglomerado','Compostaje'],
   'reciclene':    ['PTAR'],
@@ -781,7 +751,7 @@ const RESIDUOS_DEFAULT = ['Aglomerado','Aguas residuales','Compostaje','Contenid
 function getResiduesByOp(op) {
   if (!op) return RESIDUOS_DEFAULT;
   var opN = op.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
-  // Verificar primero claves mas especificas (pomar horti antes que pomar)
+  // Verificar primero claves mas especificas (pomar new antes que pomar)
   var keys = Object.keys(RESIDUOS_POR_OP).sort(function(a,b){ return b.length - a.length; });
   for (var i=0; i<keys.length; i++) {
     if (opN.includes(keys[i])) return RESIDUOS_POR_OP[keys[i]].concat(['Otro']);
@@ -795,7 +765,6 @@ const OPS_CONDUCTOR_SOLO = ['familia','hortiorganic'];
 const OP_MAP = {
   'bavaria': 'op-bavaria',
   'pomar': 'op-pomar',
-  'pomar horti': 'op-pomar-horti',
   'alquería cv': 'op-alqueria',
   'alqueria cv': 'op-alqueria',
   'familia': 'op-familia',
@@ -876,20 +845,11 @@ function onOperacionChange(op) {
     + residuosOp.map(function(r){ return '<option value="'+r+'">'+r+'</option>'; }).join('');
   document.getElementById('residuo-otra-wrap').style.display = 'none';
 
-  // Secciones especificas por operacion — buscar clave mas especifica primero
+  // Secciones especificas por operacion
   var opLow = op ? op.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"") : '';
   document.querySelectorAll('.op-section').forEach(function(s){ s.classList.remove('visible'); });
-  // Pomar Horti tiene prioridad explícita sobre Pomar
-  if (opLow.includes('pomar horti') || opLow.includes('pomar horti')) {
-    document.getElementById('op-pomar-horti').classList.add('visible');
-  } else {
-    var keysSorted = Object.keys(OP_MAP).sort(function(a,b){ return b.length - a.length; });
-    for (var i = 0; i < keysSorted.length; i++) {
-      if (opLow.includes(keysSorted[i])) {
-        document.getElementById(OP_MAP[keysSorted[i]]).classList.add('visible');
-        break;
-      }
-    }
+  for (var key in OP_MAP) {
+    if (opLow.includes(key)) { document.getElementById(OP_MAP[key]).classList.add('visible'); break; }
   }
   if (opLow.includes('alquer')) cargarConsecutivosAlqueria();
 }
@@ -1033,7 +993,7 @@ function validarTiqueteOp() {
   var val = document.getElementById('numero_tiquete').value;
   var warn = document.getElementById('tiquete-warn');
   warn.style.display = 'none';
-  if (op.includes('pomar') && !op.includes('horti') && val.replace(/\D/g,'').length < 6) {
+  if (op.includes('pomar') && val.replace(/\D/g,'').length < 6) {
     warn.textContent = 'Pomar requiere codigo de 6 digitos — verifique el recibo';
     warn.style.display = 'block';
   }
@@ -1150,9 +1110,6 @@ async function enviarFormulario() {
   if (!fecha)     { mostrarStatus('error','Campo requerido','Seleccione la fecha.'); return; }
   if (!placa)     { mostrarStatus('error','Campo requerido','Ingrese la placa del vehiculo.'); return; }
   if (!conductor) { mostrarStatus('error','Campo requerido','Ingrese el nombre del conductor.'); return; }
-
-  var conductorCelular = document.getElementById('conductor_celular').value.trim();
-  if (!conductorCelular || conductorCelular.length < 10) { mostrarStatus('error','Campo requerido','Ingrese el celular del conductor (10 digitos).'); return; }
   if (!pesoE)     { mostrarStatus('error','Campo requerido','Ingrese el peso del vehiculo cargado.'); return; }
   if (!operacion) { mostrarStatus('error','Campo requerido','Seleccione la operacion de la lista.'); return; }
   if (!residuo)   { mostrarStatus('error','Campo requerido','Seleccione el tipo de residuo de la lista.'); return; }
@@ -1160,7 +1117,7 @@ async function enviarFormulario() {
   var opLow = operacion.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
 
   // Pomar: tiquete debe tener 6 digitos
-  if (opLow.includes('pomar') && !opLow.includes('horti') && tiquete.replace(/\D/g,'').length < 6) {
+  if (opLow.includes('pomar') && tiquete.replace(/\D/g,'').length < 6) {
     mostrarStatus('error','Codigo Pomar incompleto','El codigo de Pomar debe tener 6 digitos completos. Verifique el ticket fisico y no ingrese solo los ultimos 4.');
     return;
   }
@@ -1208,15 +1165,9 @@ async function enviarFormulario() {
     var bavHora = document.getElementById('bav-hora-salida') ? document.getElementById('bav-hora-salida').value : '';
     if (bavHora) datosOp.push('Hora salida baucher: '+bavHora);
   }
-  if (opLow.includes('pomar') && !opLow.includes('horti')) {
+  if (opLow.includes('pomar')) {
     var pomHora = document.getElementById('pom-hora-salida') ? document.getElementById('pom-hora-salida').value : '';
     if (pomHora) datosOp.push('Hora salida ticket: '+pomHora);
-  }
-  if (opLow.includes('pomar horti')) {
-    var phIni = document.getElementById('pomar-horti-hora-ini') ? document.getElementById('pomar-horti-hora-ini').value : '';
-    var phFin = document.getElementById('pomar-horti-hora-fin') ? document.getElementById('pomar-horti-hora-fin').value : '';
-    if (phIni) datosOp.push('Hora inicial baucher: '+phIni);
-    if (phFin) datosOp.push('Hora final baucher: '+phFin);
   }
   if (opLow.includes('alquer')) {
     var alqTipo = document.getElementById('alq-tipo')         ? document.getElementById('alq-tipo').value         : '';
@@ -1293,7 +1244,6 @@ async function enviarFormulario() {
     placa:                 placa,
     tipo_flota:            tipoFlota,
     conductor:             conductor,
-    conductor_celular:     conductorCelular,
     ultimos_cuatro_cedula: document.getElementById('ultimos_cuatro_cedula').value,
     peso_entrada:          pesoE,
     peso_salida:           document.getElementById('peso_salida').value||'0',
@@ -1334,7 +1284,7 @@ async function enviarFormulario() {
 
 // ── RESET ─────────────────────────────────────────
 function resetFormulario() {
-  ['numero_tiquete','placa','conductor','conductor_celular','ultimos_cuatro_cedula','peso_entrada','observacion','seccion_depositaria'].forEach(function(id){
+  ['numero_tiquete','placa','conductor','ultimos_cuatro_cedula','peso_entrada','observacion','seccion_depositaria'].forEach(function(id){
     var el=document.getElementById(id); if(el) el.value='';
   });
   document.getElementById('peso_salida').value='';
@@ -1380,6 +1330,16 @@ function parseDateTime(str) {
   if(m) return new Date(+m[1],+m[2]-1,+m[3]);
   return null;
 }
+function getMarcaTemporalR(r) {
+  var mt = (r['Marca temporal'] || '').trim();
+  if (mt) return mt;
+  // Fallback: FECHA DISPOSICION (C) + HORA DISPOSICION (D)
+  var fecha = (r['FECHA DISPOSICION PLANTA'] || r['FECHA DISPOSICION'] || '').trim();
+  var hora  = (r['HORA DISPOSICION PLANTA']  || r['HORA DISPOSICION']  || '').trim();
+  if (fecha) return fecha + (hora ? ' ' + hora : ' 00:00:00');
+  return '';
+}
+
 function inPeriodo(str,f) {
   var d=parseDateTime(str);
   if(!d) return f==='total';
@@ -1423,7 +1383,7 @@ function setFiltroFecha(val) {
 }
 
 function renderConsulta() {
-  var filtered=registrosData.filter(function(r){return inPeriodo(r['Marca temporal']||'',filtroActual);});
+  var filtered=registrosData.filter(function(r){return inPeriodo(getMarcaTemporalR(r),filtroActual);});
   var placas=new Set(filtered.map(function(r){return r['PLACA'];}).filter(Boolean));
   var ops=new Set(filtered.map(function(r){return r['OPERACION'];}).filter(Boolean));
   var pesoNeto=0;
@@ -1442,7 +1402,7 @@ function renderConsulta() {
     return;
   }
   document.getElementById('tbody-consulta').innerHTML=filtered.slice().reverse().map(function(r){
-    var ts=r['Marca temporal']||'';
+    var ts=getMarcaTemporalR(r);
     var fecha=ts.split(' ')[0]||'—';
     var hora=(ts.split(' ')[1]||'').slice(0,5)||'—';
     var e=parseFloat((r['PESO ENTRADA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
@@ -1451,7 +1411,7 @@ function renderConsulta() {
     var tiq=(r['NUMERO TIQUETE']||'').replace(/'/g,"\\'");
     var plc=(r['PLACA']||'').replace(/'/g,"\\'");
     var opc=(r['OPERACION']||'').replace(/'/g,"\\'");
-    var mts=(r['Marca temporal']||'').replace(/'/g,"\\'");
+    var mts=ts.replace(/'/g,"\\'");
     return '<tr>'
       +'<td>'+fecha+'</td><td>'+hora+'</td>'
       +'<td style="font-size:11px;color:var(--ink-l)">'+(r['OPERARIO']||'—')+'</td>'
