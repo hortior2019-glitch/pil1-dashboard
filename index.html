@@ -18,7 +18,6 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-serif;font-weight:300;min-height:100vh}
 
-  
 /* TOPBAR */
 .topbar{background:var(--navy);color:white;padding:20px 40px;border-bottom:4px solid var(--gold);display:flex;justify-content:space-between;align-items:flex-start;position:sticky;top:0;z-index:100}
 .tb-org{font-size:10px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,.5);margin-bottom:4px}
@@ -1345,7 +1344,8 @@ function renderClientesFiltro() {
 function poblarSelectOperaciones(data) {
   const sel = document.getElementById('cli-operacion');
   const current = sel.value;
-  const ops = [...new Set(data.map(r => r['OPERACION']).filter(Boolean))].sort();
+  const normOp3 = s => s ? s.trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : '';
+  const ops = [...new Set(data.map(r => normOp3(r['OPERACION'] || '')).filter(Boolean))].sort();
   sel.innerHTML = '<option value="">Todas las operaciones</option>' +
     ops.map(op => `<option value="${op}"${op===current?' selected':''}>${op}</option>`).join('');
 }
@@ -1418,11 +1418,14 @@ function renderClientes(data, filter) {
   }
   document.getElementById('clientes-period').textContent = lbl;
 
+  // Helper para normalizar nombre de operacion (evita duplicados por mayusculas)
+  const normOp = s => s ? s.trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : '';
+
   // Agrupar por operacion
   const grupos = {};
   filtered.forEach(r => {
-    const op = r['OPERACION'] || '';
-    if (!op) return; // ignorar registros sin operacion
+    const op = normOp(r['OPERACION'] || '');
+    if (!op) return;
     if (!grupos[op]) grupos[op] = [];
     grupos[op].push(r);
   });
@@ -1707,13 +1710,14 @@ function renderChartClientes(data) {
   const diasCnt = {'Dom':0,'Lun':0,'Mar':0,'Mie':0,'Jue':0,'Vie':0,'Sab':0};
   const diasNombres = ['Dom','Lun','Mar','Mie','Jue','Vie','Sab'];
 
+  const normOp2 = s => s ? s.trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : '';
+
   data.forEach(r => {
-    const op = r['OPERACION'] || '';
-    if (!op) return; // ignorar sin operacion
+    const op = normOp2(r['OPERACION'] || '');
+    if (!op) return;
     grupos[op] = (grupos[op]||0) + 1;
     const e = getPesoNeto(r);
-    const s = 0;
-    pesos[op] = (pesos[op]||0) + Math.max(e-s,0);
+    pesos[op] = (pesos[op]||0) + Math.max(e,0);
     const res = r['RESIDUO'] || 'Sin clasificar';
     residuosCnt[res] = (residuosCnt[res]||0) + 1;
     const fecha = parseDate(getMarcaTemporal(r) || '');
