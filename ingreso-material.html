@@ -38,7 +38,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 .field-warn{font-size:10px;color:var(--orange);margin-top:2px;font-weight:600;display:none}
 .field-err{font-size:10px;color:var(--red);margin-top:2px;font-weight:600;display:none}
 
-  
 /* NOTICE */
 .notice{padding:11px 14px;margin-bottom:12px;border-left:3px solid var(--navy);background:var(--blue-l)}
 .notice.warn{border-color:var(--orange);background:var(--orange-l)}
@@ -323,6 +322,22 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
           <label>Hora de salida del ticket <span class="required">*</span></label>
           <input type="time" id="pom-hora-salida">
           <div class="field-hint">Se usa para detectar viajes distintos con mismo peso y placa</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- POMAR HORTI -->
+  <div class="op-section" id="op-pomar-horti">
+    <div class="section-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Hora inicial del baucher</label>
+          <input type="time" id="pomar-horti-hora-ini">
+        </div>
+        <div class="form-group">
+          <label>Hora final del baucher</label>
+          <input type="time" id="pomar-horti-hora-fin">
         </div>
       </div>
     </div>
@@ -765,6 +780,7 @@ const OPS_CONDUCTOR_SOLO = ['familia','hortiorganic'];
 // Operaciones con seccion especifica
 const OP_MAP = {
   'bavaria': 'op-bavaria',
+  'pomar horti': 'op-pomar-horti',
   'pomar': 'op-pomar',
   'alquería cv': 'op-alqueria',
   'alqueria cv': 'op-alqueria',
@@ -849,7 +865,9 @@ function onOperacionChange(op) {
   // Secciones especificas por operacion
   var opLow = op ? op.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"") : '';
   document.querySelectorAll('.op-section').forEach(function(s){ s.classList.remove('visible'); });
-  for (var key in OP_MAP) {
+  var opMapKeys = Object.keys(OP_MAP).sort(function(a,b){ return b.length - a.length; });
+  for (var i = 0; i < opMapKeys.length; i++) {
+    var key = opMapKeys[i];
     if (opLow.includes(key)) { document.getElementById(OP_MAP[key]).classList.add('visible'); break; }
   }
   if (opLow.includes('alquer')) cargarConsecutivosAlqueria();
@@ -990,12 +1008,8 @@ function validarConsecutivoAlqueria(val) {
 
 // ── TIQUETE VALIDACION POR OP ─────────────────────
 function validarTiqueteOp() {
-  var op = (document.getElementById('operacion').value||'').toLowerCase();
-  var val = document.getElementById('numero_tiquete').value;
   var warn = document.getElementById('tiquete-warn');
-  warn.style.display = 'none';
-    warn.style.display = 'block';
-  }
+  if (warn) warn.style.display = 'none';
 }
 
 // ── MC CAIN ───────────────────────────────────────
@@ -1117,11 +1131,6 @@ async function enviarFormulario() {
 
   var opLow = operacion.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
 
-  // Pomar: tiquete debe tener 6 digitos
-    mostrarStatus('error','Codigo Pomar incompleto','El codigo de Pomar debe tener 6 digitos completos. Verifique el ticket fisico y no ingrese solo los ultimos 4.');
-    return;
-  }
-
   // Validacion Bavaria
   if (opLow.includes('bavaria') && !bavConfirmado) {
     document.getElementById('btn-submit').disabled = true;
@@ -1165,9 +1174,15 @@ async function enviarFormulario() {
     var bavHora = document.getElementById('bav-hora-salida') ? document.getElementById('bav-hora-salida').value : '';
     if (bavHora) datosOp.push('Hora salida baucher: '+bavHora);
   }
-  if (opLow.includes('pomar')) {
+  if (opLow.includes('pomar') && !opLow.includes('horti')) {
     var pomHora = document.getElementById('pom-hora-salida') ? document.getElementById('pom-hora-salida').value : '';
     if (pomHora) datosOp.push('Hora salida ticket: '+pomHora);
+  }
+  if (opLow.includes('pomar horti')) {
+    var phIni = document.getElementById('pomar-horti-hora-ini') ? document.getElementById('pomar-horti-hora-ini').value : '';
+    var phFin = document.getElementById('pomar-horti-hora-fin') ? document.getElementById('pomar-horti-hora-fin').value : '';
+    if (phIni) datosOp.push('Hora inicial baucher: '+phIni);
+    if (phFin) datosOp.push('Hora final baucher: '+phFin);
   }
   if (opLow.includes('alquer')) {
     var alqTipo = document.getElementById('alq-tipo')         ? document.getElementById('alq-tipo').value         : '';
