@@ -771,7 +771,7 @@ function renderAccesos() {
   const filtroDispositivo = document.getElementById('acc-filtro-dispositivo').value;
 
   let datos = rawAccesos.filter(r => {
-    const marca = r['Marca temporal'] || r['MARCA TEMPORAL'] || '';
+    const marca = getMarcaTemporal(r);
     return inPeriod(marca, currentFilter);
   });
 
@@ -820,7 +820,7 @@ function renderAccesos() {
   }
 
   tbody.innerHTML = sorted.map(r => {
-    const dt   = parseDateTime(r['Marca temporal']||'');
+    const dt   = parseDateTime(getMarcaTemporal(r));
     const fecha = dt ? dt.toLocaleDateString('es-CO') : '—';
     const hora  = dt ? dt.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '—';
     return `<tr>
@@ -843,13 +843,13 @@ let currentFilter = 'hoy';
 let dataIngreso = [], dataSolicitudes = [], dataHE = [];
 
 function getPesoNeto(r) {
-  // Intentar columna PESO NETO primero
-  var n = parseFloat((r['PESO NETO']||r['PESO NETO ']||'').toString().replace(/[^0-9.]/g,''));
+  // Intentar columna PESO NETO primero (columna J)
+  var n = parseFloat((r['PESO NETO']||r['PESO NETO ']||r['Peso neto']||r['peso neto']||'').toString().replace(/[^0-9.-]/g,''));
   if (!isNaN(n) && n > 0) return n;
   // Calcular de entrada - salida
-  var e = parseFloat((r['PESO ENTRADA  SEGÚN TICKET']||r['PESO ENTRADA  Según ticket']||r['PESO ENTRADA']||'0').toString().replace(/[^0-9.]/g,''))||0;
-  var s = parseFloat((r['PESO SALIDA  SEGÚN TICKET']||r['PESO SALIDA  Según ticket']||r['PESO SALIDA']||'0').toString().replace(/[^0-9.]/g,''))||0;
-  return e - s;
+  var e = parseFloat((r['PESO ENTRADA  SEGÚN TICKET']||r['PESO ENTRADA  Según ticket']||r['PESO ENTRADA Según ticket']||r['PESO ENTRADA']||r['H']||'0').toString().replace(/[^0-9.]/g,''))||0;
+  var s = parseFloat((r['PESO SALIDA  SEGÚN TICKET']||r['PESO SALIDA  Según ticket']||r['PESO SALIDA Según ticket']||r['PESO SALIDA']||r['I']||'0').toString().replace(/[^0-9.]/g,''))||0;
+  return Math.max(0, e - s);
 }
 
 function parseCSV(text) {
@@ -885,6 +885,15 @@ function parseDate(str) {
   m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
   if (m) return new Date(parseInt(m[3]), parseInt(m[1])-1, parseInt(m[2]));
   return null;
+}
+
+function getMarcaTemporal(r) {
+  const mt = (r['Marca temporal'] || '').trim();
+  if (mt) return mt;
+  const fecha = (r['FECHA DISPOSICION PLANTA'] || r['FECHA DISPOSICION'] || '').trim();
+  const hora  = (r['HORA DISPOSICION PLANTA']  || r['HORA DISPOSICION']  || '').trim();
+  if (fecha) return fecha + (hora ? ' ' + hora : ' 00:00:00');
+  return '';
 }
 
 function parseDateTime(str) {
@@ -959,7 +968,7 @@ async function fetchCSV(url) {
 // ── RENDER INGRESO ────────────────────────────────
 function renderIngreso(data, filter) {
   const filtered = data.filter(r => {
-    const dateField = r['FECHA DISPOSICION PLANTA'] || r['Marca temporal'] || '';
+    const dateField = getMarcaTemporal(r) || '';
     return inPeriod(dateField, filter);
   });
 
@@ -1042,7 +1051,7 @@ function renderIngreso(data, filter) {
 // ── RENDER SOLICITUDES ────────────────────────────
 function renderSolicitudes(data, filter) {
   const filtered = data.filter(r => {
-    const dateField = r['FECHA SOLICITUD'] || r['Marca temporal'] || '';
+    const dateField = r['FECHA SOLICITUD'] || getMarcaTemporal(r);
     return inPeriod(dateField, filter);
   });
 
@@ -1354,7 +1363,7 @@ function renderClientes(data, filter) {
     filtered = data.slice();
   } else {
     filtered = data.filter(r => {
-      const dateField = r['Marca temporal'] || r['FECHA DISPOSICION PLANTA'] || '';
+      const dateField = getMarcaTemporal(r) || '';
       return inPeriod(dateField, filter);
     });
   }
@@ -1365,7 +1374,7 @@ function renderClientes(data, filter) {
   // Filtro por rango de fechas y horas
   if (fechaDesde || fechaHasta || horaDesde || horaHasta) {
     filtered = filtered.filter(r => {
-      const marcaTemporal = r['Marca temporal'] || '';
+      const marcaTemporal = getMarcaTemporal(r);
       if (!marcaTemporal) return false;
       const dt = parseDateTime(marcaTemporal);
       if (!dt) return false;
@@ -1706,7 +1715,7 @@ function renderChartClientes(data) {
     pesos[op] = (pesos[op]||0) + Math.max(e-s,0);
     const res = r['RESIDUO'] || 'Sin clasificar';
     residuosCnt[res] = (residuosCnt[res]||0) + 1;
-    const fecha = parseDate(r['Marca temporal'] || r['FECHA DISPOSICION PLANTA'] || '');
+    const fecha = parseDate(getMarcaTemporal(r) || '');
     if (fecha) diasCnt[diasNombres[fecha.getDay()]]++;
   });
 
@@ -1753,7 +1762,7 @@ function calcHoras(inicio, final) {
 }
 
 function renderHE(data, filter) {
-  const filtered = data.filter(r => inPeriod(r['Fecha'] || r['Marca temporal'] || '', filter));
+  const filtered = data.filter(r => inPeriod(r['Fecha'] || getMarcaTemporal(r), filter));
   const lbl = { hora:'Ultima hora', hoy:'Hoy', semana:'Esta semana', mes:'Este mes', total:'Total acumulado' }[filter];
 
   let totalHoras = 0;
@@ -1977,7 +1986,7 @@ function renderKPI(data) {
       if (!isNaN(ahtRaw) && ahtRaw > 0) ahtSegundos.push(ahtRaw);
 
       // Tiempo de disposicion: diferencia entre Marca temporal y FECHA+HORA DISPOSICION
-      const ts = parseDateTime(r['Marca temporal']||'');
+      const ts = parseDateTime(getMarcaTemporal(r));
       const fd = r['FECHA DISPOSICION PLANTA']||'';
       const hd = r['HORA DISPOSICION PLANTA']||'';
       if (ts && fd && hd) {
@@ -2012,7 +2021,7 @@ function renderKPI(data) {
       const db = parseDateTime(b['Marca temporal']||'');
       return (db||0)-(da||0);
     }).slice(0,20).map(r => {
-      const ts  = r['Marca temporal']||'';
+      const ts  = getMarcaTemporal(r);
       const fecha = ts.split(' ')[0]||'—';
       const hora  = (ts.split(' ')[1]||'').slice(0,5)||'—';
       const e = getPesoNeto(r);
@@ -2141,7 +2150,7 @@ function renderOportunidades(data) {
   // 8. Hora pico — hora con mas registros
   const porHora = {};
   data.forEach(r => {
-    const ts = r['Marca temporal']||'';
+    const ts = getMarcaTemporal(r);
     const h = ts.split(' ')[1]?.slice(0,2);
     if (h) porHora[h] = (porHora[h]||0)+1;
   });
