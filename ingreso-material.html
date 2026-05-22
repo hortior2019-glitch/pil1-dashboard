@@ -1399,13 +1399,19 @@ function setFiltroFecha(val) {
 }
 
 function renderConsulta() {
+  // Helper para buscar campo por múltiples nombres posibles
+  function gc(r, keys) {
+    for (var i=0; i<keys.length; i++) { if (r[keys[i]] !== undefined && r[keys[i]] !== '') return r[keys[i]]; }
+    return '';
+  }
+
   var filtered=registrosData.filter(function(r){return inPeriodo(getMarcaTemporalR(r),filtroActual);});
-  var placas=new Set(filtered.map(function(r){return r['PLACA'];}).filter(Boolean));
-  var ops=new Set(filtered.map(function(r){return r['OPERACION'];}).filter(Boolean));
+  var placas=new Set(filtered.map(function(r){return gc(r,['PLACA','Placa','placa']);}).filter(Boolean));
+  var ops=new Set(filtered.map(function(r){return gc(r,['OPERACION','Operacion','operacion','OPERACIÓN']);}).filter(Boolean));
   var pesoNeto=0;
   filtered.forEach(function(r){
-    var e=parseFloat((r['PESO ENTRADA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
-    var s=parseFloat((r['PESO SALIDA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
+    var e=parseFloat((gc(r,['PESO ENTRADA  Según ticket','PESO ENTRADA Según ticket','PESO ENTRADA','H'])||'0').replace(/[^0-9.]/g,''))||0;
+    var s=parseFloat((gc(r,['PESO SALIDA  Según ticket','PESO SALIDA Según ticket','PESO SALIDA','I'])||'0').replace(/[^0-9.]/g,''))||0;
     pesoNeto+=(e-s);
   });
   document.getElementById('c-total').textContent=filtered.length;
@@ -1421,20 +1427,25 @@ function renderConsulta() {
     var ts=getMarcaTemporalR(r);
     var fecha=ts.split(' ')[0]||'—';
     var hora=(ts.split(' ')[1]||'').slice(0,5)||'—';
-    var e=parseFloat((r['PESO ENTRADA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
-    var s=parseFloat((r['PESO SALIDA  Según ticket']||'0').replace(/[^0-9.]/g,''))||0;
+    var e=parseFloat((gc(r,['PESO ENTRADA  Según ticket','PESO ENTRADA Según ticket','PESO ENTRADA'])||'0').replace(/[^0-9.]/g,''))||0;
+    var s=parseFloat((gc(r,['PESO SALIDA  Según ticket','PESO SALIDA Según ticket','PESO SALIDA'])||'0').replace(/[^0-9.]/g,''))||0;
     var neto=e-s;
-    var tiq=(r['NUMERO TIQUETE']||'').replace(/'/g,"\\'");
-    var plc=(r['PLACA']||'').replace(/'/g,"\\'");
-    var opc=(r['OPERACION']||'').replace(/'/g,"\\'");
+    var operacion = gc(r,['OPERACION','Operacion','operacion','OPERACIÓN']);
+    var operario  = gc(r,['OPERARIO registra','OPERARIO','Operario','operario','Q']);
+    var tiquete   = gc(r,['NUMERO TIQUETE','Numero tiquete','TIQUETE']);
+    var placa     = gc(r,['PLACA','Placa','placa']);
+    var residuo   = gc(r,['RESIDUO','Residuo','residuo']);
+    var tiq=tiquete.replace(/'/g,"\\'");
+    var plc=placa.replace(/'/g,"\\'");
+    var opc=operacion.replace(/'/g,"\\'");
     var mts=ts.replace(/'/g,"\\'");
     return '<tr>'
       +'<td>'+fecha+'</td><td>'+hora+'</td>'
-      +'<td style="font-size:11px;color:var(--ink-l)">'+(r['OPERARIO']||'—')+'</td>'
-      +'<td class="bold">'+(r['NUMERO TIQUETE']||'—')+'</td>'
-      +'<td>'+(r['PLACA']||'—')+'</td>'
-      +'<td>'+(r['OPERACION']||'—')+'</td>'
-      +'<td>'+(r['RESIDUO']||'—')+'</td>'
+      +'<td style="font-size:11px;color:var(--ink-l)">'+(operario||'—')+'</td>'
+      +'<td class="bold">'+(tiquete||'—')+'</td>'
+      +'<td>'+(placa||'—')+'</td>'
+      +'<td>'+(operacion||'—')+'</td>'
+      +'<td>'+(residuo||'—')+'</td>'
       +'<td class="num">'+(e>0?fmt(e)+' kg':'—')+'</td>'
       +'<td class="num">'+(s>0?fmt(s)+' kg':'0')+'</td>'
       +'<td class="num" style="color:var(--navy);font-weight:700">'+(neto>0?fmt(neto)+' kg':'—')+'</td>'
