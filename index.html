@@ -1170,14 +1170,22 @@ async function loadAllData() {
   let ok = 0, errors = [];
 
   try {
-    dataIngreso = await fetchCSV(SHEETS.ingreso);
-    renderIngreso(dataIngreso, currentFilter);
-    renderClientes(dataIngreso, currentFilter);
-    renderKPI(dataIngreso);
-    renderOportunidades(dataIngreso);
+    const rawIngreso = await fetchCSV(SHEETS.ingreso);
+    // Filtrar registros corruptos (filas clonadas con Marca temporal inválida)
+    dataIngreso = rawIngreso.filter(r => {
+      const mt = (r['Marca temporal'] || '').toString().trim();
+      if (!mt) return true; // sin marca temporal → válido (usa C+D)
+      if (mt.match(/^\d{1,2}\/\d{1,2}\/\d{4}/)) return true; // formato fecha colombiano OK
+      if (mt.match(/^\d{4}-\d{2}-\d{2}/)) return true; // formato ISO OK
+      return false; // cualquier otro formato → corrupto
+    });
+    try { renderIngreso(dataIngreso, currentFilter); } catch(e2) { console.error('renderIngreso error:', e2); }
+    try { renderClientes(dataIngreso, currentFilter); } catch(e2) { console.error('renderClientes error:', e2); }
+    try { renderKPI(dataIngreso); } catch(e2) { console.error('renderKPI error:', e2); }
+    try { renderOportunidades(dataIngreso); } catch(e2) { console.error('renderOportunidades error:', e2); }
     document.getElementById('footer-ingreso').textContent = 'Ingreso: '+fmt(dataIngreso.length)+' registros';
     ok++;
-  } catch(e) { errors.push('Ingreso Material'); console.error('Ingreso:', e); }
+  } catch(e) { errors.push('Ingreso Material'); console.error('Ingreso fetch error:', e); }
 
   try {
     dataSolicitudes = await fetchCSV(SHEETS.solicitudes);
