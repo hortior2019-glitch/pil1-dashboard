@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <link rel="icon" href="data:,">
   <meta name="theme-color" content="#1a4a2e" />
   <title>Control de Viajes Internos</title>
   <style>
@@ -634,28 +636,26 @@ function verificarSesion() {
 // ============================================================
 //  API
 // ============================================================
-// Apps Script no responde al preflight OPTIONS que dispara Content-Type: application/json.
-// Solución: GET con query params — no genera preflight y evita el bloqueo CORS.
-async function apiFetch(params) {
-  const url = CONFIG.APPS_SCRIPT_URL;
-  if (!url || url === "PEGAR_URL_AQUI") throw new Error("URL no configurada");
+// Google Apps Script hace un redirect que pierde los headers CORS.
+// Solución: pasar por allorigins.win que hace el fetch server-side y retorna JSON limpio.
+async function gasGet(params) {
+  const base    = CONFIG.APPS_SCRIPT_URL;
+  if (!base || base === "PEGAR_URL_AQUI") throw new Error("URL no configurada");
+  const target  = encodeURIComponent(base + "?" + new URLSearchParams(params).toString());
+  const proxy   = "https://api.allorigins.win/get?url=" + target;
+  const res     = await fetch(proxy);
+  if (!res.ok) throw new Error("HTTP proxy " + res.status);
+  const wrapper = await res.json();          // { contents: "...", status: {...} }
+  return JSON.parse(wrapper.contents);
+}
 
-  const qs  = new URLSearchParams(params).toString();
-  const res = await fetch(url + "?" + qs, { method: "GET", redirect: "follow" });
-  if (!res.ok) throw new Error("HTTP " + res.status);
-  return await res.json();
+async function apiFetch(params) {
+  return gasGet(params);
 }
 
 async function apiPost(body) {
-  const url = CONFIG.APPS_SCRIPT_URL;
-  if (!url || url === "PEGAR_URL_AQUI") throw new Error("URL no configurada");
-
-  // guardarViaje tiene payload grande — lo metemos en un param ?data=JSON
-  // Apps Script lo lee con e.parameter.data y hace JSON.parse.
-  const qs  = new URLSearchParams({ data: JSON.stringify(body) }).toString();
-  const res = await fetch(url + "?" + qs, { method: "GET", redirect: "follow" });
-  if (!res.ok) throw new Error("HTTP " + res.status);
-  return await res.json();
+  // guardarViaje: metemos todo como params GET via proxy
+  return gasGet(body);
 }
 
 async function fetchCSV(url) {
