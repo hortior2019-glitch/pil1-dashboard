@@ -366,51 +366,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
         <div class="form-group">
           <label>Operacion (proveedor) <span class="required">*</span></label>
           <select id="operacion" onchange="onOperacionChange(this.value)">
-            <option value="">— Seleccione —</option>
-            <option>3R</option>
-            <option>Alpina</option>
-            <option>Bavaria</option>
-            <option>Brinsa</option>
-            <option>Alquería CV</option>
-            <option>Emsersopo</option>
-            <option>Emsertenjo</option>
-            <option>EPC</option>
-            <option>EPZ</option>
-            <option>EPT</option>
-            <option>Familia</option>
-            <option>Frigorífico</option>
-            <option>Funredcol</option>
-            <option>Gloria</option>
-            <option>Guillermo Clink</option>
-            <option>HortiOrganic</option>
-            <option>Pesebreras</option>
-            <option>Puerta Azul</option>
-            <option>Tía Lola</option>
-            <option>Mc Cain</option>
-            <option>Pomar</option>
-            <option>Pomar Horti</option>
-            <option>Prodensa - Centro Chía</option>
-            <option>Prodensa - Corona</option>
-            <option>Prodensa - CPNS</option>
-            <option>Prodensa - Casanare</option>
-            <option>Prodensa - Saufel</option>
-            <option>Prodensa - Toptex</option>
-            <option>Prodensa - Tanktechs</option>
-            <option>Reciclene</option>
-            <option>Recreo</option>
-            <option>Sábana Larga</option>
-            <option>Sábana Lact - Felipe</option>
-            <option>Samsa - Ducto</option>
-            <option>Samsa - Industria Nacional</option>
-            <option>Samsa - Pomar</option>
-            <option>Samsa - Veolia / Sanilia</option>
-            <option>Samsa - Quala</option>
-            <option>Samsa - Finca</option>
-            <option>Samsa - Urbaser</option>
-            <option>Softys</option>
-            <option>Ubaser</option>
-            <option>Zasiago</option>
-            <option>Otro</option>
+            <option value="">— Cargando operaciones... —</option>
           </select>
           <div class="otro-field" id="operacion-otra-wrap">
             <input type="text" id="operacion-otro-text" placeholder="Escriba el nombre del proveedor...">
@@ -837,8 +793,80 @@ const FLOTA_INTERNA = ['OGN522','SMO346','TDS941','TAY245','XGD873','WOB048'];
 
 const OPERACIONES = ['3R','Alpina','Bavaria','Alquería CV','Emsersopo','Emsertenjo','EPC','EPZ','EPT','Familia','Frigorífico','Funredcol','Gloria','Guillermo Clink','HortiOrganic','Pesebreras','Puerta Azul','Tía Lola','Mc Cain','Pomar','Prodensa - Centro Chía','Prodensa - Corona','Prodensa - CPNS','Prodensa - Casanare','Prodensa - Saufel','Prodensa - Toptex','Prodensa - Tanktechs','Reciclene','Recreo','Sábana Larga','Sábana Lact - Felipe','Samsa - Ducto','Samsa - Industria Nacional','Samsa - Pomar','Samsa - Veolia / Sanilia','Samsa - Quala','Samsa - Finca','Samsa - Urbaser','Softys','Ubaser','Zasiago','Otro'];
 
-// Materiales por operacion
-const RESIDUOS_POR_OP = {
+// ── OPERACIONES Y MATERIALES DESDE SHEETS ─────────
+const OPS_MATERIALES_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRSqpazRb4cbj80oOEfw8sdn3c43q897I1zTpGjb3WYBHoQoEaSOu17IyEJqpLxgwBgEQvsWK83Rv7J/pub?gid=1604382711&single=true&output=csv';
+
+var opsMaterialesDB = {}; // { 'Bavaria': ['Lodos','Tierras filtrantes',...], ... }
+
+async function cargarOpsMateriales() {
+  try {
+    var res  = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(OPS_MATERIALES_CSV), {cache:'no-store'});
+    var text = await res.text();
+    var lines = text.trim().split('\n');
+    // headers: OPERACION, MATERIAL_1, MATERIAL_2, ...
+    opsMaterialesDB = {};
+    lines.slice(1).forEach(function(line) {
+      var cols = [];
+      var cur = '', inQ = false;
+      for (var i = 0; i < line.length; i++) {
+        var ch = line[i];
+        if (ch === '"') { inQ = !inQ; }
+        else if (ch === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
+        else { cur += ch; }
+      }
+      cols.push(cur.trim());
+      var op = cols[0].replace(/^"|"$/g,'').trim();
+      if (!op) return;
+      var materiales = cols.slice(1).map(function(m){ return m.replace(/^"|"$/g,'').trim(); }).filter(Boolean);
+      if (materiales.length > 0) opsMaterialesDB[op] = materiales;
+    });
+    poblarSelectOperaciones();
+  } catch(e) {
+    console.error('Error cargando operaciones:', e);
+    poblarSelectOperacionesFallback();
+  }
+}
+
+function poblarSelectOperaciones() {
+  var sel = document.getElementById('operacion');
+  var ops = Object.keys(opsMaterialesDB).sort(function(a,b){ return a.localeCompare(b,'es'); });
+  sel.innerHTML = '<option value="">— Seleccione —</option>' +
+    ops.map(function(op){ return '<option>' + op + '</option>'; }).join('');
+}
+
+function poblarSelectOperacionesFallback() {
+  // Fallback con datos hardcodeados si falla el CSV
+  var sel = document.getElementById('operacion');
+  var ops = Object.keys(RESIDUOS_POR_OP_FALLBACK).sort(function(a,b){ return a.localeCompare(b,'es'); });
+  ops.forEach(function(op){
+    opsMaterialesDB[op] = RESIDUOS_POR_OP_FALLBACK[op];
+  });
+  sel.innerHTML = '<option value="">— Seleccione —</option>' +
+    ops.map(function(op){ return '<option>' + op.charAt(0).toUpperCase()+op.slice(1) + '</option>'; }).join('');
+}
+
+function getResiduesByOp(op) {
+  if (!op) return RESIDUOS_DEFAULT;
+  // Buscar exacto primero
+  if (opsMaterialesDB[op]) return opsMaterialesDB[op].concat(['Otro']);
+  // Buscar normalizado
+  var opN = op.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  var keys = Object.keys(opsMaterialesDB);
+  for (var i = 0; i < keys.length; i++) {
+    var keyN = keys[i].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+    if (opN === keyN) return opsMaterialesDB[keys[i]].concat(['Otro']);
+  }
+  // Buscar por includes ordenado por longitud
+  var sorted = keys.sort(function(a,b){ return b.length - a.length; });
+  for (var i = 0; i < sorted.length; i++) {
+    var keyN = sorted[i].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+    if (opN.includes(keyN)) return opsMaterialesDB[sorted[i]].concat(['Otro']);
+  }
+  return RESIDUOS_DEFAULT.concat(['Otro']);
+}
+
+// Fallback hardcodeado por si falla el CSV
+const RESIDUOS_POR_OP_FALLBACK = {
   '3r':                    ['Orgánicos y podas'],
   'alpina':                ['Lodo láctico','Suero','Destrucción de marca'],
   'bavaria':               ['Lodos','Tierras filtrantes','Aguas residuales'],
@@ -886,6 +914,7 @@ const RESIDUOS_POR_OP = {
   'brinsa':                ['Lodo orgánico biodegradable'],
   'zasiago':               ['Lodos','Lodo láctico'],
 };
+const RESIDUOS_POR_OP = RESIDUOS_POR_OP_FALLBACK; // compatibilidad
 const RESIDUOS_DEFAULT = ['Aglomerado','Aguas residuales','Compostaje','Contenido ruminal','Destrucción de marca','Equinaza','Gourmet orgánicos','Jarabes','Lodos','Lodos & Tromel','Lodos PTAR','Mantenimiento','Mixto (orgánicos y ollejo)','Hollejo','Orgánicos y podas','PNC','Podas','PTAP','PTAR','Retal madera','Retal madera aglomerado','Suero','Suero lácteo','Tierras filtrantes','Tromel'];
 
 function getResiduesByOp(op) {
@@ -1625,6 +1654,8 @@ var bloqueoInterval = null;
 window.addEventListener('load', function() {
   // Verificar bloqueo activo
   verificarBloqueo();
+  // Cargar operaciones y materiales desde Sheets
+  cargarOpsMateriales();
   // Cargar CSV de usuarios
   fetchCSVMultiProxy(USUARIOS_CSV)
     .then(function(t){
