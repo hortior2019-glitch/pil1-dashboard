@@ -283,6 +283,38 @@
       background: var(--verde-bg);
       font-weight: 700;
     }
+    .selector-fila .fila-flecha {
+      float: right;
+      color: var(--texto-suave);
+      font-size: 12px;
+      transition: transform 0.2s;
+    }
+    .selector-fila.abierto .fila-flecha { transform: rotate(90deg); }
+
+    .subopciones {
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+      padding: 6px 0 2px 16px;
+      animation: fadeIn 0.15s ease;
+    }
+    .subopciones.visible { display: flex; }
+    .subopcion {
+      background: var(--crema-oscura);
+      border: 2px solid transparent;
+      border-radius: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .subopcion.seleccionado {
+      border-color: var(--verde-medio);
+      background: var(--verde-bg);
+      font-weight: 700;
+    }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
 
     .btn-continuar {
       position: fixed; bottom: 0; left: 0; right: 0;
@@ -855,6 +887,16 @@ function seleccionarTractor(i) {
   verificarConfigCompleta();
 }
 
+// Extrae sub-opciones de un frente (columnas COLUMNA1..COLUMNA12 con valor)
+function getSubopciones(f) {
+  const subs = [];
+  for (let c = 1; c <= 12; c++) {
+    const v = f["COLUMNA" + c] || f["Columna " + c] || f["COLUMNA " + c] || "";
+    if (v.trim()) subs.push(v.trim());
+  }
+  return subs;
+}
+
 function renderFrentes() {
   const ori  = document.getElementById("listaOrigen");
   const dest = document.getElementById("listaDestino");
@@ -865,8 +907,21 @@ function renderFrentes() {
     return;
   }
   const makeHtml = (tipo) => frentes.map((f, i) => {
-    const n = f.NOMBRE || f.Nombre || f.nombre || ("Frente " + (i+1));
-    return `<div class="selector-fila" onclick="seleccionarFrente('${tipo}', ${i}, this)">${n}</div>`;
+    const n    = f.NOMBRE || f.Nombre || f.nombre || ("Frente " + (i+1));
+    const subs = getSubopciones(f);
+    const flecha = subs.length ? `<span class="fila-flecha">&#9654;</span>` : "";
+    const subHtml = subs.length
+      ? `<div class="subopciones" id="sub-${tipo}-${i}">` +
+          subs.map((s, si) =>
+            `<div class="subopcion" onclick="seleccionarSubopcion(event,'${tipo}',${i},${si},'${s.replace(/'/g,"\'")}',this)">${s}</div>`
+          ).join("") +
+        `</div>`
+      : "";
+    return `
+      <div class="selector-fila" onclick="seleccionarFrente('${tipo}',${i},this)" id="fila-${tipo}-${i}">
+        ${n}${flecha}
+      </div>
+      ${subHtml}`;
   }).join("");
   ori.innerHTML  = makeHtml("origen");
   dest.innerHTML = makeHtml("destino");
@@ -876,12 +931,48 @@ function seleccionarFrente(tipo, i, el) {
   const contenedor = tipo === "origen"
     ? document.getElementById("listaOrigen")
     : document.getElementById("listaDestino");
-  contenedor.querySelectorAll(".selector-fila").forEach(e => e.classList.remove("seleccionado"));
+  const f    = frentes[i];
+  const n    = f.NOMBRE || f.Nombre || f.nombre || ("Frente " + (i+1));
+  const subs = getSubopciones(f);
+
+  // Cerrar todos los submenús y quitar selección
+  contenedor.querySelectorAll(".selector-fila").forEach(e => e.classList.remove("seleccionado", "abierto"));
+  contenedor.querySelectorAll(".subopciones").forEach(e => e.classList.remove("visible"));
+  contenedor.querySelectorAll(".subopcion").forEach(e => e.classList.remove("seleccionado"));
+
   el.classList.add("seleccionado");
+
+  if (subs.length) {
+    // Tiene sub-opciones: abrir/cerrar el desplegable, no confirmar aún
+    el.classList.add("abierto");
+    const subDiv = document.getElementById("sub-" + tipo + "-" + i);
+    if (subDiv) subDiv.classList.add("visible");
+    // Limpiar selección del frente hasta que elija una sub-opción
+    if (tipo === "origen") viajeActual.frenteOrigen  = null;
+    else                   viajeActual.frenteDestino = null;
+  } else {
+    // Sin sub-opciones: confirmar directo
+    if (tipo === "origen") viajeActual.frenteOrigen  = n;
+    else                   viajeActual.frenteDestino = n;
+  }
+  verificarConfigCompleta();
+}
+
+function seleccionarSubopcion(event, tipo, i, si, subNombre, el) {
+  event.stopPropagation(); // no propagar al padre selector-fila
+  const contenedor = tipo === "origen"
+    ? document.getElementById("listaOrigen")
+    : document.getElementById("listaDestino");
   const f = frentes[i];
   const n = f.NOMBRE || f.Nombre || f.nombre || ("Frente " + (i+1));
-  if (tipo === "origen") viajeActual.frenteOrigen  = n;
-  else                   viajeActual.frenteDestino = n;
+  const nombreFinal = n + " - " + subNombre;
+
+  // Quitar selección de otras sub-opciones del mismo contenedor
+  contenedor.querySelectorAll(".subopcion").forEach(e => e.classList.remove("seleccionado"));
+  el.classList.add("seleccionado");
+
+  if (tipo === "origen") viajeActual.frenteOrigen  = nombreFinal;
+  else                   viajeActual.frenteDestino = nombreFinal;
   verificarConfigCompleta();
 }
 
