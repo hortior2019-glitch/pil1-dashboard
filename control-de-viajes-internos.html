@@ -679,18 +679,75 @@ async function apiPost(body) {
   return gasJsonp(body);
 }
 
-async function fetchCSV(url) {
-  const res   = await fetch(url);
-  const text  = await res.text();
+// Parsea CSV en array de objetos, normalizando headers (sin importar mayúsculas)
+function parseCSV(text) {
   const lines = text.trim().split(/\r?\n/).filter(l => l.trim());
   if (lines.length < 2) return [];
   const headers = lines[0].split(",").map(h => h.trim());
   return lines.slice(1).map(line => {
-    const vals = line.split(",").map(v => v.trim());
-    const obj  = {};
-    headers.forEach((h, i) => obj[h] = vals[i] || "");
+    // Soporte para valores entre comillas con comas internas
+    const vals = [];
+    let current = "", inQuotes = false;
+    for (let c of line) {
+      if (c === '"') { inQuotes = !inQuotes; }
+      else if (c === "," && !inQuotes) { vals.push(current.trim()); current = ""; }
+      else { current += c; }
+    }
+    vals.push(current.trim());
+    const obj = {};
+    headers.forEach((h, i) => {
+      obj[h] = vals[i] || "";
+      // También guardar versión lowercase para búsqueda flexible
+      obj[h.toLowerCase()] = vals[i] || "";
+      // Versión capitalizada (primera letra mayúscula)
+      obj[h.charAt(0).toUpperCase() + h.slice(1).toLowerCase()] = vals[i] || "";
+    });
     return obj;
   });
+}
+
+// Intenta fetch directo; si falla por CORS usa corsproxy.io como fallback
+async function fetchCSV(url) {
+  // Cache-busting: siempre descarga la versión más nueva del archivo
+  const urlConTs = url + (url.includes("?") ? "&" : "?") + "_t=" + Date.now();
+
+  // Intento 1: fetch directo (funciona cuando la app está en servidor)
+  try {
+    const res = await fetch(urlConTs, { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const text = await res.text();
+    if (!text.trim()) throw new Error("CSV vacío");
+    const rows = parseCSV(text);
+    console.log("✅ CSV cargado directo:", url, "→", rows.length, "filas");
+    return rows;
+  } catch(e1) {
+    console.warn("⚠️ Fetch directo falló (" + e1.message + "), intentando proxy...");
+  }
+
+  // Intento 2: proxy CORS (necesario cuando se abre como archivo local file://)
+  const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent(urlConTs);
+  try {
+    const res = await fetch(proxyUrl, { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const text = await res.text();
+    if (!text.trim()) throw new Error("CSV vacío via proxy");
+    const rows = parseCSV(text);
+    console.log("✅ CSV cargado via proxy:", url, "→", rows.length, "filas");
+    return rows;
+  } catch(e2) {
+    console.error("❌ Ambos intentos fallaron para:", url, e2.message);
+    throw new Error("No se pudo cargar " + url.split("/").pop() + ": " + e2.message);
+  }
+}
+
+// Obtiene el valor de un campo tolerando variaciones de nombre
+function campo(obj, ...nombres) {
+  for (const n of nombres) {
+    if (obj[n] !== undefined && obj[n] !== "") return obj[n];
+    if (obj[n.toLowerCase()] !== undefined && obj[n.toLowerCase()] !== "") return obj[n.toLowerCase()];
+    if (obj[n.toUpperCase()] !== undefined && obj[n.toUpperCase()] !== "") return obj[n.toUpperCase()];
+  }
+  return "";
 }
 
 // ============================================================
@@ -828,62 +885,100 @@ async function goToConfig() {
 
   viajeActual = { conductor: sesion.nombre };
 
+  document.getElementById("listaTractores").innerHTML =
+    '<div style="padding:12px;color:var(--texto-suave);font-size:13px;">Cargando tractores...</div>';
+  document.getElementById("listaOrigen").innerHTML =
+    '<div style="padding:12px;color:var(--texto-suave);font-size:13px;">Cargando frentes...</div>';
+  document.getElementById("listaDestino").innerHTML = "";
+  document.getElementById("btnIrPulsazos").disabled = true;
+
   mostrarLoading();
+  const errores = [];
+
   try {
-    const [tracs, frs] = await Promise.all([
-      fetchCSV(CONFIG.CSV_TRACTORES),
-      fetchCSV(CONFIG.CSV_FRENTES),
-    ]);
-    tractores = tracs;
-    frentes   = frs;
-    renderTractores();
-    renderFrentes();
+    tractores = await fetchCSV(CONFIG.CSV_TRACTORES);
+    if (!tractores.length) errores.push("tractores.csv vacío o sin filas");
   } catch(e) {
-    mostrarToast("Error cargando datos. Revisa conexion.", "error");
-  } finally {
-    ocultarLoading();
+    errores.push("Tractores: " + e.message);
+    tractores = [];
+  }
+
+  try {
+    frentes = await fetchCSV(CONFIG.CSV_FRENTES);
+    if (!frentes.length) errores.push("frentes.csv vacío o sin filas");
+  } catch(e) {
+    errores.push("Frentes: " + e.message);
+    frentes = [];
+  }
+
+  ocultarLoading();
+  renderTractores();
+  renderFrentes();
+
+  if (errores.length) {
+    mostrarToast("Error cargando: " + errores[0], "error");
+    console.error("Errores CSVs:", errores);
   }
 }
 
 function renderTractores() {
   const cont = document.getElementById("listaTractores");
-  cont.innerHTML = tractores.map((t, i) => `
+  if (!tractores.length) {
+    cont.innerHTML = '<div style="padding:12px;color:var(--rojo);font-size:13px;grid-column:1/-1;">⚠️ No se pudieron cargar los tractores. Verifica la URL del CSV y la conexión.</div>';
+    return;
+  }
+  cont.innerHTML = tractores.map((t, i) => {
+    const modelo = campo(t, "Modelo", "modelo", "MODELO", "Tractor");
+    const cap    = campo(t, "CapacidadTon", "capacidadTon", "CAPACIDADTON", "Capacidad", "capacidad");
+    const placa  = campo(t, "Placa", "placa", "PLACA");
+    const label  = modelo || ("Tractor " + (i+1));
+    const detalle = (cap ? cap + " ton" : "—") + (placa ? " · " + placa : "");
+    return `
     <div class="selector-item" onclick="seleccionarTractor(${i})" id="tractor-${i}">
-      <div class="selector-item-nombre">${t.Modelo || t.modelo || "Tractor " + (i+1)}</div>
-      <div class="selector-item-detalle">${t.CapacidadTon || t.capacidadTon || "—"} ton</div>
-    </div>
-  `).join("");
+      <div class="selector-item-nombre">${label}</div>
+      <div class="selector-item-detalle">${detalle}</div>
+    </div>`;
+  }).join("");
 }
 
 function seleccionarTractor(i) {
   document.querySelectorAll("#listaTractores .selector-item").forEach(el => el.classList.remove("seleccionado"));
   document.getElementById("tractor-" + i).classList.add("seleccionado");
   const t = tractores[i];
-  viajeActual.tractor     = t.Modelo || t.modelo;
-  viajeActual.capacidadTon = parseFloat(t.CapacidadTon || t.capacidadTon) || 0;
+  viajeActual.tractor      = campo(t, "Modelo", "modelo", "MODELO") || ("Tractor " + (i+1));
+  viajeActual.capacidadTon = parseFloat(campo(t, "CapacidadTon", "capacidadTon", "CAPACIDADTON", "Capacidad")) || 0;
   verificarConfigCompleta();
 }
 
 function renderFrentes() {
   const ori  = document.getElementById("listaOrigen");
   const dest = document.getElementById("listaDestino");
-  const html = frentes.map((f, i) => {
-    const n = f.Nombre || f.nombre || "Frente " + (i+1);
-    return `<div class="selector-fila" onclick="seleccionarFrente('origen', ${i}, this)">${n}</div>`;
+
+  if (!frentes.length) {
+    const msg = '<div style="padding:12px;color:var(--rojo);font-size:13px;">⚠️ No se pudieron cargar los frentes. Verifica la URL del CSV y la conexión.</div>';
+    ori.innerHTML  = msg;
+    dest.innerHTML = msg;
+    return;
+  }
+
+  const makeHtml = (tipo) => frentes.map((f, i) => {
+    const n = campo(f, "Nombre", "nombre", "NOMBRE", "Frente", "frente", "Name", "name");
+    const label = n || ("Frente " + (i+1));
+    return `<div class="selector-fila" onclick="seleccionarFrente('${tipo}', ${i}, this)">${label}</div>`;
   }).join("");
-  const html2 = frentes.map((f, i) => {
-    const n = f.Nombre || f.nombre || "Frente " + (i+1);
-    return `<div class="selector-fila" onclick="seleccionarFrente('destino', ${i}, this)">${n}</div>`;
-  }).join("");
-  ori.innerHTML  = html;
-  dest.innerHTML = html2;
+
+  ori.innerHTML  = makeHtml("origen");
+  dest.innerHTML = makeHtml("destino");
 }
 
 function seleccionarFrente(tipo, i, el) {
-  const contenedor = tipo === "origen" ? document.getElementById("listaOrigen") : document.getElementById("listaDestino");
+  const contenedor = tipo === "origen"
+    ? document.getElementById("listaOrigen")
+    : document.getElementById("listaDestino");
   contenedor.querySelectorAll(".selector-fila").forEach(e => e.classList.remove("seleccionado"));
   el.classList.add("seleccionado");
-  const n = frentes[i].Nombre || frentes[i].nombre;
+  const f = frentes[i];
+  const n = campo(f, "Nombre", "nombre", "NOMBRE", "Frente") || ("Frente " + (i+1));
   if (tipo === "origen") viajeActual.frenteOrigen  = n;
   else                   viajeActual.frenteDestino = n;
   verificarConfigCompleta();
