@@ -393,25 +393,46 @@
     .cronometro-tiempo { font-size: 36px; font-weight: 800; color: var(--verde-oscuro); font-variant-numeric: tabular-nums; }
 
     /* ── CARGA ── */
-    .carga-opciones { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
-    .carga-opcion {
-      display: flex; align-items: center; gap: 16px;
-      background: var(--blanco);
-      border: 2px solid transparent;
-      border-radius: var(--radio);
-      padding: 16px 20px;
-      cursor: pointer;
+    /* Pantalla paladas */
+    .paladas-wrap {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 28px; padding: 24px 0;
+    }
+    .paladas-titulo {
+      font-size: 15px; font-weight: 600; color: var(--texto-suave);
+      text-transform: uppercase; letter-spacing: 0.08em;
+    }
+    .paladas-contador {
+      display: flex; align-items: center; gap: 24px;
+    }
+    .paladas-btn {
+      width: 64px; height: 64px; border-radius: 50%;
+      border: none; font-size: 32px; font-weight: 700;
+      cursor: pointer; transition: transform 0.1s, opacity 0.15s;
+      display: flex; align-items: center; justify-content: center;
       box-shadow: var(--sombra);
-      transition: border-color 0.15s, background 0.15s;
     }
-    .carga-opcion.seleccionado {
-      border-color: var(--verde-oscuro);
-      background: var(--verde-bg);
+    .paladas-btn:active { transform: scale(0.92); }
+    .paladas-btn.menos { background: var(--crema-oscura); color: var(--texto); }
+    .paladas-btn.menos:disabled { opacity: 0.35; cursor: default; }
+    .paladas-btn.mas   { background: var(--verde-oscuro); color: var(--blanco); }
+    .paladas-btn.mas:disabled   { opacity: 0.35; cursor: default; }
+    .paladas-numero {
+      font-size: 72px; font-weight: 800; color: var(--verde-oscuro);
+      min-width: 90px; text-align: center; line-height: 1;
     }
-    .carga-barra-wrap { flex: 1; height: 10px; background: var(--crema-oscura); border-radius: 5px; }
-    .carga-barra { height: 100%; background: var(--verde-claro); border-radius: 5px; }
-    .carga-label { font-size: 15px; font-weight: 600; min-width: 36px; }
-    .carga-ton { font-size: 13px; color: var(--texto-suave); min-width: 60px; text-align: right; }
+    .paladas-puntos {
+      display: flex; gap: 8px; justify-content: center;
+    }
+    .palada-dot {
+      width: 18px; height: 18px; border-radius: 50%;
+      background: var(--crema-oscura);
+      transition: background 0.2s, transform 0.15s;
+    }
+    .palada-dot.activo {
+      background: var(--verde-claro);
+      transform: scale(1.2);
+    }
 
     .confirmacion-card {
       background: var(--blanco);
@@ -596,11 +617,19 @@
 <!-- PANTALLA CARGA -->
 <div id="screenCarga" class="screen">
   <div class="pulsazos-contenido">
-    <div class="carga-opciones" id="listaCarga"></div>
+    <div class="paladas-wrap">
+      <div class="paladas-titulo">Paladas cargadas</div>
+      <div class="paladas-contador">
+        <button class="paladas-btn menos" id="btnMenos" onclick="cambiarPaladas(-1)">−</button>
+        <div class="paladas-numero" id="numPaladas">6</div>
+        <button class="paladas-btn mas"   id="btnMas"   onclick="cambiarPaladas(+1)">+</button>
+      </div>
+      <div class="paladas-puntos" id="puntoPaladas"></div>
+    </div>
     <div class="confirmacion-card">
       <div class="cronometro-label">Toneladas estimadas</div>
       <div class="confirmacion-ton" id="tonConfirm">—</div>
-      <div class="confirmacion-label" id="capacidadLabel"></div>
+      <div class="confirmacion-label" id="capacidadLabel">2.2 t por palada</div>
     </div>
     <button class="btn-guardar" id="btnGuardar" onclick="guardarViaje()" disabled>Guardar viaje</button>
   </div>
@@ -1062,47 +1091,55 @@ function actualizarCronometro() {
 // ============================================================
 //  NIVEL DE CARGA
 // ============================================================
-const NIVELES = [
-  { label: "LLENO", factor: 1.00,  ancho: "100%" },
-  { label: "3/4",   factor: 0.75,  ancho: "75%"  },
-  { label: "1/2",   factor: 0.50,  ancho: "50%"  },
-  { label: "1/4",   factor: 0.25,  ancho: "25%"  },
-];
+const PALADA_TON   = 2.2;
+const PALADAS_MIN  = 6;
+const PALADAS_MAX  = 8;
+let   paladasActual = PALADAS_MIN;
 
 function goToCarga() {
-  document.getElementById("headerTitle").textContent    = "Nivel de carga";
+  document.getElementById("headerTitle").textContent    = "Paladas cargadas";
   document.getElementById("headerSubtitle").textContent = "";
   document.querySelectorAll(".screen").forEach(s => s.classList.remove("activa"));
   document.getElementById("screenCarga").classList.add("activa");
 
-  viajeActual.nivelCarga   = null;
-  viajeActual.factorLlenado = null;
+  paladasActual = PALADAS_MIN;
+  viajeActual.nivelCarga        = null;
+  viajeActual.factorLlenado     = null;
+  viajeActual.toneladasEstimadas = null;
 
-  const cont = document.getElementById("listaCarga");
-  cont.innerHTML = NIVELES.map((nv, i) => {
-    const ton = (viajeActual.capacidadTon * nv.factor).toFixed(1);
-    return `
-      <div class="carga-opcion" onclick="seleccionarCarga(${i})" id="carga-${i}">
-        <div class="carga-label">${nv.label}</div>
-        <div class="carga-barra-wrap"><div class="carga-barra" style="width:${nv.ancho}"></div></div>
-        <div class="carga-ton">${ton} ton</div>
-      </div>
-    `;
-  }).join("");
-
-  document.getElementById("tonConfirm").textContent  = "—";
-  document.getElementById("capacidadLabel").textContent = "Capacidad: " + viajeActual.capacidadTon + " ton";
-  document.getElementById("btnGuardar").disabled = true;
+  renderPaladas();
+  // Habilitar directamente con el valor por defecto
+  actualizarCargaPaladas();
 }
 
-function seleccionarCarga(i) {
-  document.querySelectorAll(".carga-opcion").forEach(el => el.classList.remove("seleccionado"));
-  document.getElementById("carga-" + i).classList.add("seleccionado");
-  const nv = NIVELES[i];
-  viajeActual.nivelCarga    = nv.label;
-  viajeActual.factorLlenado = nv.factor;
-  viajeActual.toneladasEstimadas = parseFloat((viajeActual.capacidadTon * nv.factor).toFixed(1));
-  document.getElementById("tonConfirm").textContent = viajeActual.toneladasEstimadas + " ton";
+function renderPaladas() {
+  // Puntos visuales
+  const puntos = document.getElementById("puntoPaladas");
+  puntos.innerHTML = "";
+  for (let p = PALADAS_MIN; p <= PALADAS_MAX; p++) {
+    const d = document.createElement("div");
+    d.className = "palada-dot" + (p <= paladasActual ? " activo" : "");
+    puntos.appendChild(d);
+  }
+  document.getElementById("numPaladas").textContent = paladasActual;
+  document.getElementById("btnMenos").disabled = (paladasActual <= PALADAS_MIN);
+  document.getElementById("btnMas").disabled   = (paladasActual >= PALADAS_MAX);
+}
+
+function cambiarPaladas(delta) {
+  const nuevo = paladasActual + delta;
+  if (nuevo < PALADAS_MIN || nuevo > PALADAS_MAX) return;
+  paladasActual = nuevo;
+  renderPaladas();
+  actualizarCargaPaladas();
+}
+
+function actualizarCargaPaladas() {
+  const ton = parseFloat((paladasActual * PALADA_TON).toFixed(1));
+  viajeActual.nivelCarga         = paladasActual + " paladas";
+  viajeActual.factorLlenado      = paladasActual;
+  viajeActual.toneladasEstimadas = ton;
+  document.getElementById("tonConfirm").textContent = ton + " ton";
   document.getElementById("btnGuardar").disabled = false;
 }
 
@@ -1110,7 +1147,7 @@ function seleccionarCarga(i) {
 //  GUARDAR VIAJE
 // ============================================================
 async function guardarViaje() {
-  if (!viajeActual.nivelCarga) return;
+  if (!viajeActual.toneladasEstimadas) return;
   document.getElementById("btnGuardar").disabled = true;
   mostrarLoading();
 
