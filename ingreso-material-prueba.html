@@ -310,21 +310,30 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
           <div class="field-hint" id="placa-flota-hint"></div>
         </div>
         <div class="form-group">
-          <label>Conductor — Nombre y apellido <span class="required">*</span></label>
-          <input type="text" id="conductor" placeholder="Nombre completo">
+          <label>Conductor <span class="required">*</span></label>
+          <select id="conductor-select" onchange="onConductorSelect(this.value)" style="width:100%">
+            <option value="">— Seleccione o escriba nuevo —</option>
+          </select>
         </div>
       </div>
-      <div class="form-row single">
-        <div class="form-group">
-          <label>Cedula del conductor</label>
-          <input type="text" id="ultimos_cuatro_cedula" placeholder="" oninput="this.value=this.value.replace(/[^0-9]/g,'')" maxlength="12">
+      <!-- Campos conductor: se llenan solos o se escriben si es nuevo -->
+      <div id="conductor-campos">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Nombre completo <span class="required">*</span></label>
+            <input type="text" id="conductor" placeholder="Nombre completo">
+          </div>
+          <div class="form-group">
+            <label>Cédula</label>
+            <input type="text" id="ultimos_cuatro_cedula" placeholder="" oninput="this.value=this.value.replace(/[^0-9]/g,'')" maxlength="12">
+          </div>
         </div>
-      </div>
-      <div class="form-row single">
-        <div class="form-group">
-          <label>Celular del conductor <span class="required">*</span></label>
-          <input type="tel" id="conductor_celular" placeholder="Ej: 3001234567" oninput="this.value=this.value.replace(/[^0-9]/g,'')" maxlength="10">
-          <div class="field-hint">Número de 10 dígitos sin espacios</div>
+        <div class="form-row single">
+          <div class="form-group">
+            <label>Celular <span class="required">*</span></label>
+            <input type="tel" id="conductor_celular" placeholder="Ej: 3001234567" oninput="this.value=this.value.replace(/[^0-9]/g,'')" maxlength="10">
+            <div class="field-hint">Número de 10 dígitos sin espacios</div>
+          </div>
         </div>
       </div>
       <!-- Conductor acompañado - SI/NO -->
@@ -793,7 +802,78 @@ const FLOTA_INTERNA = ['OGN522','SMO346','TDS941','TAY245','XGD873','WOB048'];
 
 const OPERACIONES = ['3R','Alpina','Bavaria','Alquería CV','Emsersopo','Emsertenjo','EPC','EPZ','EPT','Familia','Frigorífico','Funredcol','Gloria','Guillermo Clink','HortiOrganic','Pesebreras','Puerta Azul','Tía Lola','Mc Cain','Pomar','Prodensa - Centro Chía','Prodensa - Corona','Prodensa - CPNS','Prodensa - Casanare','Prodensa - Saufel','Prodensa - Toptex','Prodensa - Tanktechs','Reciclene','Recreo','Sábana Larga','Sábana Lact - Felipe','Samsa - Ducto','Samsa - Industria Nacional','Samsa - Pomar','Samsa - Veolia / Sanilia','Samsa - Quala','Samsa - Finca','Samsa - Urbaser','Softys','Ubaser','Zasiago','Otro'];
 
-// ── OPERACIONES Y MATERIALES DESDE SHEETS ─────────
+// ── CONDUCTORES DESDE CSV ─────────────────────────
+const CONDUCTORES_CSV = 'conductores.csv';
+var conductoresDB = []; // [{operacion, nombre, cedula, celular}, ...]
+
+async function cargarConductores() {
+  try {
+    var res  = await fetch(CONDUCTORES_CSV + '?t=' + Date.now(), {cache:'no-store'});
+    var text = await res.text();
+    var lines = text.trim().split('\n');
+    var sep = lines[0].includes(';') ? ';' : ',';
+    conductoresDB = lines.slice(1).map(function(line) {
+      var cols = line.split(sep).map(function(c){ return c.replace(/^"|"$/g,'').replace(/\r/g,'').trim(); });
+      return {
+        operacion: (cols[0]||'').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,""),
+        nombre:    cols[1] || '',
+        cedula:    cols[2] || '',
+        celular:   cols[3] || ''
+      };
+    }).filter(function(c){ return c.nombre; });
+    console.log('Conductores cargados:', conductoresDB.length);
+  } catch(e) {
+    console.error('Error cargando conductores:', e);
+  }
+}
+
+function actualizarSelectConductores(operacion) {
+  var sel = document.getElementById('conductor-select');
+  var opN = (operacion||'').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  var filtrados = conductoresDB.filter(function(c){
+    return !opN || c.operacion === opN || c.operacion === '' || opN.includes(c.operacion) || c.operacion.includes(opN);
+  });
+  // Ordenar por nombre
+  filtrados.sort(function(a,b){ return a.nombre.localeCompare(b.nombre,'es'); });
+  sel.innerHTML = '<option value="">— Seleccione conductor —</option>' +
+    filtrados.map(function(c,i){
+      return '<option value="'+i+'">'+c.nombre+(c.cedula?' · CC:'+c.cedula:'')+'</option>';
+    }).join('') +
+    '<option value="nuevo">+ Nuevo conductor</option>';
+  // Limpiar campos
+  document.getElementById('conductor').value = '';
+  document.getElementById('ultimos_cuatro_cedula').value = '';
+  document.getElementById('conductor_celular').value = '';
+  // Guardar referencia para lookup
+  sel._filtrados = filtrados;
+}
+
+function onConductorSelect(val) {
+  var sel = document.getElementById('conductor-select');
+  var campos = document.getElementById('conductor-campos');
+  if (!val) {
+    document.getElementById('conductor').value = '';
+    document.getElementById('ultimos_cuatro_cedula').value = '';
+    document.getElementById('conductor_celular').value = '';
+    return;
+  }
+  if (val === 'nuevo') {
+    // Limpiar para que escriba
+    document.getElementById('conductor').value = '';
+    document.getElementById('ultimos_cuatro_cedula').value = '';
+    document.getElementById('conductor_celular').value = '';
+    document.getElementById('conductor').focus();
+    return;
+  }
+  // Prellenar con datos del conductor seleccionado
+  var idx = parseInt(val);
+  var filtrados = sel._filtrados || [];
+  if (filtrados[idx]) {
+    document.getElementById('conductor').value            = filtrados[idx].nombre;
+    document.getElementById('ultimos_cuatro_cedula').value = filtrados[idx].cedula;
+    document.getElementById('conductor_celular').value    = filtrados[idx].celular;
+  }
+}
 const OPS_MATERIALES_CSV = 'ops-materiales.csv';
 
 var opsMaterialesDB = {}; // { 'Bavaria': ['Lodos','Tierras filtrantes',...], ... }
@@ -1015,6 +1095,9 @@ function onOperacionChange(op) {
     if (opLow.includes(key)) { document.getElementById(OP_MAP[key]).classList.add('visible'); break; }
   }
   if (opLow.includes('alquer')) cargarConsecutivosAlqueria();
+
+  // Actualizar conductores según operación
+  actualizarSelectConductores(op);
 }
 
 function onResiduoChange(val) {
@@ -1395,6 +1478,7 @@ async function enviarFormulario() {
 
 // ── RESET ─────────────────────────────────────────
 function resetFormulario() {
+  document.getElementById('conductor-select').value = '';
   ['numero_tiquete','placa','conductor','conductor_celular','ultimos_cuatro_cedula','peso_entrada','observacion','seccion_depositaria'].forEach(function(id){
     var el=document.getElementById(id); if(el) el.value='';
   });
@@ -1647,6 +1731,8 @@ window.addEventListener('load', function() {
   verificarBloqueo();
   // Cargar operaciones y materiales desde Sheets
   cargarOpsMateriales();
+  // Cargar conductores
+  cargarConductores();
   // Cargar CSV de usuarios
   fetchCSVMultiProxy(USUARIOS_CSV)
     .then(function(t){
