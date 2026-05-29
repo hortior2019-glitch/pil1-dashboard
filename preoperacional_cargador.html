@@ -395,7 +395,7 @@
         </div>
         <div class="field">
           <label>Horómetro Actual <span>*</span></label>
-          <input type="text" placeholder="Ej: 4523.5 horas">
+          <input type="text" id="horometro" placeholder="Ej: 4523.5 horas">
         </div>
       </div>
     </div>
@@ -518,11 +518,11 @@
     <div class="card-body" style="display:flex;flex-direction:column;gap:20px;">
       <div class="field">
         <label>Observaciones</label>
-        <textarea placeholder="Registre aquí cualquier observación relevante sobre el estado del equipo..."></textarea>
+        <textarea id="observaciones" placeholder="Registre aquí cualquier observación relevante sobre el estado del equipo..."></textarea>
       </div>
       <div class="field">
         <label>Nombre de quien diligencia el preoperacional <span>*</span></label>
-        <input type="text" placeholder="Nombre completo del operador o responsable">
+        <input type="text" id="operador" placeholder="Nombre completo del operador o responsable">
       </div>
       <div class="disclaimer">
         La inspección preoperacional se realiza como medida preventiva para identificar y corregir oportunamente condiciones que puedan generar accidentes o fallas durante la operación.
@@ -625,10 +625,67 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
 // Set today's date
 document.getElementById('fecha').valueAsDate = new Date();
 
+// ── Reemplaza esta URL con la de tu Apps Script desplegado ──
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwq-8IIio1eJCjdyqgsXkZd1vNlHDClJM9uOPBUq_ztwYmjOwrQspnYxivnKI-D6o1zuw/exec';
+
 function submitForm() {
-  const fecha = document.getElementById('fecha').value;
+  // Validar campos requeridos
+  const fecha    = document.getElementById('fecha').value;
+  const horometro = document.getElementById('horometro').value.trim();
+  const operador = document.getElementById('operador').value.trim();
+
   if (!fecha) { alert('Por favor registre la fecha de inspección.'); return; }
-  alert('✅ Inspección preoperacional guardada exitosamente.');
+  if (!horometro) { alert('Por favor registre el horómetro actual.'); return; }
+  if (!operador) { alert('Por favor registre el nombre de quien diligencia.'); return; }
+
+  // Validar que todos los ítems de inspección estén respondidos
+  const groups = {};
+  document.querySelectorAll('input[type="radio"]').forEach(r => {
+    if (!groups[r.name]) groups[r.name] = false;
+    if (r.checked) groups[r.name] = true;
+  });
+  if (Object.values(groups).some(v => !v)) {
+    alert('Por favor responda todos los ítems de inspección.');
+    return;
+  }
+
+  // Recopilar todos los valores de radio
+  const radioValues = {};
+  document.querySelectorAll('input[type="radio"]:checked').forEach(r => {
+    radioValues[r.name] = r.value;
+  });
+
+  // Construir el payload
+  const payload = {
+    tipo:          'cargador',
+    fecha:         fecha,
+    horometro:     horometro,
+    operador:      operador,
+    observaciones: document.getElementById('observaciones').value,
+    ...radioValues,
+  };
+
+  // Bloquear botón mientras envía
+  const btn = document.querySelector('.btn-submit');
+  btn.disabled = true;
+  btn.textContent = 'Enviando…';
+
+  fetch(APPS_SCRIPT_URL, {
+    method:  'POST',
+    mode:    'no-cors',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(payload),
+  })
+  .then(() => {
+    alert('✅ Inspección registrada correctamente en Google Sheets.');
+    btn.disabled = false;
+    btn.textContent = 'Guardar Inspección';
+  })
+  .catch(() => {
+    alert('❌ Error al enviar. Verifique su conexión e intente de nuevo.');
+    btn.disabled = false;
+    btn.textContent = 'Guardar Inspección';
+  });
 }
 </script>
 </body>
