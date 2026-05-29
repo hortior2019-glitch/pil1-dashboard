@@ -477,6 +477,36 @@
       text-align: center; padding: 8px;
       font-size: 13px; font-weight: 600;
     }
+
+    /* ── GEOLOCALIZACIÓN ── */
+    .geo-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 11px; font-weight: 600;
+      padding: 3px 10px; border-radius: 100px;
+      margin-top: 6px;
+    }
+    .geo-badge.ok   { background: var(--verde-bg); color: var(--verde-oscuro); }
+    .geo-badge.err  { background: var(--rojo-bg);  color: var(--rojo); }
+    .geo-badge.wait { background: var(--amarillo-bg); color: #7a5f00; }
+
+    .pulso-geo {
+      font-size: 11px; color: var(--texto-suave);
+      margin-top: 3px; font-style: italic;
+    }
+    .pulso-geo.ok  { color: var(--verde-claro); }
+    .pulso-geo.err { color: var(--rojo); }
+
+    .geo-banner {
+      background: var(--amarillo-bg);
+      border: 1px solid #e0c84a;
+      border-radius: var(--radio);
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      font-size: 13px; color: #5a4a00;
+      display: flex; align-items: flex-start; gap: 10px;
+    }
+    .geo-banner-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+    .geo-banner b { display: block; font-size: 14px; margin-bottom: 3px; }
   </style>
 </head>
 <body>
@@ -572,6 +602,11 @@
   <div class="pulsazos-contenido">
     <div class="viaje-resumen" id="viajeResumen"></div>
 
+    <div class="geo-banner" id="geoBannerPulsazos" style="display:none">
+      <div class="geo-banner-icon">📍</div>
+      <div><b>Geolocalización no disponible</b>Activa el GPS del dispositivo para registrar tu ubicación en cada evento del viaje.</div>
+    </div>
+
     <div class="cronometro" id="cronometroBox" style="display:none">
       <div class="cronometro-label">Tiempo del viaje</div>
       <div class="cronometro-tiempo" id="cronometroTiempo">00:00</div>
@@ -583,6 +618,7 @@
         <div class="pulso-info">
           <div class="pulso-nombre">Cargando</div>
           <div class="pulso-hora" id="hora1">Toca para registrar</div>
+          <div class="pulso-geo" id="geo1"></div>
         </div>
         <div class="pulso-check" id="check1"></div>
       </button>
@@ -591,6 +627,7 @@
         <div class="pulso-info">
           <div class="pulso-nombre">En camino</div>
           <div class="pulso-hora" id="hora2">Esperando paso anterior</div>
+          <div class="pulso-geo" id="geo2"></div>
         </div>
         <div class="pulso-check" id="check2"></div>
       </button>
@@ -599,6 +636,7 @@
         <div class="pulso-info">
           <div class="pulso-nombre">Descargando</div>
           <div class="pulso-hora" id="hora3">Esperando paso anterior</div>
+          <div class="pulso-geo" id="geo3"></div>
         </div>
         <div class="pulso-check" id="check4"></div>
       </button>
@@ -607,6 +645,7 @@
         <div class="pulso-info">
           <div class="pulso-nombre">Completado</div>
           <div class="pulso-hora" id="hora4">Esperando paso anterior</div>
+          <div class="pulso-geo" id="geo4"></div>
         </div>
         <div class="pulso-check" id="check4b"></div>
       </button>
@@ -1011,6 +1050,79 @@ function verificarConfigCompleta() {
 }
 
 // ============================================================
+//  GEOLOCALIZACIÓN
+// ============================================================
+const GEO_TIMEOUT   = 10000; // ms máximo esperando GPS
+const GEO_MAX_AGE   = 5000;  // acepta posición cacheada hasta 5 s
+const GEO_HIGH_ACC  = true;
+
+let geoPermiso = null; // null | "granted" | "denied" | "unavailable"
+
+/** Solicita posición GPS una vez. Devuelve { lat, lng, acc, ts } o null. */
+function obtenerGeoUnaVez() {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      geoPermiso = "unavailable";
+      resolve(null);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        geoPermiso = "granted";
+        resolve({
+          lat: parseFloat(pos.coords.latitude.toFixed(7)),
+          lng: parseFloat(pos.coords.longitude.toFixed(7)),
+          acc: Math.round(pos.coords.accuracy),   // metros
+          ts:  new Date().toISOString()
+        });
+      },
+      (err) => {
+        geoPermiso = err.code === 1 ? "denied" : "unavailable";
+        resolve(null);
+      },
+      { enableHighAccuracy: GEO_HIGH_ACC, timeout: GEO_TIMEOUT, maximumAge: GEO_MAX_AGE }
+    );
+  });
+}
+
+/** Muestra feedback visual en la línea geo del pulso */
+function mostrarGeoPulso(n, geo) {
+  const el = document.getElementById("geo" + n);
+  if (!el) return;
+  if (geo) {
+    el.className = "pulso-geo ok";
+    el.textContent = `📍 ${geo.lat}, ${geo.lng}  ±${geo.acc}m`;
+  } else {
+    el.className = "pulso-geo err";
+    el.textContent = geoPermiso === "denied"
+      ? "📍 GPS denegado"
+      : "📍 GPS no disponible";
+  }
+}
+
+/** Comprueba si el GPS está accesible al entrar a la pantalla pulsazos */
+async function iniciarGeo() {
+  document.getElementById("geoBannerPulsazos").style.display = "none";
+  if (!navigator.geolocation) {
+    geoPermiso = "unavailable";
+    document.getElementById("geoBannerPulsazos").style.display = "flex";
+    return;
+  }
+  // Sondeo silencioso para detectar permiso
+  try {
+    const p = await Promise.race([
+      obtenerGeoUnaVez(),
+      new Promise(r => setTimeout(() => r("timeout"), GEO_TIMEOUT + 500))
+    ]);
+    if (p === "timeout" || !p) {
+      document.getElementById("geoBannerPulsazos").style.display = "flex";
+    }
+  } catch(e) {
+    document.getElementById("geoBannerPulsazos").style.display = "flex";
+  }
+}
+
+// ============================================================
 //  PULSAZOS
 // ============================================================
 function goToPulsazos() {
@@ -1024,6 +1136,11 @@ function goToPulsazos() {
   viajeActual.T2_EnCamino   = null;
   viajeActual.T3_Descargando = null;
   viajeActual.T4_Completado  = null;
+  // reset geo
+  viajeActual.geo_T1 = null;
+  viajeActual.geo_T2 = null;
+  viajeActual.geo_T3 = null;
+  viajeActual.geo_T4 = null;
 
   [1,2,3,4].forEach(n => {
     const btn = document.getElementById("btn" + n);
@@ -1032,6 +1149,8 @@ function goToPulsazos() {
     document.getElementById("hora" + n).textContent = n === 1 ? "Toca para registrar" : "Esperando paso anterior";
     const chk = document.getElementById(n === 4 ? "check4b" : "check" + (n === 3 ? 4 : n));
     if (chk) chk.textContent = "";
+    const geoEl = document.getElementById("geo" + n);
+    if (geoEl) { geoEl.textContent = ""; geoEl.className = "pulso-geo"; }
   });
 
   document.getElementById("cronometroBox").style.display = "none";
@@ -1041,9 +1160,12 @@ function goToPulsazos() {
     `<strong>${viajeActual.tractor}</strong> &nbsp;|&nbsp; ` +
     `${viajeActual.frenteOrigen} &rarr; ${viajeActual.frenteDestino}<br>` +
     `Capacidad: <strong>${viajeActual.capacidadTon} ton</strong>`;
+
+  // Iniciar verificación de geo en segundo plano
+  iniciarGeo();
 }
 
-function registrarPulso(n) {
+async function registrarPulso(n) {
   const btn = document.getElementById("btn" + n);
   if (btn.classList.contains("pendiente") || btn.classList.contains("completado")) return;
 
@@ -1072,6 +1194,16 @@ function registrarPulso(n) {
     document.getElementById("cronometroBox").style.display = "block";
     cronInterval = setInterval(actualizarCronometro, 1000);
   }
+
+  // ── Capturar geolocalización (asíncrono, no bloquea la UI) ──
+  const geoClaves = [null, "geo_T1", "geo_T2", "geo_T3", "geo_T4"];
+  const geoEl = document.getElementById("geo" + n);
+  if (geoEl) { geoEl.className = "pulso-geo wait"; geoEl.textContent = "📍 Obteniendo ubicación…"; }
+
+  obtenerGeoUnaVez().then(geo => {
+    viajeActual[geoClaves[n]] = geo;
+    mostrarGeoPulso(n, geo);
+  });
 
   // T4 completado: ir a pantalla de carga
   if (n === 4) {
@@ -1151,8 +1283,14 @@ async function guardarViaje() {
   document.getElementById("btnGuardar").disabled = true;
   mostrarLoading();
 
+  // Serializar campos de geo como strings JSON para el Sheet
+  const payload = { ...viajeActual };
+  ["geo_T1","geo_T2","geo_T3","geo_T4"].forEach(k => {
+    payload[k] = payload[k] ? JSON.stringify(payload[k]) : "";
+  });
+
   if (!navigator.onLine) {
-    guardarPendiente(viajeActual);
+    guardarPendiente(payload);
     ocultarLoading();
     mostrarToast("Guardado sin conexion. Se sincronizara.", "exito");
     setTimeout(mostrarInicio, 1200);
@@ -1160,17 +1298,17 @@ async function guardarViaje() {
   }
 
   try {
-    const res = await apiPost({ action: "guardarViaje", ...viajeActual });
+    const res = await apiPost({ action: "guardarViaje", ...payload });
     if (res.ok) {
       mostrarToast("Viaje guardado correctamente", "exito");
       setTimeout(mostrarInicio, 1000);
     } else {
-      guardarPendiente(viajeActual);
+      guardarPendiente(payload);
       mostrarToast("Error al guardar. Guardado local.", "error");
       setTimeout(mostrarInicio, 1400);
     }
   } catch(e) {
-    guardarPendiente(viajeActual);
+    guardarPendiente(payload);
     mostrarToast("Sin conexion. Guardado local.", "error");
     setTimeout(mostrarInicio, 1400);
   } finally {
