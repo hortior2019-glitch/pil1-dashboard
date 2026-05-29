@@ -366,22 +366,27 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
       </div>
       <div id="acomp-campos" style="display:none;margin-top:8px;padding:14px;background:#fff8e1;border:2px solid #2a2a2a;">
         <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--orange);margin-bottom:10px">Datos del acompañante</div>
-        <div class="form-row single" style="margin-bottom:10px">
-          <div class="form-group">
-            <label>Nombre del acompañante <span class="required">*</span></label>
-            <input type="text" id="acomp-nombre" placeholder="Nombre completo">
+        <div id="acomp-lista">
+          <div class="acomp-item" data-index="0" style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px dashed #ddd">
+            <div class="form-row single" style="margin-bottom:10px">
+              <div class="form-group">
+                <label>Nombre del acompañante <span class="required">*</span></label>
+                <input type="text" class="acomp-nombre" placeholder="Nombre completo">
+              </div>
+            </div>
+            <div class="form-row" style="margin-bottom:0">
+              <div class="form-group">
+                <label>Cedula del acompañante</label>
+                <input type="text" class="acomp-cedula" placeholder="Numero de cedula" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+              </div>
+              <div class="form-group">
+                <label>Cargo / Rol</label>
+                <input type="text" class="acomp-cargo" placeholder="Ej: Ayudante, Supervisor...">
+              </div>
+            </div>
           </div>
         </div>
-        <div class="form-row" style="margin-bottom:0">
-          <div class="form-group">
-            <label>Cedula del acompañante</label>
-            <input type="text" id="acomp-cedula" placeholder="Numero de cedula" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
-          </div>
-          <div class="form-group">
-            <label>Cargo / Rol</label>
-            <input type="text" id="acomp-cargo" placeholder="Ej: Ayudante, Supervisor...">
-          </div>
-        </div>
+        <button type="button" onclick="agregarAcompanante()" style="margin-top:4px;padding:7px 14px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:2px solid #2a2a2a;background:#fff;color:var(--ink);cursor:pointer;font-family:'Source Sans 3',sans-serif">+ Agregar otro acompañante</button>
       </div>
     </div>
   </div>
@@ -1100,6 +1105,21 @@ function onResiduoChange(val) {
 }
 
 // ── CONDUCTOR ACOMPAÑANTE ─────────────────────────
+function agregarAcompanante() {
+  var lista = document.getElementById('acomp-lista');
+  var idx   = lista.querySelectorAll('.acomp-item').length;
+  var div   = document.createElement('div');
+  div.className = 'acomp-item';
+  div.dataset.index = idx;
+  div.style.cssText = 'margin-bottom:12px;padding-bottom:12px;border-bottom:1px dashed #ddd;position:relative';
+  div.innerHTML =
+    '<button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:0;right:0;background:none;border:none;font-size:16px;cursor:pointer;color:#999">✕</button>'+
+    '<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--orange);margin-bottom:6px">Acompañante '+(idx+1)+'</div>'+
+    '<div class="form-row single" style="margin-bottom:10px"><div class="form-group"><label>Nombre</label><input type="text" class="acomp-nombre" placeholder="Nombre completo"></div></div>'+
+    '<div class="form-row" style="margin-bottom:0"><div class="form-group"><label>Cedula</label><input type="text" class="acomp-cedula" placeholder="Numero de cedula" oninput="this.value=this.value.replace(/[^0-9]/g,\'\')"></div><div class="form-group"><label>Cargo / Rol</label><input type="text" class="acomp-cargo" placeholder="Ej: Ayudante..."></div></div>';
+  lista.appendChild(div);
+}
+
 function toggleAcompanante(val) {
   document.getElementById('conductor-solo').value = val;
   var btnSi = document.getElementById('acomp-si');
@@ -1116,6 +1136,14 @@ function toggleAcompanante(val) {
     btnSi.style.background = '#e8f5ee'; btnSi.style.color = 'var(--ink)'; btnSi.style.borderColor = '#2a2a2a';
     campos.style.display = 'none';
     if (alerta) alerta.style.display = 'none';
+    // Limpiar acompañantes extra
+    var lista = document.getElementById('acomp-lista');
+    if (lista) {
+      lista.querySelectorAll('.acomp-item').forEach(function(item, i) {
+        if (i === 0) { item.querySelectorAll('input').forEach(function(inp){ inp.value=''; }); }
+        else { item.remove(); }
+      });
+    }
   }
 }
 // ── FLOTA ─────────────────────────────────────────
@@ -1332,13 +1360,17 @@ async function enviarFormulario() {
   var alertas = [];
 
   if (document.getElementById('conductor-solo').value === 'si') {
-    var acompNombre = document.getElementById('acomp-nombre') ? document.getElementById('acomp-nombre').value.trim() : '';
-    var acompCedula = document.getElementById('acomp-cedula') ? document.getElementById('acomp-cedula').value.trim() : '';
-    var acompCargo  = document.getElementById('acomp-cargo')  ? document.getElementById('acomp-cargo').value.trim()  : '';
-    alertas.push('CONDUCTOR ACOMPAÑADO'
-      + (acompNombre ? ' | '+acompNombre : '')
-      + (acompCedula ? ' | CC: '+acompCedula : '')
-      + (acompCargo  ? ' | '+acompCargo : ''));
+    var items = document.querySelectorAll('#acomp-lista .acomp-item');
+    var acompTextos = [];
+    items.forEach(function(item) {
+      var nombre = item.querySelector('.acomp-nombre') ? item.querySelector('.acomp-nombre').value.trim() : '';
+      var cedula = item.querySelector('.acomp-cedula') ? item.querySelector('.acomp-cedula').value.trim() : '';
+      var cargo  = item.querySelector('.acomp-cargo')  ? item.querySelector('.acomp-cargo').value.trim()  : '';
+      if (nombre || cedula) {
+        acompTextos.push((nombre||'Sin nombre')+(cedula?' CC:'+cedula:'')+(cargo?' ('+cargo+')':''));
+      }
+    });
+    alertas.push('CONDUCTOR ACOMPAÑADO | '+(acompTextos.length>0?acompTextos.join(' / '):'Sin datos'));
   }
   if (bavEsDiferente) alertas.push('VIAJE DIFERENTE MISMO BAUCHER');
 
@@ -1501,7 +1533,14 @@ function resetFormulario() {
   var btnNo = document.getElementById('acomp-no');
   if (btnSi) { btnSi.style.background='#e8f5ee'; btnSi.style.color='var(--ink)'; btnSi.style.borderColor='#2a2a2a'; }
   if (btnNo) { btnNo.style.background='#e8f5ee'; btnNo.style.color='var(--ink)'; btnNo.style.borderColor='#2a2a2a'; }
-  ['acomp-nombre','acomp-cedula','acomp-cargo'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+  // Limpiar acompañantes
+  var lista = document.getElementById('acomp-lista');
+  if (lista) {
+    lista.querySelectorAll('.acomp-item').forEach(function(item, i) {
+      if (i === 0) { item.querySelectorAll('input').forEach(function(inp){ inp.value=''; }); }
+      else { item.remove(); }
+    });
+  }
   document.querySelectorAll('.op-section').forEach(function(s){s.classList.remove('visible');});
   document.getElementById('fun-apreciacion').value='';
   document.querySelectorAll('.apr-btn').forEach(function(b){b.classList.remove('active');});
