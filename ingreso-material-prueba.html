@@ -710,6 +710,9 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
       <option value="Deivi">Deivi</option>
       <option value="Saul">Saúl</option>
     </select>
+    <select id="filtro-operacion" onchange="renderConsulta()" style="padding:5px 9px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);font-family:'Source Sans 3',sans-serif;cursor:pointer">
+      <option value="">Todas las operaciones</option>
+    </select>
     <button class="refresh-btn" onclick="cargarRegistros()">Actualizar</button>
   </div>
 
@@ -1582,17 +1585,34 @@ function limpiarTiquete(tiq) {
 }
 
 function renderConsulta() {
-  var filtroOp = document.getElementById('filtro-operario') ? document.getElementById('filtro-operario').value : '';
+  var filtroOp      = document.getElementById('filtro-operario')  ? document.getElementById('filtro-operario').value  : '';
+  var filtroOperacion = document.getElementById('filtro-operacion') ? document.getElementById('filtro-operacion').value : '';
 
   var filtered = registrosData.filter(function(r) {
-    var ts = getField(r,['FECHA DISPOSICION PLANTA','Marca temporal','MARCA TEMPORAL']);
+    var ts = getMarcaTemporalR(r);
     if (!inPeriodo(ts, filtroActual)) return false;
     if (filtroOp) {
       var operario = getField(r,['OPERARIO registra','OPERARIO REGISTRA','OPERARIO']).toLowerCase();
       if (!operario.includes(filtroOp.toLowerCase())) return false;
     }
+    if (filtroOperacion) {
+      var op = getField(r,['OPERACION','operacion']).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+      var opF = filtroOperacion.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+      if (op !== opF) return false;
+    }
     return true;
   });
+
+  // Poblar select de operaciones con los datos del periodo
+  var selOp = document.getElementById('filtro-operacion');
+  var currentOp = selOp.value;
+  var todasOps = [...new Set(registrosData
+    .filter(function(r){ return inPeriodo(getMarcaTemporalR(r), filtroActual); })
+    .map(function(r){ return getField(r,['OPERACION','operacion']); })
+    .filter(Boolean)
+  )].sort();
+  selOp.innerHTML = '<option value="">Todas las operaciones</option>' +
+    todasOps.map(function(op){ return '<option value="'+op+'"'+(op===currentOp?' selected':'')+'>'+op+'</option>'; }).join('');
 
   var placas = new Set(filtered.map(function(r){return getField(r,['PLACA']);}).filter(Boolean));
   var ops    = new Set(filtered.map(function(r){return getField(r,['operacion','OPERACION']);}).filter(Boolean));
