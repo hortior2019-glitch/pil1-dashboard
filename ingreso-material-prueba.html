@@ -207,13 +207,8 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 <!-- ══ PANTALLA BIENVENIDA ══ -->
 <div id="pantalla-bienvenida">
   <div class="bienvenida-header">
-    <div style="display:flex;align-items:center;gap:14px">
-      <img src="logo.png" alt="Logo" style="width:48px;height:48px;object-fit:contain;flex-shrink:0">
-      <div>
-        <div class="bienvenida-header-org">Planta Empathy — Control de Ingreso</div>
-        <div class="bienvenida-header-title">Sistema de Control Operativo</div>
-      </div>
-    </div>
+    <div class="bienvenida-header-org">Planta Empathy — Control de Ingreso</div>
+    <div class="bienvenida-header-title">Sistema de Control Operativo</div>
   </div>
   <div class="bienvenida-body">
     <div class="bienvenida-saludo" id="bienvenida-saludo">Bienvenido</div>
@@ -271,13 +266,10 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 <!-- ══ PANTALLA APP ══ -->
 <div id="pantalla-app">
 <div class="header" style="display:flex;justify-content:space-between;align-items:center">
-  <div style="display:flex;align-items:center;gap:14px">
-    <img src="logo.png" alt="Logo" style="width:44px;height:44px;object-fit:contain;flex-shrink:0">
-    <div>
-      <div class="header-org">Planta Empathy — Control de Ingreso</div>
-      <div class="header-title">Formulario de Ingreso de Material</div>
-      <div class="header-sub" id="app-usuario-label">Registro de residuos por operacion</div>
-    </div>
+  <div>
+    <div class="header-org">Planta Empathy — Control de Ingreso</div>
+    <div class="header-title">Formulario de Ingreso de Material</div>
+    <div class="header-sub" id="app-usuario-label">Registro de residuos por operacion</div>
   </div>
   <button onclick="volverAlMenu()" style="padding:8px 16px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid rgba(255,255,255,.4);background:transparent;color:rgba(255,255,255,.8);cursor:pointer;font-family:'Source Sans 3',sans-serif;flex-shrink:0">← Menu</button>
 </div>
@@ -1720,12 +1712,25 @@ const BLOQUEO_MS   = 5 * 60 * 1000; // 5 minutos
 
 var usuariosDB = [];
 var sesionUsuario = null;
+
+// Restaurar sesión guardada
+(function() {
+  try {
+    var saved = localStorage.getItem('pil1_sesion');
+    if (saved) sesionUsuario = JSON.parse(saved);
+  } catch(e) { sesionUsuario = null; }
+})();
 var ahtInicio = null;
 var ahtInterval = null;
 var bloqueoInterval = null;
 
 // Cargar usuarios al iniciar
 window.addEventListener('load', function() {
+  // Restaurar sesión si existe
+  if (sesionUsuario) {
+    document.getElementById('pantalla-login').style.display = 'none';
+    mostrarBienvenida();
+  }
   // Verificar bloqueo activo
   verificarBloqueo();
   // Cargar operaciones y materiales desde Sheets
@@ -1803,6 +1808,7 @@ function intentarLogin() {
     errEl.style.display = 'none';
     intEl.textContent = '';
     sesionUsuario = user;
+    localStorage.setItem('pil1_sesion', JSON.stringify(user));
 
     // Registrar acceso en log
     fetch('https://script.google.com/macros/s/AKfycbxZpFHLbmGpE9LuASyf-0iWvFWtzUO3HZPjk6u68Yp76E9Fip2wrviCF6z2iAuWMMqZHA/exec', {
@@ -1887,6 +1893,7 @@ function abrirConsulta() {
 
 function cerrarSesion() {
   sesionUsuario = null;
+  localStorage.removeItem('pil1_sesion');
   detenerAHT();
   document.getElementById('pantalla-bienvenida').style.display = 'none';
   document.getElementById('pantalla-app').style.display = 'none';
