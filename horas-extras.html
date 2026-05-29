@@ -54,7 +54,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 .emp-lbl{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--accent)}
 .emp-val{font-size:13px;font-weight:600;color:var(--primary-d)}
 
-  
 /* FILTROS */
 .filtros-bar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
 .filtro-btn{padding:6px 14px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--input-border);background:var(--input-bg);color:var(--ink-m);cursor:pointer;transition:.2s;font-family:'Source Sans 3',sans-serif;border-radius:3px}
@@ -136,9 +135,136 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   .section-body{padding:16px}
   .act-grid{grid-template-columns:1fr 1fr}
 }
+
+/* ══ LOGIN OVERLAY ══════════════════════════════════════════ */
+#login-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 20px;
+}
+#login-overlay.hidden { display: none; }
+
+.login-card {
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 40px 36px 36px;
+  width: 100%;
+  max-width: 380px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.25);
+}
+.login-logo {
+  text-align: center;
+  margin-bottom: 28px;
+}
+.login-logo-img {
+  display: block;
+  margin: 0 auto 16px;
+  max-width: 140px;
+  max-height: 80px;
+  object-fit: contain;
+}
+.login-logo-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--primary-d);
+  line-height: 1.2;
+}
+.login-logo-sub {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--ink-l);
+  margin-top: 4px;
+}
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.login-field label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--ink-l);
+}
+.login-field input {
+  padding: 12px 14px;
+  font-size: 14px;
+  font-family: 'Source Sans 3', sans-serif;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--ink);
+  border-radius: 4px;
+  outline: none;
+  transition: .2s;
+  width: 100%;
+}
+.login-field input:focus {
+  border-color: var(--primary);
+  background: #e0f0e5;
+  box-shadow: 0 0 0 3px rgba(45,106,63,.12);
+}
+.login-error {
+  font-size: 12px;
+  color: var(--red);
+  font-weight: 600;
+  min-height: 18px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+.login-btn {
+  width: 100%;
+  padding: 14px;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-family: 'Source Sans 3', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background .2s;
+}
+.login-btn:hover   { background: var(--primary-d); }
+.login-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 </style>
 </head>
 <body>
+
+<!-- ══ LOGIN OVERLAY ══ -->
+<div id="login-overlay">
+  <div class="login-card">
+    <div class="login-logo">
+      <img src="logo.png" alt="Logo" class="login-logo-img"
+        onerror="this.style.display='none'">
+      <div class="login-logo-title">Horas Extras</div>
+    </div>
+    <div class="login-field">
+      <label>Usuario</label>
+      <input type="text" id="login-user" placeholder="Ingrese su usuario"
+        autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()">
+    </div>
+    <div class="login-field">
+      <label>Contraseña</label>
+      <input type="password" id="login-pass" placeholder="Ingrese su contraseña"
+        autocomplete="current-password" onkeydown="if(event.key==='Enter')loginSubmit()">
+    </div>
+    <div class="login-error" id="login-error"></div>
+    <button class="login-btn" id="login-btn" onclick="loginSubmit()">Ingresar</button>
+  </div>
+</div>
+
 
 <div class="header">
   <div class="header-org">Planta PIL 1 — Gestion de Personal</div>
@@ -702,6 +828,58 @@ async function cargarHE() {
   }
   document.getElementById('tbody-he-consulta').innerHTML='<tr><td colspan="7" class="empty">No se pudieron cargar los registros.</td></tr>';
 }
+
+// ══ LOGIN ═══════════════════════════════════════════════════
+const LOGIN_SHEET_CSV = 'https://docs.google.com/spreadsheets/d/1qTonHCPcWYct2E9PJt2tI27jAfXf5k9W7TB7gl7kM6I/export?format=csv&gid=0';
+
+async function loginSubmit() {
+  const usuario = document.getElementById('login-user').value.trim();
+  const pass    = document.getElementById('login-pass').value.trim();
+  const errEl   = document.getElementById('login-error');
+  const btn     = document.getElementById('login-btn');
+
+  if (!usuario || !pass) { errEl.textContent = 'Ingrese usuario y contrase\u00f1a.'; return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Verificando\u2026';
+  errEl.textContent = '';
+
+  try {
+    const res  = await fetch(LOGIN_SHEET_CSV);
+    const text = await res.text();
+
+    // Parsear CSV: columna A=usuario(0), B=contrasena(1), H=autorizado(7)
+    const rows = text.trim().split('\n').slice(1); // saltar cabecera
+    let acceso = false;
+    for (const row of rows) {
+      // Split respetando campos entre comillas
+      const cols = row.match(/(".*?"|[^,]+|(?<=,)(?=,)|^(?=,)|(?<=,)$)/g) || row.split(',');
+      const clean = cols.map(c => c.replace(/^"|"$/g,'').trim());
+      const colA  = clean[0]  || '';
+      const colB  = clean[1]  || '';
+      const colH  = (clean[7] || '').toLowerCase();
+      if (colA.toLowerCase() === usuario.toLowerCase() && colB === pass) {
+        if (colH !== 'si') {
+          errEl.textContent = 'Usuario sin autorizaci\u00f3n para horas extras.';
+          btn.disabled = false; btn.textContent = 'Ingresar'; return;
+        }
+        acceso = true;
+        break;
+      }
+    }
+
+    if (acceso) {
+      document.getElementById('login-overlay').classList.add('hidden');
+    } else {
+      errEl.textContent = 'Usuario o contrase\u00f1a incorrectos.';
+    }
+  } catch (e) {
+    errEl.textContent = 'Error de conexi\u00f3n. Intente de nuevo.';
+  }
+  btn.disabled = false;
+  btn.textContent = 'Ingresar';
+}
+// ═══════════════════════════════════════════════════════════
 </script>
 </body>
 </html>
