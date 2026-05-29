@@ -355,9 +355,154 @@
   .reg-col  { color: var(--regular); }
   .mal-col  { color: var(--bad); }
   .na-col   { color: var(--na); }
+
+  /* ══════════════════════════════════════════
+     PANTALLA DE PIN
+  ══════════════════════════════════════════ */
+  #pin-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--green-dark);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 20px;
+  }
+  #pin-overlay.hidden { display: none; }
+
+  .pin-card {
+    background: #ffffff;
+    border-radius: 24px;
+    padding: 36px 28px 28px;
+    width: 100%;
+    max-width: 340px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.25);
+  }
+
+  .pin-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--text-dark);
+    margin-bottom: 20px;
+  }
+
+  /* Puntos indicadores */
+  .pin-dots {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 32px;
+  }
+  .pin-dot {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #e0e0d8;
+    transition: background 0.2s;
+  }
+  .pin-dot.filled { background: var(--green-dark); }
+
+  /* Grid de teclas */
+  .pin-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    width: 100%;
+    margin-bottom: 20px;
+  }
+  .pin-key {
+    background: #f5f3ee;
+    border: none;
+    border-radius: 16px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-dark);
+    height: 80px;
+    cursor: pointer;
+    transition: background 0.12s, transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .pin-key:active { background: #e0ddd5; transform: scale(0.95); }
+  .pin-key.pin-zero { grid-column: 2; }
+  .pin-key.pin-del  {
+    grid-column: 3;
+    font-size: 18px;
+    color: var(--text-muted);
+  }
+
+  /* Mensaje de error */
+  .pin-error {
+    font-size: 12px;
+    color: var(--bad, #c0392b);
+    font-weight: 600;
+    min-height: 18px;
+    margin-bottom: 14px;
+    text-align: center;
+    letter-spacing: 0.02em;
+  }
+
+  /* Botón Ingresar */
+  .pin-btn {
+    width: 100%;
+    padding: 16px;
+    background: #8a9e87;
+    border: none;
+    border-radius: 12px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #ffffff;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .pin-btn:hover   { background: var(--green-mid); }
+  .pin-btn:active  { background: var(--green-dark); }
+  .pin-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
 </head>
 <body>
+
+<!-- ══ PANTALLA DE PIN ══ -->
+<div id="pin-overlay">
+  <div class="pin-card">
+    <div class="pin-title">PIN de Acceso</div>
+    <div class="pin-dots">
+      <div class="pin-dot" id="dot0"></div>
+      <div class="pin-dot" id="dot1"></div>
+      <div class="pin-dot" id="dot2"></div>
+      <div class="pin-dot" id="dot3"></div>
+    </div>
+    <div class="pin-grid">
+      <button class="pin-key" onclick="pinKey('1')">1</button>
+      <button class="pin-key" onclick="pinKey('2')">2</button>
+      <button class="pin-key" onclick="pinKey('3')">3</button>
+      <button class="pin-key" onclick="pinKey('4')">4</button>
+      <button class="pin-key" onclick="pinKey('5')">5</button>
+      <button class="pin-key" onclick="pinKey('6')">6</button>
+      <button class="pin-key" onclick="pinKey('7')">7</button>
+      <button class="pin-key" onclick="pinKey('8')">8</button>
+      <button class="pin-key" onclick="pinKey('9')">9</button>
+      <button class="pin-key pin-zero" onclick="pinKey('0')">0</button>
+      <button class="pin-key pin-del"  onclick="pinDel()">&#x232B;</button>
+    </div>
+    <div class="pin-error" id="pin-error"></div>
+    <button class="pin-btn" id="pin-btn" onclick="pinSubmit()">Ingresar</button>
+  </div>
+</div>
+
 
 <!-- HEADER -->
 <header class="header">
@@ -609,6 +754,57 @@ function resetForm() {
   document.getElementById('fecha').valueAsDate = new Date();
 }
 
+
+// ══ LÓGICA DE PIN ══════════════════════════════════════════
+const PREOP_URL = 'https://script.google.com/macros/s/AKfycbwq-8IIio1eJCjdyqgsXkZd1vNlHDClJM9uOPBUq_ztwYmjOwrQspnYxivnKI-D6o1zuw/exec';
+let pinValue = '';
+const PIN_MAX = 4;
+
+function pinKey(d) {
+  if (pinValue.length >= PIN_MAX) return;
+  pinValue += d;
+  actualizarDots();
+  document.getElementById('pin-error').textContent = '';
+  if (pinValue.length === PIN_MAX) pinSubmit();
+}
+
+function pinDel() {
+  pinValue = pinValue.slice(0, -1);
+  actualizarDots();
+  document.getElementById('pin-error').textContent = '';
+}
+
+function actualizarDots() {
+  for (let i = 0; i < PIN_MAX; i++) {
+    document.getElementById('dot' + i).classList.toggle('filled', i < pinValue.length);
+  }
+}
+
+async function pinSubmit() {
+  if (pinValue.length === 0) return;
+  const btn = document.getElementById('pin-btn');
+  btn.disabled = true;
+  btn.textContent = 'Verificando…';
+
+  try {
+    const res  = await fetch(PREOP_URL + '?action=verificarPIN_preop&pin=' + encodeURIComponent(pinValue));
+    const json = await res.json();
+    if (json.ok) {
+      document.getElementById('pin-overlay').classList.add('hidden');
+    } else {
+      document.getElementById('pin-error').textContent = json.error || 'PIN incorrecto';
+      pinValue = '';
+      actualizarDots();
+    }
+  } catch (e) {
+    document.getElementById('pin-error').textContent = 'Error de conexión. Intente de nuevo.';
+    pinValue = '';
+    actualizarDots();
+  }
+  btn.disabled = false;
+  btn.textContent = 'Ingresar';
+}
+// ═══════════════════════════════════════════════════════════
 </script>
 </body>
 </html>
