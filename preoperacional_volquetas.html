@@ -641,28 +641,76 @@ function resetForm() {
   document.getElementById('fecha').valueAsDate = new Date();
 }
 
+// ── Reemplaza esta URL con la de tu Apps Script desplegado ──
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwq-8IIio1eJCjdyqgsXkZd1vNlHDClJM9uOPBUq_ztwYmjOwrQspnYxivnKI-D6o1zuw/exec';
+
 function submitForm() {
+  // Validar campos de texto requeridos
   const required = ['fecha','placa','km','conductor','diligencia'];
   let missing = false;
   required.forEach(id => {
     const el = document.getElementById(id);
-    if (!el.value.trim()) { el.style.borderColor = 'var(--bad)'; missing = true; }
-    else el.style.borderColor = '';
+    if (!el.value.trim()) {
+      el.style.borderColor = 'var(--bad)';
+      missing = true;
+    } else {
+      el.style.borderColor = '';
+    }
   });
 
+  // Validar que todos los ítems de inspección estén respondidos
   const groups = {};
   document.querySelectorAll('input[type="radio"]').forEach(r => {
     if (!groups[r.name]) groups[r.name] = false;
     if (r.checked) groups[r.name] = true;
   });
-  const unanswered = Object.values(groups).some(v => !v);
-  if (unanswered) { missing = true; alert('Por favor responda todos los ítems de inspección.'); }
-
+  if (Object.values(groups).some(v => !v)) {
+    alert('Por favor responda todos los ítems de inspección.');
+    return;
+  }
   if (missing) return;
 
-  const toast = document.getElementById('toast');
-  toast.style.display = 'block';
-  setTimeout(() => toast.style.display = 'none', 3500);
+  // Recopilar todos los valores de radio
+  const radioValues = {};
+  document.querySelectorAll('input[type="radio"]:checked').forEach(r => {
+    radioValues[r.name] = r.value;
+  });
+
+  // Construir el payload
+  const payload = {
+    tipo:       'volqueta',
+    fecha:      document.getElementById('fecha').value,
+    placa:      document.getElementById('placa').value,
+    km:         document.getElementById('km').value,
+    conductor:  document.getElementById('conductor').value,
+    diligencia: document.getElementById('diligencia').value,
+    ...radioValues,
+  };
+
+  // Bloquear botón mientras envía
+  const btn = document.querySelector('.btn-submit');
+  btn.disabled = true;
+  btn.textContent = 'Enviando…';
+
+  fetch(APPS_SCRIPT_URL, {
+    method:  'POST',
+    mode:    'no-cors',   // Apps Script no devuelve CORS headers
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(payload),
+  })
+  .then(() => {
+    const toast = document.getElementById('toast');
+    toast.textContent = '✅ Inspección registrada correctamente en Google Sheets.';
+    toast.style.display = 'block';
+    setTimeout(() => { toast.style.display = 'none'; }, 4000);
+    btn.disabled = false;
+    btn.textContent = 'Guardar Inspección';
+  })
+  .catch(() => {
+    alert('❌ Error al enviar. Verifique su conexión e intente de nuevo.');
+    btn.disabled = false;
+    btn.textContent = 'Guardar Inspección';
+  });
 }
 </script>
 </body>
