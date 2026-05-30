@@ -674,8 +674,57 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 
 
 <div class="panel" id="panel-pedidos">
-  <div class="panel-iframe-wrap">
-    <iframe class="iframe-panel" src="pedidos.html"></iframe>
+  <div class="sec-hdr">
+    <div class="sec-title">Pedidos</div>
+    <div class="sec-sub" id="ped-period">Todos los registros</div>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi" style="--ac:var(--navy)"><div class="kpi-lbl">Total Pedidos</div><div class="kpi-val" id="ped-total">—</div><div class="kpi-desc">registros en el sheet</div></div>
+    <div class="kpi" style="--ac:var(--green)"><div class="kpi-lbl">Clientes Únicos</div><div class="kpi-val" id="ped-clientes">—</div><div class="kpi-desc">empresas distintas</div></div>
+    <div class="kpi" style="--ac:var(--gold)"><div class="kpi-lbl">Valor Total</div><div class="kpi-val" id="ped-valor">—</div><div class="kpi-desc">suma precio acordado</div></div>
+    <div class="kpi" style="--ac:var(--blue)"><div class="kpi-lbl">Valor Promedio</div><div class="kpi-val" id="ped-promedio">—</div><div class="kpi-desc">por pedido</div></div>
+    <div class="kpi" style="--ac:var(--red)"><div class="kpi-lbl">Sin Fecha Entrega</div><div class="kpi-val" id="ped-sin-fecha">—</div><div class="kpi-desc">pendientes de asignar</div></div>
+    <div class="kpi" style="--ac:var(--green)"><div class="kpi-lbl">Responsables</div><div class="kpi-val" id="ped-responsables">—</div><div class="kpi-desc">comerciales activos</div></div>
+  </div>
+
+  <div class="g2">
+    <div class="card">
+      <div class="card-hdr">Pedidos por producto</div>
+      <div id="ped-productos"><div class="empty">Cargando...</div></div>
+    </div>
+    <div class="card">
+      <div class="card-hdr">Método de pago</div>
+      <div id="ped-pagos"><div class="empty">Cargando...</div></div>
+    </div>
+  </div>
+
+  <div class="g2">
+    <div class="card">
+      <div class="card-hdr">Pedidos por responsable comercial</div>
+      <div id="ped-comercial"><div class="empty">Cargando...</div></div>
+    </div>
+    <div class="card">
+      <div class="card-hdr">Condiciones de pago</div>
+      <div id="ped-condiciones"><div class="empty">Cargando...</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr">Detalle de pedidos — Datos en tiempo real desde Google Sheets</div>
+    <div style="overflow-x:auto">
+      <table class="tbl">
+        <thead><tr>
+          <th>Fecha Solicitud</th>
+          <th>Cliente</th>
+          <th>Responsable</th>
+          <th>Método Pago</th>
+          <th>Fecha Entrega</th>
+          <th class="price">Valor</th>
+        </tr></thead>
+        <tbody id="tbody-ped"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -1275,6 +1324,7 @@ async function loadAllData() {
   try {
     dataSolicitudes = await fetchCSV(SHEETS.solicitudes);
     renderSolicitudes(dataSolicitudes, currentFilter);
+    try { renderPedidos(dataSolicitudes); } catch(e2) { console.error('renderPedidos:', e2); }
     ok++;
   } catch(e) { errors.push('Solicitudes'); console.error('Solicitudes:', e); }
 
@@ -2492,6 +2542,119 @@ function renderPreop(tipo, data) {
         <td ${mCls}>${m}</td><td ${rCls}>${reg}</td><td>${b}</td>
       </tr>`;
     }
+  }).join('');
+}
+
+// ── PEDIDOS ──────────────────────────────────────────────────
+const PEDIDOS_PRODUCTOS = [
+  'HUMUS SOLIDO','HUMUS LIQUIDO PURO','HUMUS LIQUIDO PLUS',
+  'HUMUS LIQUIDO ORGANICO MINERAL','HUMUS LIQUIDO PRADERA',
+  'ENRAIZADOR','HUMUS LIQUIDO CNM','HORTI OLOR','HORTI COMPOSTAJE'
+];
+
+function parsePrecio(v) {
+  if (!v) return 0;
+  return parseFloat(v.toString().replace(/[^0-9.]/g,'')) || 0;
+}
+
+function fmtCOP(n) {
+  if (n >= 1000000) return '$' + (n/1000000).toFixed(1) + 'M';
+  if (n >= 1000)    return '$' + Math.round(n/1000) + 'K';
+  return '$' + Math.round(n);
+}
+
+function barraSimple(label, count, max, color) {
+  const pct = max > 0 ? Math.round(count/max*100) : 0;
+  return `<div style="margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+      <span style="font-size:11px;color:var(--ink)">${label}</span>
+      <span style="font-size:11px;font-weight:700;color:var(--ink-m)">${count}</span>
+    </div>
+    <div style="height:6px;background:var(--rule-l);border-radius:3px">
+      <div style="width:${pct}%;height:100%;background:${color};border-radius:3px"></div>
+    </div>
+  </div>`;
+}
+
+function renderPedidos(data) {
+  if (!data || data.length === 0) {
+    document.getElementById('ped-total').textContent = '0';
+    return;
+  }
+
+  // KPIs
+  const clientes = new Set(data.map(r => (r['NOMBRE DEL CLIENTE O EMPRESA']||'').trim()).filter(Boolean));
+  const responsables = new Set(data.map(r => (r['RESPONSABLE COMERCIAL QUE GENERA EL PEDIDO']||'').trim()).filter(Boolean));
+  const valores = data.map(r => parsePrecio(r['PRECIO ACORDADO (CON DESCUENTO)']));
+  const totalValor = valores.reduce((a,b)=>a+b,0);
+  const sinFecha = data.filter(r => !(r['FECHA DE ENTREGA']||'').trim()).length;
+  const promedio = data.length > 0 ? totalValor / data.length : 0;
+
+  document.getElementById('ped-total').textContent       = fmt(data.length);
+  document.getElementById('ped-clientes').textContent    = fmt(clientes.size);
+  document.getElementById('ped-valor').textContent       = fmtCOP(totalValor);
+  document.getElementById('ped-promedio').textContent    = fmtCOP(promedio);
+  document.getElementById('ped-sin-fecha').textContent   = fmt(sinFecha);
+  document.getElementById('ped-responsables').textContent = fmt(responsables.size);
+
+  // Barras productos
+  const prodMap = {};
+  PEDIDOS_PRODUCTOS.forEach(p => {
+    const cnt = data.filter(r => (r[p]||'').toString().trim() !== '').length;
+    if (cnt > 0) prodMap[p] = cnt;
+  });
+  const prodSorted = Object.entries(prodMap).sort((a,b)=>b[1]-a[1]);
+  const maxProd = prodSorted[0]?.[1] || 1;
+  document.getElementById('ped-productos').innerHTML = prodSorted.length
+    ? prodSorted.map(([p,c]) => barraSimple(p.charAt(0)+p.slice(1).toLowerCase(), c, maxProd, 'var(--green)')).join('')
+    : '<div class="empty">Sin datos</div>';
+
+  // Métodos de pago
+  const pagosMap = {};
+  data.forEach(r => {
+    const p = (r['METODO DE PAGO']||'Sin especificar').trim() || 'Sin especificar';
+    pagosMap[p] = (pagosMap[p]||0) + 1;
+  });
+  const pagosSorted = Object.entries(pagosMap).sort((a,b)=>b[1]-a[1]);
+  const maxPago = pagosSorted[0]?.[1] || 1;
+  document.getElementById('ped-pagos').innerHTML = pagosSorted
+    .map(([p,c]) => barraSimple(p, c, maxPago, 'var(--navy)')).join('');
+
+  // Responsable comercial
+  const comMap = {};
+  data.forEach(r => {
+    const p = (r['RESPONSABLE COMERCIAL QUE GENERA EL PEDIDO']||'Sin asignar').trim() || 'Sin asignar';
+    comMap[p] = (comMap[p]||0) + 1;
+  });
+  const comSorted = Object.entries(comMap).sort((a,b)=>b[1]-a[1]);
+  const maxCom = comSorted[0]?.[1] || 1;
+  document.getElementById('ped-comercial').innerHTML = comSorted
+    .map(([p,c]) => barraSimple(p, c, maxCom, 'var(--gold)')).join('');
+
+  // Condiciones de pago
+  const condMap = {};
+  data.forEach(r => {
+    const p = (r['CONDICIONES DE PAGO']||'Sin especificar').trim() || 'Sin especificar';
+    condMap[p] = (condMap[p]||0) + 1;
+  });
+  const condSorted = Object.entries(condMap).sort((a,b)=>b[1]-a[1]);
+  const maxCond = condSorted[0]?.[1] || 1;
+  document.getElementById('ped-condiciones').innerHTML = condSorted
+    .map(([p,c]) => barraSimple(p, c, maxCond, 'var(--blue)')).join('');
+
+  // Tabla detalle
+  const tbody = document.getElementById('tbody-ped');
+  tbody.innerHTML = data.slice(0,60).map(r => {
+    const valor = parsePrecio(r['PRECIO ACORDADO (CON DESCUENTO)']);
+    const sinFch = !(r['FECHA DE ENTREGA']||'').trim();
+    return `<tr>
+      <td>${r['FECHA SOLICITUD']||''}</td>
+      <td><strong>${r['NOMBRE DEL CLIENTE O EMPRESA']||'—'}</strong></td>
+      <td>${r['RESPONSABLE COMERCIAL QUE GENERA EL PEDIDO']||'—'}</td>
+      <td>${r['METODO DE PAGO']||'—'}</td>
+      <td ${sinFch ? 'style="color:var(--red);font-weight:600"' : ''}>${r['FECHA DE ENTREGA']||'Pendiente'}</td>
+      <td class="price">${valor > 0 ? fmtCOP(valor) : '—'}</td>
+    </tr>`;
   }).join('');
 }
 </script>
