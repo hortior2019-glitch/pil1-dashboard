@@ -1,0 +1,2086 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- PWA iOS -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Empathy" />
+  <!-- PWA Android/Chrome -->
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#1a5c35" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%231a5c35'/%3E%3Ctext y='68' x='50' text-anchor='middle' font-size='38' font-family='Georgia,serif' font-weight='700' fill='%238b6914'%3EEmp%3C/text%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%231a5c35'/%3E%3Ctext y='68' x='50' text-anchor='middle' font-size='38' font-family='Georgia,serif' font-weight='700' fill='%238b6914'%3EEmp%3C/text%3E%3C/svg%3E">
+  <script>
+  // ── Service Worker — cache offline (iOS y Android) ──────────────
+  if ('serviceWorker' in navigator) {
+    const SW = `
+const CACHE='empathy-v1';
+const APP_URL=self.location.href.split('?')[0];
+self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.add(APP_URL)));self.skipWaiting();});
+self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));self.clients.claim();});
+self.addEventListener('fetch',e=>{
+  const u=e.request.url;
+  if(u.includes('script.google.com')||u.includes('googleapis.com')||u.includes('fonts.googleapis.com')||u.includes('fonts.gstatic.com'))return;
+  e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)||caches.match(APP_URL)));
+});`;
+    const blob=new Blob([SW],{type:'application/javascript'});
+    navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});
+  }
+  // ── Web App Manifest — Android Chrome instala la PWA ───────────
+  const M={
+    name:"Empathy — Ingreso de Material",
+    short_name:"Empathy",
+    description:"Sistema de Control de Ingreso de Residuos",
+    start_url:location.pathname+location.search,
+    display:"standalone",
+    orientation:"portrait",
+    background_color:"#1a5c35",
+    theme_color:"#1a5c35",
+    icons:[{
+      src:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' fill='%231a5c35'/%3E%3Ctext y='320' x='256' text-anchor='middle' font-size='180' font-family='Georgia,serif' font-weight='700' fill='%238b6914'%3EEmp%3C/text%3E%3C/svg%3E",
+      sizes:"512x512",type:"image/svg+xml",purpose:"any maskable"
+    }]
+  };
+  const ml=document.createElement('link');
+  ml.rel='manifest';
+  ml.href=URL.createObjectURL(new Blob([JSON.stringify(M)],{type:'application/manifest+json'}));
+  document.head.appendChild(ml);
+
+  // ── Banner instalación iOS (solo Safari, no standalone) ────────
+  document.addEventListener('DOMContentLoaded',()=>{
+    const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
+    const isStandalone=navigator.standalone===true||matchMedia('(display-mode:standalone)').matches;
+    if(isIOS&&!isStandalone&&!localStorage.getItem('emp_install_ok')){
+      setTimeout(()=>{
+        const b=document.createElement('div');
+        b.id='emp-install-banner';
+        b.style.cssText='position:fixed;bottom:0;left:0;right:0;background:#1a5c35;color:#fff;padding:12px 16px;font-size:12px;display:flex;align-items:center;gap:10px;z-index:9999;font-family:sans-serif';
+        b.innerHTML=`<span>📱</span><span>Para instalar: toca <strong style="color:#c8a84b">Compartir</strong> → <strong style="color:#c8a84b">"En pantalla de inicio"</strong></span><button onclick="this.parentNode.remove();localStorage.setItem('emp_install_ok','1')" style="margin-left:auto;background:none;border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;flex-shrink:0">OK</button>`;
+        document.body.appendChild(b);
+      },4000);
+    }
+    // Android: botón instalar nativo
+    window.addEventListener('beforeinstallprompt',e=>{
+      e.preventDefault();
+      window._empInstall=e;
+      const btn=document.createElement('button');
+      btn.textContent='⬇ Instalar app';
+      btn.style.cssText='position:fixed;bottom:16px;right:16px;background:#1a5c35;color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:12px;font-weight:700;cursor:pointer;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.3);font-family:sans-serif';
+      btn.onclick=async()=>{
+        if(!window._empInstall)return;
+        window._empInstall.prompt();
+        const{outcome}=await window._empInstall.userChoice;
+        if(outcome==='accepted')btn.remove();
+      };
+      document.body.appendChild(btn);
+      window.addEventListener('appinstalled',()=>btn.remove());
+    });
+  });
+  <\/script>
+<title>Ingreso de Material — Empathy</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Source+Sans+3:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f8f7f4;--white:#fff;--ink:#1a1a1a;--ink-m:#4a4a4a;--ink-l:#8a8a8a;--rule:#d8d4cc;--rule-l:#ede9e2;--s2:#f2f2f0;--navy:#1a5c35;--blue:#2d8a4e;--blue-l:#e8f5ee;--gold:#8b6914;--gold-l:#f5eed8;--green:#1a5c35;--green-l:#e8f5ee;--red:#8b1a1a;--red-l:#f5e8e8;--orange:#7a3d00;--orange-l:#fdf0e0}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-serif;font-weight:300;min-height:100vh}
+
+/* ── PANTALLAS ──────────────────────────────────── */
+#pantalla-login{background:var(--navy);display:flex;align-items:center;justify-content:center;flex-direction:column;padding:24px;min-height:100vh}
+#pantalla-bienvenida{display:none;background:var(--bg);min-height:100vh}
+#pantalla-app{display:none;background:var(--bg);min-height:100vh}
+.login-box{background:var(--white);width:100%;max-width:380px;padding:36px 32px}
+.login-logo{font-family:'Playfair Display',serif;font-size:32px;font-weight:700;color:var(--white);text-align:center;margin-bottom:4px}
+.login-sub{font-size:11px;color:rgba(255,255,255,.5);text-align:center;letter-spacing:2px;text-transform:uppercase;margin-bottom:28px}
+.login-title{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy);margin-bottom:20px;text-align:center}
+.login-group{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.login-group label{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l)}
+.login-group input{padding:11px 13px;font-size:14px;font-family:'Source Sans 3',sans-serif;border:1px solid var(--rule);background:var(--bg);color:var(--ink);outline:none;transition:.2s;width:100%}
+.login-group input:focus{border-color:var(--navy);background:var(--white)}
+.btn-login{width:100%;padding:13px;font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;background:var(--navy);color:white;border:none;cursor:pointer;font-family:'Source Sans 3',sans-serif;margin-top:6px;transition:.2s}
+.btn-login:hover{background:var(--blue)}
+.btn-login:disabled{opacity:.5;pointer-events:none}
+.login-error{display:none;margin-top:12px;padding:10px 14px;background:var(--red-l);border-left:3px solid var(--red);font-size:12px;color:var(--red);font-weight:600}
+.login-block{display:none;margin-top:12px;padding:10px 14px;background:var(--orange-l);border-left:3px solid var(--orange);font-size:12px;color:var(--orange);font-weight:600;text-align:center}
+.login-intentos{font-size:11px;color:var(--ink-l);text-align:center;margin-top:10px}
+
+/* ── BIENVENIDA ─────────────────────────────────── */
+#pantalla-app .header{background:var(--navy);color:white;padding:18px 24px;border-bottom:4px solid var(--gold);display:flex !important;justify-content:space-between;align-items:center}
+.bienvenida-header{background:var(--navy);color:white;padding:18px 24px;border-bottom:4px solid var(--gold)}
+.bienvenida-header-org{font-size:10px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,.5);margin-bottom:3px}
+.bienvenida-header-title{font-family:'Playfair Display',serif;font-size:21px;font-weight:700}
+.bienvenida-body{max-width:500px;margin:0 auto;padding:48px 24px;text-align:center}
+.bienvenida-saludo{font-family:'Playfair Display',serif;font-size:26px;font-weight:600;color:var(--navy);margin-bottom:8px}
+.bienvenida-fecha{font-size:12px;color:var(--ink-l);margin-bottom:48px}
+.btn-accion{display:block;width:100%;padding:18px;font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border:2px solid var(--navy);cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:.2s;margin-bottom:14px}
+.btn-accion.verde{background:var(--green);border-color:#0f3d22;color:white}
+.btn-accion.verde:hover{background:#0f3d22}
+.btn-accion.gris{background:var(--white);border-color:var(--rule);color:var(--ink-m)}
+.btn-accion.gris:hover{border-color:var(--navy);color:var(--navy)}
+.btn-logout{margin-top:32px;font-size:11px;color:var(--ink-l);background:none;border:none;cursor:pointer;text-decoration:underline;font-family:'Source Sans 3',sans-serif}
+
+/* ── APP PRINCIPAL ──────────────────────────────── */
+/* app hidden via #pantalla-app display none above */
+.panel{display:none}.panel.active{display:block}
+
+/* AHT COUNTER */
+#aht-bar{background:var(--navy);color:white;padding:6px 16px;display:flex;align-items:center;justify-content:space-between;font-size:11px}
+#aht-counter{font-family:'Playfair Display',serif;font-size:16px;font-weight:700;color:var(--gold)}
+#aht-label{font-size:10px;letter-spacing:1px;text-transform:uppercase;opacity:.7}
+
+.section{background:var(--white);border:1px solid var(--rule);margin-bottom:14px}
+.section-hdr{padding:13px 18px;border-bottom:1px solid var(--rule-l);display:flex;align-items:center;gap:10px}
+.section-num{display:none}
+.section-title{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy)}
+.section-badge{font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:2px 8px;margin-left:auto}
+.section-body{padding:16px 18px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.form-row.three{grid-template-columns:1fr 1fr 1fr}
+.form-row.single{grid-template-columns:1fr}
+.form-row:last-child{margin-bottom:0}
+.form-group{display:flex;flex-direction:column;gap:4px}
+.form-group label{font-size:12px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-m)}
+.form-group input,.form-group select,.form-group textarea{padding:9px 11px;font-size:15px;font-family:'Source Sans 3',sans-serif;font-weight:700;border:2px solid #2a2a2a;background:#e8f5ee;color:var(--ink);outline:none;transition:.2s;width:100%}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:var(--navy);background:var(--white);box-shadow:0 0 0 2px rgba(26,92,53,0.15)}
+.form-group textarea{resize:vertical;min-height:65px}
+.required{color:var(--red)}
+.field-hint{font-size:10px;color:var(--ink-l);margin-top:2px;font-style:italic}
+.field-warn{font-size:10px;color:var(--orange);margin-top:2px;font-weight:600;display:none}
+.field-err{font-size:10px;color:var(--red);margin-top:2px;font-weight:600;display:none}
+
+/* NOTICE */
+.notice{padding:11px 14px;margin-bottom:12px;border-left:3px solid var(--navy);background:var(--blue-l)}
+.notice.warn{border-color:var(--orange);background:var(--orange-l)}
+.notice.err{border-color:var(--red);background:var(--red-l)}
+.notice.ok{border-color:var(--green);background:var(--green-l)}
+.notice-title{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;color:var(--navy)}
+.notice.warn .notice-title{color:var(--orange)}
+.notice.err .notice-title{color:var(--red)}
+.notice.ok .notice-title{color:var(--green)}
+.notice-text{font-size:12px;color:var(--ink-m);line-height:1.5}
+
+/* OP-SPECIFIC SECTIONS */
+.op-section{display:none;background:var(--white);border:1px solid var(--rule);border-left:4px solid var(--gold);margin-bottom:14px}
+.op-section.visible{display:block}
+.op-section .section-hdr{border-left:none}
+
+/* PESO NETO */
+.peso-neto-box{background:var(--blue-l);border:1px solid #b5d8c2;padding:11px 14px;margin-top:10px;display:flex;justify-content:space-between;align-items:center}
+.peso-neto-lbl{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--blue)}
+.peso-neto-val{font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--navy)}
+
+/* SEARCH DROPDOWN */
+.search-wrap{position:relative}
+.search-input{width:100%;padding:9px 11px;font-size:15px;font-family:'Source Sans 3',sans-serif;font-weight:700;border:2px solid #2a2a2a;background:#e8f5ee;color:var(--ink);outline:none;transition:.2s}
+.search-input:focus{border-color:var(--navy);background:var(--white);box-shadow:0 0 0 2px rgba(26,92,53,0.15)}
+.dropdown{display:none;position:absolute;top:100%;left:0;right:0;background:var(--white);border:1px solid var(--navy);border-top:none;max-height:200px;overflow-y:auto;z-index:200;box-shadow:0 4px 12px rgba(0,0,0,.1)}
+.dropdown.open{display:block}
+.dropdown-item{padding:8px 11px;font-size:12px;cursor:pointer;color:var(--ink-m);border-bottom:1px solid var(--rule-l)}
+.dropdown-item:last-child{border-bottom:none}
+.dropdown-item:hover,.dropdown-item:active{background:var(--blue-l);color:var(--navy)}
+.otro-field{display:none;margin-top:7px}
+.otro-field input{padding:9px 11px;font-size:13px;font-family:'Source Sans 3',sans-serif;border:2px solid var(--gold);background:#e8f5ee;color:var(--ink);outline:none;width:100%}
+
+/* APRECIACION */
+.apreciacion-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:4px}
+.apr-btn{padding:10px 4px;border:2px solid var(--rule);background:var(--bg);color:var(--ink-m);cursor:pointer;font-size:11px;font-weight:700;font-family:'Source Sans 3',sans-serif;text-align:center;transition:.2s}
+.apr-btn:hover{border-color:var(--navy);color:var(--navy);background:var(--blue-l)}
+.apr-btn.active{border-color:var(--navy);background:var(--navy);color:white}
+
+/* CONFIRM MODAL */
+.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:500;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal-box{background:var(--white);border-top:4px solid var(--orange);max-width:480px;width:92%;padding:22px}
+.modal-title{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--orange);margin-bottom:8px}
+.modal-text{font-size:13px;color:var(--ink-m);line-height:1.6;margin-bottom:16px}
+.modal-btns{display:flex;gap:10px}
+.modal-btn{flex:1;padding:11px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:none;cursor:pointer;font-family:'Source Sans 3',sans-serif}
+.modal-btn.cancel{background:var(--bg);border:1px solid var(--rule);color:var(--ink-m)}
+.modal-btn.confirm{background:var(--orange);color:white}
+.modal-btn.confirm-diff{background:var(--navy);color:white}
+
+/* SUBMIT */
+.btn-submit{width:100%;padding:14px;font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;background:var(--navy);color:white;border:none;cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:.2s;margin-top:14px}
+.btn-submit:hover{background:var(--blue)}
+.btn-submit:disabled{opacity:.5;pointer-events:none}
+.status{display:none;padding:13px 16px;margin-top:13px;border-left:4px solid var(--navy)}
+.status.loading{background:var(--blue-l);border-color:var(--navy);display:block}
+.status.success{background:var(--green-l);border-color:var(--green);display:block}
+.status.error{background:var(--red-l);border-color:var(--red);display:block}
+.status-title{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:3px}
+.status.loading .status-title{color:var(--navy)}
+.status.success .status-title{color:var(--green)}
+.status.error .status-title{color:var(--red)}
+.status-text{font-size:12px;color:var(--ink-m);line-height:1.5}
+.spinner{display:inline-block;width:11px;height:11px;border:2px solid rgba(26,92,53,.3);border-top-color:var(--navy);border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:5px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* CONSULTA */
+.filter-bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+.fbtn{padding:6px 13px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:.2s}
+.fbtn.active{background:var(--navy);border-color:var(--navy);color:white}
+.refresh-btn{margin-left:auto;padding:6px 13px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--navy);background:transparent;color:var(--navy);cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:.2s}
+.refresh-btn:hover{background:var(--navy);color:white}
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);margin-bottom:14px}
+.kpi-box{background:var(--white);padding:12px 14px}
+.kpi-lbl{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);margin-bottom:5px}
+.kpi-val{font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:var(--navy)}
+.kpi-desc{font-size:10px;color:var(--ink-l)}
+.card{background:var(--white);border:1px solid var(--rule);padding:16px 18px}
+.card-hdr{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink-l);margin-bottom:12px;padding-bottom:9px;border-bottom:1px solid var(--rule-l)}
+.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl thead tr{border-bottom:2px solid var(--ink)}
+.tbl th{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-m);padding:7px 9px;text-align:left}
+.tbl td{padding:8px 9px;color:var(--ink-m);border-bottom:1px solid var(--rule-l);font-weight:300;vertical-align:top}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr:hover td{background:var(--s2)}
+.tbl .bold{font-weight:600;color:var(--ink)}
+.tbl .num{text-align:right;font-weight:600}
+.empty{text-align:center;padding:28px;color:var(--ink-l);font-style:italic;font-size:12px}
+.date-filter-wrap{display:flex;align-items:center;gap:6px}
+.date-filter-wrap input[type=date]{padding:5px 9px;font-size:11px;font-family:'Source Sans 3',sans-serif;border:1px solid var(--rule);background:var(--bg);color:var(--ink);outline:none}
+
+@media(max-width:600px){
+  .header{padding:14px 16px}.wrapper{padding:14px 10px 48px}
+  .form-row,.form-row.three{grid-template-columns:1fr}.section-body{padding:13px}
+  .apreciacion-grid{grid-template-columns:repeat(3,1fr)}
+  .tbl th,.tbl td{padding:6px 7px;font-size:11px}
+}
+</style>
+</head>
+<body>
+
+<!-- ══ PANTALLA LOGIN ══ -->
+<div id="pantalla-login">
+  <div class="login-box">
+    <div style="text-align:center;margin-bottom:16px">
+      <img src="logo.png" alt="Logo" style="width:90px;height:90px;object-fit:contain">
+    </div>
+    <div style="font-family:'Playfair Display',serif;font-size:26px;font-weight:700;color:var(--navy);margin-bottom:4px;text-align:center">Empathy</div>
+    <div style="font-size:10px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--ink-l);margin-bottom:24px;text-align:center">Registro de Ingreso de Residuos</div>
+    <div class="login-group">
+      <label>Usuario</label>
+      <input type="text" id="login-usuario" placeholder="Su usuario" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()">
+    </div>
+    <div class="login-group">
+      <label>Contrasena</label>
+      <div style="position:relative">
+        <input type="password" id="login-pass" placeholder="Su contrasena" autocomplete="current-password" onkeydown="if(event.key==='Enter')intentarLogin()" style="padding-right:40px;width:100%">
+        <button type="button" id="toggle-pass" onclick="var i=document.getElementById('login-pass');i.type=i.type==='password'?'text':'password';document.getElementById('icon-eye').style.display=i.type==='password'?'block':'none';document.getElementById('icon-eye-off').style.display=i.type==='password'?'none':'block';" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:0;color:var(--ink-l);display:flex;align-items:center">
+          <svg id="icon-eye" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg id="icon-eye-off" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+        </button>
+      </div>
+    </div>
+    <button class="btn-login" id="btn-login" onclick="intentarLogin()">Ingresar</button>
+    <div class="login-error" id="login-error">Usuario o contrasena incorrectos.</div>
+    <div class="login-block" id="login-block"></div>
+    <div class="login-intentos" id="login-intentos"></div>
+  </div>
+</div>
+
+<!-- ══ PANTALLA BIENVENIDA ══ -->
+<div id="pantalla-bienvenida">
+  <div class="bienvenida-header">
+    <div class="bienvenida-header-org">Planta Empathy — Control de Ingreso</div>
+    <div class="bienvenida-header-title">Sistema de Control Operativo</div>
+  </div>
+  <div class="bienvenida-body">
+    <div class="bienvenida-saludo" id="bienvenida-saludo">Bienvenido</div>
+    <div class="bienvenida-fecha" id="bienvenida-fecha"></div>
+    <button class="btn-accion verde" onclick="abrirFormulario()">Llenar Formulario de Ingreso</button>
+    <button class="btn-logout" onclick="cerrarSesion()">Cerrar sesion</button>
+  </div>
+
+  <!-- REGISTROS INLINE EN MENU -->
+  <div style="max-width:900px;margin:0 auto;padding:0 18px 48px">
+
+    <div class="filter-bar">
+      <button class="fbtn active" id="fbtn-hoy" onclick="setFiltro('hoy',this)">Hoy</button>
+      <button class="fbtn" onclick="setFiltro('hora',this)">Ultima hora</button>
+      <button class="fbtn" onclick="setFiltro('semana',this)">Esta semana</button>
+      <button class="fbtn" onclick="setFiltro('mes',this)">Este mes</button>
+      <button class="fbtn" onclick="setFiltro('total',this)">Total</button>
+      <div class="date-filter-wrap">
+        <input type="date" id="filtro-fecha-cal" onchange="setFiltroFecha(this.value)" title="Filtrar por fecha especifica">
+      </div>
+      <select id="filtro-operario" onchange="renderConsulta()" style="padding:5px 9px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);font-family:'Source Sans 3',sans-serif;cursor:pointer">
+        <option value="">Todos los operarios</option>
+        <option value="Alexander">Alexander</option>
+        <option value="Idaldo">Idaldo</option>
+        <option value="Deivi">Deivi</option>
+        <option value="Saul">Saúl</option>
+      </select>
+      <select id="filtro-operacion" onchange="renderConsulta()" style="padding:5px 9px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);font-family:'Source Sans 3',sans-serif;cursor:pointer">
+        <option value="">Todas las operaciones</option>
+      </select>
+      <button class="refresh-btn" onclick="cargarRegistros()">Actualizar</button>
+    </div>
+
+    <div class="kpi-row">
+      <div class="kpi-box"><div class="kpi-lbl">Registros</div><div class="kpi-val" id="c-total">—</div><div class="kpi-desc">en el periodo</div></div>
+      <div class="kpi-box"><div class="kpi-lbl">Peso Neto</div><div class="kpi-val" id="c-peso">—</div><div class="kpi-desc">kg acumulados</div></div>
+      <div class="kpi-box"><div class="kpi-lbl">Vehiculos</div><div class="kpi-val" id="c-veh">—</div><div class="kpi-desc">placas distintas</div></div>
+      <div class="kpi-box"><div class="kpi-lbl">Operaciones</div><div class="kpi-val" id="c-ops">—</div><div class="kpi-desc">proveedores distintos</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-hdr">Registros en tiempo real</div>
+      <div style="overflow-x:auto">
+        <table class="tbl">
+          <thead><tr>
+            <th>Fecha</th><th>Hora</th><th>Operario</th><th>Tiquete</th><th>Placa</th>
+            <th>Operacion</th><th>Residuo</th>
+            <th class="num">P.Cargado</th><th class="num">P.Vehículo Vacío</th><th class="num">Neto kg</th><th></th>
+          </tr></thead>
+          <tbody id="tbody-consulta"><tr><td colspan="11" class="empty">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══ PANTALLA APP ══ -->
+<div id="pantalla-app">
+<div class="header" style="display:flex;justify-content:space-between;align-items:center">
+  <div>
+    <div class="header-org">Planta Empathy — Control de Ingreso</div>
+    <div class="header-title">Formulario de Ingreso de Material</div>
+    <div class="header-sub" id="app-usuario-label">Registro de residuos por operacion</div>
+  </div>
+  <button onclick="volverAlMenu()" style="padding:8px 16px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid rgba(255,255,255,.4);background:transparent;color:rgba(255,255,255,.8);cursor:pointer;font-family:'Source Sans 3',sans-serif;flex-shrink:0">← Menu</button>
+</div>
+<div id="aht-bar" style="display:none">
+  <span class="aht-label">TIEMPO DE DILIGENCIAMIENTO</span>
+  <span id="aht-counter">00:00</span>
+</div>
+
+
+
+<!-- paneles sin tabs -->
+
+<!-- ══════════════════════════════════════ -->
+<!-- PANEL REGISTRO -->
+<!-- ══════════════════════════════════════ -->
+<div class="panel" id="panel-registro">
+<div class="wrapper">
+
+  <!-- OPERARIO DESDE SESION -->
+  <input type="hidden" id="operario">
+
+  <!-- 1. OPERACION Y MATERIAL -->
+  <div class="section">
+    <div class="section-hdr"></div>
+    <div class="section-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Operacion (proveedor) <span class="required">*</span></label>
+          <select id="operacion" onchange="onOperacionChange(this.value)">
+            <option value="">— Cargando operaciones... —</option>
+          </select>
+          <div class="otro-field" id="operacion-otra-wrap">
+            <input type="text" id="operacion-otro-text" placeholder="Escriba el nombre del proveedor...">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Residuo / Material <span class="required">*</span></label>
+          <select id="residuo" onchange="onResiduoChange(this.value)">
+            <option value="">— Seleccione operacion primero —</option>
+          </select>
+          <div class="otro-field" id="residuo-otra-wrap">
+            <input type="text" id="residuo-otro" placeholder="Escriba el tipo de residuo...">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. VEHICULO Y CONDUCTOR -->
+  <div class="section">
+    <div class="section-hdr"></div>
+    <div class="section-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Placa del vehiculo <span class="required">*</span></label>
+          <input type="text" id="placa" placeholder="Ej: ABC123" maxlength="6" oninput="formatPlaca(this);checkPlacaFlota(this.value)">
+          <div class="field-hint" id="placa-flota-hint"></div>
+        </div>
+        <div class="form-group">
+          <label>Conductor <span class="required">*</span></label>
+          <select id="conductor-select" onchange="onConductorSelect(this.value)" style="width:100%">
+            <option value="">— Seleccione operacion primero —</option>
+          </select>
+        </div>
+      </div>
+      <!-- Campos conductor -->
+      <div id="conductor-campos">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Nombre completo <span class="required">*</span></label>
+            <input type="text" id="conductor" placeholder="Nombre completo">
+          </div>
+          <div class="form-group">
+            <label>Cédula</label>
+            <input type="text" id="ultimos_cuatro_cedula" placeholder="" oninput="this.value=this.value.replace(/[^0-9]/g,'')" maxlength="12">
+          </div>
+        </div>
+        <div class="form-row single">
+          <div class="form-group">
+            <label>Celular <span class="required">*</span></label>
+            <input type="tel" id="conductor_celular" placeholder="Ej: 3001234567" oninput="this.value=this.value.replace(/[^0-9]/g,'')" maxlength="10">
+            <div class="field-hint">Número de 10 dígitos sin espacios</div>
+          </div>
+        </div>
+      </div>
+      <!-- Conductor acompañado -->
+      <div style="margin-top:10px;padding:12px 14px;background:var(--s2);border:2px solid #2a2a2a;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);margin-bottom:8px">El conductor viene acompañado en la cabina</div>
+        <div style="display:flex;gap:10px">
+          <button type="button" id="acomp-no" onclick="toggleAcompanante('no')" style="flex:1;padding:10px;font-size:13px;font-weight:700;border:2px solid #2a2a2a;background:#e8f5ee;color:var(--ink);cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:.2s">No</button>
+          <button type="button" id="acomp-si" onclick="toggleAcompanante('si')" style="flex:1;padding:10px;font-size:13px;font-weight:700;border:2px solid #2a2a2a;background:#e8f5ee;color:var(--ink);cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:.2s">Sí</button>
+        </div>
+        <input type="hidden" id="conductor-solo" value="no">
+      </div>
+      <div id="acomp-campos" style="display:none;margin-top:8px;padding:14px;background:#fff8e1;border:2px solid #2a2a2a;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--orange);margin-bottom:10px">Datos del acompañante</div>
+        <div id="acomp-lista">
+          <div class="acomp-item" data-index="0" style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px dashed #ddd">
+            <div class="form-row single" style="margin-bottom:10px">
+              <div class="form-group">
+                <label>Nombre del acompañante <span class="required">*</span></label>
+                <input type="text" class="acomp-nombre" placeholder="Nombre completo">
+              </div>
+            </div>
+            <div class="form-row" style="margin-bottom:0">
+              <div class="form-group">
+                <label>Cedula del acompañante</label>
+                <input type="text" class="acomp-cedula" placeholder="Numero de cedula" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+              </div>
+              <div class="form-group">
+                <label>Cargo / Rol</label>
+                <input type="text" class="acomp-cargo" placeholder="Ej: Ayudante, Supervisor...">
+              </div>
+            </div>
+          </div>
+        </div>
+        <button type="button" onclick="agregarAcompanante()" style="margin-top:4px;padding:7px 14px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:2px solid #2a2a2a;background:#fff;color:var(--ink);cursor:pointer;font-family:'Source Sans 3',sans-serif">+ Agregar otro acompañante</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SECCIONES ESPECIFICAS POR OPERACION (debajo del punto 3) ══ -->
+
+  <!-- POMAR -->
+  <div class="op-section" id="op-pomar">
+    <div class="section-body">
+      <div class="form-row single">
+        <div class="form-group">
+          <label>Hora de salida del ticket <span class="required">*</span></label>
+          <input type="time" id="pom-hora-salida">
+          <div class="field-hint">Se usa para detectar viajes distintos con mismo peso y placa</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ALQUERIA CV -->
+  <div class="op-section" id="op-alqueria">
+    <div class="section-hdr">
+      <div class="section-num" style="background:var(--red)">A</div>
+      <span class="section-badge" style="background:var(--red-l);color:var(--red)">Tipo A/B + Consecutivo</span>
+    </div>
+    <div class="section-body">
+      <div class="notice warn" style="margin-bottom:12px">
+        <div class="notice-title">Codigo del recibo</div>
+        <div class="notice-text">Ingrese el codigo numerico del recibo en el campo 4 (Identificacion del Ingreso). El sistema verificara si el consecutivo viene atrasado.</div>
+      </div>
+      <div class="form-row single">
+        <div class="form-group">
+          <label>Tipo de recibo <span class="required">*</span></label>
+          <select id="alq-tipo">
+            <option value="">— Seleccione —</option>
+            <option value="A">Recibo A — Cajicá (Suero láctico)</option>
+            <option value="B">Recibo B — Tocancipá (Otros materiales)</option>
+          </select>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- FAMILIA / HORTIORGANIC -->
+  <div class="op-section" id="op-familia">
+    <div class="section-hdr">
+      <div class="section-num" style="background:var(--blue)">F</div>
+      <span class="section-badge" style="background:var(--blue-l);color:var(--blue)">Bascula ticket</span>
+    </div>
+    <div class="section-body">
+      <div class="form-row single">
+        <div class="form-group">
+          <label>Fecha de salida (si difiere)</label>
+          <input type="date" id="fam-fecha-salida">
+          <div class="field-hint">Dejar vacio si entrada y salida son el mismo dia</div>
+        </div>
+      </div>
+      <div class="form-row single">
+        <div class="form-group">
+          <label>Destino</label>
+          <select id="fam-destino">
+            <option value="">— Seleccione —</option>
+            <option value="Familia">Familia</option>
+            <option value="HortiOrganic">HortiOrganic</option>
+            <option value="Ambos">Ambos</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MC CAIN -->
+  <div class="op-section" id="op-mccain">
+    <div class="section-hdr">
+      <div class="section-num" style="background:var(--orange)">M</div>
+      <span class="section-badge" style="background:var(--orange-l);color:var(--orange)">Multi-carga</span>
+    </div>
+    <div class="section-body">
+      <div class="notice" style="margin-bottom:12px">
+        <div class="notice-title">Recibos por carga</div>
+        <div class="notice-text">Cada carga tiene su propio recibo. Ingrese el numero del primer recibo en el campo 4. Los recibos adicionales se registran abajo con su hora de salida.</div>
+      </div>
+      <div class="form-row single">
+        <div class="form-group">
+          <label>Numero de cargas en este viaje <span class="required">*</span></label>
+          <select id="mc-num-cargas" onchange="renderMcCargas()">
+            <option value="1">1 carga (1 recibo)</option>
+            <option value="2">2 cargas (2 recibos)</option>
+            <option value="3">3 cargas (3 recibos)</option>
+            <option value="4">4 cargas o mas</option>
+          </select>
+        </div>
+      </div>
+      <div id="mc-cargas-container"></div>
+    </div>
+  </div>
+
+  <!-- RECREO -->
+  <div class="op-section" id="op-recreo">
+    <div class="section-hdr">
+      <div class="section-num" style="background:var(--blue)">R</div>
+      <span class="section-badge" style="background:var(--blue-l);color:var(--blue)">Baucher sin consecutivo</span>
+    </div>
+    <div class="section-body">
+      <div class="form-row single">
+        <div class="form-group">
+          <label>Hora de salida del baucher <span class="required">*</span></label>
+          <input type="time" id="rec-hora-salida">
+          <div class="field-hint">Discrimina viajes diferentes con mismos datos</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- UBASER / PELDAR -->
+  <div class="op-section" id="op-ubaser">
+    <div class="section-hdr">
+      <div class="section-num" style="background:var(--ink-m)">U</div>
+      <span class="section-badge" style="background:var(--s2);color:var(--ink-m)">Destino por ticket</span>
+    </div>
+    <div class="section-body">
+      <div class="form-row single">
+        <div class="form-group">
+          <label>Segun el ticket, esta carga corresponde a <span class="required">*</span></label>
+          <select id="uba-destino">
+            <option value="">— Seleccione segun el ticket —</option>
+            <option value="Ubaser (antes Reciclene)">Ubaser (antes Reciclene)</option>
+            <option value="Peldar">Peldar</option>
+          </select>
+        </div>
+      </div>
+      <div class="notice" style="margin-top:10px;margin-bottom:0">
+        <div class="notice-title">Solo peso neto</div>
+        <div class="notice-text">Para esta operacion unicamente se registra el peso neto segun el ticket.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FUNRECOL -->
+  <div class="op-section" id="op-funredcol">
+    <div class="section-hdr">
+      <div class="section-num" style="background:var(--green)">F</div>
+      <span class="section-badge" style="background:var(--green-l);color:var(--green)">Tipo A / Tipo B</span>
+    </div>
+    <div class="section-body">
+      <div class="form-row single">
+        <div class="form-group">
+          <label>Tipo de baucher <span class="required">*</span></label>
+          <select id="fun-tipo" onchange="toggleFunredcol()">
+            <option value="">— Seleccione —</option>
+            <option value="A">Tipo A — Con bascula (fecha, pesos, conductor)</option>
+            <option value="B">Tipo B — Domingo / Festivo (apreciacion visual)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- TIPO A -->
+      <div id="fun-tipo-a" style="display:none;margin-top:12px">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Fecha de entrada</label>
+            <input type="date" id="fun-fecha-entrada">
+          </div>
+          <div class="form-group">
+            <label>Fecha de salida</label>
+            <input type="date" id="fun-fecha-salida">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Peso de entrada (kg)</label>
+            <input type="number" id="fun-peso-entrada" placeholder="kg" min="0" step="0.01">
+          </div>
+          <div class="form-group">
+            <label>Peso de salida (kg)</label>
+            <input type="number" id="fun-peso-salida" placeholder="kg" min="0" step="0.01">
+          </div>
+        </div>
+      </div>
+
+      <!-- TIPO B -->
+      <div id="fun-tipo-b" style="display:none;margin-top:12px">
+        <div class="notice warn" style="margin-bottom:12px">
+          <div class="notice-title">Baucher por apreciacion visual</div>
+          <div class="notice-text">Entregado en domingo o festivo sin acceso a bascula. Seleccione el nivel de carga estimado. El sistema calculara un promedio historico segun la placa del vehiculo.</div>
+        </div>
+        <div class="form-group">
+          <label>Nivel de carga estimado <span class="required">*</span></label>
+          <div class="apreciacion-grid" id="apr-grid">
+            <button type="button" class="apr-btn" onclick="selApreciacion('0/5',this)">0/5<br><span style="font-size:9px;font-weight:400">Vacio</span></button>
+            <button type="button" class="apr-btn" onclick="selApreciacion('1/5',this)">1/5</button>
+            <button type="button" class="apr-btn" onclick="selApreciacion('2/5',this)">2/5</button>
+            <button type="button" class="apr-btn" onclick="selApreciacion('3/5',this)">3/5</button>
+            <button type="button" class="apr-btn" onclick="selApreciacion('4/5',this)">4/5</button>
+            <button type="button" class="apr-btn" onclick="selApreciacion('Lleno',this)">Lleno</button>
+          </div>
+          <input type="hidden" id="fun-apreciacion">
+        </div>
+        <div class="form-group" style="margin-top:10px">
+          <label>Promedio historico estimado para esta placa</label>
+          <div id="fun-promedio-hist" style="padding:9px 11px;background:var(--s2);border:1px solid var(--rule);font-size:12px;color:var(--ink-m)">Ingrese la placa del vehiculo en la seccion 2 para ver el promedio</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SOFTYS -->
+  <div class="op-section" id="op-softys">
+    <div class="section-hdr">
+      <div class="section-num" style="background:#0057A8">S</div>
+      <span class="section-badge" style="background:#e8f0f8;color:#0057A8">Lodo / Tromel</span>
+    </div>
+    <div class="section-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Fecha de ingreso</label>
+          <input type="date" id="sof-fecha-ingreso">
+        </div>
+        <div class="form-group">
+          <label>Fecha de salida (si difiere)</label>
+          <input type="date" id="sof-fecha-salida">
+          <div class="field-hint">Dejar vacio si es el mismo dia</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECCIONES 4-6 (siempre visibles, debajo de las op-sections) -->
+
+  <!-- IDENTIFICACION -->
+  <div class="section">
+    <div class="section-hdr"></div>
+    <div class="section-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Numero de tiquete / baucher <span class="required">*</span></label>
+          <input type="text" id="numero_tiquete" placeholder="Numero del tiquete" oninput="validarTiqueteOp()">
+          <div class="field-warn" id="tiquete-warn"></div>
+          <div class="field-err" id="tiquete-err"></div>
+        </div>
+        <div class="form-group">
+          <label>Fecha de disposicion <span class="required">*</span></label>
+          <input type="date" id="fecha_disposicion">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PESOS -->
+  <div class="section">
+    <div class="section-hdr"></div>
+    <div class="section-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Peso vehiculo vacio (kg)</label>
+          <input type="number" id="peso_salida" placeholder="0" min="0" step="0.01">
+          <div class="field-hint">Si el ticket no trae este dato, dejar en 0</div>
+        </div>
+        <div class="form-group">
+          <label>Peso vehiculo cargado (kg) <span class="required">*</span></label>
+          <input type="number" id="peso_entrada" placeholder="Peso con carga" min="0" step="0.01">
+        </div>
+      </div>
+      <div class="peso-neto-box">
+        <span class="peso-neto-val" id="peso-neto-val">— kg</span>
+        <span class="peso-neto-lbl">Peso neto de material</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECCION DEPOSITARIA -->
+  <div class="section">
+    <div class="section-hdr"></div>
+    <div class="section-body">
+      <div class="form-row single">
+        <div class="form-group">
+          <label>Zona de descargue</label>
+          <input type="text" id="seccion_depositaria" placeholder="Numero o nombre de la seccion">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- OBSERVACIONES -->
+  <div class="section">
+    <div class="section-hdr"></div>
+    <div class="section-body">
+      <div class="form-row single">
+        <div class="form-group">
+          <label>Observacion</label>
+          <textarea id="observacion" placeholder="Novedades, incidentes, condiciones del material..."></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn-submit" id="btn-submit" type="button">Guardar Formulario</button>
+  <div class="status" id="status">
+    <div class="status-title" id="status-title"></div>
+    <div class="status-text" id="status-text"></div>
+  </div>
+
+</div>
+</div><!-- /panel-registro -->
+
+<!-- ══════════════════════════════════════ -->
+<!-- PANEL CONSULTA -->
+<!-- ══════════════════════════════════════ -->
+<div class="panel" id="panel-consulta">
+<div class="wrapper">
+
+  <div class="filter-bar">
+    <button class="fbtn active" id="fbtn-hoy" onclick="setFiltro('hoy',this)">Hoy</button>
+    <button class="fbtn" onclick="setFiltro('hora',this)">Ultima hora</button>
+    <button class="fbtn" onclick="setFiltro('semana',this)">Esta semana</button>
+    <button class="fbtn" onclick="setFiltro('mes',this)">Este mes</button>
+    <button class="fbtn" onclick="setFiltro('total',this)">Total</button>
+    <div class="date-filter-wrap">
+      <input type="date" id="filtro-fecha-cal" onchange="setFiltroFecha(this.value)" title="Filtrar por fecha especifica">
+    </div>
+    <select id="filtro-operario-2" onchange="renderConsulta()" style="padding:5px 9px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);font-family:'Source Sans 3',sans-serif;cursor:pointer">
+      <option value="">Todos los operarios</option>
+      <option value="Alexander">Alexander</option>
+      <option value="Idaldo">Idaldo</option>
+      <option value="Deivi">Deivi</option>
+      <option value="Saul">Saúl</option>
+    </select>
+    <select id="filtro-operacion-2" onchange="renderConsulta()" style="padding:5px 9px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);font-family:'Source Sans 3',sans-serif;cursor:pointer">
+      <option value="">Todas las operaciones</option>
+    </select>
+    <button class="refresh-btn" onclick="cargarRegistros()">Actualizar</button>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi-box"><div class="kpi-lbl">Registros</div><div class="kpi-val" id="c-total">—</div><div class="kpi-desc">en el periodo</div></div>
+    <div class="kpi-box"><div class="kpi-lbl">Peso Neto</div><div class="kpi-val" id="c-peso">—</div><div class="kpi-desc">kg acumulados</div></div>
+    <div class="kpi-box"><div class="kpi-lbl">Vehiculos</div><div class="kpi-val" id="c-veh">—</div><div class="kpi-desc">placas distintas</div></div>
+    <div class="kpi-box"><div class="kpi-lbl">Operaciones</div><div class="kpi-val" id="c-ops">—</div><div class="kpi-desc">proveedores distintos</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr">Registros en tiempo real</div>
+    <div style="overflow-x:auto">
+      <table class="tbl">
+        <thead><tr>
+          <th>Fecha</th><th>Hora</th><th>Operario</th><th>Tiquete</th><th>Placa</th>
+          <th>Operacion</th><th>Residuo</th>
+          <th class="num">P.Cargado</th><th class="num">P.Vehículo Vacío</th><th class="num">Neto kg</th><th></th>
+        </tr></thead>
+        <tbody id="tbody-consulta"><tr><td colspan="11" class="empty">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+</div><!-- /panel-consulta -->
+
+<!-- MODAL BAVARIA -->
+<div class="modal-overlay" id="modal-bavaria">
+  <div class="modal-box">
+    <div class="modal-title">Posible duplicado Bavaria</div>
+    <div class="modal-text" id="modal-bav-texto"></div>
+    <div class="modal-btns">
+      <button class="modal-btn cancel" onclick="bavCancelar()">Cancelar</button>
+      <button class="modal-btn confirm-diff" onclick="bavConfirmarDiferente()">Es viaje diferente — Registrar con alerta</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ERROR CONSULTA -->
+<div class="modal-overlay" id="modal-error">
+  <div class="modal-box" style="border-top-color:var(--red)">
+    <div class="modal-title" style="color:var(--red)">Reportar Error en Registro</div>
+    <div style="font-size:12px;color:var(--ink-l);margin-bottom:12px" id="modal-ref">—</div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label>Descripcion del error <span class="required">*</span></label>
+      <textarea id="modal-descripcion" rows="3" placeholder="Describa que dato esta incorrecto y cual deberia ser el valor correcto..." style="padding:9px 11px;font-size:13px;font-family:'Source Sans 3',sans-serif;border:1px solid var(--rule);background:var(--bg);color:var(--ink);outline:none;resize:vertical;width:100%"></textarea>
+    </div>
+    <div class="modal-btns">
+      <button class="modal-btn cancel" onclick="cerrarModalError()">Cancelar</button>
+      <button class="modal-btn confirm" style="background:var(--red)" onclick="enviarReporte()">Enviar Reporte</button>
+    </div>
+    <div id="modal-status" style="display:none;margin-top:10px;padding:9px 12px;font-size:12px;border-left:3px solid var(--green);background:var(--green-l);color:var(--green);font-weight:600"></div>
+  </div>
+</div>
+
+<script>
+function formatPlaca(input) {
+  var raw = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  var letras = raw.replace(/[^A-Z]/g, '').slice(0, 3);
+  var numeros = raw.replace(/[^0-9]/g, '').slice(0, 3);
+  input.value = letras + numeros;
+  // Show hint based on progress
+  var hint = document.getElementById('placa-flota-hint');
+  if (input.value.length > 0 && letras.length < 3) {
+    hint.textContent = 'Ingrese 3 letras primero (Ej: ABC)';
+    hint.style.color = 'var(--orange)';
+  } else if (letras.length === 3 && numeros.length < 3) {
+    hint.textContent = 'Ahora ingrese 3 números (Ej: 123)';
+    hint.style.color = 'var(--blue)';
+  } else {
+    hint.textContent = '';
+  }
+}
+
+const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbz1CznJcepKoBIJXwnQ6yc82n7fFX7q20kCxes5Na4OgPQUoe3xe5AllPhXUAe2JNg/exec';
+const CSV_URL    = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSWdFqaD1Ism7B9QLkcVpFtQa--82W9fNA7AG_ave-7ZgIrZ-_IMaxeIPdtYuNkV23pkkJUlyMT4HF/pub?gid=1262525313&single=true&output=csv';
+
+// Placas flota interna
+const FLOTA_INTERNA = ['OGN522','SMO346','TDS941','TAY245','XGD873','WOB048'];
+
+const OPERACIONES = ['3R','Alpina','Bavaria','Alquería CV','Emsersopo','Emsertenjo','EPC','EPZ','EPT','Familia','Frigorífico','Funredcol','Gloria','Guillermo Clink','HortiOrganic','Pesebreras','Puerta Azul','Tía Lola','Mc Cain','Pomar','Prodensa - Centro Chía','Prodensa - Corona','Prodensa - CPNS','Prodensa - Casanare','Prodensa - Saufel','Prodensa - Toptex','Prodensa - Tanktechs','Reciclene','Recreo','Sábana Larga','Sábana Lact - Felipe','Samsa - Ducto','Samsa - Industria Nacional','Samsa - Pomar','Samsa - Veolia / Sanilia','Samsa - Quala','Samsa - Finca','Samsa - Urbaser','Softys','Ubaser','Zasiago','Otro'];
+
+// ── CONDUCTORES DESDE CSV ─────────────────────────
+const CONDUCTORES_CSV = 'conductores.csv';
+var conductoresDB = []; // [{operacion, nombre, cedula, celular}, ...]
+
+async function cargarConductores() {
+  try {
+    var res  = await fetch(CONDUCTORES_CSV + '?t=' + Date.now(), {cache:'no-store'});
+    var text = await res.text();
+    var lines = text.trim().split('\n');
+    var sep = lines[0].includes(';') ? ';' : ',';
+    conductoresDB = lines.slice(1).map(function(line) {
+      var cols = line.split(sep).map(function(c){ return c.replace(/^"|"$/g,'').replace(/\r/g,'').trim(); });
+      return {
+        operacion: (cols[0]||'').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,""),
+        nombre:    cols[1] || '',
+        cedula:    cols[2] || '',
+        celular:   cols[3] || ''
+      };
+    }).filter(function(c){ return c.nombre; });
+    console.log('Conductores cargados:', conductoresDB.length);
+  } catch(e) {
+    console.error('Error cargando conductores:', e);
+  }
+}
+
+function actualizarSelectConductores(operacion) {
+  var sel = document.getElementById('conductor-select');
+  var opN = (operacion||'').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  var filtrados = conductoresDB.filter(function(c){
+    return !opN || c.operacion === opN || c.operacion === '' || opN.includes(c.operacion) || c.operacion.includes(opN);
+  });
+  // Ordenar por nombre
+  filtrados.sort(function(a,b){ return a.nombre.localeCompare(b.nombre,'es'); });
+  sel.innerHTML = '<option value="">— Seleccione conductor —</option>' +
+    filtrados.map(function(c,i){
+      return '<option value="'+i+'">'+c.nombre+(c.cedula?' · CC:'+c.cedula:'')+'</option>';
+    }).join('') +
+    '<option value="nuevo">+ Nuevo conductor</option>';
+  // Limpiar campos
+  document.getElementById('conductor').value = '';
+  document.getElementById('ultimos_cuatro_cedula').value = '';
+  document.getElementById('conductor_celular').value = '';
+  // Guardar referencia para lookup
+  sel._filtrados = filtrados;
+}
+
+function onConductorSelect(val) {
+  var sel = document.getElementById('conductor-select');
+  var campos = document.getElementById('conductor-campos');
+  if (!val) {
+    document.getElementById('conductor').value = '';
+    document.getElementById('ultimos_cuatro_cedula').value = '';
+    document.getElementById('conductor_celular').value = '';
+    return;
+  }
+  if (val === 'nuevo') {
+    // Limpiar para que escriba
+    document.getElementById('conductor').value = '';
+    document.getElementById('ultimos_cuatro_cedula').value = '';
+    document.getElementById('conductor_celular').value = '';
+    document.getElementById('conductor').focus();
+    return;
+  }
+  // Prellenar con datos del conductor seleccionado
+  var idx = parseInt(val);
+  var filtrados = sel._filtrados || [];
+  if (filtrados[idx]) {
+    document.getElementById('conductor').value            = filtrados[idx].nombre;
+    document.getElementById('ultimos_cuatro_cedula').value = filtrados[idx].cedula;
+    document.getElementById('conductor_celular').value    = filtrados[idx].celular;
+  }
+}
+const OPS_MATERIALES_CSV = 'ops-materiales.csv';
+
+var opsMaterialesDB = {}; // { 'Bavaria': ['Lodos','Tierras filtrantes',...], ... }
+
+async function cargarOpsMateriales() {
+  try {
+    var res  = await fetch(OPS_MATERIALES_CSV + '?t=' + Date.now(), {cache:'no-store'});
+    var text = await res.text();
+    var lines = text.trim().split('\n');
+    // Detectar separador: ; o ,
+    var sep = lines[0].includes(';') ? ';' : ',';
+    // headers: OPERACION, MATERIAL_1, MATERIAL_2, ...
+    opsMaterialesDB = {};
+    lines.slice(1).forEach(function(line) {
+      var cols = [];
+      var cur = '', inQ = false;
+      for (var i = 0; i < line.length; i++) {
+        var ch = line[i];
+        if (ch === '"') { inQ = !inQ; }
+        else if (ch === sep && !inQ) { cols.push(cur.trim()); cur = ''; }
+        else { cur += ch; }
+      }
+      cols.push(cur.trim());
+      var op = cols[0].replace(/^"|"$/g,'').replace(/\r/g,'').trim();
+      if (!op) return;
+      var materiales = cols.slice(1).map(function(m){ return m.replace(/^"|"$/g,'').replace(/\r/g,'').trim(); }).filter(Boolean);
+      if (materiales.length > 0) opsMaterialesDB[op] = materiales;
+    });
+    poblarSelectOperaciones();
+  } catch(e) {
+    console.error('Error cargando operaciones:', e);
+    poblarSelectOperacionesFallback();
+  }
+}
+
+function poblarSelectOperaciones() {
+  var sel = document.getElementById('operacion');
+  var ops = Object.keys(opsMaterialesDB).sort(function(a,b){ return a.localeCompare(b,'es'); });
+  sel.innerHTML = '<option value="">— Seleccione —</option>' +
+    ops.map(function(op){ return '<option>' + op + '</option>'; }).join('');
+}
+
+function poblarSelectOperacionesFallback() {
+  // Fallback con datos hardcodeados si falla el CSV
+  var sel = document.getElementById('operacion');
+  var ops = Object.keys(RESIDUOS_POR_OP_FALLBACK).sort(function(a,b){ return a.localeCompare(b,'es'); });
+  ops.forEach(function(op){
+    opsMaterialesDB[op] = RESIDUOS_POR_OP_FALLBACK[op];
+  });
+  sel.innerHTML = '<option value="">— Seleccione —</option>' +
+    ops.map(function(op){ return '<option>' + op.charAt(0).toUpperCase()+op.slice(1) + '</option>'; }).join('');
+}
+
+function getResiduesByOp(op) {
+  if (!op) return RESIDUOS_DEFAULT;
+  // Buscar exacto primero
+  if (opsMaterialesDB[op]) return opsMaterialesDB[op].concat(['Otro']);
+  // Buscar normalizado
+  var opN = op.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  var keys = Object.keys(opsMaterialesDB);
+  for (var i = 0; i < keys.length; i++) {
+    var keyN = keys[i].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+    if (opN === keyN) return opsMaterialesDB[keys[i]].concat(['Otro']);
+  }
+  // Buscar por includes ordenado por longitud
+  var sorted = keys.sort(function(a,b){ return b.length - a.length; });
+  for (var i = 0; i < sorted.length; i++) {
+    var keyN = sorted[i].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+    if (opN.includes(keyN)) return opsMaterialesDB[sorted[i]].concat(['Otro']);
+  }
+  return RESIDUOS_DEFAULT.concat(['Otro']);
+}
+
+// Fallback hardcodeado por si falla el CSV
+const RESIDUOS_POR_OP_FALLBACK = {
+  '3r':                    ['Orgánicos y podas'],
+  'alpina':                ['Lodo láctico','Suero','Destrucción de marca'],
+  'bavaria':               ['Lodos','Tierras filtrantes','Aguas residuales'],
+  'alqueria':              ['Destrucción de marca','Gourmet orgánicos','Lodo láctico','Mantenimiento','PNC','Suero lácteo'],
+  'emsersopo':             ['PTAR'],
+  'emsertenjo':            ['EPT','Orgánicos y podas'],
+  'epc':                   ['Orgánicos y podas','Podas'],
+  'epz':                   ['Orgánicos y podas'],
+  'ept':                   ['Orgánicos y podas'],
+  'familia':               ['Lodo papelero'],
+  'hortiorganic':          ['Lodo papelero'],
+  'frigorifico':           ['Contenido ruminal'],
+  'funredcol':             ['Lodo láctico','Lodo orgánico biodegradable','Destrucción de marca'],
+  'gloria':                ['Lodo láctico'],
+  'guillermo':             ['Equinaza'],
+  'pesebreras':            ['Equinaza'],
+  'puerta azul':           ['Equinaza'],
+  'tia lola':              ['Equinaza'],
+  'mc cain':               ['Orgánicos y podas','Hollejo','Mixto (orgánicos y ollejo)'],
+  'pomar horti':           ['Aguas residuales','Lodos PTAR'],
+  'pomar':                 ['Suero lácteo'],
+  'prodensa - centro chia':['PTAR'],
+  'prodensa - corona':     ['Aglomerado'],
+  'prodensa - cpns':       ['PTAR'],
+  'prodensa - casanare':   ['Retal madera','Compostaje'],
+  'prodensa - saufel':     ['Retal madera'],
+  'prodensa - toptex':     ['PTAR','Retal madera','Compostaje'],
+  'prodensa - tanktechs':  ['Retal madera'],
+  'prodensa':              ['PTAR','Retal madera','Retal madera aglomerado','Compostaje'],
+  'reciclene':             ['PTAR'],
+  'ubaser':                ['PTAR'],
+  'recreo':                ['Suero','Lodos','Aguas residuales','Destrucción de marca'],
+  'sabana larga':          ['Aguas residuales','PTAR'],
+  'sábana lact - felipe':  ['Aguas residuales','Otro'],
+  'samsa - ducto':         ['Lodos'],
+  'samsa - industria nacional': ['Jarabes','PTAP','PTAR'],
+  'samsa - pomar':         ['PTAR','Aguas residuales'],
+  'samsa - veolia':        ['Orgánicos y podas'],
+  'samsa - quala':         ['PTAR'],
+  'samsa - softys':        ['Aguas residuales'],
+  'samsa - finca':         ['Otro'],
+  'samsa - urbaser':       ['PTAR'],
+  'samsa':                 ['Lodos','Jarabes','PTAR','PTAP','Orgánicos y podas','Aguas residuales'],
+  'softys':                ['Lodo papelero','Lodos','Tromel','Lodos & Tromel'],
+  'brinsa':                ['Lodo orgánico biodegradable'],
+  'zasiago':               ['Lodos','Lodo láctico'],
+};
+const RESIDUOS_POR_OP = RESIDUOS_POR_OP_FALLBACK; // compatibilidad
+const RESIDUOS_DEFAULT = ['Aglomerado','Aguas residuales','Compostaje','Contenido ruminal','Destrucción de marca','Equinaza','Gourmet orgánicos','Jarabes','Lodos','Lodos & Tromel','Lodos PTAR','Mantenimiento','Mixto (orgánicos y ollejo)','Hollejo','Orgánicos y podas','PNC','Podas','PTAP','PTAR','Retal madera','Retal madera aglomerado','Suero','Suero lácteo','Tierras filtrantes','Tromel'];
+
+// Operaciones que requieren conductor solo
+const OPS_CONDUCTOR_SOLO = ['familia','hortiorganic'];
+// Operaciones con seccion especifica
+const OP_MAP = {
+  'bavaria': 'op-bavaria',
+  'pomar horti': 'op-pomar-horti',
+  'pomar': 'op-pomar',
+  'alquería cv': 'op-alqueria',
+  'alqueria cv': 'op-alqueria',
+  'familia': 'op-familia',
+  'hortiorganic': 'op-familia',
+  'mc cain': 'op-mccain',
+  'recreo': 'op-recreo',
+  'ubaser': 'op-ubaser',
+  'peldar': 'op-ubaser',
+  'funredcol': 'op-funredcol',
+  'softys': 'op-softys',
+};
+
+let filtroActual = 'hoy';
+let filtroFechaEsp = null;
+let registrosData = [];
+let bavConfirmado = false;
+let bavEsDiferente = false;
+let reporteActual = {};
+let consultaRefreshInterval = null;
+let alqueriaCodigos = [];
+
+// ── INIT ──────────────────────────────────────────
+window.addEventListener('load', function() {
+  document.getElementById('fecha_disposicion').value = new Date().toISOString().slice(0,10);
+  document.getElementById('sof-fecha-ingreso').value = new Date().toISOString().slice(0,10);
+  document.getElementById('fam-fecha-salida').value = '';
+
+  // Select nativo — no requiere inicializacion de dropdown
+
+  document.getElementById('peso_entrada').addEventListener('input', calcularPesoNeto);
+  document.getElementById('peso_salida').addEventListener('input', calcularPesoNeto);
+  document.getElementById('btn-submit').addEventListener('click', enviarFormulario);
+  document.getElementById('btn-cancelar-modal') && document.getElementById('btn-cancelar-modal').addEventListener('click', cerrarModalError);
+
+  document.addEventListener('click', function(e) {
+    ['operacion','residuo'].forEach(function(t) {
+      var wrap = document.getElementById('wrap-'+t);
+      if (wrap && !wrap.contains(e.target)) document.getElementById(t+'-dropdown').classList.remove('open');
+    });
+    var mBav = document.getElementById('modal-bavaria');
+    if (e.target === mBav) bavCancelar();
+    var mErr = document.getElementById('modal-error');
+    if (e.target === mErr) cerrarModalError();
+  });
+
+  renderMcCargas();
+});
+
+// ── TABS ──────────────────────────────────────────
+function showTab(id) {
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});
+  document.querySelectorAll('.panel').forEach(function(p){p.classList.remove('active');});
+  document.getElementById('tab-'+id).classList.add('active');
+  document.getElementById('panel-'+id).classList.add('active');
+  if (id === 'consulta') {
+    cargarRegistros();
+    if (!consultaRefreshInterval) consultaRefreshInterval = setInterval(cargarRegistros, 2*60*1000);
+  } else {
+    if (consultaRefreshInterval) { clearInterval(consultaRefreshInterval); consultaRefreshInterval = null; }
+  }
+}
+
+// ── DROPDOWNS ─────────────────────────────────────
+// ── OPERACION Y RESIDUO (select nativo) ───────────
+function setupDropdown() {} // ya no necesario
+function renderDropdown() {}
+function seleccionarOpcion() {}
+
+function onOperacionChange(op) {
+  // Mostrar/ocultar campo "Otro"
+  var otraWrap = document.getElementById('operacion-otra-wrap');
+  if (otraWrap) otraWrap.style.display = op === 'Otro' ? 'block' : 'none';
+
+  // Actualizar lista de residuos
+  var residuosOp = getResiduesByOp(op);
+  var sel = document.getElementById('residuo');
+  sel.innerHTML = '<option value="">— Seleccione —</option>'
+    + residuosOp.map(function(r){ return '<option value="'+r+'">'+r+'</option>'; }).join('');
+  document.getElementById('residuo-otra-wrap').style.display = 'none';
+
+  // Secciones especificas por operacion
+  var opLow = op ? op.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"") : '';
+  document.querySelectorAll('.op-section').forEach(function(s){ s.classList.remove('visible'); });
+  var opMapKeys = Object.keys(OP_MAP).sort(function(a,b){ return b.length - a.length; });
+  for (var i = 0; i < opMapKeys.length; i++) {
+    var key = opMapKeys[i];
+    if (opLow.includes(key)) { document.getElementById(OP_MAP[key]).classList.add('visible'); break; }
+  }
+  if (opLow.includes('alquer')) cargarConsecutivosAlqueria();
+
+  // Actualizar conductores según operación
+  actualizarSelectConductores(op);
+}
+
+function onResiduoChange(val) {
+  var wrap = document.getElementById('residuo-otra-wrap');
+  if (wrap) wrap.style.display = val === 'Otro' ? 'block' : 'none';
+}
+
+// ── CONDUCTOR ACOMPAÑANTE ─────────────────────────
+function agregarAcompanante() {
+  var lista = document.getElementById('acomp-lista');
+  var idx   = lista.querySelectorAll('.acomp-item').length;
+  var div   = document.createElement('div');
+  div.className = 'acomp-item';
+  div.dataset.index = idx;
+  div.style.cssText = 'margin-bottom:12px;padding-bottom:12px;border-bottom:1px dashed #ddd;position:relative';
+  div.innerHTML =
+    '<button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:0;right:0;background:none;border:none;font-size:16px;cursor:pointer;color:#999">✕</button>'+
+    '<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--orange);margin-bottom:6px">Acompañante '+(idx+1)+'</div>'+
+    '<div class="form-row single" style="margin-bottom:10px"><div class="form-group"><label>Nombre</label><input type="text" class="acomp-nombre" placeholder="Nombre completo"></div></div>'+
+    '<div class="form-row" style="margin-bottom:0"><div class="form-group"><label>Cedula</label><input type="text" class="acomp-cedula" placeholder="Numero de cedula" oninput="this.value=this.value.replace(/[^0-9]/g,\'\')"></div><div class="form-group"><label>Cargo / Rol</label><input type="text" class="acomp-cargo" placeholder="Ej: Ayudante..."></div></div>';
+  lista.appendChild(div);
+}
+
+function toggleAcompanante(val) {
+  document.getElementById('conductor-solo').value = val;
+  var btnSi = document.getElementById('acomp-si');
+  var btnNo = document.getElementById('acomp-no');
+  var campos = document.getElementById('acomp-campos');
+  var alerta = document.getElementById('alerta-conductor-solo');
+  if (val === 'si') {
+    btnSi.style.background = 'var(--navy)'; btnSi.style.color = 'white'; btnSi.style.borderColor = 'var(--navy)';
+    btnNo.style.background = '#e8f5ee'; btnNo.style.color = 'var(--ink)'; btnNo.style.borderColor = '#2a2a2a';
+    campos.style.display = 'block';
+    if (alerta) alerta.style.display = 'block';
+  } else {
+    btnNo.style.background = 'var(--navy)'; btnNo.style.color = 'white'; btnNo.style.borderColor = 'var(--navy)';
+    btnSi.style.background = '#e8f5ee'; btnSi.style.color = 'var(--ink)'; btnSi.style.borderColor = '#2a2a2a';
+    campos.style.display = 'none';
+    if (alerta) alerta.style.display = 'none';
+    // Limpiar acompañantes extra
+    var lista = document.getElementById('acomp-lista');
+    if (lista) {
+      lista.querySelectorAll('.acomp-item').forEach(function(item, i) {
+        if (i === 0) { item.querySelectorAll('input').forEach(function(inp){ inp.value=''; }); }
+        else { item.remove(); }
+      });
+    }
+  }
+}
+// ── FLOTA ─────────────────────────────────────────
+function checkPlacaFlota(placa) {
+  var hint = document.getElementById('placa-flota-hint');
+  if (!placa || placa.length < 5) { hint.textContent=''; return; }
+  if (FLOTA_INTERNA.indexOf(placa.toUpperCase()) >= 0) {
+    hint.style.color = 'var(--green)';
+    hint.textContent = 'Flota interna Empathy';
+  } else {
+    hint.style.color = 'var(--ink-l)';
+    hint.textContent = 'Flota tercera';
+  }
+  // Actualizar promedio Funredcol si aplica
+  actualizarPromedioFunredcol(placa);
+}
+
+// ── BAVARIA ───────────────────────────────────────
+function validarBavaria() {
+  // Verificacion desactivada — pasa directo al envio
+  return Promise.resolve(true);
+}
+
+function bavConfirmarDiferente() {
+  bavEsDiferente = true;
+  bavConfirmado = true;
+  document.getElementById('modal-bavaria').classList.remove('open');
+  document.getElementById('observacion').value += (document.getElementById('observacion').value ? '\n' : '') + '[ALERTA: Viaje diferente con mismo baucher confirmado por operario]';
+  enviarFormulario();
+}
+
+function bavCancelar() {
+  document.getElementById('modal-bavaria').classList.remove('open');
+  document.getElementById('btn-submit').disabled = false;
+  mostrarStatus('', '', '');
+  document.getElementById('status').className = 'status';
+}
+
+// ── POMAR ─────────────────────────────────────────
+function validarCodigoPomar(input) {
+  var val = input.value.replace(/\D/g,'');
+  input.value = val;
+  var warn = document.getElementById('pom-warn');
+  warn.style.display = val.length > 0 && val.length < 6 ? 'block' : 'none';
+}
+
+// ── ALQUERIA CONSECUTIVOS ─────────────────────────
+function cargarConsecutivosAlqueria() {
+  fetchCSVMultiProxy(CSV_URL)
+    .then(function(text){
+      var rows = parseCSV(text);
+      alqueriaCodigos = rows
+        .filter(function(r){ return (r['OPERACION']||'').toLowerCase().includes('alquer'); })
+        .map(function(r){ return parseInt(r['NUMERO TIQUETE']||'0'); })
+        .filter(function(n){ return !isNaN(n) && n>0; })
+        .sort(function(a,b){return a-b;});
+    }).catch(function(){});
+}
+
+function validarConsecutivoAlqueria(val) {
+  var num = parseInt(val);
+  var warn = document.getElementById('alq-consec-warn');
+  if (!val || isNaN(num) || alqueriaCodigos.length === 0) { warn.style.display='none'; return; }
+  var ultimo = alqueriaCodigos[alqueriaCodigos.length-1];
+  if (num < ultimo) {
+    warn.style.display = 'block';
+    warn.textContent = 'Alerta: Recibo atrasado — el codigo '+num+' es menor al ultimo registrado ('+ultimo+'). Verifique si es un recibo tardio.';
+  } else {
+    warn.style.display = 'none';
+  }
+}
+
+// ── TIQUETE VALIDACION POR OP ─────────────────────
+function validarTiqueteOp() {
+  var warn = document.getElementById('tiquete-warn');
+  if (warn) warn.style.display = 'none';
+}
+
+// ── MC CAIN ───────────────────────────────────────
+function renderMcCargas() {
+  var n = parseInt(document.getElementById('mc-num-cargas') ? document.getElementById('mc-num-cargas').value : 1) || 1;
+  if (n > 4) n = 4;
+  var container = document.getElementById('mc-cargas-container');
+  var html = '';
+  for (var i = 2; i <= n; i++) {
+    html += '<div style="background:var(--s2);border:1px solid var(--rule-l);padding:12px;margin-top:10px">'
+      + '<div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:8px">Baucher ' + i + ' — carga adicional</div>'
+      + '<div class="form-row">'
+      + '<div class="form-group"><label>Numero de baucher ' + i + '</label><input type="text" id="mc-baucher-' + i + '" placeholder="Numero del baucher #' + i + '"></div>'
+      + '<div class="form-group"><label>Hora de salida carga ' + i + '</label><input type="time" id="mc-hora-' + i + '"></div>'
+      + '</div></div>';
+  }
+  // Carga 1 siempre va en el campo principal (campo 4)
+  if (n > 1) {
+    container.innerHTML = '<div class="notice" style="margin-bottom:0"><div class="notice-title">Baucher 1</div><div class="notice-text">El numero del primer baucher va en el campo 4 — Identificacion del Ingreso.</div></div>' + html;
+  } else {
+    container.innerHTML = '';
+  }
+}
+
+// ── RECREO ────────────────────────────────────────
+function toggleRecreoCampos() {
+  var tipo = document.getElementById('rec-tipo').value;
+  document.getElementById('rec-mixto-campos').style.display = tipo === 'Mixto' ? 'block' : 'none';
+}
+
+// ── FUNRECOL ──────────────────────────────────────
+function toggleFunredcol() {
+  var tipo = document.getElementById('fun-tipo').value;
+  document.getElementById('fun-tipo-a').style.display = tipo==='A' ? 'block' : 'none';
+  document.getElementById('fun-tipo-b').style.display = tipo==='B' ? 'block' : 'none';
+}
+
+function selApreciacion(val, btn) {
+  document.querySelectorAll('#apr-grid .apr-btn').forEach(function(b){b.classList.remove('active');});
+  btn.classList.add('active');
+  document.getElementById('fun-apreciacion').value = val;
+}
+
+function actualizarPromedioFunredcol(placa) {
+  var op = (document.getElementById('operacion').value||'').toLowerCase();
+  if (!op.includes('funredcol') || !placa || placa.length < 5) return;
+  var el = document.getElementById('fun-promedio-hist');
+  if (!registrosData.length) { el.textContent = 'Cargando datos historicos...'; return; }
+  var hist = registrosData.filter(function(r){
+    return (r['OPERACION']||'').toLowerCase().includes('funredcol') &&
+           (r['PLACA']||'').toUpperCase() === placa.toUpperCase() &&
+           (r['OBSERVACION']||'').includes('Apreciacion:');
+  });
+  if (!hist.length) { el.textContent = 'Sin historial para esta placa en Funredcol'; return; }
+  var niveles = {'0/5':0,'1/5':1,'2/5':2,'3/5':3,'4/5':4,'Lleno':5};
+  var suma=0, cnt=0;
+  hist.forEach(function(r){
+    var obs = r['OBSERVACION']||'';
+    var m = obs.match(/Apreciacion: ([^\s|]+)/);
+    if (m && niveles[m[1]] !== undefined) { suma+=niveles[m[1]]; cnt++; }
+  });
+  if (cnt>0) {
+    var prom = (suma/cnt).toFixed(1);
+    el.textContent = 'Promedio historico: '+prom+'/5 (basado en '+cnt+' registros con esta placa)';
+  } else {
+    el.textContent = 'Sin registros de apreciacion para esta placa';
+  }
+}
+
+// ── PESO NETO ─────────────────────────────────────
+function calcularPesoNeto() {
+  var e = parseFloat(document.getElementById('peso_entrada').value)||0;
+  var s = parseFloat(document.getElementById('peso_salida').value)||0;
+  var el = document.getElementById('peso-neto-val');
+  if (e>0) { el.textContent=(e-s).toLocaleString('es-CO')+' kg'; el.style.color=(e-s)>=0?'var(--navy)':'var(--red)'; }
+  else { el.textContent='— kg'; el.style.color='var(--navy)'; }
+}
+
+// ── STATUS ────────────────────────────────────────
+function mostrarStatus(tipo, titulo, texto) {
+  var el=document.getElementById('status');
+  el.className='status'+(tipo?' '+tipo:'');
+  document.getElementById('status-title').textContent=titulo;
+  document.getElementById('status-text').innerHTML=tipo==='loading'?'<span class="spinner"></span>'+texto:texto;
+  if(tipo) el.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+// ── ENVIO ─────────────────────────────────────────
+async function enviarFormulario() {
+  var operario  = document.getElementById('operario').value;
+  var tiquete   = document.getElementById('numero_tiquete').value.trim();
+  var fecha     = document.getElementById('fecha_disposicion').value;
+  var placa     = document.getElementById('placa').value.trim();
+  var conductor = document.getElementById('conductor').value.trim();
+  var pesoE     = document.getElementById('peso_entrada').value;
+  var operacion = document.getElementById('operacion').value;
+  var residuo   = document.getElementById('residuo').value;
+
+  // Si seleccionaron "Otro" tomar el texto libre
+  if (operacion === 'Otro') {
+    var otraText = document.getElementById('operacion-otro-text');
+    operacion = otraText ? otraText.value.trim() : '';
+  }
+  if (residuo === 'Otro') {
+    var resOtro = document.getElementById('residuo-otro');
+    residuo = resOtro ? resOtro.value.trim() : '';
+  }
+
+  if (!tiquete)   { mostrarStatus('error','Campo requerido','Ingrese el numero de tiquete.'); return; }
+  if (!fecha)     { mostrarStatus('error','Campo requerido','Seleccione la fecha.'); return; }
+  if (!placa)     { mostrarStatus('error','Campo requerido','Ingrese la placa del vehiculo.'); return; }
+  if (!conductor) { mostrarStatus('error','Campo requerido','Ingrese el nombre del conductor.'); return; }
+  var conductorCelular = (document.getElementById('conductor_celular')||{value:''}).value.trim();
+  if (!conductorCelular || conductorCelular.length < 10) { mostrarStatus('error','Campo requerido','Ingrese el celular del conductor (10 dígitos).'); return; }
+  if (!pesoE)     { mostrarStatus('error','Campo requerido','Ingrese el peso del vehiculo cargado.'); return; }
+  if (!operacion) { mostrarStatus('error','Campo requerido','Seleccione la operacion de la lista.'); return; }
+  if (!residuo)   { mostrarStatus('error','Campo requerido','Seleccione el tipo de residuo de la lista.'); return; }
+
+  var opLow = operacion.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+
+  // Validacion Bavaria
+  if (opLow.includes('bavaria') && !bavConfirmado) {
+    document.getElementById('btn-submit').disabled = true;
+    var ok = await validarBavaria();
+    if (!ok) {
+      mostrarStatus('','','');
+      document.getElementById('status').className = 'status';
+      document.getElementById('btn-submit').disabled = false;
+      return;
+    }
+    bavConfirmado = false;
+  }
+
+  var ahora = new Date();
+  var horaAuto = String(ahora.getHours()).padStart(2,'0')+':'+String(ahora.getMinutes()).padStart(2,'0');
+
+  // ── ALERTAS (columna O) ───────────────────────────
+  var alertas = [];
+
+  if (document.getElementById('conductor-solo').value === 'si') {
+    var items = document.querySelectorAll('#acomp-lista .acomp-item');
+    var acompTextos = [];
+    items.forEach(function(item) {
+      var nombre = item.querySelector('.acomp-nombre') ? item.querySelector('.acomp-nombre').value.trim() : '';
+      var cedula = item.querySelector('.acomp-cedula') ? item.querySelector('.acomp-cedula').value.trim() : '';
+      var cargo  = item.querySelector('.acomp-cargo')  ? item.querySelector('.acomp-cargo').value.trim()  : '';
+      if (nombre || cedula) {
+        acompTextos.push((nombre||'Sin nombre')+(cedula?' CC:'+cedula:'')+(cargo?' ('+cargo+')':''));
+      }
+    });
+    alertas.push('CONDUCTOR ACOMPAÑADO | '+(acompTextos.length>0?acompTextos.join(' / '):'Sin datos'));
+  }
+  if (bavEsDiferente) alertas.push('VIAJE DIFERENTE MISMO BAUCHER');
+
+  // ── DATOS OPERACION (columna N) ───────────────────
+  var datosOp = [];
+
+  if (opLow.includes('bavaria')) {
+    var bavHora = document.getElementById('bav-hora-salida') ? document.getElementById('bav-hora-salida').value : '';
+    if (bavHora) datosOp.push('Hora salida baucher: '+bavHora);
+  }
+  if (opLow.includes('pomar')) {
+    var pomHora = document.getElementById('pom-hora-salida') ? document.getElementById('pom-hora-salida').value : '';
+    if (pomHora) datosOp.push('Hora salida ticket: '+pomHora);
+  }
+  if (opLow.includes('alquer')) {
+    var alqTipo = document.getElementById('alq-tipo')         ? document.getElementById('alq-tipo').value         : '';
+    var alqPE   = document.getElementById('alq-peso-entrada') ? document.getElementById('alq-peso-entrada').value : '';
+    var alqPS   = document.getElementById('alq-peso-salida')  ? document.getElementById('alq-peso-salida').value  : '';
+    var alqHora = document.getElementById('alq-hora-envio')   ? document.getElementById('alq-hora-envio').value   : '';
+    if (alqTipo) datosOp.push('Recibo tipo: '+alqTipo);
+    if (alqPE)   datosOp.push('Peso entrada ticket: '+alqPE+' kg');
+    if (alqPS)   datosOp.push('Peso salida ticket: '+alqPS+' kg');
+    if (alqHora) datosOp.push('Hora envio ticket: '+alqHora);
+  }
+  if (opLow.includes('familia')||opLow.includes('horti')) {
+    var famSalida = document.getElementById('fam-fecha-salida') ? document.getElementById('fam-fecha-salida').value : '';
+    var famDest   = document.getElementById('fam-destino')      ? document.getElementById('fam-destino').value      : '';
+    if (famSalida) datosOp.push('Fecha salida: '+famSalida);
+    if (famDest)   datosOp.push('Destino: '+famDest);
+  }
+  if (opLow.includes('mc cain')||opLow.includes('mccain')) {
+    var nCargas = parseInt(document.getElementById('mc-num-cargas') ? document.getElementById('mc-num-cargas').value : 1)||1;
+    datosOp.push('Total cargas: '+nCargas);
+    datosOp.push('Baucher 1: en campo tiquete principal');
+    for (var i=2;i<=Math.min(nCargas,4);i++) {
+      var bauEl  = document.getElementById('mc-baucher-'+i);
+      var horEl2 = document.getElementById('mc-hora-'+i);
+      var bauNum = bauEl ? bauEl.value.trim() : '';
+      var horVal = horEl2 ? horEl2.value : '';
+      datosOp.push('Baucher '+i+': '+(bauNum||'sin numero')+' | Hora salida: '+(horVal||'sin hora'));
+    }
+  }
+  if (opLow.includes('recreo')) {
+    var recTipo = document.getElementById('rec-tipo')        ? document.getElementById('rec-tipo').value        : '';
+    var recHora = document.getElementById('rec-hora-salida') ? document.getElementById('rec-hora-salida').value : '';
+    if (recHora) datosOp.push('Hora salida: '+recHora);
+    if (recTipo) datosOp.push('Tipo material: '+recTipo);
+    if (recTipo==='Mixto') {
+      datosOp.push('kg Suero (R): '+((document.getElementById('rec-kg-suero') ? document.getElementById('rec-kg-suero').value : '')||'0'));
+      datosOp.push('kg Lodos (L): '+((document.getElementById('rec-kg-lodos') ? document.getElementById('rec-kg-lodos').value : '')||'0'));
+    }
+  }
+  if (opLow.includes('ubaser')||opLow.includes('peldar')) {
+    var ubaDest = document.getElementById('uba-destino') ? document.getElementById('uba-destino').value : '';
+    if (ubaDest) datosOp.push('Destino segun ticket: '+ubaDest);
+  }
+  if (opLow.includes('funredcol')) {
+    var funTipo = document.getElementById('fun-tipo') ? document.getElementById('fun-tipo').value : '';
+    if (funTipo) datosOp.push('Funredcol tipo: '+funTipo);
+    if (funTipo==='A') {
+      var funFE = document.getElementById('fun-fecha-entrada') ? document.getElementById('fun-fecha-entrada').value : '';
+      var funFS = document.getElementById('fun-fecha-salida')  ? document.getElementById('fun-fecha-salida').value  : '';
+      var funPE = document.getElementById('fun-peso-entrada')  ? document.getElementById('fun-peso-entrada').value  : '';
+      var funPS = document.getElementById('fun-peso-salida')   ? document.getElementById('fun-peso-salida').value   : '';
+      if (funFE) datosOp.push('Fecha entrada: '+funFE);
+      if (funFS) datosOp.push('Fecha salida: '+funFS);
+      if (funPE) datosOp.push('Peso entrada: '+funPE+' kg');
+      if (funPS) datosOp.push('Peso salida: '+funPS+' kg');
+    }
+    if (funTipo==='B') {
+      var apr = document.getElementById('fun-apreciacion') ? document.getElementById('fun-apreciacion').value : '';
+      if (apr) datosOp.push('Apreciacion: '+apr);
+    }
+  }
+  if (opLow.includes('softys')) {
+    var sofFS = document.getElementById('sof-fecha-salida') ? document.getElementById('sof-fecha-salida').value : '';
+    if (sofFS) datosOp.push('Fecha salida: '+sofFS);
+  }
+
+  var tipoFlota = FLOTA_INTERNA.indexOf(placa.toUpperCase()) >= 0 ? 'Flota interna' : 'Flota tercera';
+
+  var datos = {
+    operario:              operario,
+    numero_tiquete:        tiquete,
+    fecha_disposicion:     fecha,
+    hora_disposicion:      horaAuto,
+    placa:                 placa,
+    tipo_flota:            tipoFlota,
+    conductor:             conductor,
+    conductor_celular:     conductorCelular,
+    ultimos_cuatro_cedula: document.getElementById('ultimos_cuatro_cedula').value,
+    peso_entrada:          pesoE,
+    peso_salida:           document.getElementById('peso_salida').value||'0',
+    observacion:           document.getElementById('observacion').value.trim(),
+    operacion:             operacion,
+    residuo:               residuo,
+    seccion_depositaria:   document.getElementById('seccion_depositaria') ? document.getElementById('seccion_depositaria').value.trim() : '',
+    datos_operacion:       datosOp.join(' | '),
+    alertas:               alertas.join(' | '),
+    aht_segundos:          getAHTSegundos()
+  };
+
+  document.getElementById('btn-submit').disabled = true;
+  mostrarStatus('loading','Guardando registro...','Enviando datos al sistema. Por favor espere.');
+
+  try {
+    var res = await fetch(WEBAPP_URL, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(datos)});
+    var json = await res.json();
+    if (json.success) {
+      mostrarStatus('success','Registro guardado','Ingreso de <strong>'+placa+'</strong> — '+operacion+' registrado por '+operario+'.');
+      bavConfirmado=false; bavEsDiferente=false;
+      detenerAHT();
+      setTimeout(function(){ resetFormulario(); volverAlMenu(); }, 2500);
+    } else {
+      mostrarStatus('error','Error al guardar',json.error||'Error desconocido.');
+      document.getElementById('btn-submit').disabled=false;
+    }
+  } catch(e) {
+    try {
+      await fetch(WEBAPP_URL, {method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(datos)});
+      mostrarStatus('success','Registro enviado','Ingreso de <strong>'+placa+'</strong> enviado al sistema.');
+      bavConfirmado=false; bavEsDiferente=false;
+      detenerAHT();
+      setTimeout(function(){ resetFormulario(); volverAlMenu(); }, 2500);
+    } catch(e2) {
+      mostrarStatus('error','Error de conexion','Verifique su conexion a internet.');
+      document.getElementById('btn-submit').disabled=false;
+    }
+  }
+}
+
+// ── RESET ─────────────────────────────────────────
+function resetFormulario() {
+  document.getElementById('conductor-select').value = '';
+  ['numero_tiquete','placa','conductor','conductor_celular','ultimos_cuatro_cedula','peso_entrada','observacion','seccion_depositaria'].forEach(function(id){
+    var el=document.getElementById(id); if(el) el.value='';
+  });
+  document.getElementById('peso_salida').value='';
+  document.getElementById('operario').value='';
+  document.getElementById('operacion').value='';
+  document.getElementById('residuo').innerHTML='<option value="">— Seleccione operacion primero —</option>';
+  var opOtraWrap = document.getElementById('operacion-otra-wrap');
+  if (opOtraWrap) opOtraWrap.style.display='none';
+  var resOtraWrap = document.getElementById('residuo-otra-wrap');
+  if (resOtraWrap) resOtraWrap.style.display='none';
+  var opOtraText = document.getElementById('operacion-otro-text');
+  if (opOtraText) opOtraText.value='';
+  var resOtro = document.getElementById('residuo-otro');
+  if (resOtro) resOtro.value='';
+  document.getElementById('fecha_disposicion').value=new Date().toISOString().slice(0,10);
+  document.getElementById('btn-submit').disabled=false;
+  document.getElementById('status').className='status';
+  document.getElementById('peso-neto-val').textContent='— kg';
+  document.getElementById('placa-flota-hint').textContent='';
+  document.getElementById('conductor-solo').value = 'no';
+  document.getElementById('acomp-campos').style.display = 'none';
+  var alertaCond = document.getElementById('alerta-conductor-solo');
+  if (alertaCond) alertaCond.style.display = 'none';
+  var btnSi = document.getElementById('acomp-si');
+  var btnNo = document.getElementById('acomp-no');
+  if (btnSi) { btnSi.style.background='#e8f5ee'; btnSi.style.color='var(--ink)'; btnSi.style.borderColor='#2a2a2a'; }
+  if (btnNo) { btnNo.style.background='#e8f5ee'; btnNo.style.color='var(--ink)'; btnNo.style.borderColor='#2a2a2a'; }
+  // Limpiar acompañantes
+  var lista = document.getElementById('acomp-lista');
+  if (lista) {
+    lista.querySelectorAll('.acomp-item').forEach(function(item, i) {
+      if (i === 0) { item.querySelectorAll('input').forEach(function(inp){ inp.value=''; }); }
+      else { item.remove(); }
+    });
+  }
+  document.querySelectorAll('.op-section').forEach(function(s){s.classList.remove('visible');});
+  document.getElementById('fun-apreciacion').value='';
+  document.querySelectorAll('.apr-btn').forEach(function(b){b.classList.remove('active');});
+  bavConfirmado=false; bavEsDiferente=false;
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+// ── CONSULTA ──────────────────────────────────────
+function getMarcaTemporalR(r) {
+  var mt = (r['Marca temporal'] || '').trim();
+  if (mt) return mt;
+  var fecha = (r['FECHA DISPOSICION PLANTA'] || r['FECHA DISPOSICION'] || '').trim();
+  var hora  = (r['HORA DISPOSICION PLANTA']  || r['HORA DISPOSICION']  || '').trim();
+  if (fecha) return fecha + (hora ? ' ' + hora : ' 00:00:00');
+  return '';
+}
+
+function parseDateTime(str) {
+  if (!str) return null;
+  var s = str.trim();
+  // DD/MM/YYYY HH:MM:SS o D/M/YYYY H:MM (con o sin segundos)
+  var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (m) return new Date(+m[3], +m[2]-1, +m[1], +(m[4]||0), +(m[5]||0), +(m[6]||0));
+  // YYYY-MM-DD HH:MM
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{1,2}):(\d{2}))?/);
+  if (m) return new Date(+m[1], +m[2]-1, +m[3], +(m[4]||0), +(m[5]||0));
+  return null;
+}
+function inPeriodo(str, f) {
+  var d = parseDateTime(String(str||'').trim());
+  if (!d || isNaN(d)) return f === 'total';
+  var now = new Date(), today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (f === 'fecha' && filtroFechaEsp) {
+    var fd = new Date(filtroFechaEsp + 'T00:00:00');
+    return d >= fd && d < new Date(fd.getTime() + 86400000);
+  }
+  if (f === 'total')  return true;
+  if (f === 'hora')   return (now - d) <= 3600000;
+  if (f === 'hoy')    return d >= today;
+  if (f === 'semana') { var wk = new Date(today); wk.setDate(today.getDate() - today.getDay()); return d >= wk; }
+  if (f === 'mes')    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  return true;
+}
+function parseCSV(text) {
+  var lines=text.trim().split('\n');
+  var headers=lines[0].split(',').map(function(h){return h.trim().replace(/^"|"$/g,'');});
+  return lines.slice(1).map(function(line){
+    var vals=[],cur='',inQ=false;
+    for(var i=0;i<line.length;i++){var c=line[i];if(c==='"')inQ=!inQ;else if(c===','&&!inQ){vals.push(cur.trim());cur='';}else cur+=c;}
+    vals.push(cur.trim());
+    var obj={};headers.forEach(function(h,i){obj[h]=(vals[i]||'').replace(/^"|"$/g,'');});
+    return obj;
+  }).filter(function(r){return Object.values(r).some(function(v){return v;});});
+}
+function fmt(n){return Math.round(n).toLocaleString('es-CO');}
+
+function setFiltro(f,el) {
+  filtroActual=f; filtroFechaEsp=null;
+  document.querySelectorAll('.fbtn').forEach(function(b){b.classList.remove('active');});
+  if(el) el.classList.add('active');
+  document.getElementById('filtro-fecha-cal').value='';
+  renderConsulta();
+}
+function setFiltroFecha(val) {
+  if (!val) { setFiltro('hoy', document.getElementById('fbtn-hoy')); return; }
+  filtroFechaEsp=val; filtroActual='fecha';
+  document.querySelectorAll('.fbtn').forEach(function(b){b.classList.remove('active');});
+  renderConsulta();
+}
+
+function getField(r, keys) {
+  for (var i=0;i<keys.length;i++) {
+    if (r[keys[i]]!==undefined && r[keys[i]]!==null && r[keys[i]]!=='') return r[keys[i]];
+  }
+  return '';
+}
+
+function limpiarTiquete(tiq) {
+  if (!tiq) return '—';
+  var s = String(tiq);
+  // Si tiene formato ISO o dd/mm/yyyy hh:mm — es una fecha mal guardada
+  if (s.match(/\d{4}-\d{2}-\d{2}T/) || s.match(/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}/)) {
+    var d = new Date(s.includes('T') ? s : s.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$2-$1'));
+    if (!isNaN(d)) {
+      var serial = Math.round((d.getTime() - new Date('1899-12-30T00:00:00Z').getTime()) / 86400000);
+      return serial.toString();
+    }
+  }
+  return s;
+}
+
+function renderConsulta() {
+  var filtroOp       = (document.getElementById('filtro-operario')   ? document.getElementById('filtro-operario').value   : '') ||
+                       (document.getElementById('filtro-operario-2') ? document.getElementById('filtro-operario-2').value : '');
+  var filtroOperacion= (document.getElementById('filtro-operacion')   ? document.getElementById('filtro-operacion').value   : '') ||
+                       (document.getElementById('filtro-operacion-2') ? document.getElementById('filtro-operacion-2').value : '');
+
+  var filtered = registrosData.filter(function(r) {
+    var ts = getMarcaTemporalR(r);
+    if (!inPeriodo(ts, filtroActual)) return false;
+    if (filtroOp) {
+      var operario = getField(r,['OPERARIO registra','OPERARIO REGISTRA','OPERARIO']).toLowerCase();
+      if (!operario.includes(filtroOp.toLowerCase())) return false;
+    }
+    if (filtroOperacion) {
+      var op = getField(r,['OPERACION','operacion']).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+      var opF = filtroOperacion.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+      if (op !== opF) return false;
+    }
+    return true;
+  });
+
+  // Poblar select de operaciones con los datos del periodo
+  var selOp = document.getElementById('filtro-operacion');
+  var currentOp = selOp.value;
+  var todasOps = [...new Set(registrosData
+    .filter(function(r){ return inPeriodo(getMarcaTemporalR(r), filtroActual); })
+    .map(function(r){ return getField(r,['OPERACION','operacion']); })
+    .filter(Boolean)
+  )].sort();
+  // Poblar selects de operaciones con los datos del periodo
+  var opOptions = '<option value="">Todas las operaciones</option>' +
+    todasOps.map(function(op){ return '<option value="'+op+'"'+(op===currentOp?' selected':'')+'>'+op+'</option>'; }).join('');
+  ['filtro-operacion','filtro-operacion-2'].forEach(function(id){
+    var sel = document.getElementById(id);
+    if (sel) sel.innerHTML = opOptions;
+  });
+
+  var placas = new Set(filtered.map(function(r){return getField(r,['PLACA']);}).filter(Boolean));
+  var ops    = new Set(filtered.map(function(r){return getField(r,['operacion','OPERACION']);}).filter(Boolean));
+  var pesoNeto = 0;
+  filtered.forEach(function(r){
+    var n = parseFloat(getField(r,['PESO NETO','peso neto','PESO NETO '])) || 0;
+    if (!n) {
+      var e = parseFloat(getField(r,['PESO ENTRADA  Según ticket','PESO ENTRADA'])) || 0;
+      var s = parseFloat(getField(r,['PESO SALIDA  Según ticket','PESO SALIDA'])) || 0;
+      n = e - s;
+    }
+    pesoNeto += n;
+  });
+
+  document.getElementById('c-total').textContent = filtered.length;
+  document.getElementById('c-peso').textContent  = fmt(pesoNeto);
+  document.getElementById('c-veh').textContent   = placas.size;
+  document.getElementById('c-ops').textContent   = ops.size;
+
+  if (filtered.length === 0) {
+    document.getElementById('tbody-consulta').innerHTML = '<tr><td colspan="11" class="empty">Sin registros para el periodo seleccionado</td></tr>';
+    return;
+  }
+
+  document.getElementById('tbody-consulta').innerHTML = filtered.slice().reverse().map(function(r) {
+    var ts       = getField(r,['Marca temporal','MARCA TEMPORAL']);
+    var fecha    = ts.split(' ')[0] || '—';
+    var hora     = (ts.split(' ')[1]||'').slice(0,5) || '—';
+    var tiq      = limpiarTiquete(getField(r,['NUMERO TIQUETE','numero tiquete']));
+    var placa    = getField(r,['PLACA']) || '—';
+    var operacion= getField(r,['operacion','OPERACION']) || '—';
+    var residuo  = getField(r,['RESIDUO','residuo']) || '—';
+    var operario = getField(r,['OPERARIO registra','OPERARIO REGISTRA','OPERARIO']) || '—';
+    var n  = parseFloat(getField(r,['PESO NETO','peso neto'])) || 0;
+    var e  = parseFloat(getField(r,['PESO ENTRADA  Según ticket','PESO ENTRADA'])) || 0;
+    var s  = parseFloat(getField(r,['PESO SALIDA  Según ticket','PESO SALIDA'])) || 0;
+    var neto = n || (e-s);
+    var mts = ts.replace(/'/g,"\\'");
+    return '<tr>'
+      +'<td>'+fecha+'</td><td>'+hora+'</td>'
+      +'<td style="font-size:11px;color:var(--ink-l)">'+operario+'</td>'
+      +'<td class="bold">'+tiq+'</td>'
+      +'<td>'+placa+'</td>'
+      +'<td>'+operacion+'</td>'
+      +'<td>'+residuo+'</td>'
+      +'<td class="num">'+(e>0?fmt(e)+' kg':'—')+'</td>'
+      +'<td class="num">'+(s>0?fmt(s)+' kg':'0')+'</td>'
+      +'<td class="num" style="color:var(--navy);font-weight:700">'+(neto>0?fmt(neto)+' kg':'—')+'</td>'
+      +'<td><button onclick="abrirModalError(\''+fecha+' '+hora+'\',\''+tiq.replace(/'/g,"\\'")+'\',\''+placa.replace(/'/g,"\\'")+'\',\''+operacion.replace(/'/g,"\\'")+'\',\''+mts+'\')" style="padding:3px 9px;font-size:10px;font-weight:700;text-transform:uppercase;border:1px solid var(--red);background:transparent;color:var(--red);cursor:pointer;font-family:\'Source Sans 3\',sans-serif;white-space:nowrap">Error</button></td>'
+      +'</tr>';
+  }).join('');
+}
+
+async function fetchCSVMultiProxy(url) {
+  var bust = '&nocache=' + Date.now();
+  var proxies = [
+    function(u) { return u + bust; },
+    function(u) { return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u + bust); },
+    function(u) { return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); },
+    function(u) { return 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u); },
+    function(u) { return u; },
+  ];
+  for (var i = 0; i < proxies.length; i++) {
+    try {
+      var proxyUrl = proxies[i](url);
+      var res = await fetch(proxyUrl, {cache:'no-store'});
+      if (res.ok) {
+        var text = await res.text();
+        if (text.length > 10 && text.indexOf(',') > -1 && !text.includes('<html')) {
+          return text;
+        }
+      }
+    } catch(e) { console.log('Proxy ' + i + ' fallo:', e.message); }
+  }
+  throw new Error('Todos los proxies fallaron');
+}
+
+async function cargarRegistros() {
+  var tbody = document.getElementById('tbody-consulta');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="11" class="empty"><span class="spinner"></span>Cargando...</td></tr>';
+  try {
+    var text = await fetchCSVMultiProxy(CSV_URL);
+    registrosData = parseCSV(text);
+    renderConsulta();
+  } catch(e) {
+    console.log('cargarRegistros error:', e.message);
+    tbody.innerHTML = '<tr><td colspan="11" class="empty">No se pudieron cargar los registros. Presione Actualizar.</td></tr>';
+  }
+}
+
+// ── MODAL ERROR ───────────────────────────────────
+function abrirModalError(fechaHora,tiquete,placa,operacion,marcaTemporal){
+  reporteActual={fechaHora,tiquete,placa,operacion,marcaTemporal};
+  document.getElementById('modal-ref').textContent='Tiquete: '+(tiquete||'—')+' | Placa: '+(placa||'—')+' | '+operacion+' | '+fechaHora;
+  document.getElementById('modal-descripcion').value='';
+  document.getElementById('modal-status').style.display='none';
+  document.getElementById('modal-error').classList.add('open');
+}
+function cerrarModalError(){document.getElementById('modal-error').classList.remove('open');}
+async function enviarReporte(){
+  var desc=document.getElementById('modal-descripcion').value.trim();
+  if(!desc){document.getElementById('modal-descripcion').style.borderColor='var(--red)';return;}
+  document.getElementById('modal-descripcion').style.borderColor='var(--rule)';
+  var datos={numero_tiquete:'ERROR: '+reporteActual.tiquete,fecha_disposicion:new Date().toISOString().slice(0,10),hora_disposicion:new Date().toTimeString().slice(0,5),placa:reporteActual.placa,conductor:'',ultimos_cuatro_cedula:'',peso_entrada:'',peso_salida:'',observacion:'REPORTE DE ERROR — Registro: '+reporteActual.marcaTemporal+' | Tiquete: '+reporteActual.tiquete+' | Placa: '+reporteActual.placa+' | Operacion: '+reporteActual.operacion+' | Error: '+desc,operacion:reporteActual.operacion,residuo:'',seccion_depositaria:''};
+  try{await fetch(WEBAPP_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(datos)});}
+  catch(e){try{await fetch(WEBAPP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(datos)});}catch(e2){}}
+  var st=document.getElementById('modal-status');
+  st.style.display='block';st.textContent='Reporte enviado correctamente.';
+  setTimeout(cerrarModalError,2000);
+}
+
+// ── LOGIN & SESION ────────────────────────────────
+const USUARIOS_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSU6sHBRI35p5dMo7JlkeWW9Wn648agSah05G-mD6xqA-NUjLAgg7TBynyZaBdQ3WNNXTFINsRNhgQ-/pub?gid=0&single=true&output=csv';
+const MAX_INTENTOS = 5;
+const BLOQUEO_MS   = 5 * 60 * 1000; // 5 minutos
+
+var usuariosDB = [];
+var sesionUsuario = null;
+
+// Restaurar sesión guardada
+(function() {
+  try {
+    var saved = localStorage.getItem('pil1_sesion');
+    if (saved) sesionUsuario = JSON.parse(saved);
+  } catch(e) { sesionUsuario = null; }
+})();
+var ahtInicio = null;
+var ahtInterval = null;
+var bloqueoInterval = null;
+
+// Cargar usuarios al iniciar
+window.addEventListener('load', function() {
+  // Restaurar sesión si existe
+  if (sesionUsuario) {
+    document.getElementById('pantalla-login').style.display = 'none';
+    mostrarBienvenida();
+  }
+  // Verificar bloqueo activo
+  verificarBloqueo();
+  // Cargar operaciones y materiales desde Sheets
+  cargarOpsMateriales();
+  // Cargar conductores
+  cargarConductores();
+  // Cargar CSV de usuarios
+  fetchCSVMultiProxy(USUARIOS_CSV)
+    .then(function(t){
+      var lines = t.trim().split('\n').slice(1);
+      usuariosDB = lines.map(function(l){
+        var p = l.split(',').map(function(x){return x.trim().replace(/^"|"$/g,'');});
+        return {usuario: (p[0]||'').toLowerCase().trim(), contrasena: (p[1]||'').trim(), nombre: (p[2]||'').trim(), activo: (p[3]||'').toUpperCase().trim()==='SI'};
+      }).filter(function(u){return u.usuario;});
+    }).catch(function(){
+      // Si falla el CSV, permitir continuar con usuarios hardcodeados de respaldo
+      usuariosDB = [
+        {usuario:'alexander',contrasena:'pil2026',nombre:'Alexander Velásquez Benavides',activo:true},
+        {usuario:'hidalgo',  contrasena:'pil2026',nombre:'Idaldo Madrid Lara',           activo:true},
+        {usuario:'deivi',    contrasena:'pil2026',nombre:'Deivi José Oliveros Peinado',  activo:true},
+        {usuario:'saul',     contrasena:'pil2026',nombre:'Saúl García Sandoval',         activo:true},
+      ];
+    });
+});
+
+function verificarBloqueo() {
+  var bloqueadoHasta = parseInt(sessionStorage.getItem('pil1_bloqueado')||'0');
+  if (bloqueadoHasta > Date.now()) {
+    mostrarContadorBloqueo(bloqueadoHasta);
+    document.getElementById('btn-login').disabled = true;
+  }
+}
+
+function mostrarContadorBloqueo(hasta) {
+  document.getElementById('login-error').style.display = 'none';
+  var blk = document.getElementById('login-block');
+  blk.style.display = 'block';
+  clearInterval(bloqueoInterval);
+  bloqueoInterval = setInterval(function() {
+    var resta = Math.max(0, Math.ceil((hasta - Date.now()) / 1000));
+    var m = Math.floor(resta/60), s = resta%60;
+    blk.textContent = 'Demasiados intentos fallidos. Espere ' + m + ':' + String(s).padStart(2,'0') + ' para intentar de nuevo.';
+    if (resta <= 0) {
+      clearInterval(bloqueoInterval);
+      blk.style.display = 'none';
+      document.getElementById('btn-login').disabled = false;
+      sessionStorage.removeItem('pil1_bloqueado');
+      sessionStorage.removeItem('pil1_intentos');
+      document.getElementById('login-intentos').textContent = '';
+    }
+  }, 1000);
+}
+
+function intentarLogin() {
+  var bloqueadoHasta = parseInt(sessionStorage.getItem('pil1_bloqueado')||'0');
+  if (bloqueadoHasta > Date.now()) return;
+
+  var usuario    = (document.getElementById('login-usuario').value||'').replace(/^[\s\u00A0\u200B\u200C\u200D\uFEFF\u2000-\u200A\u202F\u205F\u3000]+|[\s\u00A0\u200B\u200C\u200D\uFEFF\u2000-\u200A\u202F\u205F\u3000]+$/g,'').toLowerCase();
+  var contrasena = (document.getElementById('login-pass').value||'').trim();
+  var errEl     = document.getElementById('login-error');
+  var intEl     = document.getElementById('login-intentos');
+
+  if (!usuario || !contrasena) {
+    errEl.textContent = 'Ingrese usuario y contrasena.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  var user = usuariosDB.find(function(u){ return u.usuario === usuario && u.contrasena === contrasena && u.activo; });
+
+  if (user) {
+    // Login exitoso
+    sessionStorage.removeItem('pil1_intentos');
+    sessionStorage.removeItem('pil1_bloqueado');
+    errEl.style.display = 'none';
+    intEl.textContent = '';
+    sesionUsuario = user;
+    localStorage.setItem('pil1_sesion', JSON.stringify(user));
+
+    // Registrar acceso en log
+    fetch('https://script.google.com/macros/s/AKfycbxZpFHLbmGpE9LuASyf-0iWvFWtzUO3HZPjk6u68Yp76E9Fip2wrviCF6z2iAuWMMqZHA/exec', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'registrarAcceso',
+        usuario: user.usuario,
+        nombre: user.nombre,
+        dispositivo: navigator.userAgent
+      })
+    }).catch(function(){}); // silencioso, no bloquea el login
+
+    mostrarBienvenida();
+  } else {
+    // Intento fallido
+    var intentos = parseInt(sessionStorage.getItem('pil1_intentos')||'0') + 1;
+    sessionStorage.setItem('pil1_intentos', intentos);
+    var restantes = MAX_INTENTOS - intentos;
+    if (intentos >= MAX_INTENTOS) {
+      var hasta = Date.now() + BLOQUEO_MS;
+      sessionStorage.setItem('pil1_bloqueado', hasta);
+      document.getElementById('btn-login').disabled = true;
+      errEl.style.display = 'none';
+      mostrarContadorBloqueo(hasta);
+    } else {
+      errEl.textContent = 'Usuario o contrasena incorrectos.';
+      errEl.style.display = 'block';
+      intEl.textContent = restantes + ' intento' + (restantes===1?'':'s') + ' restante' + (restantes===1?'':'s') + '.';
+    }
+    document.getElementById('login-pass').value = '';
+    document.getElementById('login-pass').focus();
+  }
+}
+
+function mostrarBienvenida() {
+  document.getElementById('pantalla-login').style.display = 'none';
+  document.getElementById('pantalla-bienvenida').style.display = 'block';
+  window.scrollTo(0,0);
+  var ahora = new Date();
+  var opciones = {weekday:'long',year:'numeric',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'};
+  document.getElementById('bienvenida-saludo').textContent = 'Bienvenido, ' + sesionUsuario.nombre.split(' ')[0];
+  document.getElementById('bienvenida-fecha').textContent  = ahora.toLocaleDateString('es-CO', opciones);
+  cargarRegistros();
+}
+
+function volverAlMenu() {
+  detenerAHT();
+  document.getElementById('pantalla-app').style.display = 'none';
+  document.getElementById('pantalla-bienvenida').style.display = 'block';
+  window.scrollTo(0,0);
+  cargarRegistros();
+}
+
+function abrirFormulario() {
+  document.getElementById('pantalla-bienvenida').style.display = 'none';
+  document.getElementById('pantalla-app').style.display = 'block';
+  document.getElementById('aht-bar').style.display = 'none';
+  document.getElementById('panel-registro').style.display = 'block';
+  document.getElementById('panel-registro').classList.add('active');
+  document.getElementById('panel-consulta').style.display = 'none';
+  document.getElementById('panel-consulta').classList.remove('active');
+  if (sesionUsuario) document.getElementById('operario').value = sesionUsuario.nombre;
+  var lbl = document.getElementById('app-usuario-label');
+  if (lbl && sesionUsuario) lbl.textContent = 'Sesion: ' + sesionUsuario.nombre;
+  window.scrollTo(0,0);
+  iniciarAHT();
+}
+
+function abrirConsulta() {
+  document.getElementById('pantalla-bienvenida').style.display = 'none';
+  document.getElementById('pantalla-app').style.display = 'block';
+  document.getElementById('aht-bar').style.display = 'none';
+  document.getElementById('panel-registro').style.display = 'none';
+  document.getElementById('panel-registro').classList.remove('active');
+  document.getElementById('panel-consulta').style.display = 'block';
+  document.getElementById('panel-consulta').classList.add('active');
+  var lbl = document.getElementById('app-usuario-label');
+  if (lbl && sesionUsuario) lbl.textContent = 'Sesion: ' + sesionUsuario.nombre;
+  window.scrollTo(0,0);
+  cargarRegistros();
+}
+
+function cerrarSesion() {
+  sesionUsuario = null;
+  localStorage.removeItem('pil1_sesion');
+  detenerAHT();
+  document.getElementById('pantalla-bienvenida').style.display = 'none';
+  document.getElementById('pantalla-app').style.display = 'none';
+  document.getElementById('pantalla-login').style.display = 'flex';
+  document.getElementById('login-usuario').value = '';
+  document.getElementById('login-pass').value = '';
+  document.getElementById('login-error').style.display = 'none';
+  window.scrollTo(0,0);
+}
+
+// ── AHT ──────────────────────────────────────────
+function iniciarAHT() {
+  ahtInicio = Date.now();
+  // Corre internamente — NO se muestra
+  clearInterval(ahtInterval);
+  ahtInterval = setInterval(function() {
+    var seg = Math.floor((Date.now() - ahtInicio) / 1000);
+    var m   = Math.floor(seg / 60);
+    var s   = seg % 60;
+    document.getElementById('aht-counter').textContent = String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+  }, 1000);
+}
+
+function detenerAHT() {
+  clearInterval(ahtInterval);
+  ahtInterval = null;
+}
+
+function getAHTSegundos() {
+  if (!ahtInicio) return 0;
+  return Math.floor((Date.now() - ahtInicio) / 1000);
+}
+</script>
+</div><!-- /pantalla-app -->
+</body>
+</html>
