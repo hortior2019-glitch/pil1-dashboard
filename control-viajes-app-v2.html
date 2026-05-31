@@ -541,9 +541,11 @@ let deferredInstall = null;
 document.addEventListener("DOMContentLoaded", async () => {
   await abrirDB();
   verificarSesion();
-  window.addEventListener("online",  () => { ocultarOffline(); sincronizarTodo(); });
   window.addEventListener("offline", mostrarOffline);
-  if (!navigator.onLine) mostrarOffline();
+  window.addEventListener("online",  () => { ocultarOffline(); sincronizarTodo(); });
+  // navigator.onLine es poco confiable en iOS PWA — hacemos un ping real
+  verificarConexion();
+  setInterval(verificarConexion, 15000); // re-chequea cada 15 s
   actualizarBadgeSync();
 
   // iOS: mostrar instrucción manual si no está instalada como PWA
@@ -579,6 +581,19 @@ async function instalarAndroid() {
 
 function mostrarOffline() { document.getElementById("offlineBanner").style.display = "block"; }
 function ocultarOffline() { document.getElementById("offlineBanner").style.display = "none"; }
+
+// Ping real — navigator.onLine miente en iOS PWA standalone
+async function verificarConexion() {
+  try {
+    const ctrl = new AbortController();
+    const id   = setTimeout(() => ctrl.abort(), 4000);
+    await fetch(GAS_URL + "?action=ping", { method:"GET", redirect:"follow", signal: ctrl.signal });
+    clearTimeout(id);
+    ocultarOffline();
+  } catch(e) {
+    mostrarOffline();
+  }
+}
 
 async function actualizarBadgeSync() {
   try {
