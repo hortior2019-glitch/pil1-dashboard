@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <!-- PWA iOS -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="CV Viajes" />
+  <!-- PWA Android/Chrome -->
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#1a4a2e" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%231a4a2e'/%3E%3Ctext y='68' x='50' text-anchor='middle' font-size='48' font-family='system-ui' font-weight='900' fill='%23c8a84b'%3ECV%3C/text%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%231a4a2e'/%3E%3Ctext y='68' x='50' text-anchor='middle' font-size='48' font-family='system-ui' font-weight='900' fill='%23c8a84b'%3ECV%3C/text%3E%3C/svg%3E">
+  <title>Control de Viajes</title>
+
+  <script>
+  // ── Service Worker (offline cache para Android e iOS) ──────────
+  if ('serviceWorker' in navigator) {
+    const SW = `
+const CACHE='cv-v2';
+const APP_URL=self.location.href.split('?')[0];
+self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.add(APP_URL)));self.skipWaiting();});
+self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));self.clients.claim();});
+self.addEventListener('fetch',e=>{
+  const u=e.request.url;
+  if(u.includes('script.google.com')||u.includes('googleapis.com'))return;
+  e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)||caches.match(APP_URL)));
+});`;
+    const blob=new Blob([SW],{type:'application/javascript'});
+    navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});
+  }
+  // ── Web App Manifest (Android Chrome muestra "Instalar app") ──
+  const M={name:"Control de Viajes Internos",short_name:"CV Viajes",
+    description:"Registro de viajes con GPS y sincronización offline",
+    start_url:location.pathname+location.search,display:"standalone",
+    orientation:"portrait",background_color:"#1a4a2e",theme_color:"#1a4a2e",
+    icons:[{src:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='80' fill='%231a4a2e'/%3E%3Ctext y='340' x='256' text-anchor='middle' font-size='260' font-family='system-ui' font-weight='900' fill='%23c8a84b'%3ECV%3C/text%3E%3C/svg%3E",
+      sizes:"512x512",type:"image/svg+xml",purpose:"any maskable"}]};
+  const ml=document.createElement('link');ml.rel='manifest';
+  ml.href=URL.createObjectURL(new Blob([JSON.stringify(M)],{type:'application/manifest+json'}));
+  document.head.appendChild(ml);
+  </script>
+
+  <style>
+    :root{
+      --verde-oscuro:#1a4a2e;--verde-medio:#2d6a45;--verde-claro:#4a9466;
+      --dorado:#c8a84b;--crema:#f5f2eb;--crema-oscura:#ece8df;
+      --texto:#1c1c1c;--texto-suave:#555;--blanco:#ffffff;
+      --amarillo-bg:#fff8dc;--verde-bg:#d5f5e3;
+      --rojo:#e74c3c;--rojo-bg:#fde8e8;
+      --azul:#2980b9;--azul-bg:#d6eaf8;
+      --gris:#95a5a6;--gris-bg:#ecf0f1;
+      --radio:14px;
+      --sombra:0 4px 20px rgba(0,0,0,0.10);
+      --sombra-fuerte:0 8px 32px rgba(0,0,0,0.18);
+      --safe-top:env(safe-area-inset-top,0px);
+      --safe-bot:env(safe-area-inset-bottom,0px);
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+      font-size:16px;background:var(--crema);color:var(--texto);overflow-x:hidden;
+      -webkit-tap-highlight-color:transparent;-webkit-overflow-scrolling:touch;}
+
+    /* ── HEADER ── */
+    .header{background:var(--verde-oscuro);color:var(--blanco);padding:0 16px;
+      padding-top:var(--safe-top);display:flex;align-items:center;justify-content:space-between;
+      height:calc(60px + var(--safe-top));position:sticky;top:0;z-index:100;
+      box-shadow:0 2px 8px rgba(0,0,0,0.2);}
+    .header-logo{width:36px;height:36px;background:var(--dorado);border-radius:8px;
+      display:flex;align-items:center;justify-content:center;
+      font-weight:800;font-size:14px;color:var(--verde-oscuro);}
+    .header-title{font-size:17px;font-weight:700;letter-spacing:0.3px;}
+    .header-subtitle{font-size:11px;opacity:0.7;margin-top:1px;}
+    .header-center{text-align:center;flex:1;}
+    .header-right{display:flex;gap:6px;align-items:center;min-width:36px;justify-content:flex-end;}
+    .btn-header{background:none;border:1px solid rgba(255,255,255,0.3);color:var(--blanco);
+      border-radius:8px;padding:5px 9px;font-size:12px;cursor:pointer;white-space:nowrap;}
+
+    .screen{display:none;min-height:calc(100dvh - calc(60px + var(--safe-top)));}
+    .screen.activa{display:block;}
+
+    /* ── BANNERS ── */
+    .offline-banner{background:#e67e22;color:#fff;text-align:center;
+      padding:8px 16px;font-size:13px;font-weight:600;display:none;}
+    .sync-banner{background:var(--azul);color:#fff;text-align:center;
+      padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;display:none;}
+    .sync-banner.visible{display:block;}
+    .install-ios{background:var(--verde-oscuro);color:var(--blanco);
+      padding:11px 14px;font-size:12px;line-height:1.5;
+      display:none;align-items:center;gap:10px;}
+    .install-ios.visible{display:flex;}
+    .install-ios strong{color:var(--dorado);}
+    .install-ios-close{margin-left:auto;background:none;border:1px solid rgba(255,255,255,0.4);
+      color:#fff;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;flex-shrink:0;}
+
+    /* ── LOGIN ── */
+    .login-wrap{min-height:100dvh;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;
+      padding:32px 24px calc(32px + var(--safe-bot));
+      background:linear-gradient(160deg,var(--verde-oscuro) 0%,var(--verde-medio) 100%);}
+    .login-logo{width:80px;height:80px;background:var(--dorado);border-radius:20px;
+      display:flex;align-items:center;justify-content:center;
+      font-size:30px;font-weight:900;color:var(--verde-oscuro);
+      margin-bottom:20px;box-shadow:0 6px 24px rgba(0,0,0,0.3);}
+    .login-titulo{color:var(--blanco);font-size:22px;font-weight:700;text-align:center;margin-bottom:4px;}
+    .login-subtitulo{color:rgba(255,255,255,0.6);font-size:14px;text-align:center;margin-bottom:36px;}
+    .login-card{background:var(--blanco);border-radius:20px;padding:28px 24px;
+      width:100%;max-width:360px;box-shadow:var(--sombra-fuerte);}
+    .login-label{font-size:13px;font-weight:600;color:var(--texto-suave);margin-bottom:16px;
+      text-align:center;letter-spacing:0.5px;text-transform:uppercase;}
+    .pin-display{display:flex;justify-content:center;gap:12px;margin-bottom:28px;}
+    .pin-dot{width:16px;height:16px;border-radius:50%;
+      border:2px solid var(--crema-oscura);background:var(--crema);transition:all 0.15s;}
+    .pin-dot.lleno{background:var(--verde-oscuro);border-color:var(--verde-oscuro);transform:scale(1.15);}
+    .teclado{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+    .tecla{aspect-ratio:1;background:var(--crema);border:none;border-radius:14px;
+      font-size:22px;font-weight:600;color:var(--texto);cursor:pointer;
+      transition:background 0.1s,transform 0.1s;
+      display:flex;align-items:center;justify-content:center;}
+    .tecla:active{background:var(--crema-oscura);transform:scale(0.93);}
+    .tecla.borrar{font-size:16px;color:var(--texto-suave);}
+    .tecla.vacio{visibility:hidden;}
+    .btn-ingresar{width:100%;margin-top:20px;background:var(--verde-oscuro);color:var(--blanco);
+      border:none;border-radius:14px;padding:16px;font-size:16px;font-weight:700;
+      cursor:pointer;transition:transform 0.1s;}
+    .btn-ingresar:active{transform:scale(0.98);}
+    .btn-ingresar:disabled{background:var(--gris);cursor:not-allowed;}
+
+    /* ── TOAST ── */
+    .toast{position:fixed;bottom:calc(24px + var(--safe-bot));left:50%;transform:translateX(-50%);
+      background:#333;color:#fff;padding:12px 24px;border-radius:100px;
+      font-size:14px;font-weight:500;z-index:9999;opacity:0;transition:opacity 0.25s;
+      white-space:nowrap;pointer-events:none;}
+    .toast.visible{opacity:1;}
+    .toast.error{background:var(--rojo);}
+    .toast.exito{background:var(--verde-claro);}
+    .toast.info{background:var(--azul);}
+
+    /* ── INICIO ── */
+    .inicio-contenido{padding:20px 16px calc(100px + var(--safe-bot));}
+    .bienvenida-card{background:var(--verde-oscuro);color:var(--blanco);
+      border-radius:var(--radio);padding:20px;margin-bottom:20px;}
+    .bienvenida-nombre{font-size:20px;font-weight:700;margin-bottom:4px;}
+    .bienvenida-fecha{font-size:13px;opacity:0.7;}
+    .stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;}
+    .stat-card{background:var(--blanco);border-radius:var(--radio);
+      padding:16px;box-shadow:var(--sombra);text-align:center;}
+    .stat-numero{font-size:32px;font-weight:800;color:var(--verde-oscuro);}
+    .stat-label{font-size:12px;color:var(--texto-suave);margin-top:4px;font-weight:500;}
+    .btn-nuevo-viaje{width:100%;background:var(--dorado);color:var(--verde-oscuro);
+      border:none;border-radius:var(--radio);padding:18px;font-size:17px;font-weight:800;
+      cursor:pointer;box-shadow:var(--sombra);margin-bottom:24px;transition:transform 0.1s;}
+    .btn-nuevo-viaje:active{transform:scale(0.98);}
+    .viajes-hoy-titulo{font-size:14px;font-weight:700;color:var(--texto-suave);
+      text-transform:uppercase;letter-spacing:0.8px;margin-bottom:12px;}
+    .viaje-card{background:var(--blanco);border-radius:var(--radio);
+      padding:14px 16px;margin-bottom:10px;box-shadow:var(--sombra);}
+    .viaje-card-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+    .viaje-card-tractor{font-size:14px;font-weight:700;}
+    .viaje-card-badge{padding:3px 10px;border-radius:100px;font-size:12px;font-weight:700;}
+    .badge-completo{background:var(--verde-bg);color:var(--verde-oscuro);}
+    .badge-parcial{background:var(--amarillo-bg);color:#7a5f00;}
+    .badge-pendiente{background:var(--rojo-bg);color:var(--rojo);}
+    .viaje-card-ruta{font-size:13px;color:var(--texto-suave);}
+    .viaje-card-dur{font-size:12px;color:var(--gris);margin-top:4px;}
+    .viaje-card-sync{display:inline-block;margin-top:6px;font-size:11px;
+      font-weight:700;border-radius:100px;padding:3px 10px;}
+    .sync-ok{background:var(--verde-bg);color:var(--verde-oscuro);}
+    .sync-pend{background:var(--amarillo-bg);color:#7a5f00;}
+    .sync-err{background:var(--rojo-bg);color:var(--rojo);}
+
+    /* ── CONFIG ── */
+    .config-contenido{padding:20px 16px calc(90px + var(--safe-bot));}
+    .seccion-titulo{font-size:13px;font-weight:700;color:var(--texto-suave);
+      text-transform:uppercase;letter-spacing:0.8px;margin:20px 0 10px;}
+    .seccion-titulo:first-child{margin-top:0;}
+    .selector-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+    .selector-item{background:var(--blanco);border:2px solid transparent;
+      border-radius:var(--radio);padding:14px 12px;cursor:pointer;
+      text-align:center;box-shadow:var(--sombra);transition:border-color 0.15s,background 0.15s;}
+    .selector-item.seleccionado{border-color:var(--verde-oscuro);background:var(--verde-bg);}
+    .selector-item-nombre{font-size:14px;font-weight:600;}
+    .selector-item-detalle{font-size:12px;color:var(--texto-suave);margin-top:3px;}
+    .selector-lista{display:flex;flex-direction:column;gap:8px;}
+    .selector-fila{background:var(--blanco);border:2px solid transparent;
+      border-radius:var(--radio);padding:14px 16px;cursor:pointer;
+      box-shadow:var(--sombra);font-size:15px;font-weight:500;
+      transition:border-color 0.15s,background 0.15s;}
+    .selector-fila.seleccionado{border-color:var(--verde-oscuro);background:var(--verde-bg);font-weight:700;}
+    .selector-fila .fila-flecha{float:right;color:var(--texto-suave);font-size:12px;transition:transform 0.2s;}
+    .selector-fila.abierto .fila-flecha{transform:rotate(90deg);}
+    .subopciones{display:none;flex-direction:column;gap:6px;padding:6px 0 2px 16px;}
+    .subopciones.visible{display:flex;}
+    .subopcion{background:var(--crema-oscura);border:2px solid transparent;
+      border-radius:10px;padding:10px 14px;cursor:pointer;
+      font-size:14px;font-weight:500;transition:border-color 0.15s,background 0.15s;}
+    .subopcion.seleccionado{border-color:var(--verde-medio);background:var(--verde-bg);font-weight:700;}
+    .btn-continuar{position:fixed;bottom:0;left:0;right:0;
+      padding:12px 16px calc(12px + var(--safe-bot));
+      background:var(--crema);border-top:1px solid var(--crema-oscura);}
+    .btn-continuar button{width:100%;background:var(--verde-oscuro);color:var(--blanco);
+      border:none;border-radius:var(--radio);padding:16px;font-size:16px;font-weight:700;
+      cursor:pointer;transition:transform 0.1s;}
+    .btn-continuar button:active{transform:scale(0.98);}
+    .btn-continuar button:disabled{background:var(--gris);cursor:not-allowed;}
+
+    /* ── PULSAZOS ── */
+    .pulsazos-contenido{padding:16px 16px calc(100px + var(--safe-bot));}
+    .viaje-resumen{background:var(--blanco);border-radius:var(--radio);
+      padding:14px 16px;margin-bottom:16px;box-shadow:var(--sombra);
+      font-size:14px;color:var(--texto-suave);line-height:1.6;}
+    .viaje-resumen strong{color:var(--texto);}
+    .pulsos-lista{display:flex;flex-direction:column;gap:10px;margin-bottom:16px;}
+    .pulso-btn{display:flex;align-items:center;gap:16px;padding:18px 20px;
+      border-radius:var(--radio);border:none;cursor:pointer;width:100%;text-align:left;
+      box-shadow:var(--sombra);transition:transform 0.1s,opacity 0.2s;position:relative;}
+    .pulso-btn:active{transform:scale(0.98);}
+    .pulso-btn.completado{opacity:0.7;cursor:default;}
+    .pulso-btn.pendiente{opacity:0.40;cursor:not-allowed;}
+    .pulso-btn.p1{background:#fff3cd;}
+    .pulso-btn.p2{background:#d4edda;}
+    .pulso-btn.p3{background:#f8d7da;}
+    .pulso-btn.p4{background:#e2e3e5;}
+    .pulso-indicador{width:20px;height:20px;border-radius:50%;flex-shrink:0;}
+    .p1 .pulso-indicador{background:#f0ad00;}
+    .p2 .pulso-indicador{background:#28a745;}
+    .p3 .pulso-indicador{background:#dc3545;}
+    .p4 .pulso-indicador{background:#6c757d;}
+    .pulso-info{flex:1;min-width:0;}
+    .pulso-nombre{font-size:16px;font-weight:700;}
+    .pulso-hora{font-size:13px;color:var(--texto-suave);margin-top:2px;}
+    .pulso-geo{font-size:11px;margin-top:3px;font-style:italic;color:var(--texto-suave);}
+    .pulso-geo.ok{color:var(--verde-claro);font-style:normal;}
+    .pulso-geo.err{color:var(--rojo);font-style:normal;}
+    .pulso-geo.wait{color:#7a5f00;}
+    .pulso-check{font-size:18px;margin-left:4px;}
+    .ps-badge{position:absolute;top:8px;right:8px;font-size:10px;font-weight:700;
+      border-radius:100px;padding:2px 8px;display:none;}
+    .ps-enviando{background:var(--azul-bg);color:var(--azul);display:inline-block;}
+    .ps-ok{background:var(--verde-bg);color:var(--verde-oscuro);display:inline-block;}
+    .ps-error{background:var(--rojo-bg);color:var(--rojo);display:inline-block;}
+    .ps-local{background:var(--amarillo-bg);color:#7a5f00;display:inline-block;}
+    .cronometro{text-align:center;background:var(--blanco);border-radius:var(--radio);
+      padding:16px;margin-bottom:16px;box-shadow:var(--sombra);}
+    .cronometro-label{font-size:12px;color:var(--texto-suave);font-weight:600;
+      text-transform:uppercase;letter-spacing:0.5px;}
+    .cronometro-tiempo{font-size:36px;font-weight:800;color:var(--verde-oscuro);
+      font-variant-numeric:tabular-nums;}
+    .geo-banner{background:var(--amarillo-bg);border:1px solid #e0c84a;
+      border-radius:var(--radio);padding:12px 16px;margin-bottom:16px;
+      font-size:13px;color:#5a4a00;display:flex;align-items:flex-start;gap:10px;}
+    .geo-banner-icon{font-size:20px;flex-shrink:0;margin-top:1px;}
+    .geo-banner b{display:block;font-size:14px;margin-bottom:3px;}
+
+    /* ── CARGA ── */
+    .paladas-wrap{display:flex;flex-direction:column;align-items:center;gap:28px;padding:24px 0;}
+    .paladas-titulo{font-size:15px;font-weight:600;color:var(--texto-suave);
+      text-transform:uppercase;letter-spacing:0.08em;}
+    .paladas-contador{display:flex;align-items:center;gap:24px;}
+    .paladas-btn{width:64px;height:64px;border-radius:50%;border:none;font-size:32px;font-weight:700;
+      cursor:pointer;transition:transform 0.1s,opacity 0.15s;
+      display:flex;align-items:center;justify-content:center;box-shadow:var(--sombra);}
+    .paladas-btn:active{transform:scale(0.92);}
+    .paladas-btn.menos{background:var(--crema-oscura);color:var(--texto);}
+    .paladas-btn.menos:disabled{opacity:0.35;cursor:default;}
+    .paladas-btn.mas{background:var(--verde-oscuro);color:var(--blanco);}
+    .paladas-btn.mas:disabled{opacity:0.35;cursor:default;}
+    .paladas-numero{font-size:72px;font-weight:800;color:var(--verde-oscuro);
+      min-width:90px;text-align:center;line-height:1;}
+    .paladas-puntos{display:flex;gap:8px;justify-content:center;}
+    .palada-dot{width:18px;height:18px;border-radius:50%;background:var(--crema-oscura);
+      transition:background 0.2s,transform 0.15s;}
+    .palada-dot.activo{background:var(--verde-claro);transform:scale(1.2);}
+    .confirmacion-card{background:var(--blanco);border-radius:var(--radio);
+      padding:20px;margin-bottom:16px;box-shadow:var(--sombra);text-align:center;}
+    .confirmacion-ton{font-size:42px;font-weight:900;color:var(--verde-oscuro);}
+    .confirmacion-label{font-size:14px;color:var(--texto-suave);margin-top:4px;}
+    .btn-guardar{width:100%;background:var(--verde-oscuro);color:var(--blanco);
+      border:none;border-radius:var(--radio);padding:18px;font-size:17px;font-weight:800;
+      cursor:pointer;transition:transform 0.1s;}
+    .btn-guardar:active{transform:scale(0.98);}
+    .btn-guardar:disabled{background:var(--gris);cursor:not-allowed;}
+
+    /* ── LOADING ── */
+    .loading-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.45);
+      display:flex;align-items:center;justify-content:center;z-index:9998;}
+    .loading-spinner{width:48px;height:48px;
+      border:4px solid rgba(255,255,255,0.3);border-top-color:var(--blanco);
+      border-radius:50%;animation:spin 0.8s linear infinite;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+  </style>
+</head>
+<body>
+
+<!-- Banner iOS -->
+<div class="install-ios" id="installIOS">
+  <span>📱</span>
+  <span>Para instalar: toca <strong>Compartir</strong> → <strong>"En pantalla de inicio"</strong></span>
+  <button class="install-ios-close" onclick="cerrarInstallBanner()">OK</button>
+</div>
+
+<!-- Offline -->
+<div class="offline-banner" id="offlineBanner">📵 Sin conexión — los pulsos se guardan localmente</div>
+
+<!-- Sync pendientes -->
+<div class="sync-banner" id="syncBanner" onclick="sincronizarTodo()"></div>
+
+<!-- ═══ LOGIN ═══ -->
+<div id="screenLogin" class="login-wrap">
+  <div class="login-logo">CV</div>
+  <div class="login-titulo">Control de Viajes</div>
+  <div class="login-subtitulo">Ingresa tu PIN para continuar</div>
+  <div class="login-card">
+    <div class="login-label">PIN de acceso</div>
+    <div class="pin-display">
+      <div class="pin-dot" id="dot0"></div>
+      <div class="pin-dot" id="dot1"></div>
+      <div class="pin-dot" id="dot2"></div>
+      <div class="pin-dot" id="dot3"></div>
+    </div>
+    <div class="teclado">
+      <button class="tecla" onclick="teclaPin('1')">1</button>
+      <button class="tecla" onclick="teclaPin('2')">2</button>
+      <button class="tecla" onclick="teclaPin('3')">3</button>
+      <button class="tecla" onclick="teclaPin('4')">4</button>
+      <button class="tecla" onclick="teclaPin('5')">5</button>
+      <button class="tecla" onclick="teclaPin('6')">6</button>
+      <button class="tecla" onclick="teclaPin('7')">7</button>
+      <button class="tecla" onclick="teclaPin('8')">8</button>
+      <button class="tecla" onclick="teclaPin('9')">9</button>
+      <button class="tecla vacio"></button>
+      <button class="tecla" onclick="teclaPin('0')">0</button>
+      <button class="tecla borrar" onclick="borrarPin()">⌫</button>
+    </div>
+    <button class="btn-ingresar" id="btnIngresar" onclick="doLogin()" disabled>Ingresar</button>
+  </div>
+</div>
+
+<!-- ═══ HEADER ═══ -->
+<div class="header" id="mainHeader" style="display:none">
+  <div class="header-logo">CV</div>
+  <div class="header-center">
+    <div class="header-title"    id="headerTitle">Control de Viajes</div>
+    <div class="header-subtitle" id="headerSubtitle"></div>
+  </div>
+  <div class="header-right">
+    <button class="btn-header" id="btnInstalar" style="display:none" onclick="instalarAndroid()">⬇ Instalar</button>
+    <button class="btn-header" id="btnSync"     style="display:none" onclick="sincronizarTodo()">🔄</button>
+    <button class="btn-header" id="btnCerrar"   style="display:none" onclick="cerrarSesion()">Salir</button>
+  </div>
+</div>
+
+<!-- ═══ INICIO ═══ -->
+<div id="screenInicio" class="screen">
+  <div class="inicio-contenido">
+    <div class="bienvenida-card">
+      <div class="bienvenida-nombre" id="bienvenidaNombre">Hola</div>
+      <div class="bienvenida-fecha"  id="bienvenidaFecha"></div>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-numero" id="statViajes">0</div>
+        <div class="stat-label">Viajes hoy</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-numero" id="statTon">0.0</div>
+        <div class="stat-label">Toneladas hoy</div>
+      </div>
+    </div>
+    <button class="btn-nuevo-viaje" onclick="goToConfig()">+ Iniciar nuevo viaje</button>
+    <div class="viajes-hoy-titulo">Viajes del día</div>
+    <div id="listaViajesHoy"></div>
+  </div>
+</div>
+
+<!-- ═══ CONFIG ═══ -->
+<div id="screenConfig" class="screen">
+  <div class="config-contenido">
+    <div class="seccion-titulo">Tractor</div>
+    <div class="selector-grid" id="listaTractores"></div>
+    <div class="seccion-titulo">Frente de origen</div>
+    <div class="selector-lista" id="listaOrigen"></div>
+    <div class="seccion-titulo">Frente de destino</div>
+    <div class="selector-lista" id="listaDestino"></div>
+  </div>
+  <div class="btn-continuar">
+    <button id="btnIrPulsazos" onclick="goToPulsazos()" disabled>Continuar</button>
+  </div>
+</div>
+
+<!-- ═══ PULSAZOS ═══ -->
+<div id="screenPulsazos" class="screen">
+  <div class="pulsazos-contenido">
+    <div class="viaje-resumen" id="viajeResumen"></div>
+
+    <div class="geo-banner" id="geoBannerPulsazos" style="display:none">
+      <div class="geo-banner-icon">📍</div>
+      <div><b>Geolocalización no disponible</b>Activa el GPS del dispositivo para registrar tu ubicación en cada evento.</div>
+    </div>
+
+    <div class="cronometro" id="cronometroBox" style="display:none">
+      <div class="cronometro-label">Tiempo del viaje</div>
+      <div class="cronometro-tiempo" id="cronometroTiempo">00:00</div>
+    </div>
+
+    <div class="pulsos-lista">
+      <button class="pulso-btn p1" id="btn1" onclick="registrarPulso(1)">
+        <div class="pulso-indicador"></div>
+        <div class="pulso-info">
+          <div class="pulso-nombre">Cargando</div>
+          <div class="pulso-hora" id="hora1">Toca para registrar</div>
+          <div class="pulso-geo"  id="geo1"></div>
+        </div>
+        <div class="pulso-check" id="check1"></div>
+        <div class="ps-badge" id="ps1"></div>
+      </button>
+      <button class="pulso-btn p2 pendiente" id="btn2" onclick="registrarPulso(2)">
+        <div class="pulso-indicador"></div>
+        <div class="pulso-info">
+          <div class="pulso-nombre">En camino</div>
+          <div class="pulso-hora" id="hora2">Esperando paso anterior</div>
+          <div class="pulso-geo"  id="geo2"></div>
+        </div>
+        <div class="pulso-check" id="check2"></div>
+        <div class="ps-badge" id="ps2"></div>
+      </button>
+      <button class="pulso-btn p3 pendiente" id="btn3" onclick="registrarPulso(3)">
+        <div class="pulso-indicador"></div>
+        <div class="pulso-info">
+          <div class="pulso-nombre">Descargando</div>
+          <div class="pulso-hora" id="hora3">Esperando paso anterior</div>
+          <div class="pulso-geo"  id="geo3"></div>
+        </div>
+        <div class="pulso-check" id="check3"></div>
+        <div class="ps-badge" id="ps3"></div>
+      </button>
+      <button class="pulso-btn p4 pendiente" id="btn4" onclick="registrarPulso(4)">
+        <div class="pulso-indicador"></div>
+        <div class="pulso-info">
+          <div class="pulso-nombre">Completado</div>
+          <div class="pulso-hora" id="hora4">Esperando paso anterior</div>
+          <div class="pulso-geo"  id="geo4"></div>
+        </div>
+        <div class="pulso-check" id="check4"></div>
+        <div class="ps-badge" id="ps4"></div>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ CARGA (paladas) ═══ -->
+<div id="screenCarga" class="screen">
+  <div class="pulsazos-contenido">
+    <div class="paladas-wrap">
+      <div class="paladas-titulo">Paladas cargadas</div>
+      <div class="paladas-contador">
+        <button class="paladas-btn menos" id="btnMenos" onclick="cambiarPaladas(-1)">−</button>
+        <div class="paladas-numero" id="numPaladas">6</div>
+        <button class="paladas-btn mas"   id="btnMas"   onclick="cambiarPaladas(+1)">+</button>
+      </div>
+      <div class="paladas-puntos" id="puntoPaladas"></div>
+    </div>
+    <div class="confirmacion-card">
+      <div class="cronometro-label">Toneladas estimadas</div>
+      <div class="confirmacion-ton"   id="tonConfirm">—</div>
+      <div class="confirmacion-label">2.2 t por palada</div>
+    </div>
+    <button class="btn-guardar" id="btnGuardar" onclick="finalizarViaje()" disabled>
+      Finalizar y guardar viaje
+    </button>
+  </div>
+</div>
+
+<div class="loading-overlay" id="loadingOverlay" style="display:none">
+  <div class="loading-spinner"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+//  CONFIGURACIÓN
+// ════════════════════════════════════════════════════════════════
+const GAS_URL     = "https://script.google.com/macros/s/AKfycbzT3QdKZo6YdIjLHsbs-yQACnk655lkE6rwx9c09krteDjrKdBv1a7ELidsgPWXetIiSw/exec";
+const DIAS_EXPIRA = 30;
+const PALADA_TON  = 2.2;
+const PALADAS_MIN = 6;
+const PALADAS_MAX = 8;
+const GEO_TIMEOUT = 10000;
+const GEO_MAX_AGE = 5000;
+
+// ════════════════════════════════════════════════════════════════
+//  INDEXEDDB
+// ════════════════════════════════════════════════════════════════
+const DB_NAME = "cv_app_v2";
+let   db      = null;
+
+function abrirDB() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(DB_NAME, 1);
+    r.onupgradeneeded = e => {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains("viajes")) {
+        d.createObjectStore("viajes", { keyPath: "idLocal" })
+         .createIndex("por_fecha", ["conductor","fechaDia"]);
+      }
+      if (!d.objectStoreNames.contains("cola")) {
+        d.createObjectStore("cola", { keyPath: "idCola", autoIncrement: true })
+         .createIndex("por_estado", "estado");
+      }
+    };
+    r.onsuccess = e => { db = e.target.result; res(db); };
+    r.onerror   = e => rej(e.target.error);
+  });
+}
+
+const idb = {
+  get:   (s,k)   => new Promise((res,rej)=>{ const r=db.transaction(s).objectStore(s).get(k);                          r.onsuccess=()=>res(r.result);    r.onerror=()=>rej(r.error); }),
+  put:   (s,o)   => new Promise((res,rej)=>{ const r=db.transaction(s,"readwrite").objectStore(s).put(o);              r.onsuccess=()=>res(r.result);    r.onerror=()=>rej(r.error); }),
+  add:   (s,o)   => new Promise((res,rej)=>{ const r=db.transaction(s,"readwrite").objectStore(s).add(o);              r.onsuccess=()=>res(r.result);    r.onerror=()=>rej(r.error); }),
+  del:   (s,k)   => new Promise((res,rej)=>{ const r=db.transaction(s,"readwrite").objectStore(s).delete(k);           r.onsuccess=()=>res(true);        r.onerror=()=>rej(r.error); }),
+  all:   (s)     => new Promise((res,rej)=>{ const r=db.transaction(s).objectStore(s).getAll();                        r.onsuccess=()=>res(r.result||[]); r.onerror=()=>rej(r.error); }),
+};
+
+// ════════════════════════════════════════════════════════════════
+//  ESTADO GLOBAL
+// ════════════════════════════════════════════════════════════════
+let sesion        = null;
+let pinDigitos    = [];
+let tractores     = [];
+let frentes       = [];
+let viajeActual   = {};
+let cronInterval  = null;
+let paladasActual = PALADAS_MIN;
+let geoPermiso    = null;
+let deferredInstall = null;
+
+// ════════════════════════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════════════════════════
+document.addEventListener("DOMContentLoaded", async () => {
+  await abrirDB();
+  verificarSesion();
+  window.addEventListener("online",  () => { ocultarOffline(); sincronizarTodo(); });
+  window.addEventListener("offline", mostrarOffline);
+  if (!navigator.onLine) mostrarOffline();
+  actualizarBadgeSync();
+
+  // iOS: mostrar instrucción manual si no está instalada como PWA
+  const isIOS        = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isStandalone = navigator.standalone === true || matchMedia("(display-mode:standalone)").matches;
+  if (isIOS && !isStandalone && !localStorage.getItem("cv_install_ok")) {
+    setTimeout(() => document.getElementById("installIOS").classList.add("visible"), 3500);
+  }
+
+  // Android / Chrome: capturar evento de instalación nativa
+  window.addEventListener("beforeinstallprompt", e => {
+    e.preventDefault();
+    deferredInstall = e;
+    if (!isStandalone) document.getElementById("btnInstalar").style.display = "inline-block";
+  });
+  window.addEventListener("appinstalled", () => {
+    document.getElementById("btnInstalar").style.display = "none";
+    deferredInstall = null;
+  });
+});
+
+function cerrarInstallBanner() {
+  document.getElementById("installIOS").classList.remove("visible");
+  localStorage.setItem("cv_install_ok","1");
+}
+
+async function instalarAndroid() {
+  if (!deferredInstall) return;
+  deferredInstall.prompt();
+  const { outcome } = await deferredInstall.userChoice;
+  if (outcome === "accepted") document.getElementById("btnInstalar").style.display = "none";
+}
+
+function mostrarOffline() { document.getElementById("offlineBanner").style.display = "block"; }
+function ocultarOffline() { document.getElementById("offlineBanner").style.display = "none"; }
+
+async function actualizarBadgeSync() {
+  try {
+    const pend = (await idb.all("cola")).filter(p => p.estado === "pendiente").length;
+    document.getElementById("btnSync").style.display = pend > 0 ? "inline-block" : "none";
+    const b = document.getElementById("syncBanner");
+    if (pend > 0) { b.textContent = `🔄 ${pend} pulso(s) sin sincronizar — toca para enviar`; b.classList.add("visible"); }
+    else b.classList.remove("visible");
+  } catch(e) {}
+}
+
+// ════════════════════════════════════════════════════════════════
+//  API
+// ════════════════════════════════════════════════════════════════
+async function gasCall(params) {
+  const res = await fetch(GAS_URL + "?" + new URLSearchParams(params).toString(), { method:"GET", redirect:"follow" });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  SESIÓN
+// ════════════════════════════════════════════════════════════════
+function verificarSesion() {
+  try {
+    const raw = localStorage.getItem("vc_sesion_v2");
+    if (!raw) { mostrarLogin(); return; }
+    const s = JSON.parse(raw);
+    if (!s?.expira || Date.now() > s.expira) { localStorage.removeItem("vc_sesion_v2"); mostrarLogin(); return; }
+    sesion = s; mostrarInicio();
+  } catch(e) { mostrarLogin(); }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  LOGIN
+// ════════════════════════════════════════════════════════════════
+function mostrarLogin() {
+  document.getElementById("screenLogin").style.display = "flex";
+  document.getElementById("mainHeader").style.display  = "none";
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("activa"));
+}
+
+function teclaPin(d) {
+  if (pinDigitos.length >= 4) return;
+  pinDigitos.push(d); actualizarDots();
+  if (pinDigitos.length === 4) document.getElementById("btnIngresar").disabled = false;
+}
+function borrarPin() {
+  if (!pinDigitos.length) return;
+  pinDigitos.pop(); actualizarDots();
+  document.getElementById("btnIngresar").disabled = true;
+}
+function actualizarDots() {
+  for (let i=0;i<4;i++) document.getElementById("dot"+i).classList.toggle("lleno", i < pinDigitos.length);
+}
+
+async function doLogin() {
+  if (pinDigitos.length !== 4) return;
+  mostrarLoading();
+  try {
+    const res = await gasCall({ action:"verificarPIN", pin:pinDigitos.join("") });
+    if (res.ok) {
+      sesion = { nombre:res.conductor.nombre, usuario:res.conductor.usuario, expira:Date.now()+DIAS_EXPIRA*86400000 };
+      localStorage.setItem("vc_sesion_v2", JSON.stringify(sesion));
+      mostrarInicio();
+    } else {
+      mostrarToast(res.error || "PIN incorrecto", "error");
+      pinDigitos=[]; actualizarDots();
+      document.getElementById("btnIngresar").disabled = true;
+    }
+  } catch(e) {
+    mostrarToast("Sin conexión. Intenta de nuevo.", "error");
+    pinDigitos=[]; actualizarDots();
+    document.getElementById("btnIngresar").disabled = true;
+  } finally { ocultarLoading(); }
+}
+
+function cerrarSesion() {
+  localStorage.removeItem("vc_sesion_v2");
+  sesion=null; pinDigitos=[]; actualizarDots();
+  document.getElementById("btnIngresar").disabled = true;
+  mostrarLogin();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  INICIO
+// ════════════════════════════════════════════════════════════════
+async function mostrarInicio() {
+  document.getElementById("screenLogin").style.display = "none";
+  document.getElementById("mainHeader").style.display  = "flex";
+  document.getElementById("headerTitle").textContent   = "Control de Viajes";
+  document.getElementById("headerSubtitle").textContent = "";
+  document.getElementById("btnCerrar").style.display   = "inline-block";
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("activa"));
+  document.getElementById("screenInicio").classList.add("activa");
+
+  const fecha = new Date();
+  document.getElementById("bienvenidaNombre").textContent = "Hola, " + (sesion.nombre || "conductor");
+  document.getElementById("bienvenidaFecha").textContent  =
+    fecha.toLocaleDateString("es-ES", { weekday:"long", year:"numeric", month:"long", day:"numeric" });
+
+  await cargarViajesHoy();
+  await actualizarBadgeSync();
+}
+
+async function cargarViajesHoy() {
+  const hoy      = fechaISO(new Date());
+  const todos    = await idb.all("viajes");
+  const locales  = todos.filter(v => v.conductor === sesion.nombre && v.fechaDia === hoy);
+
+  let deServidor = [];
+  if (navigator.onLine) {
+    try {
+      const res = await gasCall({ action:"getViajesHoy", conductor:sesion.nombre });
+      if (res.ok) deServidor = res.viajes || [];
+    } catch(e) {}
+  }
+
+  const idsLocales = new Set(locales.map(v => v.idLocal));
+  const extras     = deServidor
+    .filter(v => !idsLocales.has(v.idViaje))
+    .map(v => ({ ...v, idLocal:v.idViaje, sincronizado:true, _servidor:true }));
+
+  const union = [...locales, ...extras].sort((a,b) => (b.creadoEn||0)-(a.creadoEn||0));
+  const tons  = union.reduce((s,v) => s + parseFloat(v.toneladasEstimadas||0), 0);
+
+  document.getElementById("statViajes").textContent = union.length;
+  document.getElementById("statTon").textContent    = tons.toFixed(1);
+  renderViajesHoy(union);
+}
+
+function renderViajesHoy(viajes) {
+  const cont = document.getElementById("listaViajesHoy");
+  if (!viajes.length) {
+    cont.innerHTML = '<div style="text-align:center;color:var(--texto-suave);padding:32px 0;font-size:14px;">No hay viajes registrados hoy</div>';
+    return;
+  }
+  cont.innerHTML = viajes.map(v => {
+    const pulsos = [v.T1_Cargando,v.T2_EnCamino,v.T3_Descargando,v.T4_Completado].filter(Boolean).length;
+    const [bTxt,bCls] = pulsos===4 ? ["Completo","badge-completo"] : pulsos>0 ? [pulsos+"/4 pulsos","badge-parcial"] : ["Sin pulsos","badge-pendiente"];
+    const [sTxt,sCls] = (v.sincronizado||v._servidor) ? ["✓ Sincronizado","sync-ok"] : ["⏳ Pendiente","sync-pend"];
+    return `
+    <div class="viaje-card">
+      <div class="viaje-card-top">
+        <span class="viaje-card-tractor">${v.tractor||"—"}</span>
+        <span class="viaje-card-badge ${bCls}">${bTxt}</span>
+      </div>
+      <div class="viaje-card-ruta">${v.frenteOrigen||"—"} → ${v.frenteDestino||"—"}</div>
+      <div class="viaje-card-dur">
+        ${v.duracionMinutos ? v.duracionMinutos+" min" : ""}
+        ${v.toneladasEstimadas ? " · "+parseFloat(v.toneladasEstimadas).toFixed(1)+" ton" : ""}
+        ${v.nivelCarga ? " · "+v.nivelCarga : ""}
+      </div>
+      <span class="viaje-card-sync ${sCls}">${sTxt}</span>
+    </div>`;
+  }).join("");
+}
+
+// ════════════════════════════════════════════════════════════════
+//  CONFIG VIAJE
+// ════════════════════════════════════════════════════════════════
+async function goToConfig() {
+  document.getElementById("headerTitle").textContent    = "Nuevo viaje";
+  document.getElementById("headerSubtitle").textContent = "Configura tu viaje";
+  document.getElementById("btnCerrar").style.display    = "none";
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("activa"));
+  document.getElementById("screenConfig").classList.add("activa");
+
+  viajeActual = { conductor: sesion.nombre };
+  document.getElementById("listaTractores").innerHTML =
+    '<div style="padding:12px;color:var(--texto-suave);font-size:13px;grid-column:1/-1;">Cargando...</div>';
+  document.getElementById("listaOrigen").innerHTML = document.getElementById("listaDestino").innerHTML = "";
+  document.getElementById("btnIrPulsazos").disabled = true;
+
+  mostrarLoading();
+  try {
+    const [rT,rF] = await Promise.all([gasCall({action:"getTractores"}), gasCall({action:"getFrente"})]);
+    tractores = rT.ok ? (rT.tractores||[]) : [];
+    frentes   = rF.ok ? (rF.frentes  ||[]) : [];
+    if (!tractores.length) mostrarToast("Sin tractores en el Sheet","error");
+    if (!frentes.length)   mostrarToast("Sin frentes en el Sheet","error");
+    renderTractores(); renderFrentes();
+  } catch(e) {
+    mostrarToast("Sin conexión — no se pudieron cargar los datos","error");
+  } finally { ocultarLoading(); }
+}
+
+function renderTractores() {
+  const c = document.getElementById("listaTractores");
+  if (!tractores.length) { c.innerHTML='<div style="padding:12px;color:var(--rojo);font-size:13px;grid-column:1/-1;">Sin tractores. Agrega datos en la pestaña "Tractores" del Sheet.</div>'; return; }
+  c.innerHTML = tractores.map((t,i)=>`
+    <div class="selector-item" onclick="seleccionarTractor(${i})" id="tractor-${i}">
+      <div class="selector-item-nombre">${t.MODELO||t.Modelo||"Tractor "+(i+1)}</div>
+      <div class="selector-item-detalle">${t.CAPACIDAD||t.CapacidadTon||"—"} ton · ${t.PLACA||t.Placa||""}</div>
+    </div>`).join("");
+}
+
+function seleccionarTractor(i) {
+  document.querySelectorAll("#listaTractores .selector-item").forEach(e=>e.classList.remove("seleccionado"));
+  document.getElementById("tractor-"+i).classList.add("seleccionado");
+  const t = tractores[i];
+  viajeActual.tractor      = t.MODELO||t.Modelo||"Tractor "+(i+1);
+  viajeActual.capacidadTon = parseFloat(t.CAPACIDAD||t.CapacidadTon||0)||0;
+  verificarConfigCompleta();
+}
+
+function getSubopciones(f) {
+  const s=[];
+  for(let c=1;c<=12;c++){const v=f["COLUMNA"+c]||f["Columna "+c]||"";if(v.trim())s.push(v.trim());}
+  return s;
+}
+
+function renderFrentes() {
+  const ori=document.getElementById("listaOrigen"), dest=document.getElementById("listaDestino");
+  if (!frentes.length) {
+    const m='<div style="padding:12px;color:var(--rojo);font-size:13px;">Sin frentes. Agrega datos en la pestaña "Frentes" del Sheet.</div>';
+    ori.innerHTML=dest.innerHTML=m; return;
+  }
+  const mk=tipo=>frentes.map((f,i)=>{
+    const n=f.NOMBRE||f.Nombre||"Frente "+(i+1);
+    const subs=getSubopciones(f);
+    const fl=subs.length?`<span class="fila-flecha">&#9654;</span>`:"";
+    const sh=subs.length
+      ?`<div class="subopciones" id="sub-${tipo}-${i}">`+
+        subs.map(s=>`<div class="subopcion" onclick="seleccionarSubopcion(event,'${tipo}',${i},'${s.replace(/'/g,"\\'")}',this)">${s}</div>`).join("")+
+       `</div>`:"";
+    return `<div class="selector-fila" onclick="seleccionarFrente('${tipo}',${i},this)" id="fila-${tipo}-${i}">${n}${fl}</div>${sh}`;
+  }).join("");
+  ori.innerHTML=mk("origen"); dest.innerHTML=mk("destino");
+}
+
+function seleccionarFrente(tipo, i, el) {
+  const cont=document.getElementById(tipo==="origen"?"listaOrigen":"listaDestino");
+  const f=frentes[i], n=f.NOMBRE||f.Nombre||"Frente "+(i+1), subs=getSubopciones(f);
+  cont.querySelectorAll(".selector-fila").forEach(e=>e.classList.remove("seleccionado","abierto"));
+  cont.querySelectorAll(".subopciones").forEach(e=>e.classList.remove("visible"));
+  cont.querySelectorAll(".subopcion").forEach(e=>e.classList.remove("seleccionado"));
+  el.classList.add("seleccionado");
+  if (subs.length) {
+    el.classList.add("abierto");
+    document.getElementById("sub-"+tipo+"-"+i)?.classList.add("visible");
+    if(tipo==="origen") viajeActual.frenteOrigen=null; else viajeActual.frenteDestino=null;
+  } else {
+    if(tipo==="origen") viajeActual.frenteOrigen=n; else viajeActual.frenteDestino=n;
+  }
+  verificarConfigCompleta();
+}
+
+function seleccionarSubopcion(event, tipo, i, sub, el) {
+  event.stopPropagation();
+  const cont=document.getElementById(tipo==="origen"?"listaOrigen":"listaDestino");
+  const f=frentes[i], n=f.NOMBRE||f.Nombre||"Frente "+(i+1);
+  cont.querySelectorAll(".subopcion").forEach(e=>e.classList.remove("seleccionado"));
+  el.classList.add("seleccionado");
+  const nombre=n+" - "+sub;
+  if(tipo==="origen") viajeActual.frenteOrigen=nombre; else viajeActual.frenteDestino=nombre;
+  verificarConfigCompleta();
+}
+
+function verificarConfigCompleta() {
+  document.getElementById("btnIrPulsazos").disabled =
+    !(viajeActual.tractor && viajeActual.frenteOrigen && viajeActual.frenteDestino);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  PULSAZOS
+// ════════════════════════════════════════════════════════════════
+function goToPulsazos() {
+  document.getElementById("headerTitle").textContent    = "Viaje en curso";
+  document.getElementById("headerSubtitle").textContent = viajeActual.tractor || "";
+  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("activa"));
+  document.getElementById("screenPulsazos").classList.add("activa");
+
+  viajeActual.idLocal    = "VJ-"+Date.now()+"-"+Math.random().toString(36).slice(2,6).toUpperCase();
+  viajeActual.fechaDia   = fechaISO(new Date());
+  viajeActual.creadoEn   = Date.now();
+  viajeActual.T1_Cargando=viajeActual.T2_EnCamino=viajeActual.T3_Descargando=viajeActual.T4_Completado=null;
+  viajeActual.geo_T1=viajeActual.geo_T2=viajeActual.geo_T3=viajeActual.geo_T4=null;
+  viajeActual.sincronizado = false;
+
+  [1,2,3,4].forEach(n=>{
+    const btn=document.getElementById("btn"+n);
+    btn.classList.remove("completado"); btn.classList.toggle("pendiente",n>1);
+    document.getElementById("hora"+n).textContent = n===1?"Toca para registrar":"Esperando paso anterior";
+    ["geo","check","ps"].forEach(p=>{ const el=document.getElementById(p+n); if(el){el.textContent="";el.className=p==="ps"?"ps-badge":p==="geo"?"pulso-geo":"";} });
+  });
+
+  document.getElementById("cronometroBox").style.display = "none";
+  if (cronInterval) clearInterval(cronInterval);
+
+  document.getElementById("viajeResumen").innerHTML =
+    `<strong>${viajeActual.tractor}</strong> &nbsp;|&nbsp; `+
+    `${viajeActual.frenteOrigen} → ${viajeActual.frenteDestino}<br>`+
+    `Capacidad: <strong>${viajeActual.capacidadTon} ton</strong>`;
+
+  idb.put("viajes", {...viajeActual}).catch(console.error);
+  iniciarGeo();
+}
+
+async function registrarPulso(n) {
+  const btn=document.getElementById("btn"+n);
+  if (btn.classList.contains("pendiente")||btn.classList.contains("completado")) return;
+
+  const ahora=new Date().toISOString();
+  const hora =new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  const clave =["","T1_Cargando","T2_EnCamino","T3_Descargando","T4_Completado"][n];
+  viajeActual[clave]=ahora;
+
+  // UI inmediata
+  document.getElementById("hora"+n).textContent=hora;
+  btn.classList.add("completado");
+  document.getElementById("check"+n).textContent="✓";
+  if (n<4) { document.getElementById("btn"+(n+1)).classList.remove("pendiente"); document.getElementById("hora"+(n+1)).textContent="Toca para registrar"; }
+  if (n===1) { document.getElementById("cronometroBox").style.display="block"; cronInterval=setInterval(actualizarCronometro,1000); }
+
+  setPsBadge(n,"enviando");
+
+  // Geo en paralelo
+  const geoKey=["","geo_T1","geo_T2","geo_T3","geo_T4"][n];
+  const geoEl=document.getElementById("geo"+n);
+  if(geoEl){geoEl.className="pulso-geo wait";geoEl.textContent="📍 Obteniendo...";}
+  obtenerGeo().then(geo=>{
+    viajeActual[geoKey]=geo; mostrarGeoPulso(n,geo);
+    idb.put("viajes",{...viajeActual}).catch(console.error);
+  });
+
+  await idb.put("viajes",{...viajeActual});
+  const idCola=await encolarPulso(n,ahora);
+
+  if (navigator.onLine) { enviarDesdeCola(idCola,n); }
+  else { setPsBadge(n,"local"); mostrarToast("Sin conexión — pulso guardado localmente","info"); actualizarBadgeSync(); }
+
+  if (n===4) { if(cronInterval)clearInterval(cronInterval); setTimeout(goToCarga,400); }
+}
+
+function buildPayload(n) {
+  return {
+    idLocal:            viajeActual.idLocal,
+    conductor:          viajeActual.conductor          ||"",
+    tractor:            viajeActual.tractor            ||"",
+    capacidadTon:       viajeActual.capacidadTon       ||"",
+    frenteOrigen:       viajeActual.frenteOrigen       ||"",
+    frenteDestino:      viajeActual.frenteDestino      ||"",
+    nivelCarga:         viajeActual.nivelCarga         ||"",
+    factorLlenado:      viajeActual.factorLlenado      ||"",
+    toneladasEstimadas: viajeActual.toneladasEstimadas ||"",
+    T1_Cargando:        viajeActual.T1_Cargando        ||"",
+    T2_EnCamino:        viajeActual.T2_EnCamino        ||"",
+    T3_Descargando:     viajeActual.T3_Descargando     ||"",
+    T4_Completado:      viajeActual.T4_Completado      ||"",
+    geo_T1: viajeActual.geo_T1?JSON.stringify(viajeActual.geo_T1):"",
+    geo_T2: viajeActual.geo_T2?JSON.stringify(viajeActual.geo_T2):"",
+    geo_T3: viajeActual.geo_T3?JSON.stringify(viajeActual.geo_T3):"",
+    geo_T4: viajeActual.geo_T4?JSON.stringify(viajeActual.geo_T4):"",
+    _pulsoN: n, _ts: Date.now(),
+  };
+}
+
+async function encolarPulso(n, ahora) {
+  return idb.add("cola",{ idViaje:viajeActual.idLocal, pulsoN:n, hora:ahora, estado:"pendiente", datos:buildPayload(n), intentos:0, creadoEn:Date.now() });
+}
+
+async function enviarDesdeCola(idCola, n) {
+  try {
+    const item=await idb.get("cola",idCola); if(!item)return;
+    const geoKey=["","geo_T1","geo_T2","geo_T3","geo_T4"][n];
+    if(viajeActual[geoKey]) item.datos[geoKey]=JSON.stringify(viajeActual[geoKey]);
+    const res=await gasCall({action:"guardarViaje",...item.datos});
+    if(res.ok){
+      await idb.del("cola",idCola);
+      const v=await idb.get("viajes",viajeActual.idLocal);
+      if(v){v.sincronizado=true;await idb.put("viajes",v);}
+      setPsBadge(n,"ok");
+    } else { await sumarIntento(idCola); setPsBadge(n,"error"); }
+  } catch(e) { await sumarIntento(idCola); setPsBadge(n,"error"); }
+  actualizarBadgeSync();
+}
+
+async function sumarIntento(idCola) {
+  try {
+    const item=await idb.get("cola",idCola); if(!item)return;
+    item.intentos++;
+    if(item.intentos>=5) item.estado="error";
+    await idb.put("cola",item);
+  } catch(e){}
+}
+
+function setPsBadge(n,estado) {
+  const el=document.getElementById("ps"+n); if(!el)return;
+  const m={enviando:["ps-enviando","⏳ Enviando"],ok:["ps-ok","✓ Enviado"],error:["ps-error","✗ Error"],local:["ps-local","💾 Local"]};
+  const [cls,txt]=m[estado]||["",""];
+  el.className="ps-badge "+cls; el.textContent=txt;
+}
+
+// ════════════════════════════════════════════════════════════════
+//  SINCRONIZACIÓN COMPLETA
+// ════════════════════════════════════════════════════════════════
+async function sincronizarTodo() {
+  if (!navigator.onLine) { mostrarToast("Sin conexión","error"); return; }
+  const pend=(await idb.all("cola")).filter(p=>p.estado==="pendiente");
+  if (!pend.length) { mostrarToast("Todo sincronizado ✓","exito"); actualizarBadgeSync(); return; }
+  mostrarToast("Sincronizando "+pend.length+" pulso(s)...","info");
+  let ok=0;
+  for(const item of pend){
+    try{
+      const res=await gasCall({action:"guardarViaje",...item.datos});
+      if(res.ok){ await idb.del("cola",item.idCola); const v=await idb.get("viajes",item.idViaje); if(v){v.sincronizado=true;await idb.put("viajes",v);} ok++; }
+      else await sumarIntento(item.idCola);
+    } catch(e){ await sumarIntento(item.idCola); }
+  }
+  mostrarToast(ok+" de "+pend.length+" pulso(s) sincronizado(s)", ok>0?"exito":"error");
+  await actualizarBadgeSync();
+  if (document.getElementById("screenInicio").classList.contains("activa")) cargarViajesHoy();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  PANTALLA CARGA (paladas) — FINALIZAR
+// ════════════════════════════════════════════════════════════════
+function goToCarga() {
+  document.getElementById("headerTitle").textContent    = "Paladas cargadas";
+  document.getElementById("headerSubtitle").textContent = "";
+  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("activa"));
+  document.getElementById("screenCarga").classList.add("activa");
+  paladasActual=PALADAS_MIN;
+  viajeActual.nivelCarga=viajeActual.factorLlenado=viajeActual.toneladasEstimadas=null;
+  renderPaladas(); actualizarCargaPaladas();
+}
+
+function renderPaladas() {
+  const p=document.getElementById("puntoPaladas"); p.innerHTML="";
+  for(let i=PALADAS_MIN;i<=PALADAS_MAX;i++){
+    const d=document.createElement("div");
+    d.className="palada-dot"+(i<=paladasActual?" activo":"");
+    p.appendChild(d);
+  }
+  document.getElementById("numPaladas").textContent=paladasActual;
+  document.getElementById("btnMenos").disabled=paladasActual<=PALADAS_MIN;
+  document.getElementById("btnMas").disabled  =paladasActual>=PALADAS_MAX;
+}
+
+function cambiarPaladas(d) {
+  const n=paladasActual+d;
+  if(n<PALADAS_MIN||n>PALADAS_MAX)return;
+  paladasActual=n; renderPaladas(); actualizarCargaPaladas();
+}
+
+function actualizarCargaPaladas() {
+  const ton=parseFloat((paladasActual*PALADA_TON).toFixed(1));
+  viajeActual.nivelCarga=paladasActual+" paladas";
+  viajeActual.factorLlenado=paladasActual;
+  viajeActual.toneladasEstimadas=ton;
+  document.getElementById("tonConfirm").textContent=ton+" ton";
+  document.getElementById("btnGuardar").disabled=false;
+}
+
+async function finalizarViaje() {
+  if (!viajeActual.toneladasEstimadas) return;
+  document.getElementById("btnGuardar").disabled=true; mostrarLoading();
+  let dur=0;
+  if(viajeActual.T1_Cargando&&viajeActual.T4_Completado)
+    dur=Math.round((new Date(viajeActual.T4_Completado)-new Date(viajeActual.T1_Cargando))/60000*10)/10;
+  viajeActual.duracionMinutos=dur;
+  await idb.put("viajes",{...viajeActual});
+  const payload=buildPayload("final");
+  if(navigator.onLine){
+    try{
+      const res=await gasCall({action:"guardarViaje",...payload});
+      if(res.ok){ viajeActual.sincronizado=true; await idb.put("viajes",{...viajeActual}); mostrarToast("Viaje guardado correctamente ✓","exito"); }
+      else throw new Error(res.error);
+    }catch(e){
+      await idb.add("cola",{idViaje:viajeActual.idLocal,pulsoN:"final",estado:"pendiente",datos:payload,intentos:0,creadoEn:Date.now()});
+      mostrarToast("Error al guardar — reservado localmente","error");
+    }
+  } else {
+    await idb.add("cola",{idViaje:viajeActual.idLocal,pulsoN:"final",estado:"pendiente",datos:payload,intentos:0,creadoEn:Date.now()});
+    mostrarToast("Sin conexión — viaje guardado localmente","info");
+  }
+  ocultarLoading(); await actualizarBadgeSync(); setTimeout(mostrarInicio,1300);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  GEOLOCALIZACIÓN
+// ════════════════════════════════════════════════════════════════
+function obtenerGeo() {
+  return new Promise(resolve=>{
+    if(!navigator.geolocation){geoPermiso="unavailable";resolve(null);return;}
+    navigator.geolocation.getCurrentPosition(
+      pos=>{geoPermiso="granted";resolve({lat:parseFloat(pos.coords.latitude.toFixed(7)),lng:parseFloat(pos.coords.longitude.toFixed(7)),acc:Math.round(pos.coords.accuracy),ts:new Date().toISOString()});},
+      err=>{geoPermiso=err.code===1?"denied":"unavailable";resolve(null);},
+      {enableHighAccuracy:true,timeout:GEO_TIMEOUT,maximumAge:GEO_MAX_AGE}
+    );
+  });
+}
+
+function mostrarGeoPulso(n,geo){
+  const el=document.getElementById("geo"+n); if(!el)return;
+  if(geo){el.className="pulso-geo ok";el.textContent=`📍 ${geo.lat}, ${geo.lng}  ±${geo.acc}m`;}
+  else   {el.className="pulso-geo err";el.textContent=geoPermiso==="denied"?"📍 GPS denegado":"📍 GPS no disponible";}
+}
+
+async function iniciarGeo(){
+  document.getElementById("geoBannerPulsazos").style.display="none";
+  if(!navigator.geolocation){geoPermiso="unavailable";document.getElementById("geoBannerPulsazos").style.display="flex";return;}
+  try{
+    const r=await Promise.race([obtenerGeo(),new Promise(r=>setTimeout(()=>r("timeout"),GEO_TIMEOUT+500))]);
+    if(!r||r==="timeout")document.getElementById("geoBannerPulsazos").style.display="flex";
+  }catch(e){document.getElementById("geoBannerPulsazos").style.display="flex";}
+}
+
+// ════════════════════════════════════════════════════════════════
+//  CRONÓMETRO
+// ════════════════════════════════════════════════════════════════
+function actualizarCronometro(){
+  if(!viajeActual.T1_Cargando)return;
+  const seg=Math.floor((Date.now()-new Date(viajeActual.T1_Cargando))/1000);
+  document.getElementById("cronometroTiempo").textContent=
+    String(Math.floor(seg/60)).padStart(2,"0")+":"+String(seg%60).padStart(2,"0");
+}
+
+// ════════════════════════════════════════════════════════════════
+//  UTILIDADES
+// ════════════════════════════════════════════════════════════════
+function fechaISO(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+function mostrarLoading(){document.getElementById("loadingOverlay").style.display="flex";}
+function ocultarLoading(){document.getElementById("loadingOverlay").style.display="none";}
+
+let _tt=null;
+function mostrarToast(msg,tipo){
+  const t=document.getElementById("toast");
+  t.textContent=msg; t.className="toast visible"+(tipo?" "+tipo:"");
+  if(_tt)clearTimeout(_tt); _tt=setTimeout(()=>t.classList.remove("visible"),3500);
+}
+</script>
+</body>
+</html>
