@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sistema de Acceso por PIN</title>
+<link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22Acceso%20PIN%22%2C%22short_name%22%3A%22Acceso%20PIN%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230f0f14%22%2C%22theme_color%22%3A%22%236c63ff%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEX%2F%2F%2F%2BnxBvIAAAAH0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAeAMBxAABckqT5QAAAABJRU5ErkJggg%3D%3D%22%2C%22sizes%22%3A%22128x128%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
+<meta name="theme-color" content="#6c63ff">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Acceso PIN">
+<style>
+  /* ─── INSTALL BANNER ─── */
+  #install-banner {
+    display: none;
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 9999;
+    background: var(--surface);
+    border-top: 1px solid rgba(108,99,255,0.4);
+    padding: 16px 20px;
+    align-items: center; gap: 14px;
+    box-shadow: 0 -4px 24px rgba(0,0,0,0.4);
+    animation: slideUp 0.3s ease;
+  }
+  #install-banner.show { display: flex; }
+  @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  .install-icon { font-size: 32px; flex-shrink: 0; }
+  .install-text { flex: 1; }
+  .install-text strong { display: block; font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+  .install-text span { font-size: 12px; color: var(--muted); }
+  .install-btn {
+    padding: 10px 20px; background: var(--accent);
+    border: none; border-radius: 10px; color: white;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    white-space: nowrap; flex-shrink: 0; transition: background 0.15s;
+  }
+  .install-btn:hover { background: var(--accent2); }
+  .install-dismiss {
+    width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
+    border: 0.5px solid var(--border); background: var(--surface2);
+    color: var(--muted); cursor: pointer; font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .install-dismiss:hover { color: var(--text); }
+</style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f0f14;
+    --surface: #1a1a24;
+    --surface2: #22222f;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.15);
+    --accent: #6c63ff;
+    --accent2: #8b84ff;
+    --text: #f0efff;
+    --muted: #8886a8;
+    --danger: #ff5f72;
+    --success: #3dd68c;
+    --warn: #ffa940;
+  }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .screen { display: none; flex-direction: column; height: 100vh; }
+  .screen.active { display: flex; }
+
+  /* ─── LOCK ─── */
+  #lock-screen {
+    align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at 50% 0%, #1e1a40 0%, #0f0f14 70%);
+  }
+  .lock-card {
+    background: var(--surface); border: 0.5px solid var(--border2);
+    border-radius: 24px; padding: 36px 32px 28px;
+    width: 400px; text-align: center;
+  }
+  .lock-icon {
+    width: 64px; height: 64px;
+    background: linear-gradient(135deg, var(--accent), #a78bfa);
+    border-radius: 20px; display: inline-flex;
+    align-items: center; justify-content: center;
+    font-size: 28px; margin-bottom: 18px;
+    box-shadow: 0 8px 32px rgba(108,99,255,0.3);
+  }
+  .lock-title { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+  .lock-sub { font-size: 13px; color: var(--muted); margin-bottom: 22px; }
+
+  .user-selector {
+    display: flex; gap: 8px; overflow-x: auto;
+    padding-bottom: 4px; justify-content: center;
+    margin-bottom: 20px; scrollbar-width: none;
+  }
+  .user-chip {
+    flex-shrink: 0; display: flex; flex-direction: column;
+    align-items: center; gap: 5px; cursor: pointer;
+    padding: 8px 10px; border-radius: 12px;
+    border: 1.5px solid transparent; transition: all 0.2s; min-width: 66px;
+  }
+  .user-chip:hover { background: var(--surface2); }
+  .user-chip.selected { border-color: var(--accent); background: rgba(108,99,255,0.1); }
+  .avatar {
+    width: 44px; height: 44px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 600; font-size: 15px;
+    border: 2px solid var(--border2); transition: all 0.2s;
+  }
+  .user-chip.selected .avatar { border-color: var(--accent); }
+  .user-name { font-size: 10px; color: var(--muted); white-space: nowrap; }
+  .user-chip.selected .user-name { color: var(--accent2); }
+
+  .pin-display { display: flex; gap: 12px; justify-content: center; margin-bottom: 22px; }
+  .pin-dot {
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 2px solid var(--muted); background: transparent; transition: all 0.2s;
+  }
+  .pin-dot.filled { background: var(--accent); border-color: var(--accent); }
+  .pin-dot.master { border-color: #ff8fa3; }
+  .pin-dot.master.filled { background: #ff5f72; border-color: #ff5f72; }
+
+  .numpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .num-btn {
+    background: var(--surface2); border: 0.5px solid var(--border);
+    border-radius: 14px; padding: 16px; font-size: 20px; font-weight: 500;
+    color: var(--text); cursor: pointer; transition: all 0.15s;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .num-btn:hover { background: #2a2a3c; border-color: var(--border2); }
+  .num-btn:active { transform: scale(0.93); background: var(--accent); }
+  .num-btn.del { font-size: 16px; color: var(--muted); }
+  .num-btn.zero { grid-column: 2; }
+  .num-btn.empty { visibility: hidden; }
+
+  .lock-error { font-size: 12px; color: var(--danger); margin-top: 10px; min-height: 16px; }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-7px)} 75%{transform:translateX(7px)} }
+  .master-link {
+    margin-top: 18px; font-size: 12px; color: var(--muted);
+    cursor: pointer; text-decoration: underline;
+  }
+  .master-link:hover { color: var(--accent2); }
+
+  /* ─── MASTER ─── */
+  #master-screen {
+    background: radial-gradient(ellipse at 50% 0%, #1a0f30 0%, #0f0f14 70%);
+    align-items: center; justify-content: center;
+  }
+  .master-card {
+    background: var(--surface); border: 0.5px solid rgba(255,90,120,0.3);
+    border-radius: 24px; padding: 36px 32px 28px; width: 400px; text-align: center;
+  }
+  .master-icon {
+    width: 64px; height: 64px;
+    background: linear-gradient(135deg, #ff5f72, #ff8fa3);
+    border-radius: 20px; display: inline-flex;
+    align-items: center; justify-content: center;
+    font-size: 28px; margin-bottom: 18px;
+    box-shadow: 0 8px 32px rgba(255,95,114,0.3);
+  }
+
+  /* ─── HOME ─── */
+  #home-screen { background: var(--bg); }
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 24px; border-bottom: 0.5px solid var(--border);
+    background: var(--surface);
+  }
+  .topbar-left { display: flex; align-items: center; gap: 12px; }
+  .topbar-avatar {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 600; border: 2px solid var(--accent);
+  }
+  .topbar-name { font-size: 14px; font-weight: 500; }
+  .topbar-role { font-size: 11px; color: var(--muted); }
+  .icon-btn {
+    width: 36px; height: 36px; border-radius: 10px;
+    border: 0.5px solid var(--border); background: var(--surface2);
+    cursor: pointer; font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--muted); transition: all 0.2s;
+  }
+  .icon-btn:hover { color: var(--text); border-color: var(--border2); }
+  .home-content { flex: 1; padding: 24px; overflow-y: auto; }
+  .welcome-banner {
+    background: linear-gradient(135deg, rgba(108,99,255,0.2), rgba(167,139,250,0.1));
+    border: 0.5px solid rgba(108,99,255,0.3); border-radius: 16px;
+    padding: 20px 24px; margin-bottom: 24px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  .welcome-emoji { font-size: 32px; }
+  .welcome-text h2 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+  .welcome-text p { font-size: 12px; color: var(--muted); }
+  .section-title {
+    font-size: 11px; color: var(--muted); font-weight: 500;
+    letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 12px;
+  }
+  .apps-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .app-tile {
+    background: var(--surface); border: 0.5px solid var(--border);
+    border-radius: 16px; padding: 20px 12px; text-align: center;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .app-tile:hover { background: var(--surface2); border-color: var(--border2); transform: translateY(-2px); }
+  .app-icon { font-size: 28px; margin-bottom: 8px; }
+  .app-name { font-size: 11px; color: var(--muted); }
+
+  /* ─── ADMIN ─── */
+  #admin-screen { background: var(--bg); }
+  .admin-header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 16px 24px; border-bottom: 0.5px solid var(--border);
+    background: var(--surface);
+  }
+  .back-btn {
+    width: 34px; height: 34px; border-radius: 10px;
+    border: 0.5px solid var(--border); background: var(--surface2);
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    font-size: 18px; color: var(--muted); transition: all 0.2s;
+  }
+  .back-btn:hover { color: var(--text); border-color: var(--border2); }
+  .admin-title { font-size: 17px; font-weight: 600; }
+  .admin-content { padding: 20px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 18px; }
+
+  .tabs { display: flex; gap: 6px; }
+  .tab-btn {
+    padding: 8px 18px; border-radius: 10px; border: 0.5px solid var(--border);
+    background: var(--surface2); color: var(--muted); font-size: 13px;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .tab-btn.active { background: var(--accent); border-color: var(--accent); color: white; font-weight: 500; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  .user-list { display: flex; flex-direction: column; gap: 8px; }
+  .user-row {
+    background: var(--surface); border: 0.5px solid var(--border);
+    border-radius: 13px; padding: 12px 16px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .user-row-avatar {
+    width: 40px; height: 40px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 600; font-size: 14px; flex-shrink: 0;
+  }
+  .user-row-info { flex: 1; }
+  .user-row-name { font-size: 14px; font-weight: 500; }
+  .user-row-pin { font-size: 11px; color: var(--muted); }
+  .user-row-actions { display: flex; gap: 6px; }
+  .small-btn {
+    padding: 6px 12px; border-radius: 8px; font-size: 11px;
+    border: 0.5px solid var(--border); background: var(--surface2);
+    cursor: pointer; color: var(--muted); transition: all 0.15s;
+  }
+  .small-btn:hover { color: var(--text); border-color: var(--border2); }
+  .small-btn.danger:hover { color: var(--danger); border-color: var(--danger); }
+  .small-btn.info { color: var(--accent2); border-color: rgba(108,99,255,0.3); }
+  .small-btn.info:hover { background: rgba(108,99,255,0.15); }
+
+  .form-card { background: var(--surface); border: 0.5px solid var(--border); border-radius: 14px; padding: 20px; }
+  .form-title { font-size: 15px; font-weight: 500; margin-bottom: 16px; }
+  .form-row { margin-bottom: 14px; }
+  .form-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; display: block; }
+  .form-input {
+    width: 100%; padding: 10px 14px;
+    background: var(--surface2); border: 0.5px solid var(--border2);
+    border-radius: 10px; color: var(--text); font-size: 14px;
+    outline: none; transition: border-color 0.2s;
+  }
+  .form-input:focus { border-color: var(--accent); }
+  .color-picker { display: flex; gap: 8px; flex-wrap: wrap; }
+  .color-opt {
+    width: 28px; height: 28px; border-radius: 50%;
+    cursor: pointer; border: 2px solid transparent; transition: all 0.15s;
+  }
+  .color-opt.sel { border-color: white; transform: scale(1.15); }
+  .add-btn {
+    width: 100%; padding: 12px; background: var(--accent);
+    border: none; border-radius: 12px; color: white;
+    font-size: 14px; font-weight: 500; cursor: pointer;
+    transition: all 0.15s; margin-top: 4px;
+  }
+  .add-btn:hover { background: var(--accent2); }
+  .add-btn:active { transform: scale(0.98); }
+  .form-error { font-size: 11px; color: var(--danger); margin-top: 6px; min-height: 14px; }
+
+  .master-settings {
+    background: var(--surface); border: 0.5px solid rgba(255,90,120,0.25);
+    border-radius: 14px; padding: 20px;
+  }
+  .master-settings .form-title { color: #ff8fa3; }
+  .master-info { font-size: 12px; color: var(--muted); margin-bottom: 16px; line-height: 1.6; }
+  .save-btn {
+    width: 100%; padding: 12px;
+    background: linear-gradient(135deg, #ff5f72, #ff8fa3);
+    border: none; border-radius: 12px; color: white;
+    font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.15s;
+  }
+  .save-btn:hover { opacity: 0.9; }
+  .save-btn:active { transform: scale(0.98); }
+
+  /* ─── MODAL ─── */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.65); z-index: 100;
+    align-items: center; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface); border: 0.5px solid var(--border2);
+    border-radius: 22px; padding: 30px 26px; width: 340px; text-align: center;
+  }
+  .modal h3 { font-size: 17px; font-weight: 600; margin-bottom: 6px; }
+  .modal p { font-size: 12px; color: var(--muted); margin-bottom: 20px; }
+  .modal-pin-display { display: flex; gap: 12px; justify-content: center; margin-bottom: 18px; }
+  .modal-numpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
+  .modal-num {
+    background: var(--surface2); border: 0.5px solid var(--border);
+    border-radius: 12px; padding: 13px; font-size: 18px; font-weight: 500;
+    color: var(--text); cursor: pointer; transition: all 0.15s;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .modal-num:hover { background: #2a2a3c; }
+  .modal-num:active { transform: scale(0.93); background: var(--accent); }
+  .modal-num.del { font-size: 14px; color: var(--muted); }
+  .modal-num.zero { grid-column: 2; }
+  .modal-num.empty { visibility: hidden; }
+  .modal-error { font-size: 11px; color: var(--danger); min-height: 14px; margin-bottom: 8px; }
+  .modal-actions { display: flex; gap: 8px; }
+  .modal-cancel {
+    flex: 1; padding: 11px; border-radius: 10px;
+    border: 0.5px solid var(--border2); background: var(--surface2);
+    color: var(--muted); cursor: pointer; font-size: 13px; transition: all 0.15s;
+  }
+  .modal-cancel:hover { color: var(--text); border-color: var(--border2); }
+
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 6px; font-size: 11px; font-weight: 500; background: rgba(108,99,255,0.15); color: var(--accent2); }
+  .badge.master-badge { background: rgba(255,95,114,0.15); color: #ff8fa3; }
+
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--surface2); border: 0.5px solid var(--border2);
+    border-radius: 12px; padding: 10px 20px; font-size: 13px; color: var(--text);
+    opacity: 0; pointer-events: none; transition: opacity 0.3s; z-index: 999; white-space: nowrap;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- ═══ LOCK SCREEN ═══ -->
+<div class="screen active" id="lock-screen">
+  <div class="lock-card">
+    <div class="lock-icon">🔐</div>
+    <div class="lock-title">Acceso al sistema</div>
+    <div class="lock-sub">Selecciona tu usuario e ingresa tu PIN</div>
+    <div class="user-selector" id="user-selector"></div>
+    <div class="pin-display" id="pin-display"></div>
+    <div class="numpad">
+      <button class="num-btn" onclick="padPress('1')">1</button>
+      <button class="num-btn" onclick="padPress('2')">2</button>
+      <button class="num-btn" onclick="padPress('3')">3</button>
+      <button class="num-btn" onclick="padPress('4')">4</button>
+      <button class="num-btn" onclick="padPress('5')">5</button>
+      <button class="num-btn" onclick="padPress('6')">6</button>
+      <button class="num-btn" onclick="padPress('7')">7</button>
+      <button class="num-btn" onclick="padPress('8')">8</button>
+      <button class="num-btn" onclick="padPress('9')">9</button>
+      <button class="num-btn empty"></button>
+      <button class="num-btn zero" onclick="padPress('0')">0</button>
+      <button class="num-btn del" onclick="padDel()">⌫</button>
+    </div>
+    <div class="lock-error" id="lock-error"></div>
+    <div class="master-link" onclick="goMasterScreen()">🔑 Acceso con PIN maestro (6 dígitos)</div>
+  </div>
+</div>
+
+<!-- ═══ MASTER PIN SCREEN ═══ -->
+<div class="screen" id="master-screen">
+  <div class="master-card">
+    <div class="master-icon">🛡️</div>
+    <div class="lock-title">PIN Maestro</div>
+    <div class="lock-sub">Ingresa el PIN de administrador (6 dígitos)</div>
+    <div class="pin-display" id="master-pin-display"></div>
+    <div class="numpad">
+      <button class="num-btn" onclick="masterPad('1')">1</button>
+      <button class="num-btn" onclick="masterPad('2')">2</button>
+      <button class="num-btn" onclick="masterPad('3')">3</button>
+      <button class="num-btn" onclick="masterPad('4')">4</button>
+      <button class="num-btn" onclick="masterPad('5')">5</button>
+      <button class="num-btn" onclick="masterPad('6')">6</button>
+      <button class="num-btn" onclick="masterPad('7')">7</button>
+      <button class="num-btn" onclick="masterPad('8')">8</button>
+      <button class="num-btn" onclick="masterPad('9')">9</button>
+      <button class="num-btn empty"></button>
+      <button class="num-btn zero" onclick="masterPad('0')">0</button>
+      <button class="num-btn del" onclick="masterDel()">⌫</button>
+    </div>
+    <div class="lock-error" id="master-error"></div>
+    <div class="master-link" onclick="goScreen('lock-screen')">← Volver</div>
+  </div>
+</div>
+
+<!-- ═══ HOME SCREEN ═══ -->
+<div class="screen" id="home-screen">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-avatar" id="home-avatar"></div>
+      <div>
+        <div class="topbar-name" id="home-name">Usuario</div>
+        <div class="topbar-role" id="home-role">Sesión activa</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <div class="icon-btn" onclick="lockDevice()" title="Bloquear">🔒</div>
+    </div>
+  </div>
+  <div class="home-content">
+    <div class="welcome-banner">
+      <div class="welcome-emoji">👋</div>
+      <div class="welcome-text">
+        <h2 id="welcome-msg">¡Bienvenido!</h2>
+        <p id="session-info">Sesión iniciada</p>
+      </div>
+    </div>
+    <div class="section-title">Aplicaciones</div>
+    <div class="apps-grid">
+      <div class="app-tile"><div class="app-icon">📊</div><div class="app-name">Reportes</div></div>
+      <div class="app-tile"><div class="app-icon">📦</div><div class="app-name">Inventario</div></div>
+      <div class="app-tile"><div class="app-icon">📅</div><div class="app-name">Agenda</div></div>
+      <div class="app-tile"><div class="app-icon">💬</div><div class="app-name">Mensajes</div></div>
+      <div class="app-tile"><div class="app-icon">🗂️</div><div class="app-name">Archivos</div></div>
+      <div class="app-tile"><div class="app-icon">⚙️</div><div class="app-name">Ajustes</div></div>
+      <div class="app-tile" id="admin-tile" style="display:none" onclick="goScreen('admin-screen')">
+        <div class="app-icon">🛡️</div><div class="app-name">Admin</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ ADMIN PANEL ═══ -->
+<div class="screen" id="admin-screen">
+  <div class="admin-header">
+    <div class="back-btn" onclick="goScreen('home-screen')">←</div>
+    <div class="admin-title">Panel de Administración</div>
+    <span class="badge master-badge" style="margin-left:auto">🛡️ Admin</span>
+  </div>
+  <div class="admin-content">
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab(this,'tab-users')">👥 Usuarios</button>
+      <button class="tab-btn" onclick="switchTab(this,'tab-add')">➕ Agregar</button>
+      <button class="tab-btn" onclick="switchTab(this,'tab-master')">🔑 PIN Maestro</button>
+    </div>
+
+    <!-- TAB: lista usuarios -->
+    <div class="tab-panel active" id="tab-users">
+      <div class="user-list" id="user-list"></div>
+    </div>
+
+    <!-- TAB: agregar usuario -->
+    <div class="tab-panel" id="tab-add">
+      <div class="form-card">
+        <div class="form-title">Nuevo usuario</div>
+        <div class="form-row">
+          <label class="form-label">Nombre completo</label>
+          <input class="form-input" id="new-name" placeholder="Ej: Juan Pérez" maxlength="30">
+        </div>
+        <div class="form-row">
+          <label class="form-label">PIN del usuario (4 dígitos)</label>
+          <input class="form-input" id="new-pin" type="password" inputmode="numeric" maxlength="4" placeholder="····">
+        </div>
+        <div class="form-row">
+          <label class="form-label">Color de avatar</label>
+          <div class="color-picker" id="color-picker"></div>
+        </div>
+        <div class="form-error" id="form-error"></div>
+        <button class="add-btn" onclick="addUser()">Agregar usuario</button>
+      </div>
+    </div>
+
+    <!-- TAB: PIN maestro -->
+    <div class="tab-panel" id="tab-master">
+      <div class="master-settings">
+        <div class="form-title">🔑 Cambiar PIN Maestro</div>
+        <div class="master-info">El PIN maestro tiene 6 dígitos y otorga acceso total al panel de administración. Cámbialo periódicamente para mayor seguridad.</div>
+        <div class="form-row">
+          <label class="form-label">PIN actual (6 dígitos)</label>
+          <input class="form-input" id="current-master" type="password" inputmode="numeric" maxlength="6" placeholder="······">
+        </div>
+        <div class="form-row">
+          <label class="form-label">Nuevo PIN (6 dígitos)</label>
+          <input class="form-input" id="new-master" type="password" inputmode="numeric" maxlength="6" placeholder="······">
+        </div>
+        <div class="form-row">
+          <label class="form-label">Confirmar nuevo PIN</label>
+          <input class="form-input" id="confirm-master" type="password" inputmode="numeric" maxlength="6" placeholder="······">
+        </div>
+        <div class="form-error" id="master-form-error"></div>
+        <button class="save-btn" onclick="changeMasterPin()">Guardar nuevo PIN maestro</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL EDITAR PIN ═══ -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal">
+    <h3>✏️ Editar PIN</h3>
+    <p id="modal-user-name">Usuario</p>
+    <div class="modal-pin-display" id="modal-pin-display"></div>
+    <div class="modal-numpad">
+      <button class="modal-num" onclick="modalPad('1')">1</button>
+      <button class="modal-num" onclick="modalPad('2')">2</button>
+      <button class="modal-num" onclick="modalPad('3')">3</button>
+      <button class="modal-num" onclick="modalPad('4')">4</button>
+      <button class="modal-num" onclick="modalPad('5')">5</button>
+      <button class="modal-num" onclick="modalPad('6')">6</button>
+      <button class="modal-num" onclick="modalPad('7')">7</button>
+      <button class="modal-num" onclick="modalPad('8')">8</button>
+      <button class="modal-num" onclick="modalPad('9')">9</button>
+      <button class="modal-num empty"></button>
+      <button class="modal-num zero" onclick="modalPad('0')">0</button>
+      <button class="modal-num del" onclick="modalDel()">⌫</button>
+    </div>
+    <div class="modal-error" id="modal-error"></div>
+    <div class="modal-actions">
+      <button class="modal-cancel" onclick="closeModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- ═══ BANNER DE INSTALACIÓN ═══ -->
+<div id="install-banner">
+  <div class="install-icon">📲</div>
+  <div class="install-text">
+    <strong>Instalar en tu tablet</strong>
+    <span>Agrégala a la pantalla de inicio para usarla como app</span>
+  </div>
+  <button class="install-btn" id="install-btn">Instalar</button>
+  <button class="install-dismiss" onclick="dismissInstall()" title="Cerrar">✕</button>
+</div>
+
+<script>
+// ── PWA Install ──
+let deferredPrompt = null;
+const installBanner = document.getElementById('install-banner');
+const installBtn = document.getElementById('install-btn');
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  // Mostrar banner solo si no fue descartado antes
+  if (!sessionStorage.getItem('install-dismissed')) {
+    installBanner.classList.add('show');
+  }
+});
+
+installBtn.addEventListener('click', async () => {
+  if (!deferredPrompt) return;
+  installBanner.classList.remove('show');
+  deferredPrompt.prompt();
+  const { outcome } = await deferredPrompt.userChoice;
+  if (outcome === 'accepted') showToast('✅ ¡App instalada correctamente!');
+  deferredPrompt = null;
+});
+
+function dismissInstall() {
+  installBanner.classList.remove('show');
+  sessionStorage.setItem('install-dismissed', '1');
+}
+
+window.addEventListener('appinstalled', () => {
+  installBanner.classList.remove('show');
+  deferredPrompt = null;
+  showToast('✅ ¡App instalada en tu pantalla de inicio!');
+});
+
+// ── Service Worker (necesario para PWA instalable) ──
+if ('serviceWorker' in navigator) {
+  const swCode = `
+    self.addEventListener('install', e => self.skipWaiting());
+    self.addEventListener('activate', e => e.waitUntil(clients.claim()));
+    self.addEventListener('fetch', e => e.respondWith(fetch(e.request).catch(() => new Response(''))));
+  `;
+  const blob = new Blob([swCode], { type: 'application/javascript' });
+  const swUrl = URL.createObjectURL(blob);
+  navigator.serviceWorker.register(swUrl).catch(() => {});
+}
+const COLORS = [
+  { bg: '#6c63ff', text: '#fff' },
+  { bg: '#3dd68c', text: '#0a2a1a' },
+  { bg: '#ff5f72', text: '#fff' },
+  { bg: '#ffa940', text: '#2a1a00' },
+  { bg: '#38bdf8', text: '#012a40' },
+  { bg: '#e879f9', text: '#2a0035' },
+  { bg: '#fb923c', text: '#2a0e00' },
+  { bg: '#a3e635', text: '#1a2a00' },
+];
+
+let MASTER_PIN = '123456';
+let users = [
+  { id: 1, name: 'Carlos Ruiz',   pin: '1111', color: COLORS[0], role: 'Operador' },
+  { id: 2, name: 'María López',   pin: '2222', color: COLORS[1], role: 'Supervisora' },
+  { id: 3, name: 'Pedro Gómez',   pin: '3333', color: COLORS[3], role: 'Técnico' },
+];
+let nextId = 4;
+let selectedUserId = users[0].id;
+let lockInput = '';
+let masterInput = '';
+let selectedColor = COLORS[0];
+let currentUser = null;
+let editingUserId = null;
+let modalInput = '';
+
+const USER_PIN_LEN = 4;
+const MASTER_PIN_LEN = 6;
+
+function initials(name) {
+  return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+}
+
+function goScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+function switchTab(btn, tabId) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(tabId).classList.add('active');
+  btn.classList.add('active');
+}
+
+// ── Dots ──
+function renderDots(containerId, count, total, isMaster) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = '';
+  for (let i = 0; i < total; i++) {
+    const d = document.createElement('div');
+    d.className = 'pin-dot' + (i < count ? ' filled' : '') + (isMaster ? ' master' : '');
+    el.appendChild(d);
+  }
+}
+
+function clearError(id) { const e = document.getElementById(id); if (e) e.textContent = ''; }
+
+function shakeError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.style.animation = 'none';
+  requestAnimationFrame(() => { el.style.animation = 'shake 0.35s'; });
+}
+
+// ── User chips ──
+function renderUsers() {
+  const sel = document.getElementById('user-selector');
+  sel.innerHTML = '';
+  users.forEach(u => {
+    const chip = document.createElement('div');
+    chip.className = 'user-chip' + (u.id === selectedUserId ? ' selected' : '');
+    chip.onclick = () => {
+      selectedUserId = u.id;
+      lockInput = '';
+      renderDots('pin-display', 0, USER_PIN_LEN, false);
+      clearError('lock-error');
+      renderUsers();
+    };
+    chip.innerHTML = `
+      <div class="avatar" style="background:${u.color.bg};color:${u.color.text}">${initials(u.name)}</div>
+      <div class="user-name">${u.name.split(' ')[0]}</div>`;
+    sel.appendChild(chip);
+  });
+}
+
+// ── Lock screen ──
+function padPress(n) {
+  if (lockInput.length >= USER_PIN_LEN) return;
+  lockInput += n;
+  renderDots('pin-display', lockInput.length, USER_PIN_LEN, false);
+  if (lockInput.length === USER_PIN_LEN) setTimeout(checkPin, 130);
+}
+function padDel() {
+  lockInput = lockInput.slice(0, -1);
+  renderDots('pin-display', lockInput.length, USER_PIN_LEN, false);
+  clearError('lock-error');
+}
+function checkPin() {
+  const user = users.find(u => u.id === selectedUserId);
+  if (user && lockInput === user.pin) {
+    loginSuccess(user, false);
+  } else {
+    lockInput = '';
+    renderDots('pin-display', 0, USER_PIN_LEN, false);
+    shakeError('lock-error', 'PIN incorrecto. Inténtalo de nuevo.');
+  }
+}
+
+function loginSuccess(user, isMaster) {
+  currentUser = user;
+  const av = document.getElementById('home-avatar');
+  av.textContent = initials(user.name);
+  av.style.background = user.color.bg;
+  av.style.color = user.color.text;
+  document.getElementById('home-name').textContent = user.name;
+  document.getElementById('home-role').textContent = isMaster ? '🛡️ Acceso maestro' : user.role;
+  document.getElementById('welcome-msg').textContent = `¡Hola, ${user.name.split(' ')[0]}!`;
+  document.getElementById('session-info').textContent =
+    `Sesión iniciada a las ${new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}`;
+  document.getElementById('admin-tile').style.display = isMaster ? '' : 'none';
+  lockInput = ''; masterInput = '';
+  renderDots('pin-display', 0, USER_PIN_LEN, false);
+  renderDots('master-pin-display', 0, MASTER_PIN_LEN, true);
+  clearError('lock-error'); clearError('master-error');
+  goScreen('home-screen');
+  showToast('✅ Sesión iniciada correctamente');
+}
+
+function lockDevice() {
+  currentUser = null; lockInput = '';
+  renderDots('pin-display', 0, USER_PIN_LEN, false);
+  clearError('lock-error');
+  renderUsers();
+  goScreen('lock-screen');
+  showToast('🔒 Pantalla bloqueada');
+}
+
+// ── Master PIN ──
+function goMasterScreen() {
+  masterInput = '';
+  renderDots('master-pin-display', 0, MASTER_PIN_LEN, true);
+  clearError('master-error');
+  goScreen('master-screen');
+}
+function masterPad(n) {
+  if (masterInput.length >= MASTER_PIN_LEN) return;
+  masterInput += n;
+  renderDots('master-pin-display', masterInput.length, MASTER_PIN_LEN, true);
+  if (masterInput.length === MASTER_PIN_LEN) setTimeout(checkMaster, 130);
+}
+function masterDel() {
+  masterInput = masterInput.slice(0, -1);
+  renderDots('master-pin-display', masterInput.length, MASTER_PIN_LEN, true);
+  clearError('master-error');
+}
+function checkMaster() {
+  if (masterInput === MASTER_PIN) {
+    const admin = { id: 0, name: 'Administrador', pin: MASTER_PIN, color: COLORS[5], role: 'Administrador' };
+    loginSuccess(admin, true);
+  } else {
+    masterInput = '';
+    renderDots('master-pin-display', 0, MASTER_PIN_LEN, true);
+    shakeError('master-error', 'PIN maestro incorrecto.');
+  }
+}
+
+// ── Admin: user list ──
+function renderUserList() {
+  const list = document.getElementById('user-list');
+  list.innerHTML = '';
+  if (users.length === 0) {
+    list.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:24px">No hay usuarios registrados</p>';
+    return;
+  }
+  users.forEach(u => {
+    const row = document.createElement('div');
+    row.className = 'user-row';
+    row.innerHTML = `
+      <div class="user-row-avatar" style="background:${u.color.bg};color:${u.color.text}">${initials(u.name)}</div>
+      <div class="user-row-info">
+        <div class="user-row-name">${u.name}</div>
+        <div class="user-row-pin">${u.role} &middot; PIN: ${'●'.repeat(u.pin.length)}</div>
+      </div>
+      <div class="user-row-actions">
+        <button class="small-btn info" onclick="openEditModal(${u.id})">✏️ Editar PIN</button>
+        <button class="small-btn danger" onclick="deleteUser(${u.id})">🗑️ Eliminar</button>
+      </div>`;
+    list.appendChild(row);
+  });
+}
+
+function deleteUser(id) {
+  if (users.length <= 1) { showToast('⚠️ Debe haber al menos un usuario'); return; }
+  const u = users.find(x => x.id === id);
+  users = users.filter(x => x.id !== id);
+  if (selectedUserId === id) selectedUserId = users[0].id;
+  renderUserList();
+  renderUsers();
+  showToast(`🗑️ Usuario "${u.name}" eliminado`);
+}
+
+// ── Edit PIN modal ──
+function openEditModal(userId) {
+  editingUserId = userId;
+  modalInput = '';
+  const u = users.find(x => x.id === userId);
+  document.getElementById('modal-user-name').textContent = `Nuevo PIN de 4 dígitos para ${u.name}`;
+  renderModalDots(0);
+  clearError('modal-error');
+  document.getElementById('edit-modal').classList.add('open');
+}
+function closeModal() {
+  document.getElementById('edit-modal').classList.remove('open');
+  modalInput = ''; editingUserId = null;
+}
+function renderModalDots(count) {
+  const el = document.getElementById('modal-pin-display');
+  el.innerHTML = '';
+  for (let i = 0; i < USER_PIN_LEN; i++) {
+    const d = document.createElement('div');
+    d.className = 'pin-dot' + (i < count ? ' filled' : '');
+    el.appendChild(d);
+  }
+}
+function modalPad(n) {
+  if (modalInput.length >= USER_PIN_LEN) return;
+  modalInput += n;
+  renderModalDots(modalInput.length);
+  if (modalInput.length === USER_PIN_LEN) setTimeout(saveEditPin, 130);
+}
+function modalDel() {
+  modalInput = modalInput.slice(0, -1);
+  renderModalDots(modalInput.length);
+  clearError('modal-error');
+}
+function saveEditPin() {
+  if (users.some(u => u.id !== editingUserId && u.pin === modalInput)) {
+    modalInput = ''; renderModalDots(0);
+    shakeError('modal-error', 'Ese PIN ya lo usa otro usuario.');
+    return;
+  }
+  const u = users.find(x => x.id === editingUserId);
+  u.pin = modalInput;
+  closeModal();
+  renderUserList();
+  showToast(`✅ PIN de ${u.name} actualizado`);
+}
+
+// ── Add user ──
+function initColorPicker() {
+  const cp = document.getElementById('color-picker');
+  cp.innerHTML = '';
+  COLORS.forEach((c, i) => {
+    const el = document.createElement('div');
+    el.className = 'color-opt' + (i === 0 ? ' sel' : '');
+    el.style.background = c.bg;
+    el.onclick = () => {
+      document.querySelectorAll('.color-opt').forEach(e => e.classList.remove('sel'));
+      el.classList.add('sel');
+      selectedColor = c;
+    };
+    cp.appendChild(el);
+  });
+  selectedColor = COLORS[0];
+}
+
+function addUser() {
+  const name = document.getElementById('new-name').value.trim();
+  const pin  = document.getElementById('new-pin').value.trim();
+  const err  = document.getElementById('form-error');
+  if (!name) { err.textContent = 'Ingresa el nombre del usuario.'; return; }
+  if (!/^\d{4}$/.test(pin)) { err.textContent = 'El PIN debe tener exactamente 4 dígitos.'; return; }
+  if (users.some(u => u.pin === pin)) { err.textContent = 'Ese PIN ya está en uso. Elige uno diferente.'; return; }
+  const roles = ['Operador', 'Supervisor', 'Analista', 'Técnico', 'Asistente'];
+  users.push({ id: nextId++, name, pin, color: selectedColor, role: roles[Math.floor(Math.random() * roles.length)] });
+  document.getElementById('new-name').value = '';
+  document.getElementById('new-pin').value = '';
+  err.textContent = '';
+  renderUserList();
+  renderUsers();
+  showToast(`✅ Usuario "${name}" agregado correctamente`);
+  // Volver a tab usuarios
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-users').classList.add('active');
+  document.querySelector('.tab-btn').classList.add('active');
+}
+
+// ── Change master PIN ──
+function changeMasterPin() {
+  const cur  = document.getElementById('current-master').value.trim();
+  const nw   = document.getElementById('new-master').value.trim();
+  const conf = document.getElementById('confirm-master').value.trim();
+  const err  = document.getElementById('master-form-error');
+  if (cur !== MASTER_PIN) { err.textContent = 'El PIN actual no es correcto.'; return; }
+  if (!/^\d{6}$/.test(nw)) { err.textContent = 'El nuevo PIN debe tener exactamente 6 dígitos.'; return; }
+  if (nw !== conf) { err.textContent = 'Los PINs nuevos no coinciden.'; return; }
+  MASTER_PIN = nw;
+  document.getElementById('current-master').value = '';
+  document.getElementById('new-master').value = '';
+  document.getElementById('confirm-master').value = '';
+  err.textContent = '';
+  showToast('✅ PIN maestro actualizado correctamente');
+}
+
+// ── Init ──
+renderDots('pin-display', 0, USER_PIN_LEN, false);
+renderDots('master-pin-display', 0, MASTER_PIN_LEN, true);
+renderUsers();
+initColorPicker();
+renderUserList();
+</script>
+</body>
+</html>
