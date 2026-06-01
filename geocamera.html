@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#002147">
+<meta name="description" content="Registro fotografico geoposicionado — GeoCamera">
+<title>GeoCamera</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --oxford:       #002147;
+    --oxford-mid:   #003580;
+    --oxford-dark:  #001430;
+    --green:        #1a6b3c;
+    --green-light:  #228b4e;
+    --green-pale:   #e8f5ee;
+    --green-border: #b2d8bf;
+    --cream:        #f5f3ee;
+    --text:         #0d1a0f;
+    --text-mid:     #2a3d2e;
+    --text-muted:   #5a7060;
+    --gold:         #c9a84c;
+    --gold-light:   #e8c96a;
+    --white:        #ffffff;
+    --red:          #8b1a1a;
+    --red-light:    #c0392b;
+    --radius:       8px;
+    --shadow:       0 2px 12px rgba(0,33,71,0.10);
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Source Sans 3', sans-serif;
+    background: var(--cream);
+    color: var(--text);
+    min-height: 100vh;
+    padding-bottom: 3rem;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── HEADER ── */
+  header {
+    background: var(--oxford);
+    padding: 1.4rem 1.5rem 1.1rem;
+    border-bottom: 4px solid var(--gold);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  header h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.6rem;
+    font-weight: 900;
+    color: var(--white);
+    letter-spacing: 0.02em;
+    line-height: 1.1;
+  }
+  header p {
+    font-size: 0.72rem;
+    color: var(--gold);
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    margin-top: 3px;
+  }
+
+  /* ── SECTIONS ── */
+  .section {
+    padding: 1.25rem 1rem;
+    border-bottom: 1px solid var(--green-border);
+  }
+  .section-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--oxford);
+    margin-bottom: 0.85rem;
+    letter-spacing: 0.01em;
+  }
+
+  /* ── PANELS ── */
+  .panel {
+    background: var(--white);
+    border: 1.5px solid var(--green-border);
+    border-radius: var(--radius);
+    padding: 1rem 1.1rem;
+    margin-bottom: 0.75rem;
+    box-shadow: var(--shadow);
+  }
+  .panel-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--oxford);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 0.65rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--green-border);
+  }
+
+  /* ── STATUS ROWS ── */
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0.45rem 0;
+    border-bottom: 0.5px solid var(--green-border);
+  }
+  .status-row:last-child { border-bottom: none; }
+  .status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .dot-ok   { background: var(--green-light); }
+  .dot-warn { background: var(--gold); }
+  .dot-err  { background: var(--red); }
+  .dot-idle { background: #ccc; }
+  .status-label {
+    font-size: 0.84rem;
+    font-weight: 700;
+    color: var(--text-mid);
+    flex: 1;
+  }
+  .status-val {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    text-align: right;
+    max-width: 55%;
+    word-break: break-all;
+  }
+
+  /* ── CAMERA ── */
+  #preview-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    background: #071209;
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 0.75rem;
+    border: 1.5px solid var(--green-border);
+    box-shadow: var(--shadow);
+  }
+  #preview {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  #canvas { display: none; }
+
+  .crosshair {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    width: 28px;
+    height: 28px;
+  }
+  .crosshair::before,
+  .crosshair::after {
+    content: '';
+    position: absolute;
+    background: rgba(255,255,255,0.65);
+  }
+  .crosshair::before { width: 1px; height: 100%; left: 50%; top: 0; }
+  .crosshair::after  { width: 100%; height: 1px; left: 0; top: 50%; }
+
+  .cam-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(0,33,71,0.88);
+    color: var(--gold);
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 4px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  /* ── COORDS BAR ── */
+  .coords-bar {
+    background: var(--oxford);
+    color: var(--white);
+    border-radius: var(--radius);
+    padding: 0.65rem 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+    box-shadow: var(--shadow);
+  }
+  .coords-bar .coords-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.7);
+  }
+  .coords-bar .coords-val {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--gold-light);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  /* ── BUTTONS ── */
+  .btn {
+    display: block;
+    width: 100%;
+    padding: 0.95rem 1rem;
+    border: none;
+    border-radius: var(--radius);
+    font-family: 'Source Sans 3', sans-serif;
+    font-size: 0.92rem;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: background 0.15s, transform 0.1s, opacity 0.15s;
+  }
+  .btn:active { transform: scale(0.975); }
+  .btn-primary {
+    background: var(--green);
+    color: var(--white);
+    margin-bottom: 0.5rem;
+  }
+  .btn-primary:hover:not(:disabled) { background: var(--green-light); }
+  .btn-secondary {
+    background: var(--oxford);
+    color: var(--white);
+  }
+  .btn-secondary:hover:not(:disabled) { background: var(--oxford-mid); }
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* ── GALLERY ── */
+  .gallery-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+  .count-badge {
+    display: inline-block;
+    background: var(--oxford);
+    color: var(--white);
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 2px 9px;
+    border-radius: 12px;
+    letter-spacing: 0.06em;
+  }
+  .btn-clear-all {
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--red);
+    background: none;
+    border: 1px solid var(--red);
+    border-radius: 4px;
+    padding: 3px 10px;
+    cursor: pointer;
+    font-family: 'Source Sans 3', sans-serif;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    transition: background 0.15s, color 0.15s;
+  }
+  .btn-clear-all:hover { background: var(--red); color: var(--white); }
+
+  .gallery-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .photo-card {
+    background: var(--white);
+    border: 1.5px solid var(--green-border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    animation: fadeIn 0.3s ease;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .photo-card img {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    display: block;
+  }
+  .photo-meta {
+    padding: 0.5rem 0.65rem 0.3rem;
+    border-top: 1px solid var(--green-border);
+  }
+  .photo-id {
+    font-size: 0.62rem;
+    font-weight: 700;
+    color: var(--oxford);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .photo-time {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text-mid);
+    margin: 1px 0;
+  }
+  .photo-coords-small {
+    font-size: 0.62rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .photo-actions {
+    display: flex;
+    gap: 5px;
+    padding: 0.5rem 0.65rem 0.65rem;
+  }
+  .btn-sm {
+    flex: 1;
+    padding: 0.38rem 0.3rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: 'Source Sans 3', sans-serif;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .btn-sm:active { transform: scale(0.96); }
+  .btn-dl { background: var(--green); color: var(--white); }
+  .btn-dl:hover { background: var(--green-light); }
+  .btn-rm { background: var(--red); color: var(--white); }
+  .btn-rm:hover { background: var(--red-light); }
+
+  .empty-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 2.5rem 1rem;
+    color: var(--text-muted);
+    border: 1.5px dashed var(--green-border);
+    border-radius: var(--radius);
+    background: var(--white);
+  }
+  .empty-state p {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: var(--text-mid);
+    margin-bottom: 4px;
+  }
+  .empty-state small {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  /* ── NOTICE ── */
+  .notice {
+    background: var(--green-pale);
+    border: 1px solid var(--green-border);
+    border-left: 4px solid var(--green);
+    border-radius: var(--radius);
+    padding: 0.7rem 0.9rem;
+    margin-bottom: 0.85rem;
+  }
+  .notice p {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--green);
+    line-height: 1.5;
+  }
+
+  /* ── FOOTER ── */
+  footer {
+    text-align: center;
+    padding: 1.5rem 1rem 0.5rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  footer span {
+    color: var(--oxford);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>GeoCamera</h1>
+  <p>Registro fotografico geoposicionado</p>
+</header>
+
+<!-- ── ESTADO ── -->
+<div class="section">
+  <div class="panel">
+    <div class="panel-title">Estado del sistema</div>
+
+    <div class="status-row">
+      <div class="status-dot dot-idle" id="cam-dot"></div>
+      <span class="status-label">Camara</span>
+      <span class="status-val" id="cam-status">Iniciando...</span>
+    </div>
+
+    <div class="status-row">
+      <div class="status-dot dot-idle" id="gps-dot"></div>
+      <span class="status-label">GPS</span>
+      <span class="status-val" id="gps-status">En espera</span>
+    </div>
+
+    <div class="status-row">
+      <div class="status-dot dot-idle" id="acc-dot"></div>
+      <span class="status-label">Precision</span>
+      <span class="status-val" id="acc-status">--</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── CAMARA ── -->
+<div class="section">
+  <div id="preview-wrap">
+    <video id="preview" autoplay playsinline muted></video>
+    <div class="crosshair"></div>
+    <div class="cam-badge" id="cam-badge">Sin camara</div>
+  </div>
+  <canvas id="canvas"></canvas>
+
+  <div class="coords-bar">
+    <span class="coords-label">Posicion</span>
+    <span class="coords-val" id="coords-display">Obteniendo GPS...</span>
+  </div>
+
+  <button class="btn btn-primary" id="btn-capture" disabled>Capturar foto</button>
+  <button class="btn btn-secondary" id="btn-switch">Cambiar camara</button>
+</div>
+
+<!-- ── GALERIA ── -->
+<div class="section">
+  <div class="gallery-header">
+    <div class="section-title" style="margin-bottom:0">
+      Fotos capturadas&nbsp;<span class="count-badge" id="count">0</span>
+    </div>
+    <button class="btn-clear-all" id="btn-clear" style="display:none">Borrar todo</button>
+  </div>
+
+  <div class="notice">
+    <p>Las fotos se guardan en memoria durante la sesion. Descargue cada imagen antes de cerrar el navegador. El nombre del archivo incluye coordenadas y fecha.</p>
+  </div>
+
+  <div class="gallery-grid" id="gallery">
+    <div class="empty-state">
+      <p>Sin fotos aun</p>
+      <small>Capture su primera imagen arriba</small>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <span>GeoCamera</span> &mdash; Sin servidor &mdash; Sin usuarios &mdash; Solo su dispositivo
+</footer>
+
+<script>
+  // ── ELEMENTOS ──
+  const video        = document.getElementById('preview');
+  const canvas       = document.getElementById('canvas');
+  const ctx          = canvas.getContext('2d');
+  const btnCapture   = document.getElementById('btn-capture');
+  const btnSwitch    = document.getElementById('btn-switch');
+  const btnClear     = document.getElementById('btn-clear');
+  const gallery      = document.getElementById('gallery');
+  const coordsDisplay= document.getElementById('coords-display');
+  const camDot       = document.getElementById('cam-dot');
+  const camStatus    = document.getElementById('cam-status');
+  const gpsDot       = document.getElementById('gps-dot');
+  const gpsStatus    = document.getElementById('gps-status');
+  const accDot       = document.getElementById('acc-dot');
+  const accStatus    = document.getElementById('acc-status');
+  const camBadge     = document.getElementById('cam-badge');
+  const countBadge   = document.getElementById('count');
+
+  // ── ESTADO ──
+  let stream      = null;
+  let facingMode  = 'environment';
+  let currentPos  = null;
+  let photos      = [];
+  let photoCount  = 0;
+  let cameraOk    = false;
+  let gpsOk       = false;
+
+  // ── UTILS ──
+  function setDot(dot, state) {
+    dot.className = 'status-dot dot-' + ({ok:'ok', warn:'warn', err:'err'}[state] || 'idle');
+  }
+
+  function formatDate(d) {
+    const pad = n => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate())
+      + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+  }
+
+  function fileTimestamp(d) {
+    const pad = n => String(n).padStart(2, '0');
+    return d.getFullYear() + pad(d.getMonth()+1) + pad(d.getDate())
+      + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
+  }
+
+  function checkReady() {
+    btnCapture.disabled = !(cameraOk && gpsOk);
+  }
+
+  // ── CAMARA ──
+  async function startCamera() {
+    try {
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      const constraints = {
+        video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false
+      };
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      video.srcObject = stream;
+      cameraOk = true;
+      setDot(camDot, 'ok');
+      camStatus.textContent = facingMode === 'environment' ? 'Trasera activa' : 'Frontal activa';
+      camBadge.textContent  = facingMode === 'environment' ? 'TRASERA' : 'FRONTAL';
+      checkReady();
+    } catch (e) {
+      cameraOk = false;
+      setDot(camDot, 'err');
+      camStatus.textContent = 'Sin acceso — verifique permisos';
+      camBadge.textContent  = 'ERROR';
+      checkReady();
+    }
+  }
+
+  // ── GPS ──
+  function startGPS() {
+    if (!navigator.geolocation) {
+      setDot(gpsDot, 'err');
+      setDot(accDot, 'err');
+      gpsStatus.textContent = 'No disponible en este dispositivo';
+      return;
+    }
+    setDot(gpsDot, 'warn');
+    gpsStatus.textContent = 'Localizando...';
+
+    navigator.geolocation.watchPosition(
+      pos => {
+        currentPos = pos.coords;
+        const lat  = pos.coords.latitude.toFixed(6);
+        const lon  = pos.coords.longitude.toFixed(6);
+        const acc  = Math.round(pos.coords.accuracy);
+        coordsDisplay.textContent = lat + ',  ' + lon;
+        gpsOk = true;
+        setDot(gpsDot, 'ok');
+        gpsStatus.textContent = 'Activo';
+        setDot(accDot, acc <= 20 ? 'ok' : acc <= 60 ? 'warn' : 'err');
+        accStatus.textContent = '+/- ' + acc + ' m';
+        checkReady();
+      },
+      err => {
+        gpsOk = false;
+        setDot(gpsDot, 'err');
+        setDot(accDot, 'err');
+        const msgs = {
+          1: 'Permiso denegado',
+          2: 'Posicion no disponible',
+          3: 'Tiempo de espera agotado'
+        };
+        gpsStatus.textContent = msgs[err.code] || 'Error GPS';
+        coordsDisplay.textContent = 'GPS no disponible';
+        checkReady();
+      },
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
+    );
+  }
+
+  // ── CAPTURA ──
+  function capture() {
+    if (!stream || !currentPos) return;
+
+    btnCapture.disabled = true;
+    btnCapture.textContent = 'Procesando...';
+
+    const W = video.videoWidth  || 1280;
+    const H = video.videoHeight || 720;
+    canvas.width  = W;
+    canvas.height = H;
+    ctx.drawImage(video, 0, 0, W, H);
+
+    const now  = new Date();
+    const lat  = currentPos.latitude.toFixed(6);
+    const lon  = currentPos.longitude.toFixed(6);
+    const acc  = Math.round(currentPos.accuracy);
+    const alt  = currentPos.altitude ? currentPos.altitude.toFixed(1) + ' m' : '--';
+    const dateStr = formatDate(now);
+
+    // Franja de datos en la imagen
+    const bh = Math.round(H * 0.075);
+    const fs = Math.round(bh * 0.38);
+    ctx.fillStyle = 'rgba(0,33,71,0.88)';
+    ctx.fillRect(0, H - bh, W, bh);
+
+    ctx.fillStyle = '#c9a84c';
+    ctx.font = `bold ${fs}px "Source Sans 3", sans-serif`;
+    ctx.fillText(lat + ', ' + lon + '  (+/- ' + acc + ' m)', 12, H - bh + fs + 4);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `${Math.round(fs * 0.85)}px "Source Sans 3", sans-serif`;
+    ctx.fillText(dateStr + (alt !== '--' ? '  Alt: ' + alt : ''), 12, H - 8);
+
+    const dataURL = canvas.toDataURL('image/jpeg', 0.92);
+    photoCount++;
+
+    photos.unshift({
+      id:       photoCount,
+      src:      dataURL,
+      lat, lon, acc, alt,
+      date:     dateStr,
+      fileTs:   fileTimestamp(now)
+    });
+
+    renderGallery();
+
+    setTimeout(() => {
+      btnCapture.disabled = false;
+      btnCapture.textContent = 'Capturar foto';
+    }, 700);
+  }
+
+  // ── GALERIA ──
+  function renderGallery() {
+    countBadge.textContent = photos.length;
+    btnClear.style.display = photos.length ? 'inline-block' : 'none';
+
+    if (!photos.length) {
+      gallery.innerHTML = `
+        <div class="empty-state">
+          <p>Sin fotos aun</p>
+          <small>Capture su primera imagen arriba</small>
+        </div>`;
+      return;
+    }
+
+    gallery.innerHTML = photos.map(p => `
+      <div class="photo-card" id="card-${p.id}">
+        <img src="${p.src}" alt="Foto ${p.id}" loading="lazy">
+        <div class="photo-meta">
+          <div class="photo-id">Foto #${p.id}</div>
+          <div class="photo-time">${p.date.split(' ')[1]}&nbsp;&nbsp;${p.date.split(' ')[0]}</div>
+          <div class="photo-coords-small">${p.lat}, ${p.lon}</div>
+        </div>
+        <div class="photo-actions">
+          <button class="btn-sm btn-dl" onclick="downloadPhoto(${p.id})">Descargar</button>
+          <button class="btn-sm btn-rm" onclick="removePhoto(${p.id})">Borrar</button>
+        </div>
+      </div>`).join('');
+  }
+
+  function downloadPhoto(id) {
+    const p = photos.find(x => x.id === id);
+    if (!p) return;
+    const a = document.createElement('a');
+    a.href     = p.src;
+    a.download = 'geo_' + p.lat + '_' + p.lon + '_' + p.fileTs + '.jpg';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  function removePhoto(id) {
+    photos = photos.filter(x => x.id !== id);
+    renderGallery();
+  }
+
+  // ── EVENTOS ──
+  btnCapture.addEventListener('click', capture);
+
+  btnSwitch.addEventListener('click', () => {
+    facingMode = facingMode === 'environment' ? 'user' : 'environment';
+    startCamera();
+  });
+
+  btnClear.addEventListener('click', () => {
+    if (confirm('Borrar todas las fotos de la sesion?')) {
+      photos = [];
+      renderGallery();
+    }
+  });
+
+  // ── INICIO ──
+  startCamera();
+  startGPS();
+</script>
+</body>
+</html>
