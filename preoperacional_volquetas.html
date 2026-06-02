@@ -4,6 +4,104 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Preoperacional Volquetas — Planta PIL 1</title>
+
+<!-- PWA iOS -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Preop Volquetas">
+<meta name="theme-color" content="#2d5a27">
+<!-- PWA Android/Chrome -->
+<meta name="mobile-web-app-capable" content="yes">
+
+<script>
+(function(){
+  // ── MANIFEST ──────────────────────────────────────────────
+  const manifest = {
+    name: 'Preoperacional Volquetas — PIL 1',
+    short_name: 'Preop Volq.',
+    description: 'Inspección preoperacional de volquetas',
+    display: 'standalone',
+    orientation: 'portrait',
+    background_color: '#2d5a27',
+    theme_color: '#2d5a27',
+    start_url: location.pathname + location.search,
+    icons: [
+      {
+        src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='80' fill='%232d5a27'/%3E%3Ctext y='340' x='256' text-anchor='middle' font-size='260' font-family='serif' font-weight='700' fill='%23ffffff'%3E🚛%3C/text%3E%3C/svg%3E",
+        sizes: '512x512', type: 'image/svg+xml', purpose: 'any maskable'
+      }
+    ]
+  };
+  const ml = document.createElement('link');
+  ml.rel = 'manifest';
+  ml.href = URL.createObjectURL(new Blob([JSON.stringify(manifest)], {type:'application/manifest+json'}));
+  document.head.appendChild(ml);
+
+  // ── APPLE TOUCH ICON ──────────────────────────────────────
+  const icon = document.createElement('link');
+  icon.rel = 'apple-touch-icon';
+  icon.href = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%232d5a27'/%3E%3Ctext y='130' x='90' text-anchor='middle' font-size='110' font-family='serif'%3E🚛%3C/text%3E%3C/svg%3E";
+  document.head.appendChild(icon);
+
+  // ── SERVICE WORKER ────────────────────────────────────────
+  if ('serviceWorker' in navigator) {
+    const swCode = `
+      const CACHE = 'preop-volq-v1';
+      const APP   = self.location.href.split('?')[0];
+      self.addEventListener('install', e => {
+        e.waitUntil(caches.open(CACHE).then(c => c.add(APP)));
+        self.skipWaiting();
+      });
+      self.addEventListener('activate', e => {
+        e.waitUntil(caches.keys().then(ks =>
+          Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))
+        ));
+        self.clients.claim();
+      });
+      self.addEventListener('fetch', e => {
+        const u = e.request.url;
+        if (u.includes('google') && (u.includes('script') || u.includes('spreadsheets') || u.includes('fonts'))) return;
+        e.respondWith(fetch(e.request).catch(() => caches.match(e.request) || caches.match(APP)));
+      });
+    `;
+    navigator.serviceWorker.register(
+      URL.createObjectURL(new Blob([swCode], {type:'application/javascript'}))
+    ).catch(() => {});
+  }
+
+  // ── BANNER INSTALACIÓN ────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', () => {
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const isSA  = navigator.standalone === true || matchMedia('(display-mode:standalone)').matches;
+
+    if (isIOS && !isSA && !localStorage.getItem('preop_volq_install')) {
+      setTimeout(() => {
+        const b = document.createElement('div');
+        b.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#2d5a27;color:#fff;padding:14px 18px;font-size:13px;display:flex;align-items:center;gap:12px;z-index:99999;font-family:sans-serif;border-top:3px solid #8b6914;box-shadow:0 -4px 20px rgba(0,0,0,.3)';
+        b.innerHTML = '<span style="font-size:22px">📲</span><span>Para instalar: toca <strong style="color:#f0c040">Compartir</strong> → <strong style="color:#f0c040">"Añadir a inicio"</strong></span><button onclick="this.parentNode.remove();localStorage.setItem(\'preop_volq_install\',\'1\')" style="margin-left:auto;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;white-space:nowrap;flex-shrink:0">OK</button>';
+        document.body.appendChild(b);
+      }, 2500);
+    }
+
+    window.addEventListener('beforeinstallprompt', e => {
+      e.preventDefault();
+      window._pwaPrompt = e;
+      const btn = document.createElement('button');
+      btn.innerHTML = '⬇ Instalar app';
+      btn.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#2d5a27;color:#fff;border:2px solid #8b6914;border-radius:8px;padding:12px 20px;font-size:13px;font-weight:700;cursor:pointer;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.35);font-family:sans-serif;letter-spacing:.5px';
+      btn.onclick = async () => {
+        if (!window._pwaPrompt) return;
+        window._pwaPrompt.prompt();
+        const { outcome } = await window._pwaPrompt.userChoice;
+        if (outcome === 'accepted') btn.remove();
+      };
+      document.body.appendChild(btn);
+      window.addEventListener('appinstalled', () => btn.remove());
+    });
+  });
+})();
+</script>
+
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
