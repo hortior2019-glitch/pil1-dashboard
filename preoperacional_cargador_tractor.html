@@ -43,7 +43,6 @@
   icon.href = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%232d5a27'/%3E%3Ctext y='130' x='90' text-anchor='middle' font-size='110' font-family='serif'%3E🚜%3C/text%3E%3C/svg%3E";
   document.head.appendChild(icon);
 
-  
   // ── SERVICE WORKER ────────────────────────────────────────
   if ('serviceWorker' in navigator) {
     const swCode = `
@@ -971,7 +970,27 @@ async function submitForm() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    alert('✅ Inspección registrada correctamente en Google Sheets.');
+
+    // ── Limpiar formulario y cerrar sesión ──────────────────
+    document.querySelectorAll('input[type="radio"]').forEach(r => r.checked = false);
+    document.querySelectorAll('input[type="text"], input[type="number"], textarea').forEach(f => f.value = '');
+    document.getElementById('fecha').valueAsDate = new Date();
+
+    // Liberar campos que quedaron bloqueados por el PIN
+    const op = document.getElementById('operador');
+    if (op) { op.value = ''; op.readOnly = false; }
+
+    // Reconstruir ítems mecánicos (los elimina y regenera para el próximo usuario)
+    buildMecanicoItems();
+
+    // Reiniciar PIN y mostrar overlay de acceso
+    pinValue = '';
+    actualizarDots();
+    document.getElementById('pin-error').textContent = '';
+    document.getElementById('equipo-error').textContent = '';
+    document.getElementById('pin-overlay').classList.remove('hidden');
+
+    alert('✅ Inspección registrada correctamente. Sesión cerrada.');
   } catch {
     alert('❌ Error al enviar. Verifique su conexión.');
   }
