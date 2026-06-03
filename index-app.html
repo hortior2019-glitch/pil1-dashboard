@@ -309,7 +309,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 <div class="panel active" id="panel-kpi">
   <div class="sec-hdr">
     <div class="sec-title">Desempeno por Operario</div>
-    <div class="sec-sub" id="kpi-op-period">Total acumulado</div>
+    <div class="sec-sub" id="kpi-op-period">Hoy</div>
   </div>
 
   <div id="kpi-operarios-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:20px;margin-bottom:24px"></div>
@@ -886,8 +886,8 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
     <div class="card-hdr">Registro de inspecciones — Volquetas</div>
     <div style="overflow-x:auto">
       <table class="tbl">
-        <thead><tr><th>Timestamp</th><th>Fecha</th><th>Placa</th><th>Conductor</th><th>Km</th><th class="num">Malos</th><th class="num">Regulares</th><th class="num">Buenos</th></tr></thead>
-        <tbody id="tbody-vol"><tr><td colspan="8" class="empty">Cargando...</td></tr></tbody>
+        <thead><tr><th>Timestamp</th><th>Fecha</th><th>Placa</th><th>Conductor</th><th>Km</th><th>Observaciones</th><th class="num">Malos</th><th class="num">Regulares</th><th class="num">Buenos</th></tr></thead>
+        <tbody id="tbody-vol"><tr><td colspan="9" class="empty">Cargando...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -1497,8 +1497,8 @@ async function loadAllData() {
     });
     try { renderIngreso(dataIngreso, currentFilter); } catch(e2) { console.error('renderIngreso error:', e2); }
     try { renderClientes(dataIngreso, currentFilter); } catch(e2) { console.error('renderClientes error:', e2); }
-    try { renderKPI(dataIngreso); } catch(e2) { console.error('renderKPI error:', e2); }
-    try { renderOportunidades(dataIngreso); } catch(e2) { console.error('renderOportunidades error:', e2); }
+    try { renderKPI(dataIngreso, f); } catch(e2) { console.error('renderKPI error:', e2); }
+    try { renderOportunidades(dataIngreso, f); } catch(e2) { console.error('renderOportunidades error:', e2); }
     document.getElementById('footer-ingreso').textContent = 'Ingreso: '+fmt(dataIngreso.length)+' registros';
     ok++;
   } catch(e) { errors.push('Ingreso Material'); console.error('Ingreso fetch error:', e); }
@@ -1518,7 +1518,7 @@ async function loadAllData() {
 
   try {
     dataPreopVol = await fetchCSV(SHEETS.preopVol);
-    renderPreop('vol', dataPreopVol);
+    renderPreop('vol', dataPreopVol, currentFilter);
     ok++;
   } catch(e) { errors.push('Preop Volquetas'); console.error('PreopVol:', e); }
 
@@ -1533,8 +1533,8 @@ async function loadAllData() {
       const t = (r['Tipo de Equipo'] || r['tipo de equipo'] || r['TIPO DE EQUIPO'] || '').toLowerCase().trim();
       return t === 'tractor';
     });
-    renderPreop('car', dataCargador);
-    renderPreop('tra', dataTractor);
+    renderPreop('car', dataCargador, currentFilter);
+    renderPreop('tra', dataTractor, currentFilter);
     ok++;
   } catch(e) { errors.push('Preop Cargador/Tractor'); console.error('PreopCar:', e); }
 
@@ -1611,10 +1611,15 @@ function setFilter(f, el) {
   renderSolicitudes(dataSolicitudes, f);
   renderClientes(dataIngreso, f);
   renderHE(dataHE, f);
-  renderKPI(dataIngreso);
-  renderOportunidades(dataIngreso);
+  renderKPI(dataIngreso, f);
+  renderOportunidades(dataIngreso, f);
   renderAccesos();
   renderViajes(dataViajes, f);
+  renderPreop('vol', dataPreopVol, f);
+  const dataCar2 = dataPreopCar.filter(r => { const t=(r['Tipo de Equipo']||r['tipo de equipo']||r['TIPO DE EQUIPO']||'').toLowerCase().trim(); return t==='cargador'||t===''; });
+  const dataTra2 = dataPreopCar.filter(r => { const t=(r['Tipo de Equipo']||r['tipo de equipo']||r['TIPO DE EQUIPO']||'').toLowerCase().trim(); return t==='tractor'; });
+  renderPreop('car', dataCar2, f);
+  renderPreop('tra', dataTra2, f);
 }
 
 // ── RELOJ ─────────────────────────────────────────
@@ -2346,7 +2351,10 @@ const OPERARIOS_DEF = [
   { key: 'german',    label: 'German Rodriguez',     color: 'var(--orange)' },
 ];
 
-function renderKPI(data) {
+function renderKPI(data, filter) {
+  filter = filter || currentFilter;
+  const filteredData = data.filter(r => inPeriod(getMarcaTemporal(r) || "", filter));
+  data = filteredData;
   const total = data.length;
   const ops   = new Set(data.map(r=>r['OPERACION']).filter(Boolean));
   const vehs  = new Set(data.map(r=>r['PLACA']).filter(Boolean));
@@ -2371,6 +2379,9 @@ function renderKPI(data) {
   document.getElementById('kpi-gen-ops').textContent   = fmt(ops.size);
   document.getElementById('kpi-gen-peso').textContent  = fmtPeso(pesoTotal);
   document.getElementById('kpi-gen-veh').textContent   = fmt(vehs.size);
+  const kpiLbl = {hora:'Última hora',hoy:'Hoy',semana:'Esta semana',mes:'Este mes',total:'Total acumulado'}[filter] || filter;
+  const periodEl = document.getElementById('kpi-op-period');
+  if (periodEl) periodEl.textContent = kpiLbl;
   const ahtEl = document.getElementById('kpi-gen-aht');
   if (ahtEl) ahtEl.textContent = fmtAHTGen(promAHTGen);
 
@@ -2531,7 +2542,9 @@ function renderKPI(data) {
 }
 
 // ── RENDER CAMPOS DE OPORTUNIDAD ─────────────────
-function renderOportunidades(data) {
+function renderOportunidades(data, filter) {
+  filter = filter || currentFilter;
+  data = data.filter(r => inPeriod(getMarcaTemporal(r) || "", filter));
   const total = data.length;
   if (total === 0) { document.getElementById('oportunidad-grid').innerHTML = ''; return; }
 
@@ -2675,21 +2688,28 @@ function isMalo(v)    { return ['malo','mala','m'].includes((v||'').toLowerCase(
 function isRegular(v) { return ['regular','r'].includes((v||'').toLowerCase().trim()); }
 function isBueno(v)   { return ['bueno','buena','b'].includes((v||'').toLowerCase().trim()); }
 
-function renderPreop(tipo, data) {
+function renderPreop(tipo, data, filter) {
+  filter = filter || currentFilter;
   const prefix   = tipo === 'vol' ? 'vol' : tipo === 'tra' ? 'tra' : 'car';
   const secciones = tipo === 'vol' ? PREOP_SECCIONES_VOL : PREOP_SECCIONES_CAR;
   const allItems  = Object.values(secciones).flat();
 
-  // Filtrar por hoy
-  const hoy = new Date();
-  const hoyStr = hoy.getFullYear()+'-'+String(hoy.getMonth()+1).padStart(2,'0')+'-'+String(hoy.getDate()).padStart(2,'0');
+  // Etiqueta de periodo
+  const periodoLbl = {hora:'Última hora',hoy:'Hoy',semana:'Esta semana',mes:'Este mes',total:'Total acumulado'}[filter] || filter;
+  const periodEl = document.getElementById(prefix+'-period');
+  if (periodEl) periodEl.textContent = periodoLbl;
 
-  const filtered = data.filter(r => {
+  // Filtrar según el periodo global seleccionado
+  function preopInPeriod(r) {
     const ts = (r['Timestamp'] || r['timestamp'] || '').toString();
     const fe = (r['Fecha'] || r['fecha'] || '').toString();
-    return ts.startsWith(hoyStr) || fe === hoyStr || fe.startsWith(hoyStr);
-  });
-  const rows = filtered.length > 0 ? filtered : data; // si no hay hoy, mostrar todo
+    const marca = ts || fe;
+    if (!marca) return true;
+    return inPeriod(marca, filter);
+  }
+
+  const filtered = data.filter(preopInPeriod);
+  const rows = filtered.length > 0 ? filtered : (filter === 'total' ? data : []);
 
   // KPIs globales
   let totalMalos = 0, totalReg = 0, totalBuenos = 0, totalItems = 0;
@@ -2770,35 +2790,104 @@ function renderPreop(tipo, data) {
     }).join('');
   }
 
-  // Tabla detalle
+  // Tabla detalle principal
   const tbody = document.getElementById('tbody-'+prefix);
-  if (rows.length === 0) { tbody.innerHTML='<tr><td colspan="8" class="empty">Sin registros</td></tr>'; return; }
-  tbody.innerHTML = rows.slice(0,50).map(r => {
-    let b=0,reg=0,m=0;
-    allItems.forEach(c => { const v=r[c]||''; if(isBueno(v))b++; else if(isRegular(v))reg++; else if(isMalo(v))m++; });
-    const ts   = (r['Timestamp']||'').toString().substring(0,19).replace('T',' ');
-    const mCls = m > 0 ? 'style="color:var(--red);font-weight:700"' : '';
-    const rCls = reg > 0 ? 'style="color:#d4a017;font-weight:600"' : '';
-    if (tipo === 'vol') {
-      return `<tr>
-        <td>${ts}</td>
-        <td>${r['Fecha']||''}</td>
-        <td><strong>${r['Placa']||r['placa']||'—'}</strong></td>
-        <td>${r['Conductor']||r['conductor']||'—'}</td>
-        <td>${r['Kilometraje']||r['km']||'—'}</td>
-        <td ${mCls}>${m}</td><td ${rCls}>${reg}</td><td>${b}</td>
-      </tr>`;
-    } else {
-      return `<tr>
-        <td>${ts}</td>
-        <td>${r['Fecha']||''}</td>
-        <td>${r['Horometro']||r['horometro']||'—'}</td>
-        <td>${r['Operador']||r['operador']||'—'}</td>
-        <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r['Observaciones']||r['observaciones']||''}</td>
-        <td ${mCls}>${m}</td><td ${rCls}>${reg}</td><td>${b}</td>
-      </tr>`;
+  if (rows.length === 0) { tbody.innerHTML='<tr><td colspan="8" class="empty">Sin registros en el periodo seleccionado</td></tr>'; }
+  else {
+    tbody.innerHTML = rows.slice().reverse().slice(0,50).map(r => {
+      let b=0,reg=0,m=0;
+      allItems.forEach(c => { const v=r[c]||''; if(isBueno(v))b++; else if(isRegular(v))reg++; else if(isMalo(v))m++; });
+      const ts   = (r['Timestamp']||'').toString().substring(0,19).replace('T',' ');
+      const mCls = m > 0 ? 'style="color:var(--red);font-weight:700"' : '';
+      const rCls = reg > 0 ? 'style="color:#d4a017;font-weight:600"' : '';
+      if (tipo === 'vol') {
+        const obs = (r['Observaciones']||r['observaciones']||'').trim();
+        return `<tr>
+          <td>${ts}</td>
+          <td>${r['Fecha']||''}</td>
+          <td><strong>${r['Placa']||r['placa']||'—'}</strong></td>
+          <td>${r['Conductor']||r['conductor']||'—'}</td>
+          <td>${r['Kilometraje']||r['km']||'—'}</td>
+          <td style="font-size:11px;color:${obs?'var(--ink-m)':'var(--ink-l)'};max-width:200px">${obs||'—'}</td>
+          <td ${mCls}>${m}</td><td ${rCls}>${reg}</td><td>${b}</td>
+        </tr>`;
+      } else {
+        return `<tr>
+          <td>${ts}</td>
+          <td>${r['Fecha']||''}</td>
+          <td>${r['Horometro']||r['horometro']||'—'}</td>
+          <td>${r['Operador']||r['operador']||'—'}</td>
+          <td style="max-width:200px;font-size:11px;color:var(--ink-m)">${r['Observaciones']||r['observaciones']||'—'}</td>
+          <td ${mCls}>${m}</td><td ${rCls}>${reg}</td><td>${b}</td>
+        </tr>`;
+      }
+    }).join('');
+  }
+
+  // ── Tabla de observaciones ─────────────────────────────────
+  const obsRows = rows.filter(r => {
+    const obs = (r['Observaciones']||r['observaciones']||'').trim();
+    return obs !== '' && obs !== '—';
+  }).slice().reverse();
+
+  const obsContainerId = prefix + '-obs-card';
+  let obsCard = document.getElementById(obsContainerId);
+  if (!obsCard) {
+    // Crear card de observaciones justo después de la tabla principal
+    const mainCard = tbody.closest('.card');
+    if (mainCard) {
+      obsCard = document.createElement('div');
+      obsCard.id = obsContainerId;
+      obsCard.className = 'card';
+      obsCard.style.marginTop = '20px';
+      mainCard.parentNode.insertBefore(obsCard, mainCard.nextSibling);
     }
-  }).join('');
+  }
+  if (obsCard) {
+    if (obsRows.length === 0) {
+      obsCard.style.display = 'none';
+    } else {
+      obsCard.style.display = '';
+      const tipoLabel = tipo === 'vol' ? 'Volqueta' : tipo === 'car' ? 'Cargador' : 'Tractor';
+      const nameField = tipo === 'vol' ? 'Conductor' : 'Operador';
+      const idField   = tipo === 'vol' ? 'Placa' : 'Horometro';
+      const idLabel   = tipo === 'vol' ? 'Placa' : 'Horómetro';
+      obsCard.innerHTML = `
+        <div class="card-hdr">Observaciones y Hallazgos — ${tipoLabel} · ${periodoLbl} (${obsRows.length} registro${obsRows.length!==1?'s':''})</div>
+        <div style="overflow-x:auto">
+          <table class="tbl">
+            <thead><tr>
+              <th>Fecha</th>
+              <th>${nameField}</th>
+              <th>${idLabel}</th>
+              <th>Observaciones</th>
+              <th class="num">M</th>
+              <th class="num">R</th>
+              <th class="num">B</th>
+            </tr></thead>
+            <tbody>${obsRows.map(r => {
+              let b=0,reg=0,m=0;
+              allItems.forEach(c => { const v=r[c]||''; if(isBueno(v))b++; else if(isRegular(v))reg++; else if(isMalo(v))m++; });
+              const obs = (r['Observaciones']||r['observaciones']||'').trim();
+              const fecha = (r['Fecha']||r['fecha']||(r['Timestamp']||'').substring(0,10)||'').toString();
+              const quien = (r[nameField]||r[nameField.toLowerCase()]||'—');
+              const id    = (r[idField]||r[idField.toLowerCase()]||'—');
+              const mStyle = m > 0 ? 'color:var(--red);font-weight:700' : '';
+              const rStyle = reg > 0 ? 'color:#d4a017;font-weight:600' : '';
+              return `<tr>
+                <td>${fecha}</td>
+                <td class="bold">${quien}</td>
+                <td>${id}</td>
+                <td style="font-size:12px;color:var(--ink-m);max-width:340px;line-height:1.4">${obs}</td>
+                <td class="num" style="${mStyle}">${m}</td>
+                <td class="num" style="${rStyle}">${reg}</td>
+                <td class="num">${b}</td>
+              </tr>`;
+            }).join('')}</tbody>
+          </table>
+        </div>`;
+    }
+  }
 
   // Gráfico de pastel estado general (solo cargador y tractor)
   if (tipo !== 'vol') {
