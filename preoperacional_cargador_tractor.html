@@ -927,22 +927,63 @@ function buildMecanicoItems() {
 }
 
 // ── ENVIAR ───────────────────────────────────────────────────
+function mostrarError(el, mensaje) {
+  el.style.outline = '2.5px solid var(--bad)';
+  el.style.background = '#fff0f0';
+  let msg = el.parentNode.querySelector('.campo-error-msg');
+  if (!msg) {
+    msg = document.createElement('div');
+    msg.className = 'campo-error-msg';
+    msg.style.cssText = 'color:var(--bad);font-size:12px;margin-top:4px;font-weight:600';
+    el.parentNode.appendChild(msg);
+  }
+  msg.textContent = '⚠ ' + mensaje;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.focus();
+}
+function limpiarError(el) {
+  el.style.outline = '';
+  el.style.background = '';
+  const msg = el.parentNode.querySelector('.campo-error-msg');
+  if (msg) msg.remove();
+}
+
 async function submitForm() {
-  const fecha     = document.getElementById('fecha').value;
-  const horometro = document.getElementById('horometro').value.trim();
-  const operador  = document.getElementById('operador').value.trim();
+  const camposReq = [
+    { id: 'fecha',      nombre: 'Fecha de inspección' },
+    { id: 'horometro',  nombre: 'Horómetro actual' },
+    { id: 'operador',   nombre: 'Nombre del operador' },
+  ];
 
-  if (!fecha)     { alert('Por favor registre la fecha de inspección.'); return; }
-  if (!horometro) { alert('Por favor registre el horómetro actual.'); return; }
-  if (!operador)  { alert('Por favor registre el nombre de quien diligencia.'); return; }
+  // Limpiar errores previos
+  camposReq.forEach(({ id }) => { const el = document.getElementById(id); if (el) limpiarError(el); });
 
+  // Validar campos uno por uno — parar en el primero vacío
+  for (const { id, nombre } of camposReq) {
+    const el = document.getElementById(id);
+    if (!el || !el.value.trim()) {
+      mostrarError(el, `Por favor completa: ${nombre}`);
+      return;
+    }
+  }
+
+  // Validar radios — encontrar el primer grupo sin respuesta
   const groups = {};
+  const groupEl = {};
   document.querySelectorAll('input[type="radio"]').forEach(r => {
-    if (!groups[r.name]) groups[r.name] = false;
+    if (!groups[r.name]) { groups[r.name] = false; groupEl[r.name] = r; }
     if (r.checked) groups[r.name] = true;
   });
-  if (Object.values(groups).some(v => !v)) {
-    alert('Por favor responda todos los ítems de inspección.');
+  const primerSinRespuesta = Object.keys(groups).find(k => !groups[k]);
+  if (primerSinRespuesta) {
+    const elRadio = groupEl[primerSinRespuesta];
+    const label = elRadio.closest('.item-row, .check-item, tr, .row') || elRadio.parentNode;
+    label.style.outline = '2px solid var(--bad)';
+    label.style.borderRadius = '6px';
+    label.style.background = '#fff0f0';
+    setTimeout(() => { label.style.outline = ''; label.style.background = ''; }, 4000);
+    elRadio.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    alert(`⚠ Ítem sin responder: "${primerSinRespuesta}"\nPor favor selecciona una opción para continuar.`);
     return;
   }
 

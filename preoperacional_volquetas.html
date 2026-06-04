@@ -989,33 +989,75 @@ function resetForm() {
 }
 
 // ── ENVIAR ───────────────────────────────────────────────────
+function mostrarError(el, mensaje) {
+  el.style.outline = '2.5px solid var(--bad)';
+  el.style.background = '#fff0f0';
+  // Mensaje inline bajo el campo
+  let msg = el.parentNode.querySelector('.campo-error-msg');
+  if (!msg) {
+    msg = document.createElement('div');
+    msg.className = 'campo-error-msg';
+    msg.style.cssText = 'color:var(--bad);font-size:12px;margin-top:4px;font-weight:600';
+    el.parentNode.appendChild(msg);
+  }
+  msg.textContent = '⚠ ' + mensaje;
+  // Scroll suave hacia el campo
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.focus();
+}
+function limpiarError(el) {
+  el.style.outline = '';
+  el.style.background = '';
+  const msg = el.parentNode.querySelector('.campo-error-msg');
+  if (msg) msg.remove();
+}
+
 async function submitForm() {
   const camposReq = [
-    { id: 'fecha',      nombre: 'Fecha' },
-    { id: 'placa',      nombre: 'Placa' },
-    { id: 'km',         nombre: 'Kilometraje' },
-    { id: 'conductor',  nombre: 'Conductor' },
-    { id: 'diligencia', nombre: 'Diligencia' },
+    { id: 'fecha',      nombre: 'Fecha de inspección' },
+    { id: 'placa',      nombre: 'Placa del vehículo' },
+    { id: 'km',         nombre: 'Kilometraje actual' },
+    { id: 'conductor',  nombre: 'Nombre del conductor' },
+    { id: 'diligencia', nombre: 'Quien diligencia' },
   ];
-  let missing = false;
-  camposReq.forEach(({ id }) => {
+
+  // Limpiar errores previos
+  camposReq.forEach(({ id }) => { const el = document.getElementById(id); if (el) limpiarError(el); });
+
+  // Validar campos uno por uno — parar en el primero vacío
+  for (const { id, nombre } of camposReq) {
     const el = document.getElementById(id);
     if (!el || !el.value.trim()) {
-      if (el) el.style.outline = '2px solid var(--bad)';
-      missing = true;
-    } else { el.style.outline = ''; }
-  });
+      mostrarError(el, `Por favor completa: ${nombre}`);
+      return;
+    }
+  }
 
+  // Validar radios — encontrar el primer grupo sin respuesta
   const groups = {};
+  const groupEl = {};
   document.querySelectorAll('input[type="radio"]').forEach(r => {
-    if (!groups[r.name]) groups[r.name] = false;
+    if (!groups[r.name]) { groups[r.name] = false; groupEl[r.name] = r; }
     if (r.checked) groups[r.name] = true;
   });
-  if (Object.values(groups).some(v => !v)) {
-    alert('Por favor responda todos los ítems de inspección.');
+  const primerSinRespuesta = Object.keys(groups).find(k => !groups[k]);
+  if (primerSinRespuesta) {
+    const elRadio = groupEl[primerSinRespuesta];
+    const label = elRadio.closest('.item-row, .check-item, tr, .row') || elRadio.parentNode;
+    // Resaltar la fila
+    label.style.outline = '2px solid var(--bad)';
+    label.style.borderRadius = '6px';
+    label.style.background = '#fff0f0';
+    setTimeout(() => { label.style.outline = ''; label.style.background = ''; }, 4000);
+    elRadio.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // Mostrar toast de error
+    const toast = document.getElementById('toast');
+    toast.textContent = `⚠ Ítem sin responder: "${primerSinRespuesta}" — por favor selecciona una opción.`;
+    toast.style.background = 'var(--bad)';
+    toast.style.display = 'block';
+    setTimeout(() => { toast.style.display = 'none'; toast.style.background = ''; }, 5000);
     return;
   }
-  if (missing) return;
 
   const radioValues = {};
   document.querySelectorAll('input[type="radio"]:checked').forEach(r => {
