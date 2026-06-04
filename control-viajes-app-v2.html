@@ -252,6 +252,15 @@ self.addEventListener('fetch',e=>{
       font-size:13px;color:#5a4a00;display:flex;align-items:flex-start;gap:10px;}
     .geo-banner-icon{font-size:20px;flex-shrink:0;margin-top:1px;}
     .geo-banner b{display:block;font-size:14px;margin-bottom:3px;}
+    .btn-geo-retry{margin-top:8px;background:#5a4a00;color:#fff;border:none;
+      border-radius:8px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer;}
+    .pulso-geo-retry{font-size:11px;color:var(--azul);text-decoration:underline;
+      cursor:pointer;margin-top:2px;display:none;}
+    .pulso-geo.err ~ .pulso-geo-retry, .pulso-geo-retry.visible{display:block;}
+    .btn-retomar{background:var(--dorado);color:var(--verde-oscuro);
+      border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:800;
+      cursor:pointer;margin-top:8px;width:100%;transition:transform 0.1s;}
+    .btn-retomar:active{transform:scale(0.97);}
 
     /* ── CARGA ── */
     .paladas-wrap{display:flex;flex-direction:column;align-items:center;gap:28px;padding:24px 0;}
@@ -396,7 +405,11 @@ self.addEventListener('fetch',e=>{
 
     <div class="geo-banner" id="geoBannerPulsazos" style="display:none">
       <div class="geo-banner-icon">📍</div>
-      <div><b>Geolocalización no disponible</b>Activa el GPS del dispositivo para registrar tu ubicación en cada evento.</div>
+      <div>
+        <b>Geolocalización no disponible</b>
+        Activa el GPS del dispositivo para registrar tu ubicación en cada evento.
+        <br><button class="btn-geo-retry" onclick="pedirPermisoGeo()">🔄 Intentar de nuevo</button>
+      </div>
     </div>
 
     <div class="cronometro" id="cronometroBox" style="display:none">
@@ -411,6 +424,7 @@ self.addEventListener('fetch',e=>{
           <div class="pulso-nombre">Cargando</div>
           <div class="pulso-hora" id="hora1">Toca para registrar</div>
           <div class="pulso-geo"  id="geo1"></div>
+          <div class="pulso-geo-retry" id="retry1" onclick="reintentarGeo(1,event)">📍 Reintentar GPS</div>
         </div>
         <div class="pulso-check" id="check1"></div>
         <div class="ps-badge" id="ps1"></div>
@@ -421,6 +435,7 @@ self.addEventListener('fetch',e=>{
           <div class="pulso-nombre">En camino</div>
           <div class="pulso-hora" id="hora2">Esperando paso anterior</div>
           <div class="pulso-geo"  id="geo2"></div>
+          <div class="pulso-geo-retry" id="retry2" onclick="reintentarGeo(2,event)">📍 Reintentar GPS</div>
         </div>
         <div class="pulso-check" id="check2"></div>
         <div class="ps-badge" id="ps2"></div>
@@ -431,6 +446,7 @@ self.addEventListener('fetch',e=>{
           <div class="pulso-nombre">Descargando</div>
           <div class="pulso-hora" id="hora3">Esperando paso anterior</div>
           <div class="pulso-geo"  id="geo3"></div>
+          <div class="pulso-geo-retry" id="retry3" onclick="reintentarGeo(3,event)">📍 Reintentar GPS</div>
         </div>
         <div class="pulso-check" id="check3"></div>
         <div class="ps-badge" id="ps3"></div>
@@ -441,6 +457,7 @@ self.addEventListener('fetch',e=>{
           <div class="pulso-nombre">Completado</div>
           <div class="pulso-hora" id="hora4">Esperando paso anterior</div>
           <div class="pulso-geo"  id="geo4"></div>
+          <div class="pulso-geo-retry" id="retry4" onclick="reintentarGeo(4,event)">📍 Reintentar GPS</div>
         </div>
         <div class="pulso-check" id="check4"></div>
         <div class="ps-badge" id="ps4"></div>
@@ -735,6 +752,8 @@ function renderViajesHoy(viajes) {
     const pulsos = [v.T1_Cargando,v.T2_EnCamino,v.T3_Descargando,v.T4_Completado].filter(Boolean).length;
     const [bTxt,bCls] = pulsos===4 ? ["Completo","badge-completo"] : pulsos>0 ? [pulsos+"/4 pulsos","badge-parcial"] : ["Sin pulsos","badge-pendiente"];
     const [sTxt,sCls] = (v.sincronizado||v._servidor) ? ["✓ Sincronizado","sync-ok"] : ["⏳ Pendiente","sync-pend"];
+    // Viaje retomable: tiene al menos T1 pero no T4, y es local (tiene idLocal en IDB)
+    const esRetomable = pulsos > 0 && pulsos < 4 && !v._servidor;
     return `
     <div class="viaje-card">
       <div class="viaje-card-top">
@@ -748,6 +767,7 @@ function renderViajesHoy(viajes) {
         ${v.nivelCarga ? " · "+v.nivelCarga : ""}
       </div>
       <span class="viaje-card-sync ${sCls}">${sTxt}</span>
+      ${esRetomable ? `<br><button class="btn-retomar" onclick="retomarViaje('${v.idLocal}')">▶ Retomar viaje (${pulsos}/4 pulsos)</button>` : ""}
     </div>`;
   }).join("");
 }
@@ -1126,6 +1146,82 @@ async function finalizarViaje() {
 }
 
 // ════════════════════════════════════════════════════════════════
+//  RETOMAR VIAJE
+// ════════════════════════════════════════════════════════════════
+async function retomarViaje(idLocal) {
+  mostrarLoading();
+  try {
+    const v = await idb.get("viajes", idLocal);
+    if (!v) { mostrarToast("No se encontró el viaje", "error"); return; }
+    viajeActual = { ...v };
+
+    document.getElementById("headerTitle").textContent    = "Viaje en curso";
+    document.getElementById("headerSubtitle").textContent = viajeActual.tractor || "";
+    document.querySelectorAll(".screen").forEach(s=>s.classList.remove("activa"));
+    document.getElementById("screenPulsazos").classList.add("activa");
+
+    // Restaurar UI de pulsos según el estado guardado
+    const claves = ["","T1_Cargando","T2_EnCamino","T3_Descargando","T4_Completado"];
+    const geos   = ["","geo_T1","geo_T2","geo_T3","geo_T4"];
+    let ultimoCompletado = 0;
+
+    [1,2,3,4].forEach(n => {
+      const btn  = document.getElementById("btn"+n);
+      const hora = viajeActual[claves[n]];
+      btn.classList.remove("completado","pendiente");
+
+      if (hora) {
+        // Pulso ya registrado
+        ultimoCompletado = n;
+        btn.classList.add("completado");
+        document.getElementById("check"+n).textContent = "✓";
+        document.getElementById("hora"+n).textContent  =
+          new Date(hora).toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+        // Restaurar geo
+        const geo = viajeActual[geos[n]];
+        mostrarGeoPulso(n, geo || null);
+        // Mostrar retry si no hay geo
+        const retryEl = document.getElementById("retry"+n);
+        if (retryEl) retryEl.classList.toggle("visible", !geo);
+      } else if (n === ultimoCompletado + 1) {
+        // Siguiente pulso disponible
+        document.getElementById("hora"+n).textContent = "Toca para registrar";
+        document.getElementById("check"+n).textContent = "";
+        document.getElementById("geo"+n).textContent  = "";
+      } else {
+        // Pulsos futuros bloqueados
+        btn.classList.add("pendiente");
+        document.getElementById("hora"+n).textContent  = "Esperando paso anterior";
+        document.getElementById("check"+n).textContent = "";
+        document.getElementById("geo"+n).textContent   = "";
+      }
+      // Limpiar badge de sync
+      const ps = document.getElementById("ps"+n);
+      if (ps) { ps.className="ps-badge"; ps.textContent=""; }
+    });
+
+    // Cronómetro si T1 está pero T4 no
+    document.getElementById("cronometroBox").style.display = "none";
+    if (cronInterval) clearInterval(cronInterval);
+    if (viajeActual.T1_Cargando && !viajeActual.T4_Completado) {
+      document.getElementById("cronometroBox").style.display = "block";
+      actualizarCronometro();
+      cronInterval = setInterval(actualizarCronometro, 1000);
+    }
+
+    document.getElementById("viajeResumen").innerHTML =
+      `<strong>${viajeActual.tractor}</strong> &nbsp;|&nbsp; `+
+      `${viajeActual.frenteOrigen} → ${viajeActual.frenteDestino}<br>`+
+      `Capacidad: <strong>${viajeActual.capacidadTon} ton</strong> &nbsp;·&nbsp; `+
+      `<span style="color:var(--dorado);font-weight:700">Retomando viaje</span>`;
+
+    iniciarGeo();
+    mostrarToast("Viaje retomado — continúa desde el pulso pendiente","info");
+  } catch(e) {
+    mostrarToast("Error al retomar el viaje","error");
+  } finally { ocultarLoading(); }
+}
+// ════════════════════════════════════════════════════════════════
 //  GEOLOCALIZACIÓN
 // ════════════════════════════════════════════════════════════════
 function obtenerGeo() {
@@ -1141,8 +1237,54 @@ function obtenerGeo() {
 
 function mostrarGeoPulso(n,geo){
   const el=document.getElementById("geo"+n); if(!el)return;
-  if(geo){el.className="pulso-geo ok";el.textContent=`📍 ${geo.lat}, ${geo.lng}  ±${geo.acc}m`;}
-  else   {el.className="pulso-geo err";el.textContent=geoPermiso==="denied"?"📍 GPS denegado":"📍 GPS no disponible";}
+  const retryEl=document.getElementById("retry"+n);
+  if(geo){
+    el.className="pulso-geo ok";
+    el.textContent=`📍 ${geo.lat}, ${geo.lng}  ±${geo.acc}m`;
+    if(retryEl) retryEl.classList.remove("visible");
+  } else {
+    el.className="pulso-geo err";
+    el.textContent=geoPermiso==="denied"?"📍 GPS denegado":"📍 GPS no disponible";
+    if(retryEl) retryEl.classList.add("visible");
+  }
+}
+
+async function reintentarGeo(n, event) {
+  if(event) event.stopPropagation();
+  const geoKey=["","geo_T1","geo_T2","geo_T3","geo_T4"][n];
+  const geoEl=document.getElementById("geo"+n);
+  const retryEl=document.getElementById("retry"+n);
+  if(geoEl){geoEl.className="pulso-geo wait";geoEl.textContent="📍 Obteniendo...";}
+  if(retryEl) retryEl.classList.remove("visible");
+  const geo=await obtenerGeo();
+  if(geo){
+    viajeActual[geoKey]=geo;
+    mostrarGeoPulso(n,geo);
+    await idb.put("viajes",{...viajeActual});
+    const claveT=["","T1_Cargando","T2_EnCamino","T3_Descargando","T4_Completado"][n];
+    const idCola=await encolarPulso(n,viajeActual[claveT]||new Date().toISOString());
+    if(navigator.onLine) enviarDesdeCola(idCola,n);
+    mostrarToast("📍 Ubicación actualizada","exito");
+  } else {
+    mostrarGeoPulso(n,null);
+    mostrarToast("No se pudo obtener GPS — intenta de nuevo","error");
+  }
+}
+
+async function pedirPermisoGeo() {
+  document.getElementById("geoBannerPulsazos").style.display="none";
+  const geo=await obtenerGeo();
+  if(geo){
+    mostrarToast("📍 GPS activado correctamente","exito");
+    const claves=["","T1_Cargando","T2_EnCamino","T3_Descargando","T4_Completado"];
+    const geos  =["","geo_T1","geo_T2","geo_T3","geo_T4"];
+    for(let n=1;n<=4;n++){
+      if(viajeActual[claves[n]]&&!viajeActual[geos[n]]) await reintentarGeo(n,null);
+    }
+  } else {
+    document.getElementById("geoBannerPulsazos").style.display="flex";
+    mostrarToast(geoPermiso==="denied"?"GPS bloqueado — revisa permisos del navegador":"GPS no disponible — intenta de nuevo","error");
+  }
 }
 
 async function iniciarGeo(){
@@ -1150,7 +1292,7 @@ async function iniciarGeo(){
   if(!navigator.geolocation){geoPermiso="unavailable";document.getElementById("geoBannerPulsazos").style.display="flex";return;}
   try{
     const r=await Promise.race([obtenerGeo(),new Promise(r=>setTimeout(()=>r("timeout"),GEO_TIMEOUT+500))]);
-    if(!r||r==="timeout")document.getElementById("geoBannerPulsazos").style.display="flex";
+    if(!r||r==="timeout") document.getElementById("geoBannerPulsazos").style.display="flex";
   }catch(e){document.getElementById("geoBannerPulsazos").style.display="flex";}
 }
 
