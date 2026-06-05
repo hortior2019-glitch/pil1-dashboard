@@ -69,7 +69,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 .clock{font-size:11px;color:rgba(255,255,255,.4)}
 .last-update{font-size:10px;color:rgba(255,255,255,.35);margin-top:2px}
 
-  
 /* NAV */
 .nav{background:var(--white);border-bottom:2px solid var(--rule);padding:0 24px;display:flex;overflow-x:auto;gap:0;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .nav::-webkit-scrollbar{display:none}
@@ -1569,7 +1568,7 @@ async function loadAllData() {
 
   try {
     dataPreopVol = await fetchCSV(SHEETS.preopVol);
-    renderPreop('vol', dataPreopVol);
+    renderPreop('vol', dataPreopVol, currentFilter);
     ok++;
   } catch(e) { errors.push('Preop Volquetas'); console.error('PreopVol:', e); }
 
@@ -1584,8 +1583,8 @@ async function loadAllData() {
       const t = (r['Tipo de Equipo'] || r['tipo de equipo'] || r['TIPO DE EQUIPO'] || '').toLowerCase().trim();
       return t === 'tractor';
     });
-    renderPreop('car', dataCargador);
-    renderPreop('tra', dataTractor);
+    renderPreop('car', dataCargador, currentFilter);
+    renderPreop('tra', dataTractor, currentFilter);
     ok++;
   } catch(e) { errors.push('Preop Cargador/Tractor'); console.error('PreopCar:', e); }
 
@@ -1662,10 +1661,15 @@ function setFilter(f, el) {
   renderSolicitudes(dataSolicitudes, f);
   renderClientes(dataIngreso, f);
   renderHE(dataHE, f);
-  renderKPI(dataIngreso);
-  renderOportunidades(dataIngreso);
+  renderKPI(dataIngreso.filter(r => inPeriod(getMarcaTemporal(r)||'', f)), f);
+  renderOportunidades(dataIngreso.filter(r => inPeriod(getMarcaTemporal(r)||'', f)), f);
   renderAccesos();
   renderViajes(dataViajes, f);
+  renderPreop('vol', dataPreopVol, f);
+  const dataCar = dataPreopCar.filter(r => { const t=(r['Tipo de Equipo']||'').toLowerCase().trim(); return t==='cargador'||t===''; });
+  const dataTra = dataPreopCar.filter(r => (r['Tipo de Equipo']||'').toLowerCase().trim()==='tractor');
+  renderPreop('car', dataCar, f);
+  renderPreop('tra', dataTra, f);
 }
 
 // ── RELOJ ─────────────────────────────────────────
@@ -2727,21 +2731,25 @@ function isRegular(v) { return ['regular','r'].includes((v||'').toLowerCase().tr
 function isBueno(v)   { return ['bueno','buena','b'].includes((v||'').toLowerCase().trim()); }
 function isNA(v)      { return ['n/a','no_aplica','na'].includes((v||'').toLowerCase().trim()); }
 
-function renderPreop(tipo, data) {
-  const prefix   = tipo === 'vol' ? 'vol' : tipo === 'tra' ? 'tra' : 'car';
+function renderPreop(tipo, data, filter) {
+  filter = filter || currentFilter;
+  const prefix    = tipo === 'vol' ? 'vol' : tipo === 'tra' ? 'tra' : 'car';
   const secciones = tipo === 'vol' ? PREOP_SECCIONES_VOL : PREOP_SECCIONES_CAR;
   const allItems  = Object.values(secciones).flat();
+  const periodoLbl = {hora:'Última hora',hoy:'Hoy',semana:'Esta semana',mes:'Este mes',total:'Total acumulado'}[filter] || filter;
 
-  // Filtrar por hoy
-  const hoy = new Date();
-  const hoyStr = hoy.getFullYear()+'-'+String(hoy.getMonth()+1).padStart(2,'0')+'-'+String(hoy.getDate()).padStart(2,'0');
+  // Actualizar subtítulo del periodo
+  const periodEl = document.getElementById(prefix+'-period');
+  if (periodEl) periodEl.textContent = periodoLbl;
 
-  const filtered = data.filter(r => {
-    const ts = (r['Timestamp'] || r['timestamp'] || '').toString();
-    const fe = (r['Fecha'] || r['fecha'] || '').toString();
-    return ts.startsWith(hoyStr) || fe === hoyStr || fe.startsWith(hoyStr);
+  // Filtrar usando parseDateTime igual que el resto del sistema
+  const filtered = filter === 'total' ? data : data.filter(r => {
+    const ts = (r['Timestamp'] || r['timestamp'] || '').toString().trim();
+    const fe = (r['Fecha']     || r['fecha']     || '').toString().trim();
+    const marca = ts || fe;
+    return inPeriod(marca, filter);
   });
-  const rows = filtered.length > 0 ? filtered : data; // si no hay hoy, mostrar todo
+  const rows = filtered;
 
   // KPIs globales
   let totalMalos = 0, totalReg = 0, totalBuenos = 0, totalItems = 0;
@@ -2824,13 +2832,14 @@ function renderPreop(tipo, data) {
 
   // Tabla detalle
   const tbody = document.getElementById('tbody-'+prefix);
-  if (rows.length === 0) { tbody.innerHTML='<tr><td colspan="8" class="empty">Sin registros</td></tr>'; return; }
-  tbody.innerHTML = rows.slice(0,50).map(r => {
+  if (rows.length === 0) { tbody.innerHTML='<tr><td colspan="9" class="empty">Sin registros en el periodo seleccionado</td></tr>'; return; }
+  tbody.innerHTML = rows.slice().reverse().slice(0,50).map(r => {
     let b=0,reg=0,m=0;
     allItems.forEach(c => { const v=r[c]||''; if(isBueno(v))b++; else if(isRegular(v))reg++; else if(isMalo(v))m++; });
     const ts   = (r['Timestamp']||'').toString().substring(0,19).replace('T',' ');
     const mCls = m > 0 ? 'style="color:var(--red);font-weight:700"' : '';
     const rCls = reg > 0 ? 'style="color:#d4a017;font-weight:600"' : '';
+    const obs  = (r['Observaciones']||r['observaciones']||'').trim();
     if (tipo === 'vol') {
       return `<tr>
         <td>${ts}</td>
@@ -2838,6 +2847,7 @@ function renderPreop(tipo, data) {
         <td><strong>${r['Placa']||r['placa']||'—'}</strong></td>
         <td>${r['Conductor']||r['conductor']||'—'}</td>
         <td>${r['Kilometraje']||r['km']||'—'}</td>
+        <td style="font-size:11px;color:var(--ink-m);white-space:normal;word-break:break-word;min-width:140px;max-width:260px">${obs||'—'}</td>
         <td ${mCls}>${m}</td><td ${rCls}>${reg}</td><td>${b}</td>
       </tr>`;
     } else {
@@ -2846,7 +2856,7 @@ function renderPreop(tipo, data) {
         <td>${r['Fecha']||''}</td>
         <td>${r['Horometro']||r['horometro']||'—'}</td>
         <td>${r['Operador']||r['operador']||'—'}</td>
-        <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r['Observaciones']||r['observaciones']||''}</td>
+        <td style="font-size:11px;color:var(--ink-m);white-space:normal;word-break:break-word;min-width:140px;max-width:260px">${obs||'—'}</td>
         <td ${mCls}>${m}</td><td ${rCls}>${reg}</td><td>${b}</td>
       </tr>`;
     }
