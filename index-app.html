@@ -243,7 +243,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 <div id="dash-login" style="position:fixed;top:0;left:0;right:0;bottom:0;background:var(--navy);display:flex;align-items:center;justify-content:center;z-index:2000;flex-direction:column;padding:24px">
   <div style="background:var(--white);width:100%;max-width:360px;padding:36px 32px">
     <div style="text-align:center;margin-bottom:16px">
-      <img src="logo.png" alt="Logo" style="width:90px;height:90px;object-fit:contain">
+      <img src="logo.png" alt="Logo" style="width:130px;height:130px;object-fit:contain">
     </div>
     <div style="font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:var(--navy);margin-bottom:4px;text-align:center">Horti Organic</div>
     <div style="font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--ink-l);margin-bottom:28px;text-align:center">Sistema de Analítica & Business Intelligence</div>
@@ -271,7 +271,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
       style="width:100%;padding:12px;background:var(--navy);color:white;border:none;font-family:'Source Sans 3',sans-serif;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;cursor:pointer">
       Ingresar
     </button>
-    <div id="dash-login-error" style="display:none;margin-top:12px;padding:10px 12px;background:#f5e8e8;color:#8b1a1a;font-size:12px;font-weight:600;text-align:center"></div>
+    <div id="dash-login-error" style="display:none;margin-top:12px;padding:10px 12px;background:#fef9c3;color:#92400e;font-size:12px;font-weight:600;text-align:center;border:1px solid #fde68a"></div>
   </div>
 </div>
 
@@ -1286,7 +1286,7 @@ function intentarLoginDash() {
   }
 
   if (dashUsuariosDB.length === 0) {
-    errEl.textContent = 'Cargando datos, intente de nuevo...';
+    errEl.textContent = 'Verificando credenciales...';
     errEl.style.display = 'block';
     setTimeout(intentarLoginDash, 800);
     return;
@@ -2620,11 +2620,17 @@ function getResidueColor(nombre) {
     if (key === 'DEFAULT') continue;
     if (n.includes(key)) return color;
   }
-  // Fallback: hash determinístico para evitar repetir colores
-  const palette = ['#2563eb','#16a34a','#dc2626','#d97706','#7c3aed','#0891b2','#65a30d','#be123c','#0f766e','#9d174d','#0369a1','#4f46e5','#b45309','#166534','#854d0e'];
+  // Fallback: hash determinístico con paleta extendida y sin repetición en la gráfica actual
+  const fallbackPalette = [
+    '#2563eb','#16a34a','#dc2626','#d97706','#7c3aed','#0891b2','#65a30d',
+    '#be123c','#0f766e','#9d174d','#0369a1','#4f46e5','#b45309','#166534',
+    '#854d0e','#0e7490','#15803d','#b91c1c','#92400e','#4338ca','#c026d3',
+    '#ea580c','#0284c7','#6d28d9','#a21caf','#0c4a6e','#14532d','#7f1d1d',
+    '#422006','#1e1b4b',
+  ];
   let hash = 0;
   for (let i=0;i<nombre.length;i++) hash = (hash*31 + nombre.charCodeAt(i)) & 0xffffffff;
-  return palette[Math.abs(hash) % palette.length];
+  return fallbackPalette[Math.abs(hash) % fallbackPalette.length];
 }
 
 function renderChartClientes(data) {
@@ -2663,7 +2669,30 @@ function renderChartClientes(data) {
     });
     drawPie('chart-clientes-pie','legend-clientes-pie', sortedGrupos, coloresCliente, 'pct+count');
     drawPie('chart-peso-pie','legend-peso-pie', sortedPesos.map(([k,v])=>[k,Math.round(v)]), coloresPeso, 'pct+kg');
-    const coloresResiduos = sortedRes.map(([nombre]) => getResidueColor(nombre));
+    // Asignar colores únicos a residuos — sin repetir en la misma gráfica
+  const coloresResiduos = (() => {
+    const assigned = [];
+    const used = new Set();
+    for (const [nombre] of sortedRes) {
+      let color = getResidueColor(nombre);
+      // Si el color ya fue usado, buscar variante no usada
+      if (used.has(color)) {
+        const fallbackPalette2 = [
+          '#2563eb','#16a34a','#dc2626','#d97706','#7c3aed','#0891b2','#65a30d',
+          '#be123c','#0f766e','#9d174d','#0369a1','#4f46e5','#b45309','#166534',
+          '#854d0e','#0e7490','#15803d','#b91c1c','#92400e','#4338ca','#c026d3',
+          '#ea580c','#0284c7','#6d28d9','#a21caf','#0c4a6e','#14532d','#7f1d1d',
+          '#422006','#1e1b4b','#0f172a','#134e4a','#1c1917','#27272a',
+        ];
+        for (const alt of fallbackPalette2) {
+          if (!used.has(alt)) { color = alt; break; }
+        }
+      }
+      used.add(color);
+      assigned.push(color);
+    }
+    return assigned;
+  })();
     drawPie('chart-residuos-pie','legend-residuos-pie', sortedRes, coloresResiduos);
     drawBar('chart-dias-bar', Object.keys(diasCnt), Object.values(diasCnt), '#1a5c35');
   }, 250);
