@@ -834,18 +834,29 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
     </div>
   </div>
 
-  <div class="g2" style="margin-bottom:20px;">
-    <div class="card">
-      <div class="card-hdr">Distribución de residuos / materiales</div>
-      <div style="display:flex;flex-direction:column;align-items:center;gap:24px">
-        <canvas id="chart-residuos-pie" style="max-width:340px;width:100%"></canvas>
-        <div id="legend-residuos-pie" style="width:100%;display:flex;flex-direction:column;gap:8px"></div>
+  <!-- RESIDUOS: gráfica tipo pastel igual que clientes -->
+  <div class="card" style="margin-bottom:20px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:0 0 16px;border-bottom:1px solid var(--rule-l);flex-wrap:wrap;gap:12px">
+      <div>
+        <div style="font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px">Distribución por material</div>
+        <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink)">Residuos y materiales ingresados</div>
       </div>
     </div>
-    <div class="card">
-      <div class="card-hdr">Ingresos por día de la semana</div>
-      <canvas id="chart-dias-bar" width="100%" height="240"></canvas>
+    <div style="display:flex;gap:32px;align-items:flex-start;flex-wrap:wrap;padding-top:20px">
+      <canvas id="chart-residuos-pie" style="width:300px;height:300px;flex-shrink:0"></canvas>
+      <div style="flex:1;min-width:240px">
+        <div id="legend-residuos-pie" style="display:flex;flex-direction:column;gap:0"></div>
+      </div>
     </div>
+  </div>
+
+  <!-- DIAS: gráfica de barras full width y más alta -->
+  <div class="card" style="margin-bottom:20px;">
+    <div style="padding:0 0 16px;border-bottom:1px solid var(--rule-l);margin-bottom:20px">
+      <div style="font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px">Distribución semanal</div>
+      <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink)">Ingresos por día de la semana</div>
+    </div>
+    <canvas id="chart-dias-bar" style="width:100%;display:block" height="280"></canvas>
   </div>
 
   <!-- Leyenda de colores -->
@@ -2247,13 +2258,17 @@ function renderClientes(data, filter) {
     const pct = Math.round((kg / maxKg) * 100);
     const color = getClientColor(op);
     const kgStr = kg >= 1000 ? (kg/1000).toFixed(1)+'T' : kg.toLocaleString('es-CO')+' kg';
-    return `<div style="display:flex;flex-direction:column;gap:5px">
-      <div style="display:flex;justify-content:space-between;align-items:baseline">
-        <span style="font-family:'Playfair Display',serif;font-size:16px;font-weight:700;color:var(--ink)">${op}</span>
-        <span style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:${color}">${kgStr}</span>
+    const kgLogo = getClientLogo(op);
+    return `<div style="display:flex;flex-direction:column;gap:6px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0">
+          ${kgLogo ? `<img src="${kgLogo}" style="width:48px;height:48px;object-fit:contain;flex-shrink:0" onerror="this.style.display='none'">` : `<div style="width:12px;height:12px;border-radius:50%;background:${color};flex-shrink:0"></div>`}
+          <span style="font-family:'Playfair Display',serif;font-size:16px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${op}</span>
+        </div>
+        <span style="font-family:'Libre Baskerville',serif;font-size:22px;font-weight:700;color:${color};flex-shrink:0;font-variant-numeric:lining-nums tabular-nums">${kgStr}</span>
       </div>
-      <div style="background:var(--rule-l);border-radius:3px;height:18px;overflow:hidden">
-        <div style="width:${pct}%;height:100%;background:${color};border-radius:3px;transition:width .5s ease"></div>
+      <div style="background:var(--rule-l);border-radius:2px;height:14px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:${color};border-radius:2px;transition:width .5s ease"></div>
       </div>
     </div>`;
   }).join('') || '<div style="font-size:11px;color:var(--ink-l);padding:8px">Sin datos</div>';
@@ -2520,9 +2535,9 @@ function drawBar(canvasId, labels, values, color) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  const W = canvas.offsetWidth || 400;
+  const W = canvas.parentElement?.offsetWidth || canvas.offsetWidth || 800;
   canvas.width = W;
-  const H = 180;
+  const H = 280;
   canvas.height = H;
   ctx.clearRect(0,0,W,H);
 
@@ -2530,7 +2545,7 @@ function drawBar(canvasId, labels, values, color) {
   const chartW = W - pad.left - pad.right;
   const chartH = H - pad.top - pad.bottom;
   const max = Math.max(...values, 1);
-  const barW = chartW / labels.length * 0.6;
+  const barW = chartW / labels.length * 0.55;
   const gap  = chartW / labels.length;
 
   // Lineas guia
@@ -2538,9 +2553,9 @@ function drawBar(canvasId, labels, values, color) {
   [0.25,0.5,0.75,1].forEach(f => {
     const y = pad.top + chartH * (1-f);
     ctx.beginPath(); ctx.moveTo(pad.left,y); ctx.lineTo(W-pad.right,y); ctx.stroke();
-    ctx.fillStyle='#8a8a8a'; ctx.font='9px Source Sans 3';
+    ctx.fillStyle='#8a8a8a'; ctx.font='11px Source Sans 3';
     ctx.textAlign='right';
-    ctx.fillText(Math.round(max*f), pad.left-4, y+3);
+    ctx.fillText(Math.round(max*f), pad.left-4, y+4);
   });
 
   // Barras
@@ -2548,15 +2563,22 @@ function drawBar(canvasId, labels, values, color) {
     const x = pad.left + gap*i + (gap-barW)/2;
     const barH = (values[i]/max) * chartH;
     const y = pad.top + chartH - barH;
-    ctx.fillStyle = color;
-    ctx.fillRect(x, y, barW, barH);
-    // Label
-    ctx.fillStyle='#4a4a4a'; ctx.font='10px Source Sans 3';
+    // Gradiente suave
+    const grad = ctx.createLinearGradient(x, y, x, y+barH);
+    grad.addColorStop(0, color);
+    grad.addColorStop(1, color+'99');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.roundRect(x, y, barW, barH, [4,4,0,0]);
+    ctx.fill();
+    // Label día
+    ctx.fillStyle='#4a4a4a'; ctx.font='bold 13px Source Sans 3';
     ctx.textAlign='center';
-    ctx.fillText(lbl, x+barW/2, H-pad.bottom+14);
+    ctx.fillText(lbl, x+barW/2, H-pad.bottom+16);
+    // Valor encima
     if (values[i] > 0) {
-      ctx.fillStyle='#1a1a1a'; ctx.font='bold 10px Source Sans 3';
-      ctx.fillText(values[i], x+barW/2, y-4);
+      ctx.fillStyle='#1a1a1a'; ctx.font='bold 14px Source Sans 3';
+      ctx.fillText(values[i], x+barW/2, y-6);
     }
   });
 }
