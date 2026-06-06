@@ -1640,7 +1640,7 @@ function renderIngreso(data, filter) {
   const placas = new Set(filtered.map(r => r['PLACA']).filter(Boolean));
   const conductores = new Set(filtered.map(r => r['CONDUCTOR - PRIME NOMBRE Y PRIMER APELLIDO'] || r['CONDUCTOR'] || '').filter(Boolean));
   const residuos = new Set(filtered.map(r => r['RESIDUO']).filter(Boolean));
-  const ops = new Set(filtered.map(r => r['OPERACION']).filter(Boolean));
+  const ops = new Set(filtered.map(r => normEmpresa(r['OPERACION'])).filter(Boolean));
 
   let pesoE = 0, pesoS = 0, tiqOk = 0, condOk = 0;
   filtered.forEach(r => {
@@ -1703,7 +1703,7 @@ function renderIngreso(data, filter) {
       <td class="bold">${tiq}</td>
       <td>${r['PLACA']||'—'}</td>
       <td>${r['CONDUCTOR - PRIME NOMBRE Y PRIMER APELLIDO']||r['CONDUCTOR']||'—'}</td>
-      <td>${r['OPERACION']||'—'}</td>
+      <td>${normEmpresa(r['OPERACION'])||'—'}</td>
       <td>${r['RESIDUO']||'—'}</td>
       <td class="num">${pe>0?fmt(pe)+' kg':'—'}</td>
       <td class="num">${ps>0?fmt(ps)+' kg':'—'}</td>
@@ -1802,9 +1802,7 @@ const OPS_ACCENT = ['var(--navy)','var(--green)','var(--gold)','var(--blue)','#7
 
 function renderOps(ops) {
   // Cruzar con dataIngreso para obtener viajes y peso por operación
-  const normOp = s => (s||'').toString().toUpperCase().trim()
-    .replace(/\bSAS\b|\bS\.A\.S\b|[.,]/g,'').replace(/\s+/g,' ').trim()
-    .replace(/PRODENZA/g,'PRODENSA').replace(/SOFTYES/g,'SOFTYS').replace(/ALQUERIA CV/g,'ALQUERIA');
+  const normOp = normEmpresa;
 
   const conteos = {};
   (dataIngreso||[]).forEach(r => {
@@ -2090,6 +2088,34 @@ setInterval(()=>{
 },1000);
 
 // ── COLORES POR CLIENTE ───────────────────────────
+// ── NORMALIZACIÓN CENTRAL DE NOMBRES DE EMPRESA ──
+// Única fuente de verdad — usar en TODAS las partes del código
+function normEmpresa(s) {
+  if (!s) return '';
+  let r = s.toString().trim()
+    // Quitar sufijos legales
+    .replace(/\b(SAS|S\.A\.S|S\.A|LTDA|SA)\b/gi, '')
+    .replace(/[.,]/g, '')
+    .replace(/\s+/g, ' ').trim();
+  // Capitalizar cada palabra
+  r = r.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  // Correcciones ortográficas conocidas
+  r = r
+    .replace(/Prodenza/gi,      'Prodensa')
+    .replace(/Softyes/gi,       'Softys')
+    .replace(/Alqueria Cv/gi,   'Alqueria')
+    .replace(/Alquería Cv/gi,   'Alqueria')
+    .replace(/Mc\s*Cain/gi,     'McCain')
+    .replace(/Ab\s*Inbev/gi,    'Ab Inbev')
+    .replace(/Emsersopo/gi,     'Emsersopo')
+    .replace(/Emsertenjo/gi,    'Emsertenjo')
+    .replace(/Recreo/gi,        'Recreo')
+    .replace(/3\s*R\b/gi,       '3R')
+    .replace(/Pepsico/gi,       'Pepsico')
+    .replace(/Pepsi\b/gi,       'Pepsico');
+  return r;
+}
+
 const CLIENT_COLORS = {
   "3R":           "#2563EB",  // azul eléctrico
   "ALPINA":       "#0891B2",  // cian profundo
@@ -2200,7 +2226,7 @@ function renderClientesFiltro() {
 function poblarSelectOperaciones(data) {
   const sel = document.getElementById('cli-operacion');
   const current = sel.value;
-  const normOp3 = s => {if(!s)return'';let r=s.trim().toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());r=r.replace(/Prodenza/gi,'Prodensa').replace(/Softyes/gi,'Softys').replace(/Alqueria Cv/g,'Alqueria');return r;};
+  const normOp3 = normEmpresa;
   const ops = [...new Set(data.map(r => normOp3(r['OPERACION'] || '')).filter(Boolean))].sort();
   sel.innerHTML = '<option value="">Todas las operaciones</option>' +
     ops.map(op => `<option value="${op}"${op===current?' selected':''}>${op}</option>`).join('');
@@ -2257,7 +2283,7 @@ function renderClientes(data, filter) {
   }
 
   if (opFiltro) {
-    const normOp4 = s => {if(!s)return'';let r=s.trim().toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());r=r.replace(/Prodenza/gi,'Prodensa').replace(/Softyes/gi,'Softys').replace(/Alqueria Cv/g,'Alqueria');return r;};
+    const normOp4 = normEmpresa;
     filtered = filtered.filter(r => normOp4(r['OPERACION'] || '') === opFiltro);
   }
 
@@ -2276,13 +2302,7 @@ function renderClientes(data, filter) {
   document.getElementById('clientes-period').textContent = lbl;
 
   // Helper normalizar operacion
-  const normOp = s => {
-    if (!s) return '';
-    let r = s.trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
-    // Normalizar ortografía
-    r = r.replace(/Prodenza/gi, 'Prodensa').replace(/Softyes/gi, 'Softys');
-    return r;
-  };
+  const normOp = normEmpresa;
   const getOp  = r => normOp(r['OPERACION'] || r['Operacion'] || r['operacion'] || r['OPERACIÓN'] || '');
 
   // Agrupar por operacion
@@ -2825,7 +2845,7 @@ function renderChartClientes(data) {
   const diasCnt = {'Dom':0,'Lun':0,'Mar':0,'Mie':0,'Jue':0,'Vie':0,'Sab':0};
   const diasNombres = ['Dom','Lun','Mar','Mie','Jue','Vie','Sab'];
 
-  const normOp2 = s => {if(!s)return'';let r=s.trim().toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());r=r.replace(/Prodenza/gi,'Prodensa').replace(/Softyes/gi,'Softys').replace(/Alqueria Cv/g,'Alqueria');return r;};
+  const normOp2 = normEmpresa;
   const getOp   = r => normOp2(r['OPERACION'] || r['Operacion'] || r['operacion'] || r['OPERACIÓN'] || r['L'] || '');
 
   data.forEach(r => {
@@ -3075,7 +3095,7 @@ const OPERARIOS_DEF = [
 
 function renderKPI(data) {
   const total = data.length;
-  const ops   = new Set(data.map(r=>r['OPERACION']).filter(Boolean));
+  const ops   = new Set(data.map(r=>normEmpresa(r['OPERACION'])).filter(Boolean));
   const vehs  = new Set(data.map(r=>r['PLACA']).filter(Boolean));
   let pesoTotal = 0, tiqOkTotal = 0, alertTotal = 0, ahtTotal = [];
 
@@ -3156,7 +3176,7 @@ function renderKPI(data) {
 
     // Operaciones del operario
     const opsOp = {};
-    filas.forEach(r => { const o = r['OPERACION']||'Sin op'; opsOp[o]=(opsOp[o]||0)+1; });
+    filas.forEach(r => { const o = normEmpresa(r['OPERACION'])||'Sin op'; opsOp[o]=(opsOp[o]||0)+1; });
     const topOps = Object.entries(opsOp).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k,v])=>k+' ('+v+')').join(' · ');
 
     const tiqColor = pctTiq===100?'var(--green)':pctTiq>=80?'var(--gold)':'var(--red)';
@@ -3179,7 +3199,7 @@ function renderKPI(data) {
         <td style="padding:6px 8px;border-bottom:1px solid var(--rule-l);font-size:11px">${hora}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--rule-l);font-size:11px;font-weight:600">${r['NUMERO TIQUETE']||'—'}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--rule-l);font-size:11px">${r['PLACA']||'—'}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid var(--rule-l);font-size:11px">${r['OPERACION']||'—'}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--rule-l);font-size:11px">${normEmpresa(r['OPERACION'])||'—'}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--rule-l);font-size:11px;text-align:right;font-weight:600;color:var(--navy)">${neto>0?Math.round(neto).toLocaleString('es-CO')+' kg':'—'}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--rule-l);font-size:11px;text-align:right;color:var(--gold);font-weight:600">${ahtStr}</td>
       </tr>`;
@@ -3304,7 +3324,7 @@ function renderOportunidades(data) {
 
   // 9. Operacion con mas registros
   const porOp = {};
-  data.forEach(r => { const o=r['OPERACION']||''; if(o) porOp[o]=(porOp[o]||0)+1; });
+  data.forEach(r => { const o=normEmpresa(r['OPERACION']); if(o) porOp[o]=(porOp[o]||0)+1; });
   const topOp = Object.entries(porOp).sort((a,b)=>b[1]-a[1])[0];
 
   // 10. Flota interna vs tercera
