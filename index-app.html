@@ -606,10 +606,56 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 <!-- PANEL: OPERACIONES -->
 <!-- ═══════════════════════════════════ -->
 <div class="panel" id="panel-operaciones">
-  <div class="sec-hdr"><div class="sec-title">Operaciones por Cliente</div><div class="sec-sub">Materiales aceptados</div></div>
-  <input type="text" id="ops-search" placeholder="Buscar cliente u operacion..." oninput="filterOps(this.value)"
-    style="width:100%;padding:10px 16px;font-size:13px;font-family:'Source Sans 3',sans-serif;border:1px solid var(--rule);background:var(--bg);color:var(--ink);margin-bottom:16px;outline:none">
-  <div class="card" style="padding:0;overflow:hidden"><div id="ops-table"></div></div>
+
+  <!-- Hero header con logo grande -->
+  <div style="background:var(--navy);border-radius:4px;padding:48px 56px;margin-bottom:28px;position:relative;overflow:hidden;display:flex;align-items:center;gap:48px">
+    <!-- Círculos decorativos -->
+    <div style="position:absolute;right:-60px;top:-60px;width:280px;height:280px;border-radius:50%;background:rgba(255,255,255,.04);pointer-events:none"></div>
+    <div style="position:absolute;right:80px;bottom:-80px;width:200px;height:200px;border-radius:50%;background:rgba(255,255,255,.03);pointer-events:none"></div>
+    <div style="position:absolute;left:56px;bottom:0;width:3px;height:100%;background:linear-gradient(180deg,transparent,var(--gold),transparent);pointer-events:none"></div>
+    <!-- Logo / marca -->
+    <div style="flex-shrink:0;z-index:1">
+      <div style="font-family:'Playfair Display',serif;font-size:52px;font-weight:700;color:white;line-height:1;letter-spacing:-2px">Horti<span style="color:var(--gold)">.</span></div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,.5);margin-top:6px">Organic S.A.S</div>
+    </div>
+    <!-- Separador -->
+    <div style="width:1px;height:80px;background:rgba(255,255,255,.15);flex-shrink:0;z-index:1"></div>
+    <!-- Texto -->
+    <div style="z-index:1">
+      <div style="font-size:10px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:var(--gold);margin-bottom:10px">Mapa de Operaciones</div>
+      <div style="font-family:'Playfair Display',serif;font-size:26px;font-weight:600;color:white;line-height:1.3;margin-bottom:8px">Clientes activos y<br>operaciones por participación</div>
+      <div style="font-size:12px;color:rgba(255,255,255,.5);font-weight:300">Ranking dinámico · Actualizado con los datos del periodo seleccionado</div>
+    </div>
+    <!-- KPIs rápidos en el hero -->
+    <div style="margin-left:auto;display:flex;gap:32px;z-index:1;flex-shrink:0">
+      <div style="text-align:center">
+        <div style="font-family:'Playfair Display',serif;font-size:36px;font-weight:700;color:white;line-height:1" id="ops-hero-clientes">—</div>
+        <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.45);margin-top:6px">Operaciones</div>
+      </div>
+      <div style="width:1px;background:rgba(255,255,255,.1)"></div>
+      <div style="text-align:center">
+        <div style="font-family:'Playfair Display',serif;font-size:36px;font-weight:700;color:var(--gold);line-height:1" id="ops-hero-viajes">—</div>
+        <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.45);margin-top:6px">Viajes</div>
+      </div>
+      <div style="width:1px;background:rgba(255,255,255,.1)"></div>
+      <div style="text-align:center">
+        <div style="font-family:'Playfair Display',serif;font-size:36px;font-weight:700;color:white;line-height:1" id="ops-hero-peso">—</div>
+        <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.45);margin-top:6px">Toneladas</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Buscador -->
+  <div style="position:relative;margin-bottom:24px">
+    <input type="text" id="ops-search" placeholder="Buscar operación o cliente..." oninput="filterOps(this.value)"
+      style="width:100%;padding:13px 20px 13px 44px;font-size:13px;font-family:'Source Sans 3',sans-serif;border:1px solid var(--rule);background:var(--white);color:var(--ink);outline:none;box-sizing:border-box;transition:border-color .2s"
+      onfocus="this.style.borderColor='var(--navy)'" onblur="this.style.borderColor='var(--rule)'">
+    <svg style="position:absolute;left:16px;top:50%;transform:translateY(-50%);opacity:.35;pointer-events:none" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+  </div>
+
+  <!-- Lista de operaciones ordenada por participación -->
+  <div id="ops-table"></div>
+
 </div>
 
 <!-- ═══════════════════════════════════ -->
@@ -1536,31 +1582,118 @@ const OPS = [
   {c:"Softyes",m:"Lodo papelero, lodos, tromel"},{c:"Urbaser",m:"PTAR"},{c:"Zasiago",m:"Lodos, lodo lactico"}
 ];
 
-function renderOps(data) {
-  document.getElementById('ops-table').innerHTML = data.map(op => {
+// Paleta de colores de acento por posición
+const OPS_ACCENT = ['var(--navy)','var(--green)','var(--gold)','var(--blue)','#7b5ea7','#c0392b','#16a085','#e67e22','#2980b9','#27ae60'];
+
+function renderOps(ops) {
+  // Cruzar con dataIngreso para obtener viajes y peso por operación
+  const normOp = s => (s||'').toString().toUpperCase().trim()
+    .replace(/\bSAS\b|\bS\.A\.S\b|[.,]/g,'').replace(/\s+/g,' ').trim();
+
+  const conteos = {};
+  (dataIngreso||[]).forEach(r => {
+    const op = normOp(r['OPERACION']||r['Operacion']||r['operacion']||'');
+    if (!op) return;
+    if (!conteos[op]) conteos[op] = { viajes:0, peso:0 };
+    conteos[op].viajes++;
+    conteos[op].peso += parseFloat((r['PESO NETO']||r['Peso Neto']||r['peso neto']||0).toString().replace(',','.')) || 0;
+  });
+
+  const totalViajes = Object.values(conteos).reduce((a,b) => a + b.viajes, 0);
+  const totalPeso   = Object.values(conteos).reduce((a,b) => a + b.peso,   0);
+
+  // Enriquecer OPS con conteos y ordenar por viajes desc
+  const enriched = ops.map(op => {
+    const key = normOp(op.c);
+    // Buscar el conteo más cercano
+    let found = conteos[key];
+    if (!found) {
+      // Búsqueda parcial
+      const match = Object.keys(conteos).find(k => k.includes(key) || key.includes(k));
+      if (match) found = conteos[match];
+    }
+    return { ...op, viajes: found?.viajes||0, peso: found?.peso||0 };
+  }).sort((a,b) => b.viajes - a.viajes);
+
+  // Actualizar hero KPIs
+  const heroC = document.getElementById('ops-hero-clientes');
+  const heroV = document.getElementById('ops-hero-viajes');
+  const heroP = document.getElementById('ops-hero-peso');
+  if (heroC) heroC.textContent = fmt(enriched.filter(o=>o.viajes>0).length || enriched.length);
+  if (heroV) heroV.textContent = fmt(totalViajes);
+  if (heroP) heroP.textContent = totalPeso >= 1000 ? (totalPeso/1000).toFixed(1)+'T' : fmt(Math.round(totalPeso))+'kg';
+
+  const maxViajes = enriched[0]?.viajes || 1;
+
+  document.getElementById('ops-table').innerHTML = enriched.map((op, i) => {
+    const pct    = op.viajes > 0 ? (op.viajes / maxViajes * 100).toFixed(1) : 0;
+    const pctTotal = totalViajes > 0 ? (op.viajes / totalViajes * 100).toFixed(1) : 0;
+    const accent = OPS_ACCENT[i % OPS_ACCENT.length];
+    const rank   = i + 1;
+    const pesoStr = op.peso >= 1000 ? (op.peso/1000).toFixed(1)+'T' : op.peso > 0 ? Math.round(op.peso)+'kg' : '—';
+    const hasData = op.viajes > 0;
+
     if (op.s && op.s.length) {
-      return `<div style="border-bottom:1px solid var(--rule-l)">
-        <div style="display:flex;border-bottom:1px solid var(--rule-l)">
-          <div style="width:200px;min-width:200px;padding:11px 14px;font-size:13px;font-weight:600;color:var(--navy);background:var(--s2);border-right:1px solid var(--rule-l)">${op.c}</div>
-          <div style="padding:11px 14px;font-size:12px;color:var(--ink-l);font-style:italic">Ver empresas internas</div>
+      // Operación con sub-empresas
+      return `<div style="margin-bottom:12px;border:1px solid var(--rule);background:var(--white);overflow:hidden;transition:box-shadow .2s" onmouseover="this.style.boxShadow='0 4px 20px rgba(0,0,0,.08)'" onmouseout="this.style.boxShadow='none'">
+        <div style="display:flex;align-items:center;gap:20px;padding:20px 24px;border-left:4px solid ${accent}">
+          <div style="font-family:'Playfair Display',serif;font-size:28px;font-weight:700;color:${accent};min-width:44px;text-align:right;opacity:.35">${rank}</div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px">
+              <span style="font-size:15px;font-weight:700;color:var(--ink)">${op.c}</span>
+              <span style="font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">Grupo · ${op.s.length} empresas</span>
+            </div>
+            <div style="height:6px;background:var(--rule-l);border-radius:3px;overflow:hidden;margin-bottom:6px">
+              <div style="height:100%;width:${pct}%;background:${accent};border-radius:3px;transition:width .6s ease"></div>
+            </div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:${accent}">${hasData?fmt(op.viajes):'—'}</div>
+            <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">viajes · ${pctTotal}%</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;min-width:70px">
+            <div style="font-size:14px;font-weight:600;color:var(--ink-m)">${pesoStr}</div>
+            <div style="font-size:9px;color:var(--ink-l);text-transform:uppercase;letter-spacing:1px">peso neto</div>
+          </div>
         </div>
-        ${op.s.map(s=>`<div style="display:flex;border-bottom:1px solid var(--rule-l)">
-          <div style="width:200px;min-width:200px;padding:8px 14px 8px 28px;font-size:12px;color:var(--ink-l);font-style:italic;border-right:1px solid var(--rule-l)">${s.n}</div>
-          <div style="padding:8px 14px;font-size:12px;color:var(--ink-m)">${s.m}</div>
-        </div>`).join('')}
+        <div style="background:var(--bg);border-top:1px solid var(--rule-l)">
+          ${op.s.map(s=>`<div style="display:flex;align-items:center;gap:12px;padding:10px 24px 10px 96px;border-bottom:1px solid var(--rule-l)">
+            <div style="width:4px;height:4px;border-radius:50%;background:${accent};flex-shrink:0;opacity:.5"></div>
+            <span style="font-size:12px;font-weight:600;color:var(--ink-m);min-width:160px">${s.n}</span>
+            <span style="font-size:11px;color:var(--ink-l)">${s.m}</span>
+          </div>`).join('')}
+        </div>
       </div>`;
     }
-    return `<div style="display:flex;border-bottom:1px solid var(--rule-l)">
-      <div style="width:200px;min-width:200px;padding:11px 14px;font-size:13px;font-weight:600;color:var(--ink);background:var(--s2);border-right:1px solid var(--rule-l)">${op.c}</div>
-      <div style="padding:11px 14px;font-size:12px;color:var(--ink-m)">${op.m}</div>
+
+    return `<div style="margin-bottom:10px;border:1px solid var(--rule);background:var(--white);overflow:hidden;transition:box-shadow .2s,transform .2s" onmouseover="this.style.boxShadow='0 4px 20px rgba(0,0,0,.08)';this.style.transform='translateX(3px)'" onmouseout="this.style.boxShadow='none';this.style.transform='none'">
+      <div style="display:flex;align-items:center;gap:20px;padding:20px 24px;border-left:4px solid ${hasData?accent:'var(--rule)'}">
+        <div style="font-family:'Playfair Display',serif;font-size:28px;font-weight:700;color:${accent};min-width:44px;text-align:right;opacity:${hasData?.35:.15}">${rank}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:6px">${op.c}</div>
+          <div style="height:5px;background:var(--rule-l);border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:${accent};border-radius:3px;transition:width .6s ease;opacity:${hasData?1:.2}"></div>
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;min-width:80px">
+          <div style="font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:${hasData?accent:'var(--ink-l)'}">${hasData?fmt(op.viajes):'—'}</div>
+          <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">${hasData?'viajes · '+pctTotal+'%':'sin registros'}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;min-width:70px">
+          <div style="font-size:14px;font-weight:600;color:var(--ink-m)">${pesoStr}</div>
+          <div style="font-size:9px;color:var(--ink-l);text-transform:uppercase;letter-spacing:1px">peso neto</div>
+        </div>
+      </div>
     </div>`;
   }).join('');
 }
 
+let _opsFiltered = null;
 function filterOps(q) {
   q = q.toLowerCase().trim();
-  if (!q) { renderOps(OPS); return; }
-  renderOps(OPS.filter(o => o.c.toLowerCase().includes(q) || o.m.toLowerCase().includes(q) || (o.s||[]).some(s=>s.n.toLowerCase().includes(q)||s.m.toLowerCase().includes(q))));
+  if (!q) { _opsFiltered = null; renderOps(OPS); return; }
+  _opsFiltered = OPS.filter(o => o.c.toLowerCase().includes(q) || o.m.toLowerCase().includes(q) || (o.s||[]).some(s=>s.n.toLowerCase().includes(q)||s.m.toLowerCase().includes(q)));
+  renderOps(_opsFiltered);
 }
 
 // ── CARGA DE DATOS ────────────────────────────────
@@ -1586,6 +1719,7 @@ async function loadAllData() {
     try { renderClientes(dataIngreso, currentFilter); } catch(e2) { console.error('renderClientes error:', e2); }
     try { renderKPI(dataIngreso); } catch(e2) { console.error('renderKPI error:', e2); }
     try { renderOportunidades(dataIngreso); } catch(e2) { console.error('renderOportunidades error:', e2); }
+    try { renderOps(_opsFiltered || OPS); } catch(e2) { console.error('renderOps error:', e2); }
     document.getElementById('footer-ingreso').textContent = 'Ingreso: '+fmt(dataIngreso.length)+' registros';
     ok++;
   } catch(e) { errors.push('Ingreso Material'); console.error('Ingreso fetch error:', e); }
