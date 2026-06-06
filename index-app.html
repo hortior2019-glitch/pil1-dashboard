@@ -2541,12 +2541,91 @@ const VIAJES_COLORS = ['#1a5c35','#2d8a4e','#8b6914','#8b1a1a','#2563eb','#d9770
 
 
 const CHART_COLORS = [
-  '#1a5c35','#2d8a4e','#1a5c35','#8b6914','#8b1a1a',
   '#2563eb','#dc2626','#d97706','#7c3aed','#059669',
-  '#0891b2','#65a30d','#c026d3','#e11d48','#ea580c',
-  '#be123c','#854d0e','#166534','#1d4ed8','#4f46e5',
-  '#b45309','#0f766e','#6d28d9','#0369a1','#9d174d',
+  '#0891b2','#65a30d','#e11d48','#ea580c','#be123c',
+  '#854d0e','#166534','#1d4ed8','#4f46e5','#b45309',
+  '#0f766e','#6d28d9','#0369a1','#9d174d','#0284c7',
+  '#15803d','#b91c1c','#92400e','#4338ca','#0e7490',
 ];
+
+// Colores semánticos por tipo de residuo/material
+const RESIDUO_COLORS = {
+  // Orgánicos / tierra / compost → verdes y cafés
+  'ORGANICO':    '#166534',
+  'ORGANICA':    '#166534',
+  'COMPOST':     '#4d7c0f',
+  'LODO':        '#78350f',
+  'LODOS':       '#78350f',
+  'ESTIERCOL':   '#92400e',
+  'GALLINAZA':   '#a16207',
+  'PORQUINAZA':  '#b45309',
+  'BOVINO':      '#854d0e',
+  'EQUINO':      '#7c2d12',
+  'TIERRA':      '#6b7280',
+  'SUELO':       '#6b7280',
+  'HUMUS':       '#365314',
+  'LOMBRICOMPUESTO': '#3f6212',
+  // Papel / cartón → azul grisáceo
+  'PAPEL':       '#3b82f6',
+  'CARTON':      '#2563eb',
+  'ARCHIVO':     '#1d4ed8',
+  // Plástico → azul eléctrico / cian
+  'PLASTICO':    '#0891b2',
+  'PET':         '#06b6d4',
+  'POLIETILENO': '#0e7490',
+  'BOLSA':       '#0284c7',
+  // Vidrio → azul cielo / turquesa
+  'VIDRIO':      '#0369a1',
+  // Metales → grises / plata
+  'METAL':       '#475569',
+  'CHATARRA':    '#374151',
+  'LATA':        '#6b7280',
+  'HIERRO':      '#4b5563',
+  'ALUMINIO':    '#94a3b8',
+  // Madera / poda → verde oliva
+  'MADERA':      '#65a30d',
+  'PODA':        '#4d7c0f',
+  'VEGETAL':     '#16a34a',
+  'MATERIAL VEGETAL': '#16a34a',
+  // Alimentos / residuos de cocina → naranja
+  'ALIMENTO':    '#ea580c',
+  'COCINA':      '#f97316',
+  'COMIDA':      '#fb923c',
+  // Aceites / grasas → amarillo oscuro
+  'ACEITE':      '#ca8a04',
+  'GRASA':       '#a16207',
+  // Químicos / industriales → rojo / morado
+  'QUIMICO':     '#9d174d',
+  'PELIGROSO':   '#be123c',
+  'TOXICO':      '#dc2626',
+  'INDUSTRIAL':  '#7c3aed',
+  // Construcción / escombros → gris
+  'ESCOMBRO':    '#64748b',
+  'CONSTRUCCION':'#475569',
+  'RCD':         '#64748b',
+  // Bavaria / cervecería → dorado/ámbar
+  'BAGACILLO':   '#d97706',
+  'MOSTO':       '#b45309',
+  'LEVADURA':    '#a16207',
+  'BAVARIA':     '#92400e',
+  'RESIDUO BAVARIA': '#92400e',
+  // Default
+  'DEFAULT':     '#6b7280',
+};
+
+function getResidueColor(nombre) {
+  if (!nombre) return RESIDUO_COLORS['DEFAULT'];
+  const n = nombre.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  for (const [key, color] of Object.entries(RESIDUO_COLORS)) {
+    if (key === 'DEFAULT') continue;
+    if (n.includes(key)) return color;
+  }
+  // Fallback: hash determinístico para evitar repetir colores
+  const palette = ['#2563eb','#16a34a','#dc2626','#d97706','#7c3aed','#0891b2','#65a30d','#be123c','#0f766e','#9d174d','#0369a1','#4f46e5','#b45309','#166534','#854d0e'];
+  let hash = 0;
+  for (let i=0;i<nombre.length;i++) hash = (hash*31 + nombre.charCodeAt(i)) & 0xffffffff;
+  return palette[Math.abs(hash) % palette.length];
+}
 
 function renderChartClientes(data) {
   const grupos = {}, pesos = {};
@@ -2584,7 +2663,8 @@ function renderChartClientes(data) {
     });
     drawPie('chart-clientes-pie','legend-clientes-pie', sortedGrupos, coloresCliente, 'pct+count');
     drawPie('chart-peso-pie','legend-peso-pie', sortedPesos.map(([k,v])=>[k,Math.round(v)]), coloresPeso, 'pct+kg');
-    drawPie('chart-residuos-pie','legend-residuos-pie', sortedRes, CHART_COLORS);
+    const coloresResiduos = sortedRes.map(([nombre]) => getResidueColor(nombre));
+    drawPie('chart-residuos-pie','legend-residuos-pie', sortedRes, coloresResiduos);
     drawBar('chart-dias-bar', Object.keys(diasCnt), Object.values(diasCnt), '#1a5c35');
   }, 250);
 }
@@ -3291,7 +3371,7 @@ function renderCmpChart(data) {
   const totVA  = dataA.length, totVB = dataB.length;
   const totKgA = dataA.reduce((s,r)=>s+(getPesoNeto(r)||0),0);
   const totKgB = dataB.reduce((s,r)=>s+(getPesoNeto(r)||0),0);
-  const fmtKg  = n => n>=1000000?(n/1000000).toFixed(1)+'M kg':n>=1000?(n/1000).toFixed(1)+'T':Math.round(n).toLocaleString('es-CO')+'kg';
+  const fmtKg  = n => n>=1000000?(n/1000000).toFixed(1)+' T':n>=1000?(n/1000).toFixed(1)+' T':Math.round(n).toLocaleString('es-CO')+' kg';
   const diffV  = totVB>0?((totVA-totVB)/totVB*100).toFixed(1):null;
   const diffKg = totKgB>0?((totKgA-totKgB)/totKgB*100).toFixed(1):null;
 
