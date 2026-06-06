@@ -113,6 +113,18 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 .nav-lbl{position:relative;z-index:1;font-family:'Playfair Display',serif;font-size:19px;font-weight:900}
 .nav-sep{width:2px;background:linear-gradient(180deg,transparent,var(--gold),transparent);margin:8px 6px;flex-shrink:0;border-radius:2px;opacity:.5}
 
+/* NAV WRAP TOGGLE */
+.nav-wrap-btn{
+  flex-shrink:0;align-self:center;margin-right:10px;
+  width:36px;height:36px;border:1px solid var(--rule);background:var(--bg);
+  color:var(--ink-m);cursor:pointer;border-radius:5px;font-size:16px;
+  display:flex;align-items:center;justify-content:center;
+  transition:.2s;font-family:'Source Sans 3',sans-serif;line-height:1;
+}
+.nav-wrap-btn:hover{border-color:var(--navy);color:var(--navy);background:var(--blue-l)}
+.nav-wrap-btn.active{background:var(--navy);border-color:var(--navy);color:#fff}
+.topbar.hidden{display:none}
+
 /* FILTER */
 .filter-bar{background:var(--white);border-bottom:none;box-shadow:0 1px 0 var(--rule-l);padding:10px 40px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;position:fixed;top:199px;left:0;right:0;z-index:998}
 .filter-lbl{font-size:10px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);margin-right:4px}
@@ -294,6 +306,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 
 <!-- NAV -->
 <div class="nav">
+  <button class="nav-wrap-btn" id="navWrapBtn" onclick="toggleNavWrap()" title="Ocultar / mostrar barra superior">⊞</button>
   <div class="nav-tab active" onclick="showPanel('clientes',this)"><span class="nav-lbl">Ingreso por Cliente</span></div>
   <div class="nav-tab" onclick="showPanel('ingreso',this)"><span class="nav-lbl">Ingreso de Material</span></div>
   <div class="nav-tab" onclick="showPanel('operaciones',this)"><span class="nav-lbl">Operaciones y Materiales</span></div>
@@ -1270,8 +1283,9 @@ function ajustarPosiciones() {
   var sb = document.querySelector('.status-bar');
   var wr = document.querySelector('.wrapper');
   if (!tb || !nav) return;
-  // Usar getBoundingClientRect para subpixel precision, ignorar scroll sumando scrollY
-  var tbH = Math.ceil(tb.getBoundingClientRect().height);
+  // Si la barra superior está oculta, su altura es 0
+  var oculta = tb.classList.contains('hidden');
+  var tbH = oculta ? 0 : Math.ceil(tb.getBoundingClientRect().height);
   var navH = Math.ceil(nav.getBoundingClientRect().height);
   var fbH = fb ? Math.ceil(fb.getBoundingClientRect().height) : 0;
   var sbH = sb ? Math.ceil(sb.getBoundingClientRect().height) : 0;
@@ -1281,6 +1295,28 @@ function ajustarPosiciones() {
   if (wr) wr.style.paddingTop = (tbH + navH + fbH + sbH) + 'px';
 }
 window.addEventListener('resize', ajustarPosiciones);
+
+// ── OCULTAR / MOSTRAR BARRA SUPERIOR ──────────────
+function toggleNavWrap() {
+  var tb = document.querySelector('.topbar');
+  var btn = document.getElementById('navWrapBtn');
+  if (!tb) return;
+  var oculta = tb.classList.toggle('hidden');
+  if (btn) btn.classList.toggle('active', oculta);
+  if (btn) btn.innerHTML = oculta ? '▾' : '⊞';
+  try { localStorage.setItem('hortiTopbarHidden', oculta ? '1' : '0'); } catch(e){}
+  requestAnimationFrame(function(){ ajustarPosiciones(); setTimeout(ajustarPosiciones, 50); });
+}
+function aplicarNavWrapGuardado() {
+  var guardado = '0';
+  try { guardado = localStorage.getItem('hortiTopbarHidden') || '0'; } catch(e){}
+  if (guardado === '1') {
+    var tb = document.querySelector('.topbar');
+    var btn = document.getElementById('navWrapBtn');
+    if (tb) tb.classList.add('hidden');
+    if (btn) { btn.classList.add('active'); btn.innerHTML = '▾'; }
+  }
+}
 // ── LOGIN DASHBOARD ───────────────────────────────
 const LOG_ACCESOS_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTyPle5xdPlmQX9NMV_your_published_csv/pub?gid=0&single=true&output=csv';
 const LOG_ACCESOS_URL = 'https://script.google.com/macros/s/AKfycbxZpFHLbmGpE9LuASyf-0iWvFWtzUO3HZPjk6u68Yp76E9Fip2wrviCF6z2iAuWMMqZHA/exec';
@@ -1341,6 +1377,7 @@ function intentarLoginDash() {
     document.getElementById('dash-login').style.display = 'none';
     const app = document.getElementById('dash-app');
     app.style.display = 'block';
+    aplicarNavWrapGuardado();
     requestAnimationFrame(function(){ ajustarPosiciones(); setTimeout(ajustarPosiciones, 200); });
     loadAllData();
     return;
@@ -1364,6 +1401,7 @@ function intentarLoginDash() {
   document.getElementById('dash-login').style.display = 'none';
   const app = document.getElementById('dash-app');
   app.style.display = 'block';
+  aplicarNavWrapGuardado();
   requestAnimationFrame(function(){ ajustarPosiciones(); setTimeout(ajustarPosiciones, 200); });
   loadAllData();
 }
