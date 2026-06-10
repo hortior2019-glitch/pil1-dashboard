@@ -3974,15 +3974,39 @@ function poblarPlacasVol() {
 }
 
 // Filtrar datos de volqueta por placa + fecha puntual + periodo global
+// Normaliza cualquier fecha/timestamp a YYYY-MM-DD (formato del <input type="date">)
+function toYMD(s) {
+  if (!s) return '';
+  s = s.toString().trim();
+  // YYYY-MM-DD o YYYY-MM-DDTHH:mm:ss
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  // DD/MM/YYYY (es-CO)
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  // M/D/YYYY (en-US)  ó cualquier cosa que Date pueda parsear
+  const d = new Date(s);
+  if (!isNaN(d)) {
+    const y = d.getFullYear();
+    const mo = String(d.getMonth()+1).padStart(2,'0');
+    const da = String(d.getDate()).padStart(2,'0');
+    return `${y}-${mo}-${da}`;
+  }
+  return '';
+}
+
 function filtrarVol() {
   const placa = (document.getElementById('vol-filtro-placa')?.value || '').trim();
   const fecha = (document.getElementById('vol-filtro-fecha')?.value || '').trim(); // YYYY-MM-DD
-  let data = dataPreopVol.filter(r => inPeriod((r['Timestamp']||r['Fecha']||''), currentFilter));
+  // Si hay fecha puntual, ignorar el filtro de periodo. Si no, aplicar periodo normal.
+  let data = fecha
+    ? dataPreopVol.slice()
+    : dataPreopVol.filter(r => inPeriod((r['Timestamp']||r['Fecha']||''), currentFilter));
   if (placa) data = data.filter(r => (r['Placa']||r['placa']||'').trim() === placa);
   if (fecha) data = data.filter(r => {
-    const ts = (r['Timestamp']||'').toString();
-    const fe = (r['Fecha']||'').toString();
-    return ts.startsWith(fecha) || fe === fecha || fe.startsWith(fecha);
+    const ts = toYMD(r['Timestamp']||'');
+    const fe = toYMD(r['Fecha']||'');
+    return ts === fecha || fe === fecha;
   });
   const info = document.getElementById('vol-filtro-info');
   if (info) {
@@ -3997,11 +4021,13 @@ function filtrarVol() {
 function filtrarCar() {
   const fecha = (document.getElementById('car-filtro-fecha')?.value || '').trim();
   const dataCar = dataPreopCar.filter(r => { const t=(r['Tipo de Equipo']||'').toLowerCase().trim(); return t==='cargador'||t===''; });
-  let data = dataCar.filter(r => inPeriod((r['Timestamp']||r['Fecha']||''), currentFilter));
+  let data = fecha
+    ? dataCar.slice()
+    : dataCar.filter(r => inPeriod((r['Timestamp']||r['Fecha']||''), currentFilter));
   if (fecha) data = data.filter(r => {
-    const ts = (r['Timestamp']||'').toString();
-    const fe = (r['Fecha']||'').toString();
-    return ts.startsWith(fecha) || fe === fecha;
+    const ts = toYMD(r['Timestamp']||'');
+    const fe = toYMD(r['Fecha']||'');
+    return ts === fecha || fe === fecha;
   });
   const info = document.getElementById('car-filtro-info');
   if (info) info.textContent = fecha ? 'Fecha: ' + fecha + ' — ' + data.length + ' registros' : '';
@@ -4011,11 +4037,13 @@ function filtrarCar() {
 function filtrarTra() {
   const fecha = (document.getElementById('tra-filtro-fecha')?.value || '').trim();
   const dataTra = dataPreopCar.filter(r => (r['Tipo de Equipo']||'').toLowerCase().trim()==='tractor');
-  let data = dataTra.filter(r => inPeriod((r['Timestamp']||r['Fecha']||''), currentFilter));
+  let data = fecha
+    ? dataTra.slice()
+    : dataTra.filter(r => inPeriod((r['Timestamp']||r['Fecha']||''), currentFilter));
   if (fecha) data = data.filter(r => {
-    const ts = (r['Timestamp']||'').toString();
-    const fe = (r['Fecha']||'').toString();
-    return ts.startsWith(fecha) || fe === fecha;
+    const ts = toYMD(r['Timestamp']||'');
+    const fe = toYMD(r['Fecha']||'');
+    return ts === fecha || fe === fecha;
   });
   const info = document.getElementById('tra-filtro-info');
   if (info) info.textContent = fecha ? 'Fecha: ' + fecha + ' — ' + data.length + ' registros' : '';
@@ -4062,7 +4090,7 @@ const PREOP_SECCIONES_TRA = {
   'Luces':    ['L1 - Trabajo delanteras','L2 - Traseras de trabajo','L3 - Direccionales delanteras','L4 - Direccionales traseras','L5 - Stop y señal trasera'],
   'Cabina':   ['C1 - Protección antivuelco ROPS','C2 - Cinturón de seguridad','C3 - Extintor 20lbs PQS','C4 - Perillas de mando','C5 - Indicadores','C6 - Tubo de escape','C7 - Alarma de retroceso / Pito','C8 - Espejos','C9 - Panorámico y limpiabrisa','C10 - Escaleras y apoyos','C11 - Silletería y tapicería','C12 - Palancas y pedales','C13 - Batería y cables','C14 - Orden y aseo','C15 - Documentos'],
   'Llantas':  ['LL1 - Llantas en buen estado','LL2 - Huellas en buen estado'],
-  'Mecánico': ['M1 - Fugas hidráulicas','M2 - Mangueras y conexiones hidráulicas','M3 - Freno de servicio','M4 - Freno de parqueo','M5 - Estado general implemento','M6 - Sistema de enganche tres puntos','M7 - Toma de fuerza PTO','M8 - Sistema de dirección','M9 - Transmisión y caja de cambios','M10 - Compartimiento motor aseado']
+  'Mecánico': ['T1 - Fugas hidráulicas (tractor)','T2 - Mangueras y conexiones hidráulicas','T3 - Freno de servicio (tractor)','T4 - Freno de parqueo','T5 - Estado general implemento','T6 - Sistema de enganche tres puntos','T7 - Toma de fuerza PTO','T8 - Sistema de dirección','T9 - Transmisión y caja de cambios','T10 - Compartimiento motor aseado (tractor)']
 };
 
 function isMalo(v)    { return ['malo','mala','m'].includes((v||'').toLowerCase().trim()); }
