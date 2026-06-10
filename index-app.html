@@ -1979,7 +1979,7 @@ const OPS = [
     {n:"Centro Chía",  m:"PTAR"},
     {n:"Corona",       m:"Aglomerado"},
     {n:"CPNS",         m:"PTAR"},
-    {n:"Kassani",     m:"Retal madera; Compostaje"},
+    {n:"Casanare",     m:"Retal madera; Compostaje"},
     {n:"Saufel",       m:"Retal madera"},
     {n:"Toptex",       m:"PTAR; Retal madera; Compostaje"},
     {n:"Tanktechs",    m:"Retal madera"}
@@ -2246,6 +2246,30 @@ function showPanel(id, el) {
     restaurarBotonesPeriodo();
   }
   if (id === 'accesos') renderAccesos();
+
+  // Re-renderizar gráficas del panel recién mostrado (las canvas dibujadas
+  // mientras el panel estaba oculto salen en tamaño 0; aquí se corrigen).
+  requestAnimationFrame(() => {
+    try {
+      if (id === 'preopcargador' || id === 'preoaptractor') {
+        const dataCar = dataPreopCar.filter(r => { const t=(r['Tipo de Equipo']||'').toLowerCase().trim(); return t==='cargador'||t===''; });
+        const dataTra = dataPreopCar.filter(r => (r['Tipo de Equipo']||'').toLowerCase().trim()==='tractor');
+        renderPreop('car', dataCar, currentFilter);
+        renderPreop('tra', dataTra, currentFilter);
+      } else if (id === 'preopvolquetas') {
+        renderPreop('vol', dataPreopVol, currentFilter);
+      } else if (id === 'clientes') {
+        renderClientes(dataIngreso, currentFilter);
+        if (window.dataIngreso) { try { renderCliCmpChart(window.dataIngreso); } catch(e){} }
+      } else if (id === 'viajes') {
+        renderViajes(dataViajes, currentFilter);
+      } else if (id === 'ingreso') {
+        renderIngreso(dataIngreso, currentFilter);
+        if (window.dataIngreso) { try { renderCmpChart(window.dataIngreso); } catch(e){} }
+      }
+    } catch(e) { console.error('showPanel re-render:', e); }
+    try { ajustarPosiciones(); } catch(e){}
+  });
 }
 
 function desactivarBotonesPeriodo() {
@@ -2886,7 +2910,8 @@ function drawPieSimple(canvasId, legendId, data, colors) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  const size = Math.min(canvas.parentElement?.offsetWidth || 260, 260);
+  const pw = canvas.parentElement?.offsetWidth || 0;
+  const size = Math.min(pw > 0 ? pw : 200, 260);
   const W = size, H = size;
   canvas.width = W; canvas.height = H;
   const cx = W/2, cy = H/2, r = Math.min(W,H)/2 - 12;
