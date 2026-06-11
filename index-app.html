@@ -415,6 +415,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   <div class="nav-tab" onclick="showPanel('ingreso',this)"><span class="nav-lbl">Ingreso de Material</span></div>
   <div class="nav-tab" onclick="showPanel('operaciones',this)"><span class="nav-lbl">Proveedores</span></div>
   <div class="nav-tab" onclick="showPanel('viajes',this)"><span class="nav-lbl">Viajes Internos</span></div>
+  <div class="nav-tab" onclick="showPanel('stockhumus',this)"><span class="nav-lbl">Stock Humus</span></div>
   <div class="nav-sep"></div>
   <div class="nav-tab" onclick="showPanel('preopvolquetas',this)"><span class="nav-lbl">Preop. Volquetas</span></div>
   <div class="nav-tab" onclick="showPanel('preopcargador',this)"><span class="nav-lbl">Preop. Cargador</span></div>
@@ -819,6 +820,64 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
           <th>Estado</th>
         </tr></thead>
         <tbody id="tbody-viajes"><tr><td colspan="8" class="empty">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══ STOCK HUMUS ══ -->
+<div class="panel" id="panel-stockhumus">
+  <div class="sec-hdr">
+    <div class="sec-title">Stock Humus · Resumen Diario</div>
+    <div class="sec-sub" id="stock-sub">Producción, despacho y stock por día</div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:24px">
+    <div class="kpi" style="--ac:var(--green)">
+      <div class="kpi-lbl">Stock Actual</div>
+      <div class="kpi-val" id="stock-kpi-actual">—</div>
+      <div class="kpi-desc">último cierre del día</div>
+    </div>
+    <div class="kpi" style="--ac:var(--gold)">
+      <div class="kpi-lbl">Producido en el periodo</div>
+      <div class="kpi-val" id="stock-kpi-producido">—</div>
+      <div class="kpi-desc">suma del rango cargado</div>
+    </div>
+    <div class="kpi" style="--ac:var(--navy)">
+      <div class="kpi-lbl">Despachado en el periodo</div>
+      <div class="kpi-val" id="stock-kpi-despachado">—</div>
+      <div class="kpi-desc">suma del rango cargado</div>
+    </div>
+    <div class="kpi" style="--ac:var(--red)">
+      <div class="kpi-lbl">Variación vs Ayer</div>
+      <div class="kpi-val" id="stock-kpi-variacion">—</div>
+      <div class="kpi-desc" id="stock-kpi-variacion-desc">—</div>
+    </div>
+  </div>
+
+  <!-- Tabla resumen diario -->
+  <div class="card" style="padding:0;overflow:hidden">
+    <div style="padding:18px 24px;border-bottom:1px solid var(--rule-l);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+      <div>
+        <div style="font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink-l)">Hoja: Resumen Diario</div>
+        <div class="card-hdr" style="margin:4px 0 0 0">Histórico día por día</div>
+      </div>
+      <button onclick="loadStockHumus()" class="refresh-btn">Actualizar</button>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="tbl" id="stock-tabla">
+        <thead><tr>
+          <th>Fecha</th>
+          <th style="text-align:right">Stock Anterior</th>
+          <th style="text-align:right">Producido Hoy</th>
+          <th style="text-align:right">Despachado Hoy</th>
+          <th style="text-align:right">Stock Actual</th>
+          <th style="text-align:right">Diferencia vs Ayer</th>
+          <th style="text-align:right">% Variación</th>
+          <th>Observaciones</th>
+        </tr></thead>
+        <tbody id="tbody-stockhumus"><tr><td colspan="8" class="empty">Cargando...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -1664,11 +1723,12 @@ const SHEETS = {
   horasExtras:"https://docs.google.com/spreadsheets/d/e/2PACX-1vQr9CSrS9FVO9VE_rC-wJ844xxe4VOMn9CFJymwROtQPHVOd_lgHs6jktuAaqVrl-nuMqpqMavwn2EW/pub?gid=244095645&single=true&output=csv",
   preopVol:   "https://docs.google.com/spreadsheets/d/e/2PACX-1vT7jlTWFp85CfMimM71gXUysc5zVcMU9PW-5RLtikP3aBDKXAFF4lgg5olu3_F0kARUxiEdDz0TDD5c/pub?gid=0&single=true&output=csv",
   preopCar:   "https://docs.google.com/spreadsheets/d/e/2PACX-1vT7jlTWFp85CfMimM71gXUysc5zVcMU9PW-5RLtikP3aBDKXAFF4lgg5olu3_F0kARUxiEdDz0TDD5c/pub?gid=910474309&single=true&output=csv",
-  viajes:     "https://docs.google.com/spreadsheets/d/e/2PACX-1vQfJ3w0m6ulvnQuosQllRg9mozlPZjPq4a_xlOD6t2kB21ShbW_qnFsMZ9r_I2METGWv2hZIEKL-RRN/pub?gid=1700187693&single=true&output=csv"
+  viajes:     "https://docs.google.com/spreadsheets/d/e/2PACX-1vQfJ3w0m6ulvnQuosQllRg9mozlPZjPq4a_xlOD6t2kB21ShbW_qnFsMZ9r_I2METGWv2hZIEKL-RRN/pub?gid=1700187693&single=true&output=csv",
+  stockHumus: "https://docs.google.com/spreadsheets/d/1RIL3EvKasEdh9PgqZs24sO13ucS2sit0ncnQt14rV0o/export?format=csv&gid=85759097"
 };
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
 let currentFilter = 'hoy';
-let dataIngreso = [], dataSolicitudes = [], dataHE = [], dataPreopVol = [], dataPreopCar = [], dataViajes = [];
+let dataIngreso = [], dataSolicitudes = [], dataHE = [], dataPreopVol = [], dataPreopCar = [], dataViajes = [], dataStockHumus = [];
 
 function getPesoNeto(r) {
   // Intentar columna PESO NETO primero (columna J)
@@ -2216,6 +2276,12 @@ async function loadAllData() {
     document.getElementById('footer-viajes').textContent = 'Viajes: '+fmt(dataViajes.length)+' registros';
     ok++;
   } catch(e) { errors.push('Viajes Internos'); console.error('Viajes:', e); }
+
+  try {
+    dataStockHumus = await fetchCSV(SHEETS.stockHumus);
+    renderStockHumus(dataStockHumus);
+    ok++;
+  } catch(e) { errors.push('Stock Humus'); console.error('Stock Humus:', e); }
 
   const now = new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   document.getElementById('last-update').textContent = 'Ultima actualizacion: '+now;
@@ -4434,6 +4500,108 @@ function renderViajes(data, filter) {
       <td class="num">${ton > 0 ? ton.toFixed(1)+' t' : '—'}</td>
       <td class="num">${dur > 0 ? dur+' min' : '—'}</td>
       <td><span style="padding:2px 8px;font-size:10px;font-weight:700;${estadoCls}">${estadoTxt}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+// ── STOCK HUMUS ────────────────────────────────────
+async function loadStockHumus() {
+  const btn = event && event.target ? event.target : null;
+  if (btn) { btn.disabled = true; btn.textContent = 'Cargando...'; }
+  try {
+    dataStockHumus = await fetchCSV(SHEETS.stockHumus);
+    renderStockHumus(dataStockHumus);
+  } catch(e) {
+    console.error('Stock Humus reload:', e);
+    const tb = document.getElementById('tbody-stockhumus');
+    if (tb) tb.innerHTML = '<tr><td colspan="8" class="empty">Error al cargar. Verifique que el Sheet esté compartido como público o publicado.</td></tr>';
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Actualizar'; }
+}
+
+function renderStockHumus(rows) {
+  const tbody = document.getElementById('tbody-stockhumus');
+  if (!tbody) return;
+
+  if (!rows || !rows.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">Sin registros</td></tr>';
+    ['stock-kpi-actual','stock-kpi-producido','stock-kpi-despachado','stock-kpi-variacion'].forEach(id=>{
+      const el = document.getElementById(id); if (el) el.textContent = '—';
+    });
+    return;
+  }
+
+  const norm = s => (s||'').toString().toLowerCase()
+    .replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i')
+    .replace(/[óòö]/g,'o').replace(/[úùü]/g,'u').replace(/ñ/g,'n').trim();
+  const sample = rows[0];
+  const findCol = (...cands) => {
+    for (const k of Object.keys(sample)) {
+      const nk = norm(k);
+      for (const c of cands) {
+        const nc = norm(c);
+        if (nk === nc || nk.includes(nc)) return k;
+      }
+    }
+    return null;
+  };
+  const colFecha = findCol('Fecha');
+  const colAnt   = findCol('Stock Anterior');
+  const colProd  = findCol('Producido Hoy','Producido');
+  const colDesp  = findCol('Despachado Hoy','Despachado');
+  const colAct   = findCol('Stock Actual');
+  const colDiff  = findCol('Diferencia vs Ayer','Diferencia');
+  const colVar   = findCol('% Variación','% Variacion','Variacion','Variación');
+  const colObs   = findCol('Observaciones');
+
+  const parseNum = v => {
+    if (v == null || v === '') return 0;
+    const s = v.toString().replace(/[%$\s]/g,'').replace(/,/g,'.');
+    const n = parseFloat(s);
+    return isNaN(n) ? 0 : n;
+  };
+  const fmtInt = n => Math.round(n).toLocaleString('es-CO');
+  const fmtPct = v => {
+    if (v == null || v === '') return '—';
+    const s = v.toString().trim();
+    if (s.endsWith('%')) return s;
+    const n = parseNum(s);
+    return isNaN(n) ? s : n.toFixed(2) + '%';
+  };
+
+  const sorted = rows.slice().filter(r => (r[colFecha]||'').toString().trim());
+  sorted.sort((a,b) => new Date(b[colFecha]) - new Date(a[colFecha]));
+
+  const totalProd = sorted.reduce((s,r) => s + parseNum(r[colProd]), 0);
+  const totalDesp = sorted.reduce((s,r) => s + parseNum(r[colDesp]), 0);
+  const ultimo    = sorted[0] || {};
+  const stockAct  = parseNum(ultimo[colAct]);
+  const variacion = (ultimo[colVar] || '').toString().trim();
+  const fechaAct  = (ultimo[colFecha] || '').toString().trim();
+
+  const setT = (id,v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  setT('stock-kpi-actual',     fmtInt(stockAct));
+  setT('stock-kpi-producido',  fmtInt(totalProd));
+  setT('stock-kpi-despachado', fmtInt(totalDesp));
+  setT('stock-kpi-variacion',  variacion || '—');
+  setT('stock-kpi-variacion-desc', fechaAct ? 'último día: ' + fechaAct : 'sin datos');
+  setT('stock-sub', sorted.length + ' días registrados · último: ' + (fechaAct || '—'));
+
+  tbody.innerHTML = sorted.map(r => {
+    const diff = parseNum(r[colDiff]);
+    const diffColor = diff > 0 ? 'var(--green)' : diff < 0 ? 'var(--red)' : 'var(--ink-m)';
+    const varStr = (r[colVar] || '').toString().trim();
+    const varNum = parseNum(varStr.replace('%',''));
+    const varColor = varNum > 0 ? 'var(--green)' : varNum < 0 ? 'var(--red)' : 'var(--ink-m)';
+    return `<tr>
+      <td><strong>${r[colFecha] || '—'}</strong></td>
+      <td class="num">${fmtInt(parseNum(r[colAnt]))}</td>
+      <td class="num" style="color:var(--gold);font-weight:700">${fmtInt(parseNum(r[colProd]))}</td>
+      <td class="num" style="color:var(--navy);font-weight:700">${fmtInt(parseNum(r[colDesp]))}</td>
+      <td class="num" style="color:var(--green);font-weight:700">${fmtInt(parseNum(r[colAct]))}</td>
+      <td class="num" style="color:${diffColor};font-weight:700">${diff > 0 ? '+' : ''}${fmtInt(diff)}</td>
+      <td class="num" style="color:${varColor};font-weight:700">${fmtPct(r[colVar])}</td>
+      <td>${r[colObs] || ''}</td>
     </tr>`;
   }).join('');
 }
