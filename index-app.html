@@ -74,7 +74,17 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 .last-update{font-family:'Playfair Display',serif;font-size:16px;font-weight:400;color:rgba(255,255,255,.65);letter-spacing:-.1px}
 
 /* NAV */
-.nav{background:var(--white);border-bottom:none;box-shadow:0 2px 0 var(--rule);padding:0 24px;display:flex;overflow-x:auto;gap:0;scrollbar-width:none;-webkit-overflow-scrolling:touch;position:fixed;top:129px;left:0;right:0;z-index:999}
+.nav{background:var(--white);border-bottom:none;box-shadow:0 2px 0 var(--rule);padding:0 24px;display:flex;overflow-x:auto;overflow-y:hidden;gap:0;scrollbar-width:thin;scrollbar-color:var(--gold) transparent;-webkit-overflow-scrolling:touch;position:fixed;top:129px;left:0;right:0;z-index:999}
+.nav-wrap{position:fixed;top:129px;left:0;right:0;z-index:1000;pointer-events:none}
+.nav-wrap .nav{position:relative;top:auto;left:auto;right:auto;z-index:1;pointer-events:auto}
+.nav-arr{position:absolute;top:0;width:36px;height:48px;background:var(--navy);color:white;border:none;font-size:24px;font-weight:700;cursor:pointer;z-index:2;display:none;align-items:center;justify-content:center;pointer-events:auto;box-shadow:0 0 12px rgba(0,0,0,.15);transition:background .15s,color .15s}
+.nav-arr:hover{background:var(--gold);color:var(--navy)}
+#nav-arr-l{left:0}
+.nav-arr-r{right:0}
+.nav::-webkit-scrollbar{height:8px;background:transparent}
+.nav::-webkit-scrollbar-track{background:var(--rule-l);border-radius:0}
+.nav::-webkit-scrollbar-thumb{background:var(--gold);border-radius:4px;border:1px solid var(--rule-l)}
+.nav::-webkit-scrollbar-thumb:hover{background:var(--navy)}
 .nav::-webkit-scrollbar{display:none}
 .nav-tab{
   position:relative;
@@ -409,6 +419,9 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 </div>
 
 <!-- NAV -->
+<div class="nav-wrap">
+<button class="nav-arr" id="nav-arr-l" onclick="navScroll(-1)" title="Desplazar a la izquierda" aria-label="Atrás">‹</button>
+<button class="nav-arr nav-arr-r" id="nav-arr-r" onclick="navScroll(1)" title="Desplazar a la derecha" aria-label="Adelante">›</button>
 <div class="nav">
   <button class="nav-wrap-btn" id="navWrapBtn" onclick="toggleNavWrap()" title="Ocultar / mostrar barra superior">⊞</button>
   <div class="nav-tab active" onclick="showPanel('clientes',this)"><span class="nav-lbl">Ingreso por Cliente</span></div>
@@ -433,6 +446,8 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   <div style="flex:1"></div>
   <img src="https://raw.githubusercontent.com/hortior2019-glitch/pil1-dashboard/main/logoverde.png" alt="Horti Organic" style="height:42px;object-fit:contain;flex-shrink:0;margin:0 16px;mix-blend-mode:multiply">
 </div>
+</div>
+<!-- /NAV -->
 
 <!-- FILTER BAR -->
 <div class="filter-bar">
@@ -738,6 +753,14 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   <div class="sec-hdr">
     <div class="sec-title">Viajes Internos</div>
     <div class="sec-sub" id="viajes-period">Hoy</div>
+  </div>
+
+  <!-- Filtros internos -->
+  <div style="background:var(--white);border:1px solid var(--rule-l);padding:12px 16px;margin-bottom:20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <span style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l)">Filtro día específico</span>
+    <input type="date" id="vj-filtro-fecha" onchange="aplicarFiltrosVj()" style="border:1px solid var(--rule);background:var(--white);padding:7px 10px;font-size:12px;border-radius:3px;color:var(--ink)">
+    <button onclick="limpiarFiltrosVj()" style="border:1px solid var(--rule);background:var(--bg);padding:6px 12px;font-size:11px;font-weight:700;color:var(--ink-m);cursor:pointer;border-radius:3px">Limpiar</button>
+    <span id="vj-filtro-info" style="font-size:11px;color:var(--ink-l);font-style:italic;margin-left:auto"></span>
   </div>
 
   <!-- KPIs principales -->
@@ -1490,18 +1513,19 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 // ── POSICIONAMIENTO DINÁMICO ──────────────────────
 function ajustarPosiciones() {
   var tb = document.querySelector('.topbar');
+  var navWrap = document.querySelector('.nav-wrap');
   var nav = document.querySelector('.nav');
   var fb = document.querySelector('.filter-bar');
   var sb = document.querySelector('.status-bar');
   var wr = document.querySelector('.wrapper');
   if (!tb || !nav) return;
-  // Si la barra superior está oculta, su altura es 0
   var oculta = tb.classList.contains('hidden');
   var tbH = oculta ? 0 : Math.ceil(tb.getBoundingClientRect().height);
   var navH = Math.ceil(nav.getBoundingClientRect().height);
   var fbH = fb ? Math.ceil(fb.getBoundingClientRect().height) : 0;
   var sbH = sb ? Math.ceil(sb.getBoundingClientRect().height) : 0;
-  nav.style.top = tbH + 'px';
+  if (navWrap) navWrap.style.top = tbH + 'px';
+  else nav.style.top = tbH + 'px';
   if (fb) fb.style.top = (tbH + navH) + 'px';
   if (sb) sb.style.top = (tbH + navH + fbH) + 'px';
   if (wr) wr.style.paddingTop = (tbH + navH + fbH + sbH) + 'px';
@@ -4028,6 +4052,45 @@ window.addEventListener("resize", adjustScrollOffset);
 setTimeout(adjustScrollOffset, 500);
 setInterval(loadAllData, AUTO_REFRESH_MS);
 
+// ── SCROLL HORIZONTAL EN NAV CON RUEDA DEL MOUSE ──
+(function setupNavScroll(){
+  const nav = document.querySelector('.nav');
+  if (!nav) return;
+
+  // Rueda del mouse → scroll horizontal
+  nav.addEventListener('wheel', function(e){
+    // Solo si el contenido se desborda horizontalmente
+    if (nav.scrollWidth <= nav.clientWidth) return;
+    // Si el usuario está usando scroll horizontal nativo, no interferir
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    e.preventDefault();
+    nav.scrollLeft += e.deltaY;
+  }, { passive: false });
+
+  // Mostrar/ocultar flechas según posición y desborde
+  function updateArrows(){
+    const arrL = document.getElementById('nav-arr-l');
+    const arrR = document.getElementById('nav-arr-r');
+    if (!arrL || !arrR) return;
+    const overflows = nav.scrollWidth > nav.clientWidth + 2;
+    if (!overflows) {
+      arrL.style.display = arrR.style.display = 'none';
+      return;
+    }
+    arrL.style.display = nav.scrollLeft > 4 ? 'flex' : 'none';
+    arrR.style.display = (nav.scrollLeft + nav.clientWidth) < (nav.scrollWidth - 4) ? 'flex' : 'none';
+  }
+  nav.addEventListener('scroll', updateArrows);
+  window.addEventListener('resize', updateArrows);
+  setTimeout(updateArrows, 100);
+  setTimeout(updateArrows, 600);
+
+  // Botones flecha
+  window.navScroll = function(dir){
+    nav.scrollBy({ left: dir * 240, behavior: 'smooth' });
+  };
+})();
+
 // ── FILTROS PREOPERACIONALES ──────────────────────────────────
 
 // Poblar select de placas con los datos disponibles
@@ -4119,6 +4182,12 @@ function filtrarTra() {
 function aplicarFiltrosVol() { renderPreop('vol', filtrarVol(), currentFilter, true); }
 function aplicarFiltrosCar() { renderPreop('car', filtrarCar(), currentFilter, true); }
 function aplicarFiltrosTra() { renderPreop('tra', filtrarTra(), currentFilter, true); }
+function aplicarFiltrosVj()  { renderViajes(dataViajes, currentFilter); }
+function limpiarFiltrosVj() {
+  const d = document.getElementById('vj-filtro-fecha'); if(d) d.value='';
+  const i = document.getElementById('vj-filtro-info');  if(i) i.textContent='';
+  renderViajes(dataViajes, currentFilter);
+}
 
 function limpiarFiltrosVol() {
   const s = document.getElementById('vol-filtro-placa'); if(s) s.value='';
@@ -4351,13 +4420,25 @@ function renderPreop(tipo, data, filter, yaFiltrado) {
 
 // ── VIAJES INTERNOS ───────────────────────────────
 function renderViajes(data, filter) {
-  // Filtrar por periodo usando FechaRegistro
-  const filtered = data.filter(r => {
-    const f = (r['FechaRegistro'] || r['T1_Cargando'] || '').toString();
-    return inPeriod(f, filter);
-  });
+  // Filtro de día específico (override del periodo)
+  const fechaPuntual = (document.getElementById('vj-filtro-fecha')?.value || '').trim();
+  const filtered = fechaPuntual
+    ? data.filter(r => {
+        const f = (r['FechaRegistro'] || r['T1_Cargando'] || '').toString();
+        return toYMD(f) === fechaPuntual;
+      })
+    : data.filter(r => {
+        const f = (r['FechaRegistro'] || r['T1_Cargando'] || '').toString();
+        return inPeriod(f, filter);
+      });
 
-  const lbl = { hora:'Ultima hora', hoy:'Hoy', semana:'Esta semana', mes:'Este mes', total:'Total acumulado' }[filter] || filter;
+  // Info de filtro de día
+  const info = document.getElementById('vj-filtro-info');
+  if (info) info.textContent = fechaPuntual ? 'Fecha: ' + fechaPuntual + ' — ' + filtered.length + ' viajes' : '';
+
+  const lbl = fechaPuntual
+    ? 'Fecha: ' + fechaPuntual
+    : ({ hora:'Ultima hora', hoy:'Hoy', semana:'Esta semana', mes:'Este mes', total:'Total acumulado' }[filter] || filter);
   document.getElementById('viajes-period').textContent = lbl;
 
   const total       = filtered.length;
