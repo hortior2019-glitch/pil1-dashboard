@@ -455,6 +455,16 @@
 
   <!-- ══════════ PANEL: HISTORIAL ══════════ -->
   <div id="panel-historial" class="panel">
+    <!-- Filtro de mes -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#888">Filtrar por mes:</label>
+      <select id="histFiltroMes" onchange="filtrarHistorial()" style="padding:6px 10px;font-size:13px;border:1px solid #ddd;border-radius:6px;background:#fff">
+        <option value="actual">Mes actual</option>
+        <option value="anterior">Mes anterior</option>
+        <option value="todos">Todos los registros</option>
+      </select>
+      <span id="histFiltroInfo" style="font-size:11px;color:#999"></span>
+    </div>
     <div class="seccion">
       <div class="seccion-header">Historial de Producción</div>
       <div class="seccion-body tabla-wrapper">
@@ -518,8 +528,18 @@
     }
   }
 
+  // Store last data for filtering
+  let _lastData = null;
+
   function renderResumen(data) {
+    _lastData = data;
     const r = data.resumen;
+
+    // ── Validar que "Hoy" realmente sea hoy ──
+    const hoy = new Date().toISOString().split('T')[0];
+    const MESES_NOMBRES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const mesActualLabel = MESES_NOMBRES[new Date().getMonth()] + ' ' + new Date().getFullYear();
+
     document.getElementById('stockActual').textContent = r.stockActual ?? '—';
     document.getElementById('producidoHoy').textContent = r.producidoHoy ?? 0;
     document.getElementById('despachadoHoy').textContent = r.despachadoHoy ?? 0;
@@ -530,29 +550,99 @@
     varEl.className = 'valor ' + (diff >= 0 ? 'variacion-up' : 'variacion-down');
     document.getElementById('variacionSub').textContent = r.porcentaje ? (r.porcentaje + '%') : '';
 
-    // Tabla resumen diario
+    // ── Tabla resumen diario: filtrar solo últimos 7 días REALES ──
     const tbody = document.getElementById('tablaResumen');
     if (data.historialDiario && data.historialDiario.length) {
-      tbody.innerHTML = data.historialDiario.map(d => `
-        <tr>
-          <td>${d.fecha}</td>
-          <td>${d.stockAnterior}</td>
-          <td>${d.producido}</td>
-          <td>${d.despachado}</td>
-          <td><strong>${d.stockActual}</strong></td>
-          <td class="${d.diferencia >= 0 ? 'variacion-up':'variacion-down'}">${d.diferencia >= 0 ? '+':''}${d.diferencia}</td>
-        </tr>`).join('');
+      // Filtrar: solo registros de los últimos 7 días calendario
+      const hace7dias = new Date();
+      hace7dias.setDate(hace7dias.getDate() - 7);
+      const hace7str = hace7dias.toISOString().split('T')[0];
+
+      const filtrados = data.historialDiario.filter(d => {
+        const fecha = (d.fecha || '').toString().trim();
+        if (!fecha) return false;
+        return fecha >= hace7str && fecha <= hoy;
+      });
+
+      if (filtrados.length) {
+        tbody.innerHTML = filtrados.map(d => `
+          <tr>
+            <td>${d.fecha}</td>
+            <td>${d.stockAnterior}</td>
+            <td>${d.producido}</td>
+            <td>${d.despachado}</td>
+            <td><strong>${d.stockActual}</strong></td>
+            <td class="${d.diferencia >= 0 ? 'variacion-up':'variacion-down'}">${d.diferencia >= 0 ? '+':''}${d.diferencia}</td>
+          </tr>`).join('');
+      } else {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;padding:1.5rem">Sin registros en los últimos 7 días</td></tr>';
+      }
+
+      // Advertencia si hay datos fuera de rango
+      const descartados = data.historialDiario.length - filtrados.length;
+      if (descartados > 0) {
+        document.getElementById('stockSub').textContent = 'bultos x 50 kg · ' + descartados + ' registro(s) histórico(s) excluido(s) del resumen';
+      }
+    }
+
+    // ── Historial con filtro de mes ──
+    renderHistorialFiltrado(data);
+  }
+
+  function renderHistorialFiltrado(data) {
+    if (!data) return;
+    const filtro = document.getElementById('histFiltroMes').value;
+    const ahora = new Date();
+    const mesActualKey = ahora.getFullYear() + '-' + String(ahora.getMonth()+1).padStart(2,'0');
+    const mesPrevDate = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
+    const mesAnteriorKey = mesPrevDate.getFullYear() + '-' + String(mesPrevDate.getMonth()+1).padStart(2,'0');
+
+    const filtrarPorMes = (rows, idxFecha) => {
+      if (filtro === 'todos') return rows;
+      const targetKey = filtro === 'actual' ? mesActualKey : mesAnteriorKey;
+      return rows.filter(r => {
+        const fecha = (r[idxFecha] || '').toString().trim();
+        if (!fecha) return false;
+        const d = new Date(fecha);
+        if (isNaN(d.getTime())) return fecha.startsWith(targetKey);
+        const k = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+        return k === targetKey;
+      });
+    };
+
+    const MESES_NOMBRES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const infoEl = document.getElementById('histFiltroInfo');
+    if (filtro === 'actual') {
+      infoEl.textContent = MESES_NOMBRES[ahora.getMonth()] + ' ' + ahora.getFullYear();
+    } else if (filtro === 'anterior') {
+      infoEl.textContent = MESES_NOMBRES[mesPrevDate.getMonth()] + ' ' + mesPrevDate.getFullYear();
+    } else {
+      infoEl.textContent = 'Todos los registros históricos';
     }
 
     // Tablas historial
     if (data.produccion) {
-      document.getElementById('tablaProd').innerHTML = data.produccion.map(r => `
-        <tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]||''}</td></tr>`).join('');
+      const filtradas = filtrarPorMes(data.produccion, 0);
+      if (filtradas.length) {
+        document.getElementById('tablaProd').innerHTML = filtradas.map(r => `
+          <tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]||''}</td></tr>`).join('');
+      } else {
+        document.getElementById('tablaProd').innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;padding:1.5rem">Sin registros en este periodo</td></tr>';
+      }
     }
     if (data.salidas) {
-      document.getElementById('tablaSal').innerHTML = data.salidas.map(r => `
-        <tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]||''}</td></tr>`).join('');
+      const filtradas = filtrarPorMes(data.salidas, 0);
+      if (filtradas.length) {
+        document.getElementById('tablaSal').innerHTML = filtradas.map(r => `
+          <tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]||''}</td></tr>`).join('');
+      } else {
+        document.getElementById('tablaSal').innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;padding:1.5rem">Sin registros en este periodo</td></tr>';
+      }
     }
+  }
+
+  function filtrarHistorial() {
+    if (_lastData) renderHistorialFiltrado(_lastData);
   }
 
   // ═══ ENVIAR PRODUCCIÓN ═══

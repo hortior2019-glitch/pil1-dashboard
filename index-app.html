@@ -866,11 +866,13 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
     <div class="kpi" style="--ac:var(--gold)">
       <div class="kpi-lbl">Producido en el periodo</div>
       <div class="kpi-val" id="stock-kpi-producido">—</div>
+      <div class="kpi-desc" id="stock-kpi-producido-p">mes actual</div>
       <div class="kpi-desc">suma del rango cargado</div>
     </div>
     <div class="kpi" style="--ac:var(--navy)">
       <div class="kpi-lbl">Despachado en el periodo</div>
       <div class="kpi-val" id="stock-kpi-despachado">—</div>
+      <div class="kpi-desc" id="stock-kpi-despachado-p">mes actual</div>
       <div class="kpi-desc">suma del rango cargado</div>
     </div>
   </div>
@@ -4687,8 +4689,22 @@ function renderStockHumus(rows) {
   const sorted = rows.slice().filter(r => (r[colFecha]||'').toString().trim());
   sorted.sort((a,b) => new Date(b[colFecha]) - new Date(a[colFecha]));
 
-  const totalProd = sorted.reduce((s,r) => s + parseNum(r[colProd]), 0);
-  const totalDesp = sorted.reduce((s,r) => s + parseNum(r[colDesp]), 0);
+  // ── Usar fecha REAL del sistema para determinar mes actual ──
+  const ahora = new Date();
+  const keyMesReal = ahora.getFullYear() + '-' + String(ahora.getMonth()+1).padStart(2,'0');
+  const mesPrevDate = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
+  const keyMesPrev = mesPrevDate.getFullYear() + '-' + String(mesPrevDate.getMonth()+1).padStart(2,'0');
+
+  // Filtrar solo registros del mes actual para KPIs de periodo
+  const esMesActual = (r) => {
+    const d = new Date(r[colFecha]);
+    if (isNaN(d.getTime())) return false;
+    const k = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+    return k === keyMesReal;
+  };
+  const rowsMesActual = sorted.filter(esMesActual);
+  const totalProd = rowsMesActual.reduce((s,r) => s + parseNum(r[colProd]), 0);
+  const totalDesp = rowsMesActual.reduce((s,r) => s + parseNum(r[colDesp]), 0);
   const ultimo    = sorted[0] || {};
   const stockAct  = parseNum(ultimo[colAct]);
   const variacion = (ultimo[colVar] || '').toString().trim();
@@ -4698,10 +4714,13 @@ function renderStockHumus(rows) {
   setT('stock-kpi-actual',     fmtInt(stockAct));
   setT('stock-kpi-producido',  fmtInt(totalProd));
   setT('stock-kpi-despachado', fmtInt(totalDesp));
-  setT('stock-sub', sorted.length + ' días registrados · último: ' + (fechaAct || '—'));
+  const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const nombreMesCorto = MESES[ahora.getMonth()] + ' ' + ahora.getFullYear();
+  setT('stock-kpi-producido-p', nombreMesCorto);
+  setT('stock-kpi-despachado-p', nombreMesCorto);
+  setT('stock-sub', sorted.length + ' días registrados · último: ' + (fechaAct || '—') + ' · KPIs: ' + nombreMesCorto);
 
   // ── Agrupar producción por mes (YYYY-MM) ──
-  const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   const porMes = {}; // {'2026-06': totalProducido}
   sorted.forEach(r => {
     const d = new Date(r[colFecha]);
@@ -4712,13 +4731,14 @@ function renderStockHumus(rows) {
   const mesKeys = Object.keys(porMes).sort(); // ascendente
 
   if (mesKeys.length) {
-    const ultimaFecha = new Date(sorted[0][colFecha]);
-    const keyActual = ultimaFecha.getFullYear() + '-' + String(ultimaFecha.getMonth()+1).padStart(2,'0');
-    const idxActual = mesKeys.indexOf(keyActual);
-    const keyAnterior = idxActual > 0 ? mesKeys[idxActual - 1] : null;
+    // Usar el mes REAL del sistema, no el del último registro
+    const keyActual = keyMesReal;
+    const keyAnterior = keyMesPrev;
+    // Verificar que el mes anterior exista en los datos
+    const tieneAnterior = porMes.hasOwnProperty(keyAnterior);
 
     const prodActual   = porMes[keyActual] || 0;
-    const prodAnterior = keyAnterior ? (porMes[keyAnterior] || 0) : null;
+    const prodAnterior = tieneAnterior ? (porMes[keyAnterior] || 0) : null;
 
     const nombreMes = (key) => {
       const [y,m] = key.split('-');
@@ -4732,6 +4752,8 @@ function renderStockHumus(rows) {
     if (tieneComparacion) {
       pctVar = ((prodActual - prodAnterior) / prodAnterior) * 100;
       setT('stock-mes-detalle', 'vs ' + nombreMes(keyAnterior) + ': ' + fmtInt(prodAnterior) + ' kg');
+    } else if (!tieneAnterior) {
+      setT('stock-mes-detalle', 'sin datos del mes anterior (' + nombreMes(keyAnterior) + ')');
     } else {
       setT('stock-mes-detalle', 'sin mes anterior para comparar');
     }
