@@ -283,7 +283,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   /* Topbar compacta */
   .topbar{padding:8px 14px;padding-top:max(8px,env(safe-area-inset-top));flex-wrap:wrap;gap:6px}
   .topbar > div:first-child{gap:8px !important}
-  .topbar img{height:104px !important;width:104px !important;margin:0 !important}
+  .topbar img{height:120px !important;width:120px !important;margin:0 !important}
   .topbar > div:first-child > div[style*="margin-left"]{margin-left:0 !important}
   .tb-org{font-size:8px;letter-spacing:1.5px;margin-bottom:2px}
   .tb-title{font-size:18px;line-height:1.05}
@@ -384,7 +384,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 
 /* ══ MÓVIL PEQUEÑO (≤420px) ══ */
 @media(max-width:420px){
-  .topbar img{height:52px !important;width:52px !important}
+  .topbar img{height:100px !important;width:100px !important}
   .tb-title{font-size:16px}
   .nav-tab{padding:0 12px;height:50px}
   .nav-lbl,.nav-tab{font-size:14px}
@@ -1499,10 +1499,11 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
       <label style="font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-l)">Fecha puntual</label>
       <input type="date" id="vol-filtro-fecha" onchange="aplicarFiltrosVol()" style="border:1px solid var(--rule);background:var(--white);padding:7px 10px;font-size:12px;border-radius:3px;color:var(--ink)">
     </div>
-    <button onclick="limpiarFiltrosVol()" style="padding:7px 16px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);border:1px solid var(--rule);border-radius:3px;cursor:pointer;color:var(--ink-m);transition:.2s" onmouseover="this.style.background='var(--rule)'" onmouseout="this.style.background='var(--rule-l)'">Limpiar</button>
+    <button onclick="limpiarFiltrosVol()" style="padding:7px 16px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);border:1px solid var(--rule);border-radius:3px;cursor:pointer;color:var(--ink-m);transition:.2s">Limpiar</button>
     <div id="vol-filtro-info" style="font-size:11px;color:var(--ink-l);align-self:center"></div>
   </div>
 
+  <!-- KPIs -->
   <div class="kpi-grid">
     <div class="kpi" style="--ac:var(--navy)"><div class="kpi-lbl">Inspecciones</div><div class="kpi-val" id="vol-total">—</div><div class="kpi-desc">registros totales</div><div class="kpi-period">Hoy</div></div>
     <div class="kpi" style="--ac:var(--green)"><div class="kpi-lbl">Vehículos</div><div class="kpi-val" id="vol-vehiculos">—</div><div class="kpi-desc">placas distintas</div><div class="kpi-period">Hoy</div></div>
@@ -1511,24 +1512,17 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
     <div class="kpi" style="--ac:var(--orange)"><div class="kpi-lbl">Ítems Regulares</div><div class="kpi-val" id="vol-regulares">—</div><div class="kpi-desc">requieren seguimiento</div><div class="kpi-period">Hoy</div></div>
     <div class="kpi" style="--ac:var(--green)"><div class="kpi-lbl">% Ítems Buenos</div><div class="kpi-val" id="vol-pct-buenos">—</div><div class="kpi-desc">condición óptima</div><div class="kpi-period">Hoy</div></div>
   </div>
-  <div class="g2">
-    <div class="card">
-      <div class="card-hdr">Estado por sección — Volquetas</div>
-      <div id="vol-secciones"><div class="empty">Cargando...</div></div>
-    </div>
-    <div class="card">
-      <div class="card-hdr">Hallazgos críticos (Malo) por ítem</div>
-      <div id="vol-hallazgos"><div class="empty">Cargando...</div></div>
-    </div>
-  </div>
-  <!-- Detalle por sección (expandido) -->
-  <div id="vol-detalle-secciones" style="margin-bottom:20px"></div>
+
+  <!-- Contenido visual dinámico: tarjetas por vehículo, peor estado primero -->
+  <div id="vol-visual-contenido"></div>
+
+  <!-- Tabla compacta al final -->
   <div class="card">
     <div class="card-hdr">Registro de inspecciones — Volquetas</div>
     <div style="overflow-x:auto">
       <table class="tbl">
-        <thead><tr><th>Timestamp</th><th>Fecha</th><th>Placa</th><th>Conductor</th><th>Km</th><th>Observaciones</th><th class="num">M</th><th class="num">R</th><th class="num">B</th></tr></thead>
-        <tbody id="tbody-vol"><tr><td colspan="9" class="empty">Cargando...</td></tr></tbody>
+        <thead><tr><th>Fecha</th><th>Placa</th><th>Conductor</th><th>Km</th><th class="num">M</th><th class="num">R</th><th class="num">B</th><th>Obs.</th></tr></thead>
+        <tbody id="tbody-vol"><tr><td colspan="8" class="empty">Cargando...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -2406,6 +2400,7 @@ async function loadAllData() {
   try {
     dataPreopVol = await fetchCSV(SHEETS.preopVol);
     renderPreop('vol', dataPreopVol, currentFilter);
+    renderVolquetasVisual(dataPreopVol, currentFilter);
     ok++;
   } catch(e) { errors.push('Preop Volquetas'); console.error('PreopVol:', e); }
 
@@ -2475,6 +2470,7 @@ function showPanel(id, el) {
         renderPreopUnificado(dataCar, dataTra, currentFilter);
       } else if (id === 'preopvolquetas') {
         renderPreop('vol', dataPreopVol, currentFilter);
+        renderVolquetasVisual(dataPreopVol, currentFilter);
       } else if (id === 'clientes') {
         renderClientes(dataIngreso, currentFilter);
         if (window.dataIngreso) { try { renderCliCmpChart(window.dataIngreso); } catch(e){} }
@@ -2525,6 +2521,7 @@ function setFilter(f, el) {
   renderAccesos();
   renderViajes(dataViajes, f);
   renderPreop('vol', dataPreopVol, f);
+  renderVolquetasVisual(dataPreopVol, f);
   const dataCar = dataPreopCar.filter(esCargador);
   const dataTra = dataPreopCar.filter(esTractor);
   renderPreopUnificado(dataCar, dataTra, f);
@@ -4401,7 +4398,132 @@ function filtrarTra() {
   return data;
 }
 
-function aplicarFiltrosVol() { renderPreop('vol', filtrarVol(), currentFilter, true); }
+/*
+  ═══════════════════════════════════════════════════════════
+  RENDER VOLQUETAS VISUAL — tarjetas por vehículo, peor estado primero
+  Se ejecuta después de renderPreop('vol',...) para agregar las tarjetas
+  ═══════════════════════════════════════════════════════════
+*/
+function renderVolquetasVisual(data, filter) {
+  const cont = document.getElementById('vol-visual-contenido');
+  if (!cont) return;
+
+  // Filtrar por periodo
+  const rows = (filter === 'total') ? data : data.filter(r => {
+    const marca = (r['Timestamp']||r['timestamp']||r['Fecha']||r['fecha']||'').toString().trim();
+    return inPeriod(marca, filter);
+  });
+
+  // Filtro de placa si está activo
+  const placaFiltro = (document.getElementById('vol-filtro-placa')||{}).value || '';
+  const fechaFiltro = (document.getElementById('vol-filtro-fecha')||{}).value || '';
+  let filtrados = rows;
+  if (placaFiltro) filtrados = filtrados.filter(r => (r['Placa']||r['placa']||'').trim() === placaFiltro);
+  if (fechaFiltro) filtrados = filtrados.filter(r => toYMD(r['Timestamp']||r['Fecha']||'') === fechaFiltro || toYMD(r['Fecha']||'') === fechaFiltro);
+
+  if (filtrados.length === 0) {
+    cont.innerHTML = '<div class="card" style="text-align:center;color:var(--ink-l);padding:40px">Sin inspecciones en este periodo</div>';
+    return;
+  }
+
+  const allItems = Object.values(PREOP_SECCIONES_VOL).flat();
+
+  // Agrupar por placa
+  const porPlaca = {};
+  filtrados.forEach(r => {
+    const placa = (r['Placa']||r['placa']||'Sin placa').trim();
+    if (!porPlaca[placa]) porPlaca[placa] = [];
+    porPlaca[placa].push(r);
+  });
+
+  // Calcular estado de cada vehículo y ordenar por peor estado
+  const vehiculos = Object.entries(porPlaca).map(([placa, regs]) => {
+    let malos=0, regulares=0, buenos=0, total=0;
+    regs.forEach(r => {
+      allItems.forEach(col => {
+        const v = r[col]||'';
+        if (isMalo(v)) malos++;
+        else if (isRegular(v)) regulares++;
+        else if (isBueno(v)) buenos++;
+        if (v) total++;
+      });
+    });
+    const pctBuenos = total > 0 ? Math.round(buenos/total*100) : 0;
+    const conductores = [...new Set(regs.map(r => r['Conductor']||r['conductor']||'').filter(Boolean))];
+    const ultimaFecha = regs.map(r => r['Fecha']||r['Timestamp']||'').sort().reverse()[0] || '';
+    const km = regs.map(r => r['Kilometraje']||r['km']||'').filter(Boolean).sort().reverse()[0] || '';
+    // Hallazgos
+    const malosMap = {};
+    regs.forEach(row => { allItems.forEach(col => { if(isMalo(row[col]||'')) malosMap[col]=(malosMap[col]||0)+1; }); });
+    const hallazgos = Object.entries(malosMap).sort((a,b)=>b[1]-a[1]).slice(0,4);
+    return { placa, regs, malos, regulares, buenos, total, pctBuenos, conductores, ultimaFecha, km, hallazgos };
+  }).sort((a,b) => b.malos - a.malos || b.regulares - a.regulares);
+
+  cont.innerHTML = vehiculos.map(v => {
+    const borderColor = v.malos > 0 ? 'var(--red)' : v.regulares > 0 ? '#d4a017' : 'var(--green)';
+    const badgeColor = v.malos > 0 ? 'var(--red)' : v.regulares > 0 ? '#d4a017' : 'var(--green)';
+    const badgeText = v.malos > 0 ? 'REQUIERE ATENCIÓN' : v.regulares > 0 ? 'REGULAR' : 'ÓPTIMO';
+
+    const hallHtml = v.hallazgos.length > 0 ? v.hallazgos.map(([item, cnt]) => {
+      const shortName = item.replace(/^[A-Z]+\d+\s*-\s*/,'');
+      return `<span style="font-size:11px;background:var(--red-l);color:var(--red);padding:3px 8px;border-radius:3px;font-weight:600">${shortName} (${cnt})</span>`;
+    }).join(' ') : '<span style="font-size:11px;color:var(--green);font-weight:600">Sin hallazgos</span>';
+
+    return `<div class="card" style="margin-bottom:14px;border-left:5px solid ${borderColor}">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;flex-wrap:wrap;gap:12px">
+        <!-- Placa grande -->
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+          <div style="font-family:'Libre Baskerville',serif;font-size:28px;font-weight:700;color:var(--ink);letter-spacing:1px">${v.placa}</div>
+          <span style="font-size:10px;font-weight:700;letter-spacing:1px;padding:4px 12px;border-radius:20px;background:${badgeColor};color:white">${badgeText}</span>
+        </div>
+        <div style="font-size:12px;color:var(--ink-m)">${v.regs.length} inspecciones · ${v.conductores.join(', ')||'—'}</div>
+      </div>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;padding:0 20px 16px;align-items:center">
+        <!-- KPIs compactos -->
+        <div style="text-align:center;min-width:60px">
+          <div style="font-family:'Libre Baskerville',serif;font-size:28px;font-weight:700;color:var(--red);line-height:1">${v.malos}</div>
+          <div style="font-size:9px;font-weight:700;color:var(--ink-l);letter-spacing:1px;margin-top:2px">MALOS</div>
+        </div>
+        <div style="text-align:center;min-width:60px">
+          <div style="font-family:'Libre Baskerville',serif;font-size:28px;font-weight:700;color:#d4a017;line-height:1">${v.regulares}</div>
+          <div style="font-size:9px;font-weight:700;color:var(--ink-l);letter-spacing:1px;margin-top:2px">REG.</div>
+        </div>
+        <div style="text-align:center;min-width:60px">
+          <div style="font-family:'Libre Baskerville',serif;font-size:28px;font-weight:700;color:var(--green);line-height:1">${v.pctBuenos}%</div>
+          <div style="font-size:9px;font-weight:700;color:var(--ink-l);letter-spacing:1px;margin-top:2px">BUENOS</div>
+        </div>
+        ${v.km ? `<div style="text-align:center;min-width:60px">
+          <div style="font-size:16px;font-weight:700;color:var(--ink-m);line-height:1">${v.km}</div>
+          <div style="font-size:9px;font-weight:700;color:var(--ink-l);letter-spacing:1px;margin-top:2px">KM</div>
+        </div>` : ''}
+        <!-- Hallazgos inline -->
+        <div style="flex:1;display:flex;gap:6px;flex-wrap:wrap;align-items:center;min-width:120px">${hallHtml}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Tabla compacta
+  const tbody = document.getElementById('tbody-vol');
+  if (tbody) {
+    tbody.innerHTML = filtrados.slice().reverse().slice(0,50).map(r => {
+      let b=0,reg=0,m=0;
+      allItems.forEach(c => { const v=r[c]||''; if(isBueno(v))b++; else if(isRegular(v))reg++; else if(isMalo(v))m++; });
+      const obs = (r['Observaciones']||r['observaciones']||'').trim();
+      return `<tr>
+        <td>${r['Fecha']||''}</td>
+        <td><strong>${r['Placa']||r['placa']||'—'}</strong></td>
+        <td>${r['Conductor']||r['conductor']||'—'}</td>
+        <td>${r['Kilometraje']||r['km']||'—'}</td>
+        <td ${m>0?'style="color:var(--red);font-weight:700"':''}>${m}</td>
+        <td ${reg>0?'style="color:#d4a017;font-weight:600"':''}>${reg}</td>
+        <td>${b}</td>
+        <td style="font-size:11px;color:var(--ink-m);max-width:200px;white-space:normal;word-break:break-word">${obs||'—'}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="8" class="empty">Sin registros</td></tr>';
+  }
+}
+
+function aplicarFiltrosVol() { renderPreop('vol', filtrarVol(), currentFilter, true); renderVolquetasVisual(dataPreopVol, currentFilter); }
 function aplicarFiltrosCar() { renderPreop('car', filtrarCar(), currentFilter, true); }
 function aplicarFiltrosTra() { renderPreop('tra', filtrarTra(), currentFilter, true); }
 function aplicarFiltrosVj()  { renderViajes(dataViajes, currentFilter); }
@@ -4416,6 +4538,7 @@ function limpiarFiltrosVol() {
   const d = document.getElementById('vol-filtro-fecha'); if(d) d.value='';
   const i = document.getElementById('vol-filtro-info');  if(i) i.textContent='';
   renderPreop('vol', dataPreopVol, currentFilter);
+  renderVolquetasVisual(dataPreopVol, currentFilter);
 }
 function limpiarFiltrosCar() {
   const d = document.getElementById('car-filtro-fecha'); if(d) d.value='';
