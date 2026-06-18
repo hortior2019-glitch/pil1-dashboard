@@ -487,6 +487,50 @@
 
   <!-- ══════════ PANEL: INSUMOS ══════════ -->
   <div id="panel-insumos" class="panel">
+
+    <!-- Formulario: registrar ingreso de insumo -->
+    <div class="seccion">
+      <div class="seccion-header">Registrar Ingreso de Insumo</div>
+      <div class="seccion-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Fecha <span class="req">*</span></label>
+            <input type="date" id="insFecha">
+          </div>
+          <div class="form-group">
+            <label>Insumo <span class="req">*</span></label>
+            <input type="text" id="insInsumo" list="listaInsumos" placeholder="Ej: Lonas, Carriel...">
+            <datalist id="listaInsumos"></datalist>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Cantidad que Ingresa <span class="req">*</span></label>
+            <input type="number" id="insCantidad" placeholder="Cantidad" min="0" step="0.01">
+          </div>
+          <div class="form-group">
+            <label>Responsable <span class="req">*</span></label>
+            <select id="insResponsable">
+              <option value="">— Seleccione —</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row full">
+          <div class="form-group">
+            <label>Observaciones</label>
+            <textarea id="insObs" placeholder="Notas sobre el ingreso..."></textarea>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btnIns" onclick="enviarIngresoInsumo()">Registrar Ingreso</button>
+          <button class="btn btn-secondary" onclick="limpiarForm('ins')">Limpiar</button>
+        </div>
+        <p style="font-size:0.72rem;color:var(--texto-sec);margin-top:0.6rem">
+          La cantidad ingresada se suma al stock actual del insumo. Si escribes un nombre de insumo nuevo que no aparece en la lista, se creará automáticamente en el Sheet al guardar.
+        </p>
+      </div>
+    </div>
+
     <div class="seccion">
       <div class="seccion-header">Inventario de Insumos</div>
       <div class="seccion-body tabla-wrapper">
@@ -537,6 +581,7 @@
     const hoy = new Date().toISOString().split('T')[0];
     document.getElementById('prodFecha').value = hoy;
     document.getElementById('salFecha').value = hoy;
+    document.getElementById('insFecha').value = hoy;
     if (getApiUrl()) cargarDatos();
   });
 
@@ -560,9 +605,9 @@
     _lastData = data;
     const r = data.resumen;
 
-    // ── Poblar selectores de responsables desde PARAMETROS del sheet ──
+    // ── Poblar selectores de responsables desde la hoja "Usuarios" del sheet ──
     if (data.responsables && data.responsables.length) {
-      ['prodResponsable','salResponsable'].forEach(id => {
+      ['prodResponsable','salResponsable','insResponsable'].forEach(id => {
         const sel = document.getElementById(id);
         if (!sel) return;
         const valorActual = sel.value;
@@ -575,6 +620,14 @@
         });
         if (valorActual) sel.value = valorActual;
       });
+    }
+
+    // ── Poblar datalist de insumos existentes (para el formulario de ingreso) ──
+    if (data.nombresInsumos) {
+      const dl = document.getElementById('listaInsumos');
+      if (dl) {
+        dl.innerHTML = data.nombresInsumos.map(n => `<option value="${n}"></option>`).join('');
+      }
     }
 
     // ── Validar que "Hoy" realmente sea hoy ──
@@ -738,6 +791,28 @@
     await enviar(payload, 'btnSal', 'sal');
   }
 
+  // ═══ ENVIAR INGRESO DE INSUMO ═══
+  async function enviarIngresoInsumo() {
+    const fecha = document.getElementById('insFecha').value;
+    const insumo = document.getElementById('insInsumo').value.trim();
+    const cantidad = document.getElementById('insCantidad').value;
+    const resp = document.getElementById('insResponsable').value;
+    if (!fecha || !insumo || !cantidad || !resp) return showToast('Completa los campos obligatorios', 'error');
+
+    const payload = {
+      accion: 'ingreso_insumo',
+      fecha, insumo, cantidad: Number(cantidad), resp,
+      obs: document.getElementById('insObs').value
+    };
+    await enviar(payload, 'btnIns', 'ins');
+  }
+
+  const TEXTO_BOTON = {
+    prod: 'Registrar Producción',
+    sal: 'Registrar Salida',
+    ins: 'Registrar Ingreso'
+  };
+
   async function enviar(payload, btnId, prefix) {
     const url = getApiUrl();
     if (!url) return showToast('Configura la URL del Web App primero', 'error');
@@ -763,7 +838,7 @@
     } catch(e) {
       showToast('Error de conexión', 'error');
     } finally {
-      btn.innerHTML = prefix === 'prod' ? 'Registrar Producción' : 'Registrar Salida';
+      btn.innerHTML = TEXTO_BOTON[prefix] || 'Registrar';
       btn.disabled = false;
     }
   }
@@ -777,6 +852,12 @@
       document.getElementById('prodBultos').value = '';
       document.getElementById('prodResponsable').value = '';
       document.getElementById('prodObs').value = '';
+    } else if (prefix === 'ins') {
+      document.getElementById('insFecha').value = hoy;
+      document.getElementById('insInsumo').value = '';
+      document.getElementById('insCantidad').value = '';
+      document.getElementById('insResponsable').value = '';
+      document.getElementById('insObs').value = '';
     } else {
       document.getElementById('salFecha').value = hoy;
       document.getElementById('salBultos').value = '';
