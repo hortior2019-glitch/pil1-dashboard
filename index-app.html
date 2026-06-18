@@ -323,6 +323,11 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   /* Grids a 1 columna */
   .g2,.g3{grid-template-columns:1fr !important;gap:14px}
 
+  /* Hero proveedores: apilado en móvil */
+  .ops-hero{flex-direction:column !important;align-items:flex-start !important;padding:24px 16px !important;gap:16px !important}
+  .ops-hero div[style*="width:1px;height:80px"]{display:none !important}
+  .ops-hero div[style*="margin-left:auto"]{margin-left:0 !important;width:100% !important;justify-content:space-around !important}
+
   /* Cards */
   .card{padding:16px}
   .card-hdr{font-size:18px;margin-bottom:14px}
@@ -1044,8 +1049,8 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 -->
 <div class="panel" id="panel-operaciones">
 
-  <!-- Hero header con logo grande -->
-  <div style="background:var(--navy);border-radius:4px;padding:48px 56px;margin-bottom:28px;position:relative;overflow:hidden;display:flex;align-items:center;gap:48px">
+  <!-- Hero header con logo grande — responsive para móvil -->
+  <div class="ops-hero" style="background:var(--navy);border-radius:4px;padding:32px 24px;margin-bottom:28px;position:relative;overflow:hidden;display:flex;align-items:center;gap:24px;flex-wrap:wrap">
     <!-- Círculos decorativos -->
     <div style="position:absolute;right:-60px;top:-60px;width:280px;height:280px;border-radius:50%;background:rgba(255,255,255,.04);pointer-events:none"></div>
     <div style="position:absolute;right:80px;bottom:-80px;width:200px;height:200px;border-radius:50%;background:rgba(255,255,255,.03);pointer-events:none"></div>
@@ -1064,7 +1069,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
       <div style="font-size:12px;color:rgba(255,255,255,.5);font-weight:300">Ranking dinámico · Actualizado con los datos del periodo seleccionado</div>
     </div>
     <!-- KPIs rápidos en el hero -->
-    <div style="margin-left:auto;display:flex;gap:32px;z-index:1;flex-shrink:0">
+    <div style="margin-left:auto;display:flex;gap:20px;z-index:1;flex-shrink:0;flex-wrap:wrap">
       <div style="text-align:center">
         <div style="font-family:'Playfair Display',serif;font-size:36px;font-weight:700;color:white;line-height:1" id="ops-hero-total">—</div>
         <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.45);margin-top:6px">Total Operaciones</div>
@@ -2306,7 +2311,7 @@ function renderOps(ops) {
           <div style="height:6px;background:var(--rule-l);overflow:hidden;border-radius:3px">
             <div style="height:100%;width:${pct}%;background:${accent};border-radius:3px;transition:width .8s ease"></div>
           </div>
-          <div style="font-size:10px;color:var(--ink-l);margin-top:5px;font-weight:600">${hasData?pctTotal+'%':'Sin registros en el período'}</div>
+          <div style="font-size:10px;color:var(--ink-l);margin-top:5px;font-weight:600">${hasData?pctTotal+'% del total de viajes':'Sin registros en el período'}</div>
         </div>
         <!-- Viajes -->
         <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 24px;border-left:1px solid var(--rule-l);min-width:110px;flex-shrink:0;background:${hasData?accent+'06':'transparent'}">
@@ -2395,14 +2400,8 @@ async function loadAllData() {
   try {
     dataPreopCar = await fetchCSV(SHEETS.preopCar);
     // filtrar por tipo de equipo usando columna AM
-    const dataCargador = dataPreopCar.filter(r => {
-      const t = (r['Tipo de Equipo'] || r['tipo de equipo'] || r['TIPO DE EQUIPO'] || '').toLowerCase().trim();
-      return t === 'cargador' || t === '';  // si no tiene tipo, asumir cargador (registros viejos)
-    });
-    const dataTractor = dataPreopCar.filter(r => {
-      const t = (r['Tipo de Equipo'] || r['tipo de equipo'] || r['TIPO DE EQUIPO'] || '').toLowerCase().trim();
-      return t === 'tractor';
-    });
+    const dataCargador = dataPreopCar.filter(esCargador);
+    const dataTractor = dataPreopCar.filter(esTractor);
     renderPreopUnificado(dataCargador, dataTractor, currentFilter);
     ok++;
   } catch(e) { errors.push('Preop Cargador/Tractor'); console.error('PreopCar:', e); }
@@ -2459,8 +2458,8 @@ function showPanel(id, el) {
   requestAnimationFrame(() => {
     try {
       if (id === 'preopequipo') {
-        const dataCar = dataPreopCar.filter(r => { const t=(r['Tipo de Equipo']||'').toLowerCase().trim(); return t==='cargador'||t===''; });
-        const dataTra = dataPreopCar.filter(r => (r['Tipo de Equipo']||'').toLowerCase().trim()==='tractor');
+        const dataCar = dataPreopCar.filter(esCargador);
+        const dataTra = dataPreopCar.filter(esTractor);
         renderPreopUnificado(dataCar, dataTra, currentFilter);
       } else if (id === 'preopvolquetas') {
         renderPreop('vol', dataPreopVol, currentFilter);
@@ -2514,8 +2513,8 @@ function setFilter(f, el) {
   renderAccesos();
   renderViajes(dataViajes, f);
   renderPreop('vol', dataPreopVol, f);
-  const dataCar = dataPreopCar.filter(r => { const t=(r['Tipo de Equipo']||'').toLowerCase().trim(); return t==='cargador'||t===''; });
-  const dataTra = dataPreopCar.filter(r => (r['Tipo de Equipo']||'').toLowerCase().trim()==='tractor');
+  const dataCar = dataPreopCar.filter(esCargador);
+  const dataTra = dataPreopCar.filter(esTractor);
   renderPreopUnificado(dataCar, dataTra, f);
 }
 
@@ -3004,6 +3003,7 @@ function drawHBars(containerId, data, colors, unit) {
   if (!data || data.length === 0) { el.innerHTML = '<div class="empty">Sin datos</div>'; return; }
   const total = data.reduce((s, d) => s + d[1], 0) || 1;
   const maxVal = data[0][1] || 1;
+  /* Cada fila: barra arriba, nombre+valor+porcentaje abajo — sin solaparse */
   el.innerHTML = data.slice(0, 12).map(([label, value], i) => {
     const pct = (value / total * 100).toFixed(1);
     const barPct = Math.round(value / maxVal * 100);
@@ -3013,16 +3013,14 @@ function drawHBars(containerId, data, colors, unit) {
     else if (unit === 'ton') valFmt = value.toFixed(1) + ' t';
     else if (unit === 'h') valFmt = value.toFixed(1) + ' h';
     else valFmt = fmt(value);
-    return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
-      <div style="flex:1;min-width:0">
-        <div style="height:24px;background:var(--rule-l);border-radius:4px;overflow:hidden">
-          <div style="width:${barPct}%;height:100%;background:${color};border-radius:4px;transition:width .4s"></div>
-        </div>
+    return `<div style="margin-bottom:10px">
+      <div style="height:22px;background:var(--rule-l);border-radius:4px;overflow:hidden;margin-bottom:3px">
+        <div style="width:${barPct}%;height:100%;background:${color};border-radius:4px;transition:width .4s"></div>
       </div>
-      <div style="min-width:160px;display:flex;align-items:center;gap:10px;font-size:13px;white-space:nowrap">
-        <span style="font-weight:700;color:var(--ink);flex:1;overflow:hidden;text-overflow:ellipsis;min-width:60px" title="${label}">${label}</span>
-        <span style="font-weight:600;color:var(--ink-m);min-width:60px;text-align:right">${valFmt}</span>
-        <span style="font-weight:800;color:${color};min-width:48px;text-align:right;font-size:14px">${pct}%</span>
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px">
+        <span style="font-weight:700;color:var(--ink);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${label}">${label}</span>
+        <span style="font-weight:600;color:var(--ink-m);white-space:nowrap">${valFmt}</span>
+        <span style="font-weight:800;color:${color};white-space:nowrap;font-size:14px;min-width:48px;text-align:right">${pct}%</span>
       </div>
     </div>`;
   }).join('');
@@ -4361,7 +4359,7 @@ function filtrarVol() {
 
 function filtrarCar() {
   const fecha = (document.getElementById('car-filtro-fecha')?.value || '').trim();
-  const dataCar = dataPreopCar.filter(r => { const t=(r['Tipo de Equipo']||'').toLowerCase().trim(); return t==='cargador'||t===''; });
+  const dataCar = dataPreopCar.filter(esCargador);
   let data = fecha
     ? dataCar.slice()
     : dataCar.filter(r => inPeriod((r['Timestamp']||r['Fecha']||''), currentFilter));
@@ -4377,7 +4375,7 @@ function filtrarCar() {
 
 function filtrarTra() {
   const fecha = (document.getElementById('tra-filtro-fecha')?.value || '').trim();
-  const dataTra = dataPreopCar.filter(r => (r['Tipo de Equipo']||'').toLowerCase().trim()==='tractor');
+  const dataTra = dataPreopCar.filter(esTractor);
   let data = fecha
     ? dataTra.slice()
     : dataTra.filter(r => inPeriod((r['Timestamp']||r['Fecha']||''), currentFilter));
@@ -4410,16 +4408,37 @@ function limpiarFiltrosVol() {
 function limpiarFiltrosCar() {
   const d = document.getElementById('car-filtro-fecha'); if(d) d.value='';
   const i = document.getElementById('car-filtro-info');  if(i) i.textContent='';
-  const dataCar = dataPreopCar.filter(r => { const t=(r['Tipo de Equipo']||'').toLowerCase().trim(); return t==='cargador'||t===''; });
+  const dataCar = dataPreopCar.filter(esCargador);
   renderPreop('car', dataCar, currentFilter);
 }
 function limpiarFiltrosTra() {
   const d = document.getElementById('tra-filtro-fecha'); if(d) d.value='';
   const i = document.getElementById('tra-filtro-info');  if(i) i.textContent='';
-  const dataTra = dataPreopCar.filter(r => (r['Tipo de Equipo']||'').toLowerCase().trim()==='tractor');
+  const dataTra = dataPreopCar.filter(esTractor);
   renderPreop('tra', dataTra, currentFilter);
 }
 // Columnas comunes de inspección (valores: bueno/regular/malo/na/no_aplica)
+/*
+  Helper para detectar tipo de equipo — busca en múltiples columnas posibles
+  Retorna 'cargador', 'tractor', o '' (vacío = asume cargador)
+*/
+function getTipoEquipo(r) {
+  // Buscar en columnas conocidas
+  const cols = ['Tipo de Equipo','tipo de equipo','TIPO DE EQUIPO','Tipo de equipo','Tipo De Equipo','TipoEquipo','tipoequipo'];
+  for (const c of cols) {
+    const v = (r[c]||'').toLowerCase().trim();
+    if (v === 'tractor' || v === 'cargador') return v;
+  }
+  // Fallback: buscar en TODOS los valores del registro por si la columna tiene nombre diferente
+  for (const key of Object.keys(r)) {
+    const v = (r[key]||'').toLowerCase().trim();
+    if (v === 'tractor') return 'tractor';
+  }
+  return ''; // vacío = asume cargador
+}
+function esCargador(r) { const t = getTipoEquipo(r); return t === 'cargador' || t === ''; }
+function esTractor(r)  { return getTipoEquipo(r) === 'tractor'; }
+
 const PREOP_SECCIONES_VOL = {
   'Luces':    ['L1 - Frontales altas y bajas','L2 - Traseras de trabajo','L3 - Direccionales delanteras','L4 - Direccionales traseras','L5 - Stop y señal trasera'],
   'Cabina':   ['C1 - Espejos laterales','C2 - Alarma de retroceso','C3 - Pito','C4 - Freno de servicio','C5 - Freno de emergencia','C6 - Dirección / suspensión','C7 - Cinturón de seguridad','C8 - Vidrio frontal','C9 - Limpiabrisa','C10 - Extintor 20lbs PQS','C11 - Silletería y tapicería','C12 - Indicadores','C13 - Batería y cables','C14 - Orden y aseo','C15 - Documentos'],
@@ -4795,16 +4814,16 @@ function aplicarFiltrosEquipo() {
   const fecha = (document.getElementById('equipo-filtro-fecha')||{}).value || '';
   const info = document.getElementById('equipo-filtro-info');
   if (info) info.textContent = fecha ? 'Filtrando: ' + fecha : '';
-  const dataCar = dataPreopCar.filter(r => (r['Tipo de Equipo']||'').toLowerCase().trim()==='cargador' || !(r['Tipo de Equipo']||'').trim());
-  const dataTra = dataPreopCar.filter(r => (r['Tipo de Equipo']||'').toLowerCase().trim()==='tractor');
+  const dataCar = dataPreopCar.filter(esCargador);
+  const dataTra = dataPreopCar.filter(esTractor);
   renderPreopUnificado(dataCar, dataTra, currentFilter);
 }
 
 function limpiarFiltrosEquipo() {
   const d = document.getElementById('equipo-filtro-fecha'); if(d) d.value='';
   const i = document.getElementById('equipo-filtro-info');  if(i) i.textContent='';
-  const dataCar = dataPreopCar.filter(r => (r['Tipo de Equipo']||'').toLowerCase().trim()==='cargador' || !(r['Tipo de Equipo']||'').trim());
-  const dataTra = dataPreopCar.filter(r => (r['Tipo de Equipo']||'').toLowerCase().trim()==='tractor');
+  const dataCar = dataPreopCar.filter(esCargador);
+  const dataTra = dataPreopCar.filter(esTractor);
   renderPreopUnificado(dataCar, dataTra, currentFilter);
 }
 
