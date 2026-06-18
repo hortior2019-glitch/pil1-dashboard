@@ -379,7 +379,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   /* Login compacto */
   #dash-login{padding:14px}
   #dash-login > div{max-width:100% !important;padding:28px 22px !important}
-  #dash-login img{max-width:270px !important}
+  #dash-login img{max-width:300px !important}
 }
 
 /* ══ MÓVIL PEQUEÑO (≤420px) ══ */
@@ -1225,8 +1225,8 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   <!-- DIAS: gráfica de barras full width y más alta -->
   <div class="card" style="margin-bottom:20px;">
     <div style="padding:0 0 16px;border-bottom:1px solid var(--rule-l);margin-bottom:20px">
-      <div style="font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px">Distribución semanal</div>
-      <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink)">Ingresos por día de la semana</div>
+      <div style="font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px" id="dias-bar-subtitulo">Distribución semanal</div>
+      <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink)" id="dias-bar-titulo">Ingresos por día de la semana</div>
     </div>
     <canvas id="chart-dias-bar" style="width:100%;display:block" height="280"></canvas>
   </div>
@@ -3365,6 +3365,8 @@ function renderChartClientes(data) {
   const residuosCnt = {};
   const diasCnt = {'Dom':0,'Lun':0,'Mar':0,'Mie':0,'Jue':0,'Vie':0,'Sab':0};
   const diasNombres = ['Dom','Lun','Mar','Mie','Jue','Vie','Sab'];
+  /* Para vista mensual: agrupar por día del mes (1-31) */
+  const diasMesCnt = {};
 
   const normOp2 = normEmpresa;
   const getOp   = r => normOp2(r['OPERACION'] || r['Operacion'] || r['operacion'] || r['OPERACIÓN'] || r['L'] || '');
@@ -3378,7 +3380,11 @@ function renderChartClientes(data) {
     const res = r['RESIDUO'] || r['Residuo'] || r['residuo'] || 'Sin clasificar';
     residuosCnt[res] = (residuosCnt[res]||0) + 1;
     const fecha = parseDate(getMarcaTemporal(r) || '');
-    if (fecha) diasCnt[diasNombres[fecha.getDay()]]++;
+    if (fecha) {
+      diasCnt[diasNombres[fecha.getDay()]]++;
+      const diaNum = fecha.getDate();
+      diasMesCnt[diaNum] = (diasMesCnt[diaNum]||0) + 1;
+    }
   });
 
   const sortedGrupos = Object.entries(grupos).sort((a,b)=>b[1]-a[1]).slice(0,10);
@@ -3417,7 +3423,22 @@ function renderChartClientes(data) {
     return assigned;
   })();
     drawHBars('hbar-residuos', sortedRes, coloresResiduos, 'count');
-    drawBar('chart-dias-bar', Object.keys(diasCnt), Object.values(diasCnt), '#1a5c35');
+    /* Barras: si el filtro es mes o total, mostrar todos los días del mes; si no, por día de semana */
+    const tituloEl = document.getElementById('dias-bar-titulo');
+    const subEl = document.getElementById('dias-bar-subtitulo');
+    if (currentFilter === 'mes' || currentFilter === 'total' || currentFilter === 'custom') {
+      // Vista mensual: días 1-31
+      const maxDia = Math.max(...Object.keys(diasMesCnt).map(Number), 0) || 31;
+      const labels = []; const values = [];
+      for (let d = 1; d <= maxDia; d++) { labels.push(String(d)); values.push(diasMesCnt[d]||0); }
+      if (tituloEl) tituloEl.textContent = 'Ingresos por día del mes';
+      if (subEl) subEl.textContent = currentFilter === 'total' ? 'Distribución acumulada' : 'Distribución mensual';
+      drawBar('chart-dias-bar', labels, values, '#1a5c35');
+    } else {
+      if (tituloEl) tituloEl.textContent = 'Ingresos por día de la semana';
+      if (subEl) subEl.textContent = 'Distribución semanal';
+      drawBar('chart-dias-bar', Object.keys(diasCnt), Object.values(diasCnt), '#1a5c35');
+    }
   }, 250);
 }
 
