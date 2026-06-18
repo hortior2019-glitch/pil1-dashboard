@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Planta Empathy — Inventario Humus</title>
+
+<!-- ══ Ícono de la app (para acceso directo en pantalla de inicio) ══ -->
+<link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="icons/icon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&display=swap');
 
@@ -312,6 +317,7 @@
   <div class="tab" onclick="switchTab('produccion')">Producción</div>
   <div class="tab" onclick="switchTab('salidas')">Salidas</div>
   <div class="tab" onclick="switchTab('historial')">Historial</div>
+  <div class="tab" onclick="switchTab('insumos')">Insumos</div>
 </div>
 
 <div class="container">
@@ -479,6 +485,31 @@
     </div>
   </div>
 
+  <!-- ══════════ PANEL: INSUMOS ══════════ -->
+  <div id="panel-insumos" class="panel">
+    <div class="seccion">
+      <div class="seccion-header">Inventario de Insumos</div>
+      <div class="seccion-body tabla-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Insumo</th>
+              <th>Fecha Registro</th>
+              <th>Stock Actual</th>
+              <th>Consumo / Bulto</th>
+            </tr>
+          </thead>
+          <tbody id="tablaInsumos">
+            <tr><td colspan="4" style="text-align:center;color:#999;padding:2rem">Conecta tu Google Sheet para ver datos</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <p style="font-size:0.75rem;color:var(--texto-sec);padding:0 0.25rem">
+      El stock se actualiza automáticamente al registrar producción: por cada bulto producido se descuenta 1 unidad de Lonas y 0,1 de Carriel. Si agregas un insumo nuevo en la hoja "Inventarios" del Sheet, aparecerá aquí automáticamente.
+    </p>
+  </div>
+
 </div>
 
 <!-- ── TOAST ── -->
@@ -493,12 +524,12 @@
   // ═══ TABS ═══
   function switchTab(name) {
     document.querySelectorAll('.tab').forEach((t, i) => {
-      const panels = ['resumen','produccion','salidas','historial'];
+      const panels = ['resumen','produccion','salidas','historial','insumos'];
       t.classList.toggle('active', panels[i] === name);
     });
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     document.getElementById('panel-' + name).classList.add('active');
-    if (name === 'resumen' || name === 'historial') cargarDatos();
+    if (name === 'resumen' || name === 'historial' || name === 'insumos') cargarDatos();
   }
 
   // ═══ INIT ═══
@@ -598,6 +629,25 @@
 
     // ── Historial con filtro de mes ──
     renderHistorialFiltrado(data);
+
+    // ── Tabla de Insumos ──
+    renderInsumos(data);
+  }
+
+  function renderInsumos(data) {
+    const tbody = document.getElementById('tablaInsumos');
+    if (!tbody) return;
+    if (data.insumos && data.insumos.length) {
+      tbody.innerHTML = data.insumos.map(i => `
+        <tr>
+          <td>${i.insumo}</td>
+          <td>${i.fecha || '—'}</td>
+          <td><strong>${i.stockActual}</strong></td>
+          <td>${i.consumoPorBulto !== null && i.consumoPorBulto !== undefined ? i.consumoPorBulto : '—'}</td>
+        </tr>`).join('');
+    } else {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999;padding:1.5rem">Sin registros de insumos</td></tr>';
+    }
   }
 
   function renderHistorialFiltrado(data) {
