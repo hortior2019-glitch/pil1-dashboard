@@ -952,7 +952,12 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   </div>
 
   <!-- KPIs -->
-  <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px">
+  <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px">
+    <div class="kpi" style="--ac:var(--red)">
+      <div class="kpi-lbl">Producción del Día</div>
+      <div class="kpi-val" id="stock-kpi-hoy">—</div>
+      <div class="kpi-desc" id="stock-kpi-hoy-fecha">último registro</div>
+    </div>
     <div class="kpi" style="--ac:var(--green)">
       <div class="kpi-lbl">Stock Actual</div>
       <div class="kpi-val" id="stock-kpi-actual">—</div>
@@ -5314,6 +5319,25 @@ function renderProduccionHumus(rows) {
   const fechaAct  = (ultimo[colFecha] || '').toString().trim();
 
   const setT = (id,v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+
+  // ── Producción del Día: busca el registro de HOY (fecha real); si no existe, usa el último disponible ──
+  const hoyYMD = ahora.getFullYear() + '-' + String(ahora.getMonth()+1).padStart(2,'0') + '-' + String(ahora.getDate()).padStart(2,'0');
+  const filaHoy = sorted.find(r => {
+    const d = new Date(r[colFecha]);
+    if (isNaN(d.getTime())) return false;
+    const k = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    return k === hoyYMD;
+  });
+  if (filaHoy) {
+    setT('stock-kpi-hoy', fmtInt(parseNum(filaHoy[colProd])));
+    setT('stock-kpi-hoy-fecha', 'hoy · ' + (filaHoy[colFecha]||''));
+  } else {
+    // Sin registro de hoy: mostrar el último día disponible con su fecha real
+    const ultimoConDato = sorted[0];
+    setT('stock-kpi-hoy', ultimoConDato ? fmtInt(parseNum(ultimoConDato[colProd])) : '0');
+    setT('stock-kpi-hoy-fecha', ultimoConDato ? 'sin registro de hoy · último: ' + (ultimoConDato[colFecha]||'') : 'sin registros');
+  }
+
   setT('stock-kpi-actual',     fmtInt(stockAct));
   setT('stock-kpi-producido',  fmtInt(totalProd));
   setT('stock-kpi-despachado', fmtInt(totalDesp));
