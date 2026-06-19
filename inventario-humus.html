@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Planta HortiOrganic — Inventario Humus</title>
+<title>Planta Empathy — Inventario Humus</title>
 
 <!-- ══ Ícono de la app (para acceso directo en pantalla de inicio) ══ -->
 <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
@@ -115,6 +115,72 @@
     gap: 1rem;
     margin-bottom: 1.5rem;
   }
+
+  /* ─── CARDS GRANDES: HUMUS SÓLIDO / LÍQUIDO ─── */
+  .resumen-grid-grande {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .card-grande {
+    background: var(--verde-header);
+    color: var(--blanco);
+    border: 1px solid var(--dorado);
+  }
+  .card-grande.liquido { background: #2c5f8a; border-color: #5a8fb8; }
+  .card-grande-header {
+    padding: 1.25rem 1.4rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+  }
+  .card-grande .label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.85;
+  }
+  .card-grande .valor {
+    font-family: 'Crimson Text', serif;
+    font-size: 2.4rem;
+    font-weight: 700;
+    line-height: 1.1;
+    margin-top: 0.2rem;
+  }
+  .card-grande .sub {
+    font-size: 0.72rem;
+    opacity: 0.8;
+    margin-top: 0.2rem;
+  }
+  .card-grande .chevron {
+    font-size: 1.4rem;
+    transition: transform 0.2s;
+    opacity: 0.8;
+  }
+  .card-grande.open .chevron { transform: rotate(180deg); }
+  .card-grande-detalle {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.25s ease;
+    background: rgba(0,0,0,0.15);
+  }
+  .card-grande.open .card-grande-detalle {
+    max-height: 400px;
+    overflow-y: auto;
+  }
+  .detalle-linea-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.55rem 1.4rem;
+    font-size: 0.78rem;
+    border-top: 1px solid rgba(255,255,255,0.12);
+  }
+  .detalle-linea-row .nombre { opacity: 0.95; }
+  .detalle-linea-row .cant { font-weight: 700; }
+
   .card-stat {
     background: var(--blanco);
     border: 1px solid var(--verde-borde);
@@ -295,6 +361,7 @@
   @media (max-width: 600px) {
     .form-row { grid-template-columns: 1fr; }
     .resumen-grid { grid-template-columns: 1fr 1fr; }
+    .resumen-grid-grande { grid-template-columns: 1fr; }
     header { padding: 1rem; }
     .container { padding: 1rem; }
   }
@@ -305,7 +372,7 @@
 <!-- ══════════ HEADER ══════════ -->
 <header>
   <div class="brand">
-    <h1>Planta HortiOrganic — Control de Inventario</h1>
+    <h1>Planta Empathy — Control de Inventario</h1>
     <p>Humus x 50 kg · Sistema de Registro</p>
   </div>
   <button class="menu-btn" onclick="cargarDatos()">↻ ACTUALIZAR</button>
@@ -325,6 +392,33 @@
 
   <!-- ══════════ PANEL: RESUMEN ══════════ -->
   <div id="panel-resumen" class="panel active">
+
+    <!-- Acumulados grandes: Humus Sólido vs Humus Líquido -->
+    <div class="resumen-grid-grande">
+      <div class="card-grande solido">
+        <div class="card-grande-header" onclick="toggleDetalle('solido')">
+          <div>
+            <div class="label">Humus Sólido</div>
+            <div class="valor" id="stockSolido">—</div>
+            <div class="sub">bultos en stock</div>
+          </div>
+          <span class="chevron" id="chevSolido">⌄</span>
+        </div>
+        <div class="card-grande-detalle" id="detalleSolido"></div>
+      </div>
+      <div class="card-grande liquido">
+        <div class="card-grande-header" onclick="toggleDetalle('liquido')">
+          <div>
+            <div class="label">Humus Líquido</div>
+            <div class="valor" id="stockLiquido">—</div>
+            <div class="sub">unidades en stock (todas las presentaciones)</div>
+          </div>
+          <span class="chevron" id="chevLiquido">⌄</span>
+        </div>
+        <div class="card-grande-detalle" id="detalleLiquido"></div>
+      </div>
+    </div>
+
     <div class="resumen-grid">
       <div class="card-stat stock">
         <div class="label">Stock Actual</div>
@@ -378,8 +472,22 @@
       <div class="seccion-body">
         <div class="form-row">
           <div class="form-group">
-            <label>Fecha <span class="req">*</span></label>
-            <input type="date" id="prodFecha">
+            <label>Línea <span class="req">*</span></label>
+            <select id="prodLinea" onchange="actualizarPresentaciones('prod')">
+              <option value="">— Seleccione —</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Presentación <span class="req">*</span></label>
+            <select id="prodPresentacion">
+              <option value="">— Seleccione una línea primero —</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Cantidad <span class="req">*</span></label>
+            <input type="number" id="prodBultos" placeholder="Cantidad producida" min="0" step="0.01">
           </div>
           <div class="form-group">
             <label>Lote</label>
@@ -387,10 +495,6 @@
           </div>
         </div>
         <div class="form-row">
-          <div class="form-group">
-            <label>Bultos Producidos <span class="req">*</span></label>
-            <input type="number" id="prodBultos" placeholder="Cantidad" min="0">
-          </div>
           <div class="form-group">
             <label>Responsable <span class="req">*</span></label>
             <select id="prodResponsable">
@@ -419,19 +523,29 @@
       <div class="seccion-body">
         <div class="form-row">
           <div class="form-group">
-            <label>Fecha <span class="req">*</span></label>
-            <input type="date" id="salFecha">
+            <label>Línea <span class="req">*</span></label>
+            <select id="salLinea" onchange="actualizarPresentaciones('sal')">
+              <option value="">— Seleccione —</option>
+            </select>
           </div>
           <div class="form-group">
-            <label>Bultos Despachados <span class="req">*</span></label>
-            <input type="number" id="salBultos" placeholder="Cantidad" min="0">
+            <label>Presentación <span class="req">*</span></label>
+            <select id="salPresentacion">
+              <option value="">— Seleccione una línea primero —</option>
+            </select>
           </div>
         </div>
         <div class="form-row">
           <div class="form-group">
+            <label>Cantidad <span class="req">*</span></label>
+            <input type="number" id="salBultos" placeholder="Cantidad despachada" min="0" step="0.01">
+          </div>
+          <div class="form-group">
             <label>Destino / Cliente <span class="req">*</span></label>
             <input type="text" id="salDestino" placeholder="Nombre del cliente o destino">
           </div>
+        </div>
+        <div class="form-row">
           <div class="form-group">
             <label>Responsable <span class="req">*</span></label>
             <select id="salResponsable">
@@ -469,8 +583,8 @@
       <div class="seccion-header">Historial de Producción</div>
       <div class="seccion-body tabla-wrapper">
         <table>
-          <thead><tr><th>Fecha</th><th>Lote</th><th>Bultos</th><th>Responsable</th><th>Obs.</th></tr></thead>
-          <tbody id="tablaProd"><tr><td colspan="5" style="text-align:center;color:#999;padding:1.5rem">Sin datos</td></tr></tbody>
+          <thead><tr><th>Fecha/Hora</th><th>Línea</th><th>Presentación</th><th>Cantidad</th><th>Lote</th><th>Responsable</th></tr></thead>
+          <tbody id="tablaProd"><tr><td colspan="6" style="text-align:center;color:#999;padding:1.5rem">Sin datos</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -478,8 +592,8 @@
       <div class="seccion-header">Historial de Salidas</div>
       <div class="seccion-body tabla-wrapper">
         <table>
-          <thead><tr><th>Fecha</th><th>Bultos</th><th>Destino</th><th>Responsable</th><th>Obs.</th></tr></thead>
-          <tbody id="tablaSal"><tr><td colspan="5" style="text-align:center;color:#999;padding:1.5rem">Sin datos</td></tr></tbody>
+          <thead><tr><th>Fecha/Hora</th><th>Línea</th><th>Presentación</th><th>Cantidad</th><th>Destino</th><th>Responsable</th></tr></thead>
+          <tbody id="tablaSal"><tr><td colspan="6" style="text-align:center;color:#999;padding:1.5rem">Sin datos</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -494,21 +608,17 @@
       <div class="seccion-body">
         <div class="form-row">
           <div class="form-group">
-            <label>Fecha <span class="req">*</span></label>
-            <input type="date" id="insFecha">
-          </div>
-          <div class="form-group">
             <label>Insumo <span class="req">*</span></label>
             <select id="insInsumo">
               <option value="">— Seleccione —</option>
             </select>
           </div>
-        </div>
-        <div class="form-row">
           <div class="form-group">
             <label>Nuevo Stock Actual <span class="req">*</span></label>
             <input type="number" id="insCantidad" placeholder="Stock actualizado" min="0" step="0.01">
           </div>
+        </div>
+        <div class="form-row">
           <div class="form-group">
             <label>Responsable <span class="req">*</span></label>
             <select id="insResponsable">
@@ -527,7 +637,7 @@
           <button class="btn btn-secondary" onclick="limpiarForm('ins')">Limpiar</button>
         </div>
         <p style="font-size:0.72rem;color:var(--texto-sec);margin-top:0.6rem">
-          El valor que ingreses reemplaza el stock actual del insumo (por ejemplo, tras un conteo físico o un nuevo ingreso de mercancía). Selecciona el insumo de la lista; si necesitas uno nuevo, agrégalo primero en la hoja "Inventarios" del Sheet.
+          El valor que ingreses reemplaza el stock actual del insumo (por ejemplo, tras un conteo físico o un nuevo ingreso de mercancía). Selecciona el insumo de la lista; si necesitas uno nuevo, agrégalo primero en la hoja "Insumos" del Sheet.
         </p>
       </div>
     </div>
@@ -551,7 +661,7 @@
       </div>
     </div>
     <p style="font-size:0.75rem;color:var(--texto-sec);padding:0 0.25rem">
-      El stock se actualiza automáticamente al registrar producción: por cada bulto producido se descuenta 1 unidad de Lonas y 0,1 de Carriel. Si agregas un insumo nuevo en la hoja "Inventarios" del Sheet, aparecerá aquí automáticamente.
+      El stock se actualiza automáticamente al registrar producción de Humus Sólido: por cada bulto se descuenta 1 Lona y 1 gramo de Hilaza. Si agregas un insumo nuevo en la hoja "Insumos" del Sheet, aparecerá aquí automáticamente.
     </p>
   </div>
 
@@ -574,15 +684,11 @@
     });
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     document.getElementById('panel-' + name).classList.add('active');
-    if (name === 'resumen' || name === 'historial' || name === 'insumos') cargarDatos();
+    cargarDatos();
   }
 
   // ═══ INIT ═══
   window.addEventListener('DOMContentLoaded', () => {
-    const hoy = new Date().toISOString().split('T')[0];
-    document.getElementById('prodFecha').value = hoy;
-    document.getElementById('salFecha').value = hoy;
-    document.getElementById('insFecha').value = hoy;
     if (getApiUrl()) cargarDatos();
   });
 
@@ -601,6 +707,7 @@
 
   // Store last data for filtering
   let _lastData = null;
+  let _catalogoLineas = [];
 
   function renderResumen(data) {
     _lastData = data;
@@ -633,6 +740,26 @@
         if (valorActual) selIns.value = valorActual;
       }
     }
+
+    // ── Poblar selectores de Línea (Producción/Salidas) desde la hoja "Lineas" ──
+    if (data.catalogoLineas) {
+      _catalogoLineas = data.catalogoLineas;
+      ['prodLinea','salLinea'].forEach(id => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        const valorActual = sel.value;
+        sel.innerHTML = '<option value="">— Seleccione —</option>' +
+          _catalogoLineas.map(c => `<option value="${c.linea}">${c.linea}</option>`).join('');
+        if (valorActual) {
+          sel.value = valorActual;
+          const prefix = id === 'prodLinea' ? 'prod' : 'sal';
+          actualizarPresentaciones(prefix, true);
+        }
+      });
+    }
+
+    // ── Tarjetas grandes: Humus Sólido vs Humus Líquido ──
+    renderResumenPorLinea(data.resumenPorLinea);
 
     // ── Validar que "Hoy" realmente sea hoy ──
     const hoy = new Date().toISOString().split('T')[0];
@@ -691,6 +818,65 @@
     renderInsumos(data);
   }
 
+  // ═══ SELECTS ENCADENADOS: LÍNEA → PRESENTACIÓN ═══
+  function actualizarPresentaciones(prefix, mantenerValor) {
+    const selLinea = document.getElementById(prefix + 'Linea');
+    const selPres = document.getElementById(prefix + 'Presentacion');
+    if (!selLinea || !selPres) return;
+
+    const valorActual = mantenerValor ? selPres.value : null;
+    const lineaElegida = selLinea.value;
+    const catalogo = _catalogoLineas.find(c => c.linea === lineaElegida);
+
+    if (!lineaElegida || !catalogo || !catalogo.presentaciones.length) {
+      selPres.innerHTML = '<option value="">— Seleccione una línea primero —</option>';
+      return;
+    }
+
+    selPres.innerHTML = '<option value="">— Seleccione —</option>' +
+      catalogo.presentaciones.map(p => `<option value="${p}">${p}</option>`).join('');
+
+    if (valorActual) selPres.value = valorActual;
+  }
+
+  // ═══ TARJETAS GRANDES: HUMUS SÓLIDO / LÍQUIDO ═══
+  function renderResumenPorLinea(resumenPorLinea) {
+    if (!resumenPorLinea) return;
+
+    document.getElementById('stockSolido').textContent = resumenPorLinea.humusSolido.stock;
+    document.getElementById('stockLiquido').textContent = resumenPorLinea.humusLiquido.stock;
+
+    const detalle = resumenPorLinea.detallePorLinea || [];
+
+    const solidoRows = detalle.filter(d => normalizarParaComparar(d.linea) === normalizarParaComparar('Humus Solido'));
+    const liquidoRows = detalle.filter(d => normalizarParaComparar(d.linea) !== normalizarParaComparar('Humus Solido'));
+
+    const pintarFilas = (rows, contenedorId) => {
+      const cont = document.getElementById(contenedorId);
+      if (!rows.length) {
+        cont.innerHTML = '<div class="detalle-linea-row"><span class="nombre">Sin movimientos registrados</span></div>';
+        return;
+      }
+      cont.innerHTML = rows.map(d => `
+        <div class="detalle-linea-row">
+          <span class="nombre">${d.linea}</span>
+          <span class="cant">${d.stock}</span>
+        </div>`).join('');
+    };
+
+    pintarFilas(solidoRows, 'detalleSolido');
+    pintarFilas(liquidoRows, 'detalleLiquido');
+  }
+
+  function normalizarParaComparar(s) {
+    return (s || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  }
+
+  function toggleDetalle(tipo) {
+    const card = document.querySelector('.card-grande.' + tipo);
+    if (card) card.classList.toggle('open');
+  }
+
   function renderInsumos(data) {
     const tbody = document.getElementById('tablaInsumos');
     if (!tbody) return;
@@ -743,18 +929,18 @@
       const filtradas = filtrarPorMes(data.produccion, 0);
       if (filtradas.length) {
         document.getElementById('tablaProd').innerHTML = filtradas.map(r => `
-          <tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]||''}</td></tr>`).join('');
+          <tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]||''}</td><td>${r[5]||''}</td></tr>`).join('');
       } else {
-        document.getElementById('tablaProd').innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;padding:1.5rem">Sin registros en este periodo</td></tr>';
+        document.getElementById('tablaProd').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;padding:1.5rem">Sin registros en este periodo</td></tr>';
       }
     }
     if (data.salidas) {
       const filtradas = filtrarPorMes(data.salidas, 0);
       if (filtradas.length) {
         document.getElementById('tablaSal').innerHTML = filtradas.map(r => `
-          <tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]||''}</td></tr>`).join('');
+          <tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]||''}</td><td>${r[5]||''}</td></tr>`).join('');
       } else {
-        document.getElementById('tablaSal').innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;padding:1.5rem">Sin registros en este periodo</td></tr>';
+        document.getElementById('tablaSal').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;padding:1.5rem">Sin registros en este periodo</td></tr>';
       }
     }
   }
@@ -765,14 +951,15 @@
 
   // ═══ ENVIAR PRODUCCIÓN ═══
   async function enviarProduccion() {
-    const fecha = document.getElementById('prodFecha').value;
-    const bultos = document.getElementById('prodBultos').value;
+    const linea = document.getElementById('prodLinea').value;
+    const presentacion = document.getElementById('prodPresentacion').value;
+    const cantidad = document.getElementById('prodBultos').value;
     const resp = document.getElementById('prodResponsable').value;
-    if (!fecha || !bultos || !resp) return showToast('Completa los campos obligatorios', 'error');
+    if (!linea || !presentacion || !cantidad || !resp) return showToast('Completa los campos obligatorios', 'error');
 
     const payload = {
       accion: 'produccion',
-      fecha, bultos: Number(bultos), resp,
+      linea, presentacion, cantidad: Number(cantidad), resp,
       lote: document.getElementById('prodLote').value,
       obs: document.getElementById('prodObs').value
     };
@@ -781,15 +968,16 @@
 
   // ═══ ENVIAR SALIDA ═══
   async function enviarSalida() {
-    const fecha = document.getElementById('salFecha').value;
-    const bultos = document.getElementById('salBultos').value;
+    const linea = document.getElementById('salLinea').value;
+    const presentacion = document.getElementById('salPresentacion').value;
+    const cantidad = document.getElementById('salBultos').value;
     const resp = document.getElementById('salResponsable').value;
     const destino = document.getElementById('salDestino').value;
-    if (!fecha || !bultos || !resp || !destino) return showToast('Completa los campos obligatorios', 'error');
+    if (!linea || !presentacion || !cantidad || !resp || !destino) return showToast('Completa los campos obligatorios', 'error');
 
     const payload = {
       accion: 'salida',
-      fecha, bultos: Number(bultos), resp, destino,
+      linea, presentacion, cantidad: Number(cantidad), resp, destino,
       obs: document.getElementById('salObs').value
     };
     await enviar(payload, 'btnSal', 'sal');
@@ -797,15 +985,14 @@
 
   // ═══ ENVIAR INGRESO DE INSUMO ═══
   async function enviarIngresoInsumo() {
-    const fecha = document.getElementById('insFecha').value;
     const insumo = document.getElementById('insInsumo').value.trim();
     const cantidad = document.getElementById('insCantidad').value;
     const resp = document.getElementById('insResponsable').value;
-    if (!fecha || !insumo || !cantidad || !resp) return showToast('Completa los campos obligatorios', 'error');
+    if (!insumo || !cantidad || !resp) return showToast('Completa los campos obligatorios', 'error');
 
     const payload = {
       accion: 'ingreso_insumo',
-      fecha, insumo, cantidad: Number(cantidad), resp,
+      insumo, cantidad: Number(cantidad), resp,
       obs: document.getElementById('insObs').value
     };
     await enviar(payload, 'btnIns', 'ins');
@@ -849,21 +1036,21 @@
 
   // ═══ UTILS ═══
   function limpiarForm(prefix) {
-    const hoy = new Date().toISOString().split('T')[0];
     if (prefix === 'prod') {
-      document.getElementById('prodFecha').value = hoy;
+      document.getElementById('prodLinea').value = '';
+      document.getElementById('prodPresentacion').innerHTML = '<option value="">— Seleccione una línea primero —</option>';
       document.getElementById('prodLote').value = '';
       document.getElementById('prodBultos').value = '';
       document.getElementById('prodResponsable').value = '';
       document.getElementById('prodObs').value = '';
     } else if (prefix === 'ins') {
-      document.getElementById('insFecha').value = hoy;
       document.getElementById('insInsumo').value = '';
       document.getElementById('insCantidad').value = '';
       document.getElementById('insResponsable').value = '';
       document.getElementById('insObs').value = '';
     } else {
-      document.getElementById('salFecha').value = hoy;
+      document.getElementById('salLinea').value = '';
+      document.getElementById('salPresentacion').innerHTML = '<option value="">— Seleccione una línea primero —</option>';
       document.getElementById('salBultos').value = '';
       document.getElementById('salDestino').value = '';
       document.getElementById('salResponsable').value = '';
