@@ -180,6 +180,13 @@
   }
   .detalle-linea-row .nombre { opacity: 0.95; }
   .detalle-linea-row .cant { font-weight: 700; }
+  .detalle-nota {
+    padding: 0.65rem 1.4rem 0.9rem;
+    font-size: 0.68rem;
+    opacity: 0.75;
+    line-height: 1.4;
+    border-top: 1px solid rgba(255,255,255,0.12);
+  }
 
   .card-stat {
     background: var(--blanco);
@@ -851,7 +858,18 @@
     const solidoRows = detalle.filter(d => normalizarParaComparar(d.linea) === normalizarParaComparar('Humus Solido'));
     const liquidoRows = detalle.filter(d => normalizarParaComparar(d.linea) !== normalizarParaComparar('Humus Solido'));
 
-    const pintarFilas = (rows, contenedorId) => {
+    // Humus Sólido: el stock grande viene de "Resumen Diario" (histórico
+    // completo). El detalle aquí solo refleja lo producido/despachado en los
+    // registros disponibles en Producción/Salidas (puede no ser el total).
+    const contSolido = document.getElementById('detalleSolido');
+    const totalProdSolido = solidoRows.reduce((acc, d) => acc + d.producido, 0);
+    const totalDespSolido = solidoRows.reduce((acc, d) => acc + d.despachado, 0);
+    contSolido.innerHTML = `
+      <div class="detalle-linea-row"><span class="nombre">Producido (registros disponibles)</span><span class="cant">${totalProdSolido}</span></div>
+      <div class="detalle-linea-row"><span class="nombre">Despachado (registros disponibles)</span><span class="cant">${totalDespSolido}</span></div>
+      <div class="detalle-nota">El stock total usa el histórico de "Resumen Diario"; este desglose solo cubre los días con registro en Producción/Salidas.</div>`;
+
+    const pintarFilasLiquido = (rows, contenedorId) => {
       const cont = document.getElementById(contenedorId);
       if (!rows.length) {
         cont.innerHTML = '<div class="detalle-linea-row"><span class="nombre">Sin movimientos registrados</span></div>';
@@ -864,8 +882,7 @@
         </div>`).join('');
     };
 
-    pintarFilas(solidoRows, 'detalleSolido');
-    pintarFilas(liquidoRows, 'detalleLiquido');
+    pintarFilasLiquido(liquidoRows, 'detalleLiquido');
   }
 
   function normalizarParaComparar(s) {
