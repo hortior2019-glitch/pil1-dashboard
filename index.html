@@ -851,20 +851,27 @@ function openQuote(it){
     <div class="modal-foot"><button class="btn btn-ghost" data-close>Cerrar</button>
       <button class="btn btn-primary" id="q-done">Guardar</button></div>`);
   $('#q-add').onclick=async ()=>{
+    const btn=$('#q-add');
     const prov=$('#q-prov').value.trim(), pu=+$('#q-pu').value;
     if(!prov||!pu){toast('Proveedor y precio son obligatorios','bad');return;}
     if($('#q-sug').checked) it.cotizaciones.forEach(q=>q.sugerida=false);
     it.cotizaciones.push({id:uid('CT-'),proveedor:prov,precioUnit:pu,dias:+$('#q-dias').value||0,
       calidad:$('#q-cal').value.trim(),sugerida:$('#q-sug').checked,seleccionada:false,adjunto:''});
-    await API.saveItem(it); $('#q-list').innerHTML=draw();
-    $('#q-prov').value='';$('#q-pu').value='';$('#q-cal').value='';$('#q-sug').checked=false;
+    btn.disabled=true; btn.textContent='Guardando…';
+    try{ await API.saveItem(it); it=findItem(it.id)||it; }
+    catch(e){ toast('No se pudo guardar la opción','bad'); btn.disabled=false; btn.textContent='+ Agregar opción'; return; }
+    $('#q-list').innerHTML=draw();
+    $('#q-prov').value='';$('#q-pu').value='';$('#q-cal').value='';$('#q-dias').value='7';$('#q-sug').checked=false;
+    btn.disabled=false; btn.textContent='+ Agregar opción';
     toast('Opción agregada');
   };
-  $('#q-done').onclick=async ()=>{ it.comentarioLider=$('#q-com').value.trim(); await API.saveItem(it);
+  $('#q-done').onclick=async ()=>{ const btn=$('#q-done'); btn.disabled=true; btn.textContent='Guardando…';
+    it.comentarioLider=$('#q-com').value.trim();
+    try{ await API.saveItem(it); }catch(e){ toast('No se pudo guardar','bad'); btn.disabled=false; btn.textContent='Guardar'; return; }
     toast('Cotización guardada'); closeModal(); refresh(); };
 }
-window.markSug=async (iid,qid)=>{const it=findItem(iid);it.cotizaciones.forEach(q=>q.sugerida=q.id===qid);await API.saveItem(it);openQuote(it);};
-window.delQuote=async (iid,qid)=>{const it=findItem(iid);it.cotizaciones=it.cotizaciones.filter(q=>q.id!==qid);await API.saveItem(it);openQuote(it);};
+window.markSug=async (iid,qid)=>{const it=findItem(iid);if(!it)return;it.cotizaciones.forEach(q=>q.sugerida=q.id===qid);try{await API.saveItem(it);}catch(e){toast('No se pudo guardar','bad');return;}openQuote(findItem(iid)||it);};
+window.delQuote=async (iid,qid)=>{const it=findItem(iid);if(!it)return;it.cotizaciones=it.cotizaciones.filter(q=>q.id!==qid);try{await API.saveItem(it);}catch(e){toast('No se pudo guardar','bad');return;}openQuote(findItem(iid)||it);};
 
 /* ---------- REVISAR / APROBAR (gerente) ---------- */
 function openReview(it){
