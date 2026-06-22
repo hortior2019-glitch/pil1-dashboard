@@ -515,12 +515,21 @@ function doLogin(){
   const u=$('#lg-user').value.trim(), p=$('#lg-pass').value;
   $('#lg-err').textContent='Validando…';
   (async ()=>{
-    let s;
+    let s, serverErr=false;
     try{
-      if(MODO==='remoto'){ const r=await remote('loginAndLoad',{usuario:u,password:p});
-        if(r&&r.ok){ s=r.user; applyState(r); } else s=null; }
-      else { s=API.login(u,p); }
+      if(MODO==='remoto'){
+        let r=await remote('loginAndLoad',{usuario:u,password:p});
+        if(r&&r.error){
+          // backend en versión vieja (sin loginAndLoad): caer al método anterior
+          const lr=await remote('login',{usuario:u,password:p});
+          if(lr&&lr.ok){ s=lr.user; await loadAll(); }
+          else if(lr&&lr.error){ serverErr=true; }
+          else s=null;
+        } else if(r&&r.ok){ s=r.user; applyState(r); }
+        else s=null;
+      } else { s=API.login(u,p); }
     }catch(e){ $('#lg-err').textContent='No se pudo conectar con el servidor.'; return; }
+    if(serverErr){ $('#lg-err').textContent='El backend está en una versión vieja. Publica la versión nueva del Code.gs.'; return; }
     if(!s){ $('#lg-err').textContent='Usuario o contraseña incorrectos.'; return; }
     session=s; if(MODO==='demo') log('login','sesion',u);
     $('#lg-err').textContent='';
