@@ -5318,15 +5318,34 @@ function generarCorte() {
   const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
   const fmtF = s => { const d = new Date(s+'T00:00:00'); return d.getDate()+' '+MESES[d.getMonth()]+' '+d.getFullYear(); };
 
+  // Logo y color corporativo del proveedor
+  const logoUrl = getClientLogo(prov);
+  const color = getClientColor(prov);
+  const colorOscuro = hexToRgba(color, 1);
+
   // Construir tablas por grupo
   let html = `<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px">
-    <div style="background:linear-gradient(135deg,#0a2e1a 0%,#1a5c35 100%);padding:24px 28px;color:#fff">
-      <div style="font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--gold);margin-bottom:6px">Corte de Materia Recibida</div>
-      <div style="font-family:'Playfair Display',serif;font-size:26px;font-weight:700">${prov}</div>
-      <div style="font-size:13px;color:rgba(255,255,255,.7);margin-top:4px">${fmtF(ini)} 1:00 am — ${fmtF(cie)} 12:59 pm · ${fmt(registros.length)} registros</div>
+    <div style="background:linear-gradient(135deg,${color} 0%,${hexToRgba(color,.75)} 100%);padding:28px;color:#fff;position:relative;overflow:hidden">
+      <div style="position:absolute;right:-50px;top:-50px;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,.08);pointer-events:none"></div>
+      <div style="position:relative;z-index:1;display:flex;align-items:center;gap:24px;flex-wrap:wrap">
+        ${logoUrl ? `<div style="background:#fff;border-radius:12px;padding:14px;width:110px;height:110px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><img src="${logoUrl}" alt="${prov}" style="max-width:100%;max-height:100%;object-fit:contain" onerror="this.parentElement.style.display='none'"></div>` : ''}
+        <div style="flex:1;min-width:200px">
+          <div style="font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,.7);margin-bottom:6px">Corte de Materia Recibida</div>
+          <div style="font-family:'Playfair Display',serif;font-size:32px;font-weight:700;line-height:1.1">${prov}</div>
+          <div style="font-size:13px;color:rgba(255,255,255,.85);margin-top:8px">${fmtF(ini)} 1:00 am — ${fmtF(cie)} 12:59 pm</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-family:'Libre Baskerville',serif;font-size:44px;font-weight:800;line-height:1;font-variant-numeric:lining-nums tabular-nums">${fmt(registros.length)}</div>
+          <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.7);margin-top:4px">Registros</div>
+        </div>
+      </div>
     </div>
-    <div style="padding:8px 16px;display:flex;justify-content:flex-end;gap:8px;border-bottom:1px solid var(--rule-l)">
-      <button onclick="exportarCorteCSV()" style="padding:8px 16px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Descargar CSV</button>
+    <div style="padding:12px 16px;display:flex;justify-content:flex-end;gap:8px;border-bottom:1px solid var(--rule-l);flex-wrap:wrap">
+      <button onclick="exportarCorteExcel()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:#1d6f42;color:white;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif;display:flex;align-items:center;gap:6px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="m9 12 6 6M15 12l-6 6"/></svg>
+        Exportar a Excel
+      </button>
+      <button onclick="exportarCorteCSV()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Descargar CSV</button>
     </div>`;
 
   // Guardar para exportación
@@ -5386,6 +5405,88 @@ function exportarCorteCSV() {
   const a = document.createElement('a');
   a.href = url;
   a.download = 'Corte_' + c.prov.replace(/\s+/g,'_') + '_' + c.ini + '_' + c.cie + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Exporta el corte actual a Excel (.xls SpreadsheetML — abre nativo en Excel sin librerías externas)
+function exportarCorteExcel() {
+  const c = window._corteActual;
+  if (!c) return;
+
+  const esc = s => String(s==null?'':s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+  const color = getClientColor(c.prov);
+  // Construir filas XML
+  let rowsXml = '';
+
+  // Fila título
+  rowsXml += `<Row><Cell ss:StyleID="titulo"><Data ss:Type="String">Corte de Materia Recibida — ${esc(c.prov)}</Data></Cell></Row>`;
+  rowsXml += `<Row><Cell ss:StyleID="subtitulo"><Data ss:Type="String">${esc(c.ini)} 1:00 am  →  ${esc(c.cie)} 12:59 pm</Data></Cell></Row>`;
+  rowsXml += `<Row></Row>`;
+
+  Object.keys(c.grupos).sort().forEach(clave => {
+    if (clave !== 'Todos') {
+      rowsXml += `<Row><Cell ss:StyleID="grupo"><Data ss:Type="String">${esc(clave)}</Data></Cell></Row>`;
+    }
+    // Encabezados
+    rowsXml += '<Row>' + c.colsDef.map(col =>
+      `<Cell ss:StyleID="header"><Data ss:Type="String">${esc(col.label)}</Data></Cell>`
+    ).join('') + '</Row>';
+    // Datos
+    const totales = {};
+    c.colsDef.forEach(col => { if (col.num) totales[col.id] = 0; });
+    c.grupos[clave].forEach(r => {
+      rowsXml += '<Row>' + c.colsDef.map(col => {
+        let v = col.get(r);
+        if (col.num) {
+          const n = parseFloat(v)||0;
+          totales[col.id] += n;
+          return `<Cell ss:StyleID="num"><Data ss:Type="Number">${Math.round(n)}</Data></Cell>`;
+        }
+        return `<Cell><Data ss:Type="String">${esc(v)}</Data></Cell>`;
+      }).join('') + '</Row>';
+    });
+    // Totales
+    if (Object.keys(totales).length) {
+      rowsXml += '<Row>' + c.colsDef.map((col,i) => {
+        if (col.num) return `<Cell ss:StyleID="total"><Data ss:Type="Number">${Math.round(totales[col.id])}</Data></Cell>`;
+        return i === 0 ? `<Cell ss:StyleID="totalLbl"><Data ss:Type="String">TOTAL</Data></Cell>` : '<Cell ss:StyleID="total"></Cell>';
+      }).join('') + '</Row>';
+    }
+    rowsXml += '<Row></Row>';
+  });
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+<Styles>
+ <Style ss:ID="Default"><Font ss:FontName="Calibri" ss:Size="11"/></Style>
+ <Style ss:ID="titulo"><Font ss:FontName="Calibri" ss:Size="16" ss:Bold="1" ss:Color="#1a5c35"/></Style>
+ <Style ss:ID="subtitulo"><Font ss:FontName="Calibri" ss:Size="11" ss:Color="#666666"/></Style>
+ <Style ss:ID="grupo"><Font ss:FontName="Calibri" ss:Size="13" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="${color}" ss:Pattern="Solid"/></Style>
+ <Style ss:ID="header"><Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#1a5c35" ss:Pattern="Solid"/><Alignment ss:Horizontal="Center"/></Style>
+ <Style ss:ID="num"><Alignment ss:Horizontal="Right"/></Style>
+ <Style ss:ID="total"><Font ss:Bold="1" ss:Color="#1a5c35"/><Interior ss:Color="#f0f0ee" ss:Pattern="Solid"/><Alignment ss:Horizontal="Right"/></Style>
+ <Style ss:ID="totalLbl"><Font ss:Bold="1" ss:Color="#1a5c35"/><Interior ss:Color="#f0f0ee" ss:Pattern="Solid"/></Style>
+</Styles>
+<Worksheet ss:Name="Corte">
+<Table>
+${c.colsDef.map(()=>'<Column ss:Width="120"/>').join('')}
+${rowsXml}
+</Table>
+</Worksheet>
+</Workbook>`;
+
+  const blob = new Blob([xml], {type:'application/vnd.ms-excel;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'Corte_' + c.prov.replace(/\s+/g,'_') + '_' + c.ini + '_' + c.cie + '.xls';
   a.click();
   URL.revokeObjectURL(url);
 }
