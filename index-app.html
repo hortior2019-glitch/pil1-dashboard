@@ -492,6 +492,8 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   <div class="nav-tab" onclick="showPanel('preopvolquetas',this)"><span class="nav-lbl">Preop. Volquetas</span></div>
   <div class="nav-tab" onclick="showPanel('preopequipo',this)"><span class="nav-lbl">Preop. Equipo Pesado</span></div>
   <div class="nav-sep"></div>
+  <div class="nav-tab" onclick="showPanel('cortes',this)"><span class="nav-lbl">Cortes a Proveedor</span></div>
+  <div class="nav-sep"></div>
   <div class="nav-tab" onclick="showPanel('solicitudes',this)"><span class="nav-lbl">Solicitudes de Compra</span></div>
   <div class="nav-tab" onclick="showPanel('pedidos',this)"><span class="nav-lbl">Pedidos</span></div>
   <div class="nav-tab" onclick="showPanel('catalogo',this)"><span class="nav-lbl">Catálogo de Precios</span></div>
@@ -1596,7 +1598,85 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   </div>
 </div>
 
+<!--
+  ═══════════════════════════════════════════════════════════
+  PANEL: CORTES A PROVEEDOR
+  - Genera reportes de corte de materia recibida por proveedor en un rango de fechas
+  - Empieza vacío: solo proveedor + rango de fechas
+  - Tras elegir parámetros, habilita selección de columnas y opciones de separación
+  - Permite guardar configuraciones como favoritos (localStorage NO disponible en artifacts,
+    pero esto es un archivo standalone en GitHub Pages, así que localStorage SÍ funciona aquí)
+  - El rango va de 1:00 am del día inicio a 12:59 del día cierre
+  - Se llena con: renderCortes() / generarCorte()
+  ═══════════════════════════════════════════════════════════
+-->
+<div class="panel" id="panel-cortes">
+  <div class="sec-hdr">
+    <div class="sec-title">Cortes a Proveedor</div>
+    <div class="sec-sub">Genera reportes de materia recibida por proveedor y rango de fechas</div>
+  </div>
+
+  <!-- PASO 1: Parámetros base -->
+  <div class="card" style="margin-bottom:20px;padding:24px">
+    <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy);margin-bottom:16px">Paso 1 · Selecciona proveedor y rango</div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
+      <div style="display:flex;flex-direction:column;gap:5px;min-width:220px;flex:1">
+        <label style="font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-l)">Proveedor</label>
+        <select id="corte-proveedor" onchange="onCorteParamsChange()" style="border:1px solid var(--rule);background:var(--white);padding:10px 12px;font-size:14px;border-radius:4px;color:var(--ink);font-family:'Source Sans 3',sans-serif">
+          <option value="">— Seleccione proveedor —</option>
+        </select>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <label style="font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-l)">Fecha inicio corte</label>
+        <input type="date" id="corte-fecha-inicio" onchange="onCorteParamsChange()" style="border:1px solid var(--rule);background:var(--white);padding:9px 12px;font-size:14px;border-radius:4px;color:var(--ink)">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <label style="font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-l)">Fecha cierre corte</label>
+        <input type="date" id="corte-fecha-cierre" onchange="onCorteParamsChange()" style="border:1px solid var(--rule);background:var(--white);padding:9px 12px;font-size:14px;border-radius:4px;color:var(--ink)">
+      </div>
+    </div>
+    <div id="corte-rango-info" style="font-size:11px;color:var(--ink-l);margin-top:10px"></div>
+  </div>
+
+  <!-- PASO 2: Columnas y opciones (oculto hasta tener paso 1) -->
+  <div class="card" id="corte-paso2" style="margin-bottom:20px;padding:24px;display:none">
+    <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy);margin-bottom:16px">Paso 2 · Elige columnas del corte</div>
+    <div id="corte-columnas" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:20px"></div>
+
+    <div style="border-top:1px solid var(--rule-l);padding-top:16px;margin-top:4px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink-l);margin-bottom:12px">Opciones de agrupación</div>
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px">
+        <input type="checkbox" id="corte-separar-material" onchange="generarCorte()" style="width:18px;height:18px;accent-color:var(--navy)">
+        <span style="font-size:14px;color:var(--ink)">Separar por material</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+        <input type="checkbox" id="corte-separar-empresa" onchange="generarCorte()" style="width:18px;height:18px;accent-color:var(--navy)">
+        <span style="font-size:14px;color:var(--ink)">Separar por empresa / operación</span>
+      </label>
+    </div>
+
+    <!-- Guardar como favorito -->
+    <div style="border-top:1px solid var(--rule-l);padding-top:16px;margin-top:16px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+      <div style="display:flex;flex-direction:column;gap:5px;flex:1;min-width:200px">
+        <label style="font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-l)">Guardar configuración como favorito</label>
+        <input type="text" id="corte-fav-nombre" placeholder="Ej: Corte mensual Bavaria" style="border:1px solid var(--rule);background:var(--white);padding:9px 12px;font-size:14px;border-radius:4px;color:var(--ink);font-family:'Source Sans 3',sans-serif">
+      </div>
+      <button onclick="guardarCorteFavorito()" style="padding:10px 20px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Guardar favorito</button>
+    </div>
+  </div>
+
+  <!-- Favoritos guardados -->
+  <div class="card" id="corte-favoritos-card" style="margin-bottom:20px;padding:20px 24px;display:none">
+    <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--gold);margin-bottom:14px">Cortes favoritos guardados</div>
+    <div id="corte-favoritos-lista" style="display:flex;flex-direction:column;gap:8px"></div>
+  </div>
+
+  <!-- RESULTADO DEL CORTE -->
+  <div id="corte-resultado"></div>
+</div>
+
 <div class="panel" id="panel-preopvolquetas">
+
   <div class="sec-hdr">
     <div class="sec-title">Preoperacional Volquetas</div>
     <div class="sec-sub" id="vol-period">Hoy</div>
@@ -2503,6 +2583,7 @@ async function loadAllData() {
     try { renderKPI(dataIngreso); } catch(e2) { console.error('renderKPI error:', e2); }
     try { renderOportunidades(dataIngreso); } catch(e2) { console.error('renderOportunidades error:', e2); }
     try { renderOps(_opsFiltered || OPS); } catch(e2) { console.error('renderOps error:', e2); }
+    try { initCortesProveedores(); } catch(e2) { console.error('initCortes error:', e2); }
     document.getElementById('footer-ingreso').textContent = 'Ingreso: '+fmt(dataIngreso.length)+' registros';
     ok++;
   } catch(e) { errors.push('Ingreso Material'); console.error('Ingreso fetch error:', e); }
@@ -2602,6 +2683,8 @@ function showPanel(id, el) {
       } else if (id === 'ingreso') {
         renderIngreso(dataIngreso, currentFilter);
         if (window.dataIngreso) { try { renderCmpChart(window.dataIngreso); } catch(e){} }
+      } else if (id === 'cortes') {
+        try { initCortesProveedores(); } catch(e){}
       }
     } catch(e) { console.error('showPanel re-render:', e); }
     try { ajustarPosiciones(); } catch(e){}
@@ -5113,6 +5196,289 @@ function limpiarFiltrosEquipo() {
   const dataCar = dataPreopCar.filter(esCargador);
   const dataTra = dataPreopCar.filter(esTractor);
   renderPreopUnificado(dataCar, dataTra, currentFilter);
+}
+
+// ═══════════════════════════════════════════════════════════
+// CORTES A PROVEEDOR
+// Genera reportes de materia recibida por proveedor en un rango de fechas.
+// Las columnas disponibles se detectan de los datos de ingreso.
+// Favoritos se guardan en localStorage (funciona en GitHub Pages).
+// ═══════════════════════════════════════════════════════════
+
+// Columnas candidatas para el corte (label visible → función que extrae el valor de un registro)
+const CORTE_COLUMNAS_DISP = [
+  { id:'marca',    label:'Marca temporal',    get:r => getMarcaTemporal(r) },
+  { id:'fecha',    label:'Fecha disposición', get:r => (r['FECHA DISPOSICION PLANTA']||r['FECHA DISPOSICION']||'').trim() || (parseDate(getMarcaTemporal(r))?toYMD(getMarcaTemporal(r)):'') },
+  { id:'empresa',  label:'Empresa / Operación', get:r => normEmpresa(r['OPERACION']||r['Operacion']||r['operacion']||r['OPERACIÓN']||'') },
+  { id:'material', label:'Material / Residuo', get:r => (r['RESIDUO']||r['Residuo']||r['residuo']||'').trim() || 'Sin clasificar' },
+  { id:'pesoNeto', label:'Peso neto (kg)',     get:r => getPesoNeto(r), num:true },
+  { id:'pesoEnt',  label:'Peso entrada (kg)',  get:r => parseFloat((r['PESO ENTRADA  SEGÚN TICKET']||r['PESO ENTRADA']||r['H']||'0').toString().replace(/[^0-9.]/g,''))||0, num:true },
+  { id:'pesoSal',  label:'Peso salida (kg)',   get:r => parseFloat((r['PESO SALIDA  SEGÚN TICKET']||r['PESO SALIDA']||r['I']||'0').toString().replace(/[^0-9.]/g,''))||0, num:true },
+  { id:'placa',    label:'Placa',             get:r => (r['PLACA']||r['Placa']||r['placa']||'').trim() },
+  { id:'conductor',label:'Conductor',         get:r => (r['CONDUCTOR']||r['Conductor']||r['conductor']||'').trim() },
+  { id:'ticket',   label:'N° Ticket',         get:r => (r['TICKET']||r['Ticket']||r['ticket']||r['N° TICKET']||'').trim() },
+];
+
+// Poblar el selector de proveedores cuando hay datos de ingreso
+function initCortesProveedores() {
+  const sel = document.getElementById('corte-proveedor');
+  if (!sel || !window.dataIngreso) return;
+  const proveedores = [...new Set(window.dataIngreso
+    .map(r => normEmpresa(r['OPERACION']||r['Operacion']||r['operacion']||r['OPERACIÓN']||''))
+    .filter(Boolean))].sort();
+  const valorActual = sel.value;
+  sel.innerHTML = '<option value="">— Seleccione proveedor —</option>' +
+    proveedores.map(p => `<option value="${p}">${p}</option>`).join('');
+  if (valorActual) sel.value = valorActual;
+  // Construir la lista de checkboxes de columnas (una sola vez)
+  const cont = document.getElementById('corte-columnas');
+  if (cont && !cont.dataset.init) {
+    cont.innerHTML = CORTE_COLUMNAS_DISP.map(c => `
+      <label style="display:flex;align-items:center;gap:9px;cursor:pointer;padding:8px 10px;border:1px solid var(--rule-l);border-radius:4px">
+        <input type="checkbox" class="corte-col-chk" value="${c.id}" ${['marca','empresa','material','pesoNeto'].includes(c.id)?'checked':''} onchange="generarCorte()" style="width:17px;height:17px;accent-color:var(--navy)">
+        <span style="font-size:13px;color:var(--ink)">${c.label}</span>
+      </label>`).join('');
+    cont.dataset.init = '1';
+  }
+  renderCortesFavoritos();
+}
+
+// Cada vez que cambian proveedor o fechas
+function onCorteParamsChange() {
+  const prov = (document.getElementById('corte-proveedor')||{}).value || '';
+  const ini  = (document.getElementById('corte-fecha-inicio')||{}).value || '';
+  const cie  = (document.getElementById('corte-fecha-cierre')||{}).value || '';
+  const info = document.getElementById('corte-rango-info');
+  const paso2 = document.getElementById('corte-paso2');
+
+  if (prov && ini && cie) {
+    if (paso2) paso2.style.display = '';
+    if (info) {
+      const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+      const fmtF = s => { const d = new Date(s+'T00:00:00'); return d.getDate()+' '+MESES[d.getMonth()]+' '+d.getFullYear(); };
+      info.innerHTML = 'Corte de <strong>'+prov+'</strong> desde <strong>'+fmtF(ini)+' 1:00 am</strong> hasta <strong>'+fmtF(cie)+' 12:59 pm</strong>';
+    }
+    generarCorte();
+  } else {
+    if (paso2) paso2.style.display = 'none';
+    if (info) info.textContent = '';
+    document.getElementById('corte-resultado').innerHTML = '';
+  }
+}
+
+// Filtra los registros del proveedor dentro del rango (1:00 am inicio → 12:59 cierre)
+function filtrarRegistrosCorte(prov, ini, cie) {
+  if (!window.dataIngreso) return [];
+  // Rango: desde 01:00:00 del día inicio hasta 12:59:59 del día cierre
+  const desde = new Date(ini+'T01:00:00');
+  const hasta = new Date(cie+'T12:59:59');
+  return window.dataIngreso.filter(r => {
+    const empresa = normEmpresa(r['OPERACION']||r['Operacion']||r['operacion']||r['OPERACIÓN']||'');
+    if (empresa !== prov) return false;
+    const dt = parseDateTime(getMarcaTemporal(r));
+    if (!dt) return false;
+    return dt >= desde && dt <= hasta;
+  });
+}
+
+// Genera y dibuja el resultado del corte
+function generarCorte() {
+  const prov = (document.getElementById('corte-proveedor')||{}).value || '';
+  const ini  = (document.getElementById('corte-fecha-inicio')||{}).value || '';
+  const cie  = (document.getElementById('corte-fecha-cierre')||{}).value || '';
+  if (!prov || !ini || !cie) return;
+
+  const colsSel = [...document.querySelectorAll('.corte-col-chk:checked')].map(c => c.value);
+  const sepMaterial = (document.getElementById('corte-separar-material')||{}).checked;
+  const sepEmpresa  = (document.getElementById('corte-separar-empresa')||{}).checked;
+  const cont = document.getElementById('corte-resultado');
+
+  if (colsSel.length === 0) { cont.innerHTML = '<div class="card" style="padding:24px;text-align:center;color:var(--ink-l)">Selecciona al menos una columna</div>'; return; }
+
+  const registros = filtrarRegistrosCorte(prov, ini, cie);
+  if (registros.length === 0) {
+    cont.innerHTML = '<div class="card" style="padding:40px;text-align:center;color:var(--ink-l)">No hay registros de <strong>'+prov+'</strong> en el rango seleccionado</div>';
+    return;
+  }
+
+  const colsDef = colsSel.map(id => CORTE_COLUMNAS_DISP.find(c => c.id === id)).filter(Boolean);
+
+  // Determinar agrupación
+  const grupos = {}; // clave de grupo → array de registros
+  registros.forEach(r => {
+    let clave = 'Todos';
+    const partes = [];
+    if (sepEmpresa)  partes.push(normEmpresa(r['OPERACION']||r['Operacion']||r['operacion']||r['OPERACIÓN']||'') || 'Sin empresa');
+    if (sepMaterial) partes.push((r['RESIDUO']||r['Residuo']||r['residuo']||'').trim() || 'Sin material');
+    if (partes.length) clave = partes.join(' · ');
+    if (!grupos[clave]) grupos[clave] = [];
+    grupos[clave].push(r);
+  });
+
+  const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const fmtF = s => { const d = new Date(s+'T00:00:00'); return d.getDate()+' '+MESES[d.getMonth()]+' '+d.getFullYear(); };
+
+  // Construir tablas por grupo
+  let html = `<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px">
+    <div style="background:linear-gradient(135deg,#0a2e1a 0%,#1a5c35 100%);padding:24px 28px;color:#fff">
+      <div style="font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--gold);margin-bottom:6px">Corte de Materia Recibida</div>
+      <div style="font-family:'Playfair Display',serif;font-size:26px;font-weight:700">${prov}</div>
+      <div style="font-size:13px;color:rgba(255,255,255,.7);margin-top:4px">${fmtF(ini)} 1:00 am — ${fmtF(cie)} 12:59 pm · ${fmt(registros.length)} registros</div>
+    </div>
+    <div style="padding:8px 16px;display:flex;justify-content:flex-end;gap:8px;border-bottom:1px solid var(--rule-l)">
+      <button onclick="exportarCorteCSV()" style="padding:8px 16px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Descargar CSV</button>
+    </div>`;
+
+  // Guardar para exportación
+  window._corteActual = { prov, ini, cie, colsDef, grupos };
+
+  Object.keys(grupos).sort().forEach(clave => {
+    const regs = grupos[clave];
+    // Totales de columnas numéricas
+    const totales = {};
+    colsDef.forEach(c => { if (c.num) totales[c.id] = regs.reduce((s,r)=> s + (parseFloat(c.get(r))||0), 0); });
+
+    html += `<div style="padding:18px 24px 8px">
+      ${clave !== 'Todos' ? `<div style="font-size:15px;font-weight:800;color:var(--navy);margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid var(--gold)">${clave} <span style="font-weight:600;color:var(--ink-l);font-size:13px">· ${fmt(regs.length)} registros</span></div>` : ''}
+      <div style="overflow-x:auto">
+        <table class="tbl" style="font-size:13px">
+          <thead><tr>${colsDef.map(c => `<th ${c.num?'class="num"':''}>${c.label}</th>`).join('')}</tr></thead>
+          <tbody>`;
+    regs.forEach(r => {
+      html += '<tr>' + colsDef.map(c => {
+        let v = c.get(r);
+        if (c.num) v = fmt(Math.round(v));
+        return `<td ${c.num?'class="num"':''}>${v||'—'}</td>`;
+      }).join('') + '</tr>';
+    });
+    // Fila de totales
+    if (Object.keys(totales).length) {
+      html += '<tr style="border-top:2px solid var(--navy);font-weight:800;background:var(--s2)">' + colsDef.map((c,i) => {
+        if (c.num) return `<td class="num" style="color:var(--navy)">${fmt(Math.round(totales[c.id]))}</td>`;
+        return i === 0 ? '<td style="color:var(--navy)">TOTAL</td>' : '<td></td>';
+      }).join('') + '</tr>';
+    }
+    html += `</tbody></table></div></div>`;
+  });
+
+  html += '</div>';
+  cont.innerHTML = html;
+}
+
+// Exporta el corte actual a CSV
+function exportarCorteCSV() {
+  const c = window._corteActual;
+  if (!c) return;
+  let csv = '';
+  Object.keys(c.grupos).sort().forEach(clave => {
+    if (clave !== 'Todos') csv += '\n' + clave + '\n';
+    csv += c.colsDef.map(col => '"'+col.label+'"').join(',') + '\n';
+    c.grupos[clave].forEach(r => {
+      csv += c.colsDef.map(col => {
+        let v = col.get(r);
+        if (col.num) v = Math.round(v);
+        return '"' + String(v).replace(/"/g,'""') + '"';
+      }).join(',') + '\n';
+    });
+  });
+  const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'Corte_' + c.prov.replace(/\s+/g,'_') + '_' + c.ini + '_' + c.cie + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── FAVORITOS (localStorage) ──
+function getCorteFavoritos() {
+  try { return JSON.parse(localStorage.getItem('horti_cortes_fav') || '[]'); }
+  catch(e) { return []; }
+}
+function setCorteFavoritos(arr) {
+  try { localStorage.setItem('horti_cortes_fav', JSON.stringify(arr)); } catch(e) {}
+}
+
+function guardarCorteFavorito() {
+  const nombre = (document.getElementById('corte-fav-nombre')||{}).value.trim();
+  if (!nombre) { alert('Escribe un nombre para el favorito'); return; }
+  const prov = (document.getElementById('corte-proveedor')||{}).value || '';
+  const ini  = (document.getElementById('corte-fecha-inicio')||{}).value || '';
+  const cie  = (document.getElementById('corte-fecha-cierre')||{}).value || '';
+  const colsSel = [...document.querySelectorAll('.corte-col-chk:checked')].map(c => c.value);
+  const sepMaterial = (document.getElementById('corte-separar-material')||{}).checked;
+  const sepEmpresa  = (document.getElementById('corte-separar-empresa')||{}).checked;
+
+  // Guardar también el "patrón de día" para reutilizar (ej: del 20 al 20)
+  const diaIni = ini ? new Date(ini+'T00:00:00').getDate() : null;
+  const diaCie = cie ? new Date(cie+'T00:00:00').getDate() : null;
+
+  const favs = getCorteFavoritos();
+  favs.push({ nombre, prov, ini, cie, diaIni, diaCie, colsSel, sepMaterial, sepEmpresa });
+  setCorteFavoritos(favs);
+  document.getElementById('corte-fav-nombre').value = '';
+  renderCortesFavoritos();
+}
+
+function renderCortesFavoritos() {
+  const card = document.getElementById('corte-favoritos-card');
+  const lista = document.getElementById('corte-favoritos-lista');
+  if (!card || !lista) return;
+  const favs = getCorteFavoritos();
+  if (favs.length === 0) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  lista.innerHTML = favs.map((f, i) => `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border:1px solid var(--rule-l);border-radius:6px;flex-wrap:wrap">
+      <div style="flex:1;min-width:160px">
+        <div style="font-size:14px;font-weight:800;color:var(--ink)">${f.nombre}</div>
+        <div style="font-size:11px;color:var(--ink-l);margin-top:2px">${f.prov} · ${f.colsSel.length} columnas${f.sepMaterial?' · por material':''}${f.sepEmpresa?' · por empresa':''}${f.diaIni?' · día '+f.diaIni+' al '+f.diaCie:''}</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button onclick="aplicarCorteFavorito(${i})" style="padding:7px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Usar</button>
+        <button onclick="aplicarCorteFavoritoMesActual(${i})" style="padding:7px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--gold);color:white;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif" title="Aplica el mismo patrón de días pero al periodo más reciente">Periodo actual</button>
+        <button onclick="eliminarCorteFavorito(${i})" style="padding:7px 12px;font-size:10px;font-weight:700;background:var(--rule-l);color:var(--red);border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">✕</button>
+      </div>
+    </div>`).join('');
+}
+
+// Aplica el favorito tal cual fue guardado (mismas fechas exactas)
+function aplicarCorteFavorito(i) {
+  const f = getCorteFavoritos()[i];
+  if (!f) return;
+  _aplicarFav(f, f.ini, f.cie);
+}
+
+// Aplica el favorito pero corriendo el patrón de días al periodo más reciente
+// Ej: si guardaste "del 20 al 20", lo aplica al 20 del mes pasado → 20 de este mes
+function aplicarCorteFavoritoMesActual(i) {
+  const f = getCorteFavoritos()[i];
+  if (!f || !f.diaIni || !f.diaCie) { aplicarCorteFavorito(i); return; }
+  const hoy = new Date();
+  // Cierre = día diaCie de este mes; Inicio = día diaIni del mes anterior
+  const cierre = new Date(hoy.getFullYear(), hoy.getMonth(), f.diaCie);
+  const inicio = new Date(hoy.getFullYear(), hoy.getMonth()-1, f.diaIni);
+  const ymd = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  _aplicarFav(f, ymd(inicio), ymd(cierre));
+}
+
+function _aplicarFav(f, ini, cie) {
+  document.getElementById('corte-proveedor').value = f.prov;
+  document.getElementById('corte-fecha-inicio').value = ini;
+  document.getElementById('corte-fecha-cierre').value = cie;
+  // Restaurar columnas
+  document.querySelectorAll('.corte-col-chk').forEach(chk => { chk.checked = f.colsSel.includes(chk.value); });
+  document.getElementById('corte-separar-material').checked = !!f.sepMaterial;
+  document.getElementById('corte-separar-empresa').checked = !!f.sepEmpresa;
+  onCorteParamsChange();
+  // Scroll al resultado
+  setTimeout(() => { const r = document.getElementById('corte-resultado'); if (r) r.scrollIntoView({behavior:'smooth',block:'start'}); }, 100);
+}
+
+function eliminarCorteFavorito(i) {
+  const favs = getCorteFavoritos();
+  favs.splice(i, 1);
+  setCorteFavoritos(favs);
+  renderCortesFavoritos();
 }
 
 // ── VIAJES INTERNOS ───────────────────────────────
