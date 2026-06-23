@@ -1605,6 +1605,31 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
     <div class="sec-sub">Genera reportes de materia recibida por proveedor y rango de fechas</div>
   </div>
 
+  <!--
+    ═══════════════════════════════════════════════════════════
+    PIN GATE — bloquea el contenido de cortes hasta ingresar el PIN
+    El PIN se valida contra el Apps Script (verificarPin), que lee
+    el valor hardcodeado PIN_CORTES (modificable desde el script).
+    ═══════════════════════════════════════════════════════════
+  -->
+  <div id="corte-pin-gate" class="card" style="padding:48px 32px;text-align:center;max-width:420px;margin:40px auto">
+    <div style="width:64px;height:64px;border-radius:50%;background:var(--navy);display:flex;align-items:center;justify-content:center;margin:0 auto 20px">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+    </div>
+    <div style="font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:var(--ink);margin-bottom:6px">Acceso restringido</div>
+    <div style="font-size:13px;color:var(--ink-m);margin-bottom:24px">Ingresa el PIN para generar cortes a proveedor</div>
+    <input type="password" id="corte-pin-input" inputmode="numeric" maxlength="12" placeholder="• • • • • •"
+      onkeydown="if(event.key==='Enter')verificarPinCorte()"
+      style="width:100%;max-width:240px;text-align:center;letter-spacing:6px;font-size:22px;padding:12px;border:2px solid var(--rule);border-radius:6px;color:var(--ink);font-family:'Libre Baskerville',serif;margin-bottom:16px">
+    <div style="display:flex;justify-content:center">
+      <button onclick="verificarPinCorte()" style="padding:12px 32px;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:6px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Desbloquear</button>
+    </div>
+    <div id="corte-pin-error" style="font-size:12px;color:var(--red);font-weight:600;margin-top:14px;min-height:16px"></div>
+  </div>
+
+  <!-- Contenido protegido (oculto hasta validar PIN) -->
+  <div id="corte-contenido-protegido" style="display:none">
+
   <!-- PASO 1: Parámetros base -->
   <div class="card" style="margin-bottom:20px;padding:24px">
     <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy);margin-bottom:16px">Paso 1 · Selecciona proveedor y rango</div>
@@ -1690,6 +1715,8 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 
   <!-- RESULTADO DEL CORTE -->
   <div id="corte-resultado"></div>
+
+  </div><!-- fin corte-contenido-protegido -->
 </div>
 
 <div class="panel" id="panel-preopvolquetas">
@@ -2701,7 +2728,8 @@ function showPanel(id, el) {
         renderIngreso(dataIngreso, currentFilter);
         if (window.dataIngreso) { try { renderCmpChart(window.dataIngreso); } catch(e){} }
       } else if (id === 'cortes') {
-        try { initCortesProveedores(); } catch(e){}
+        // Si ya pasó el PIN en esta sesión, refresca; si no, muestra el gate
+        try { mostrarEstadoPinCorte(); if (_cortePinOk) initCortesProveedores(); } catch(e){}
       }
     } catch(e) { console.error('showPanel re-render:', e); }
     try { ajustarPosiciones(); } catch(e){}
@@ -5226,6 +5254,58 @@ function limpiarFiltrosEquipo() {
 // URL del Apps Script Web App para favoritos de cortes (reemplazar con la URL real al implementar)
 const CORTES_FAV_API = "https://script.google.com/macros/s/AKfycbw6VAF6KaJfznpTEU_YrJNOuzgqB9FD6-0I4YgSpnblx6KwPix_Db2aq-f80JhC-lqt/exec";
 
+// PIN de respaldo (si el Apps Script no responde, se usa este valor hardcodeado)
+const CORTES_PIN_FALLBACK = "798937";
+let _cortePinOk = false; // marca si ya se desbloqueó en esta sesión
+
+// Verifica el PIN ingresado: primero contra el Apps Script, con fallback al hardcodeado
+async function verificarPinCorte() {
+  const input = document.getElementById('corte-pin-input');
+  const errEl = document.getElementById('corte-pin-error');
+  const pin = (input ? input.value : '').trim();
+  if (!pin) { if (errEl) errEl.textContent = 'Ingresa el PIN'; return; }
+  if (errEl) errEl.textContent = 'Verificando...';
+
+  let valido = false;
+  try {
+    const res = await fetch(CORTES_FAV_API + '?accion=verificarPin&pin=' + encodeURIComponent(pin), { redirect:'follow' });
+    const data = await res.json();
+    valido = !!data.valido;
+  } catch(e) {
+    // Sin conexión al script: usar fallback hardcodeado
+    valido = (pin === CORTES_PIN_FALLBACK);
+  }
+
+  if (valido) {
+    _cortePinOk = true;
+    const gate = document.getElementById('corte-pin-gate');
+    const cont = document.getElementById('corte-contenido-protegido');
+    if (gate) gate.style.display = 'none';
+    if (cont) cont.style.display = '';
+    if (errEl) errEl.textContent = '';
+    initCortesProveedores();
+  } else {
+    if (errEl) errEl.textContent = 'PIN incorrecto';
+    if (input) { input.value = ''; input.focus(); }
+  }
+}
+
+// Muestra el gate o el contenido según si ya se desbloqueó
+function mostrarEstadoPinCorte() {
+  const gate = document.getElementById('corte-pin-gate');
+  const cont = document.getElementById('corte-contenido-protegido');
+  if (_cortePinOk) {
+    if (gate) gate.style.display = 'none';
+    if (cont) cont.style.display = '';
+  } else {
+    if (gate) gate.style.display = '';
+    if (cont) cont.style.display = 'none';
+    const input = document.getElementById('corte-pin-input');
+    if (input) input.value = '';
+  }
+}
+
+
 // Columnas candidatas para el corte (label visible → función que extrae el valor de un registro)
 const CORTE_COLUMNAS_DISP = [
   { id:'marca',    label:'Marca temporal',    get:r => getMarcaTemporal(r) },
@@ -5243,6 +5323,8 @@ const CORTE_COLUMNAS_DISP = [
 
 // Poblar el selector de proveedores cuando hay datos de ingreso
 function initCortesProveedores() {
+  // No inicializar ni cargar favoritos hasta que se haya validado el PIN
+  if (!_cortePinOk) return;
   const sel = document.getElementById('corte-proveedor');
   if (!sel || !window.dataIngreso) return;
   const proveedores = [...new Set(window.dataIngreso
