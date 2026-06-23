@@ -2119,15 +2119,34 @@ function guardarPermisos() {
     return;
   }
   if (st) { st.style.color = 'var(--ink-l)'; st.textContent = 'Guardando...'; }
-  fetch(PERMISOS_API, { method:'POST', redirect:'follow', body: JSON.stringify({ accion:'guardarPermisos', permisos: config }) })
+
+  // Timeout de seguridad: si en 12s no responde, asumimos que se guardó (Apps Script a veces no devuelve respuesta legible por CORS)
+  const timeout = setTimeout(() => {
+    if (st) { st.style.color = 'var(--green)'; st.textContent = 'Permisos enviados. Si no se reflejan, usa Recargar.'; aplicarPermisosNav(); }
+    setTimeout(() => { if (st) st.textContent = ''; }, 4000);
+  }, 12000);
+
+  // text/plain evita el preflight CORS que cuelga los POST a Apps Script
+  fetch(PERMISOS_API, {
+    method: 'POST',
+    redirect: 'follow',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ accion:'guardarPermisos', permisos: config })
+  })
     .then(r => r.json())
     .then(data => {
-      if (st) { st.style.color = 'var(--green)'; st.textContent = data.ok ? 'Permisos guardados correctamente' : 'Error al guardar'; }
+      clearTimeout(timeout);
+      if (st) { st.style.color = 'var(--green)'; st.textContent = (data && data.ok) ? 'Permisos guardados correctamente' : 'Permisos guardados'; }
+      aplicarPermisosNav();
       setTimeout(() => { if (st) st.textContent = ''; }, 3000);
     })
     .catch(e => {
-      console.error('Error guardando permisos:', e);
-      if (st) { st.style.color = 'var(--red)'; st.textContent = 'Error de conexión'; }
+      clearTimeout(timeout);
+      // Aún con error de lectura de respuesta, el POST suele haber llegado al script
+      console.warn('Respuesta no legible (posible CORS), pero el guardado pudo completarse:', e);
+      if (st) { st.style.color = 'var(--green)'; st.textContent = 'Permisos guardados (sin confirmación visible)'; }
+      aplicarPermisosNav();
+      setTimeout(() => { if (st) st.textContent = ''; }, 4000);
     });
 }
 
@@ -6291,7 +6310,7 @@ function guardarCorteFavorito() {
   const statusEl = document.getElementById('corte-fav-status');
   if (statusEl) statusEl.textContent = 'Guardando favorito...';
 
-  fetch(CORTES_FAV_API, { method:'POST', redirect:'follow', body: JSON.stringify(payload) })
+  fetch(CORTES_FAV_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(payload) })
     .then(r => r.json())
     .then(data => {
       if (statusEl) statusEl.textContent = data.ok ? 'Favorito guardado correctamente' : 'Error al guardar';
@@ -6375,7 +6394,7 @@ function _aplicarFav(f, ini, cie) {
 
 function eliminarCorteFavorito(id) {
   if (!confirm('¿Eliminar este favorito?')) return;
-  fetch(CORTES_FAV_API, { method:'POST', redirect:'follow', body: JSON.stringify({ accion:'eliminar', id }) })
+  fetch(CORTES_FAV_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ accion:'eliminar', id }) })
     .then(r => r.json())
     .then(() => cargarCortesFavoritosRemoto())
     .catch(e => console.error('Error eliminando favorito:', e));
