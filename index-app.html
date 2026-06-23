@@ -1630,6 +1630,32 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   <!-- Contenido protegido (oculto hasta validar PIN) -->
   <div id="corte-contenido-protegido" style="display:none">
 
+  <!--
+    ═══════════════════════════════════════════════════════════
+    CALENDARIO GUÍA DE CORTES BASE (info de Natalia)
+    Tabla de referencia: cada empresa y su fecha/frecuencia de corte
+    Colapsable para no estorbar. Permite hacer clic para precargar fechas.
+    ═══════════════════════════════════════════════════════════
+  -->
+  <div class="card" style="margin-bottom:20px;padding:0;overflow:hidden">
+    <div onclick="toggleCalendarioCortes()" style="padding:16px 24px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;background:var(--gold-l)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        <span style="font-size:13px;font-weight:800;letter-spacing:.5px;color:var(--gold)">Calendario guía de cortes base</span>
+      </div>
+      <span id="cal-cortes-flecha" style="font-size:12px;color:var(--gold);font-weight:700">▼ ver</span>
+    </div>
+    <div id="cal-cortes-body" style="display:none;padding:8px 0 0">
+      <div style="font-size:11px;color:var(--ink-l);padding:0 24px 12px">Referencia de la fecha de corte habitual por empresa. Haz clic en una fila para precargar el rango sugerido (mes actual).</div>
+      <div style="overflow-x:auto">
+        <table class="tbl" style="font-size:13px">
+          <thead><tr><th>Empresa</th><th>Día de corte</th><th>Frecuencia / Notas</th></tr></thead>
+          <tbody id="cal-cortes-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <!-- PASO 1: Parámetros base -->
   <div class="card" style="margin-bottom:20px;padding:24px">
     <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy);margin-bottom:16px">Paso 1 · Selecciona proveedor y rango</div>
@@ -5316,9 +5342,73 @@ function mostrarEstadoPinCorte() {
 
 
 // Columnas candidatas para el corte (label visible → función que extrae el valor de un registro)
+// ── Festivos de Colombia (Ley Emiliani) y utilidades de día ──
+// Calcula los festivos de un año dado y los cachea
+const _festivosCache = {};
+function getFestivosColombia(anio) {
+  if (_festivosCache[anio]) return _festivosCache[anio];
+  const fechas = new Set();
+  const add = (mes, dia) => fechas.add(anio+'-'+String(mes).padStart(2,'0')+'-'+String(dia).padStart(2,'0'));
+  // Lunes siguiente (Ley Emiliani): si no cae lunes, se traslada al lunes siguiente
+  const lunesSiguiente = (mes, dia) => {
+    const d = new Date(anio, mes-1, dia);
+    const dow = d.getDay(); // 0=dom
+    if (dow !== 1) d.setDate(d.getDate() + ((8 - dow) % 7));
+    add(d.getMonth()+1, d.getDate());
+  };
+  // Fijos
+  add(1,1);    // Año nuevo
+  add(5,1);    // Día del trabajo
+  add(7,20);   // Independencia
+  add(8,7);    // Batalla de Boyacá
+  add(12,8);   // Inmaculada Concepción
+  add(12,25);  // Navidad
+  // Trasladables (lunes siguiente)
+  lunesSiguiente(1,6);   // Reyes Magos
+  lunesSiguiente(3,19);  // San José
+  lunesSiguiente(6,29);  // San Pedro y San Pablo
+  lunesSiguiente(8,15);  // Asunción
+  lunesSiguiente(10,12); // Día de la Raza
+  lunesSiguiente(11,1);  // Todos los Santos
+  lunesSiguiente(11,11); // Independencia de Cartagena
+  // Basados en Pascua (algoritmo de Butcher)
+  const a=anio%19,b=Math.floor(anio/100),cc=anio%100,d=Math.floor(b/4),e=b%4,
+        f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,
+        i=Math.floor(cc/4),k=cc%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),
+        mes=Math.floor((h+l-7*m+114)/31),dia=((h+l-7*m+114)%31)+1;
+  const pascua = new Date(anio, mes-1, dia);
+  const diasDesdePascua = (off) => { const x=new Date(pascua); x.setDate(x.getDate()+off); add(x.getMonth()+1, x.getDate()); };
+  diasDesdePascua(-3); // Jueves Santo
+  diasDesdePascua(-2); // Viernes Santo
+  diasDesdePascua(43); // Ascensión (lunes siguiente — ya +39+lunes)
+  diasDesdePascua(64); // Corpus Christi
+  diasDesdePascua(71); // Sagrado Corazón
+  _festivosCache[anio] = fechas;
+  return fechas;
+}
+function esDomingoOFestivo(fechaYMD) {
+  if (!fechaYMD) return false;
+  const d = new Date(fechaYMD+'T12:00:00');
+  if (isNaN(d.getTime())) return false;
+  if (d.getDay() === 0) return true; // domingo
+  return getFestivosColombia(d.getFullYear()).has(fechaYMD);
+}
+const _DIAS_SEM = ['DOM','LUN','MAR','MIE','JUE','VIE','SAB'];
+function diaSemanaDe(r) {
+  const dt = parseDateTime(getMarcaTemporal(r)) || parseDate(getMarcaTemporal(r));
+  if (!dt || isNaN(dt.getTime())) return '';
+  return _DIAS_SEM[dt.getDay()];
+}
+function fechaYMDdeRegistro(r) {
+  const dt = parseDateTime(getMarcaTemporal(r)) || parseDate(getMarcaTemporal(r));
+  if (!dt || isNaN(dt.getTime())) return '';
+  return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+}
+
 const CORTE_COLUMNAS_DISP = [
   { id:'marca',    label:'Marca temporal',    get:r => getMarcaTemporal(r) },
   { id:'fecha',    label:'Fecha disposición', get:r => (r['FECHA DISPOSICION PLANTA']||r['FECHA DISPOSICION']||'').trim() || (parseDate(getMarcaTemporal(r))?toYMD(getMarcaTemporal(r)):'') },
+  { id:'diaSem',   label:'Día',               get:r => diaSemanaDe(r) },
   { id:'hora',     label:'Hora disposición',  get:r => (r['HORA DISPOSICION PLANTA']||r['HORA DISPOSICION']||'').trim() },
   { id:'empresa',  label:'Empresa / Operación', get:r => normEmpresa(r['OPERACION']||r['Operacion']||r['operacion']||r['OPERACIÓN']||'') },
   { id:'material', label:'Material / Residuo', get:r => (r['RESIDUO']||r['Residuo']||r['residuo']||'').trim() || 'Sin clasificar' },
@@ -5329,6 +5419,81 @@ const CORTE_COLUMNAS_DISP = [
   { id:'conductor',label:'Conductor',         get:r => (r['CONDUCTOR - PRIMER NOMBRE Y PRIMER APELLIDO']||r['CONDUCTOR - PRIME NOMBRE Y PRIMER APELLIDO']||r['CONDUCTOR']||r['Conductor']||r['conductor']||'').trim() },
   { id:'ticket',   label:'N° Tiquete',        get:r => (r['NUMERO TIQUETE']||r['NÚMERO TIQUETE']||r['TIQUETE']||r['Tiquete']||r['tiquete']||r['TICKET']||'').trim() },
 ];
+
+// ── CALENDARIO GUÍA DE CORTES BASE (datos de referencia de Natalia) ──
+// dia: número del mes para el corte (o texto si es variable). diaSugerido: para precargar rango.
+const CORTES_BASE = [
+  { empresa:'Familia',            dia:'21',        diaCorte:21, freq:'Corte mensual, el 21 de cada mes' },
+  { empresa:'Softys',             dia:'27',        diaCorte:27, freq:'Corte mensual, el 27. Patricia Nieto envía el corte para comparación' },
+  { empresa:'Recreo',             dia:'27',        diaCorte:27, freq:'Corte mensual, el 27 de cada mes' },
+  { empresa:'Bavaria',            dia:'24',        diaCorte:24, freq:'Corte mensual, el 24 de cada mes' },
+  { empresa:'McCain',             dia:'23',        diaCorte:23, freq:'Corte mensual, el 23 de cada mes' },
+  { empresa:'Samsa',              dia:'30',        diaCorte:30, freq:'Corte mensual, el 30 de cada mes' },
+  { empresa:'Valrex (Gloria)',    dia:'30',        diaCorte:30, freq:'Corte mensual, el 30 de cada mes' },
+  { empresa:'3R',                 dia:'30',        diaCorte:30, freq:'Corte mensual, el 30 de cada mes' },
+  { empresa:'Campo Verde (Alquería)', dia:'15 y 30', diaCorte:30, freq:'Corte quincenal, 15 y 30 de cada mes' },
+  { empresa:'Alpina',             dia:'15 y 30',   diaCorte:30, freq:'Corte quincenal, 15 y 30. Viajes todos los días' },
+  { empresa:'Pomar',              dia:'15 y 30',   diaCorte:30, freq:'Corte quincenal, 15 y 30 de cada mes' },
+  { empresa:'Brinsa',             dia:'15 y 30',   diaCorte:30, freq:'Corte quincenal, 15 y 30 de cada mes' },
+  { empresa:'Pomar-Felipe',       dia:'Lunes',     diaCorte:null, freq:'Corte semanal, cada lunes' },
+  { empresa:'EPZ',                dia:'1er hábil', diaCorte:1,  freq:'Corte mensual, primer día hábil del mes' },
+  { empresa:'EPC',                dia:'Últ. miérc.',diaCorte:null, freq:'Corte mensual, último miércoles del mes' },
+  { empresa:'Fundación Residuos Colombia (Alquería)', dia:'11, 21 y 30', diaCorte:30, freq:'Cortes parciales: 11, 21 y corte mensual el 30' },
+  { empresa:'Ayura',              dia:'~3 meses',  diaCorte:null, freq:'Corte con acumulado del periodo, cada 3 meses aprox' },
+  { empresa:'Plastilene',         dia:'Esporádico',diaCorte:null, freq:'Viajes no frecuentes, sin corte. Se factura por tiquete (solicitar O.C)' },
+  { empresa:'Zasiago',            dia:'Esporádico',diaCorte:null, freq:'Viajes no frecuentes, sin corte. Se factura por tiquete' },
+  { empresa:'Cosmolac',           dia:'Esporádico',diaCorte:null, freq:'Viajes no frecuentes, sin corte. Se factura por tiquete' },
+  { empresa:'Prodensa',           dia:'Esporádico',diaCorte:null, freq:'No se envía corte, se informa a contabilidad para facturación' },
+  { empresa:'Frigorífico',        dia:'Esporádico',diaCorte:null, freq:'Esporádico, no se factura por corte' },
+];
+
+function renderCalendarioCortes() {
+  const tb = document.getElementById('cal-cortes-tbody');
+  if (!tb) return;
+  tb.innerHTML = CORTES_BASE.map((c, i) => `
+    <tr style="cursor:pointer" onclick="precargarCorteBase(${i})" title="Clic para precargar el rango de este corte">
+      <td style="font-weight:700;color:var(--ink)">${c.empresa}</td>
+      <td style="font-weight:700;color:var(--gold)">${c.dia}</td>
+      <td style="font-size:12px;color:var(--ink-m)">${c.freq}</td>
+    </tr>`).join('');
+}
+
+function toggleCalendarioCortes() {
+  const body = document.getElementById('cal-cortes-body');
+  const flecha = document.getElementById('cal-cortes-flecha');
+  if (!body) return;
+  const abierto = body.style.display !== 'none';
+  body.style.display = abierto ? 'none' : '';
+  if (flecha) flecha.textContent = abierto ? '▼ ver' : '▲ ocultar';
+  if (!abierto && !document.getElementById('cal-cortes-tbody').innerHTML) renderCalendarioCortes();
+}
+
+// Precarga el rango sugerido de un corte base (del día de corte del mes anterior al de este mes)
+function precargarCorteBase(i) {
+  const c = CORTES_BASE[i];
+  if (!c || !c.diaCorte) {
+    alert('Este corte tiene fecha variable (' + c.dia + '). Selecciona las fechas manualmente.');
+    return;
+  }
+  // Intentar match del nombre de empresa con un proveedor del selector
+  const sel = document.getElementById('corte-proveedor');
+  if (sel) {
+    const opts = [...sel.options].map(o => o.value);
+    // Buscar por coincidencia parcial (primera palabra del nombre base)
+    const clave = c.empresa.split(/[\s(]/)[0].toLowerCase();
+    const match = opts.find(o => o.toLowerCase().includes(clave));
+    if (match) sel.value = match;
+  }
+  // Rango: del día de corte del mes anterior al día de corte de este mes
+  const hoy = new Date();
+  const cierre = new Date(hoy.getFullYear(), hoy.getMonth(), c.diaCorte);
+  const inicio = new Date(hoy.getFullYear(), hoy.getMonth()-1, c.diaCorte);
+  const ymd = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  document.getElementById('corte-fecha-inicio').value = ymd(inicio);
+  document.getElementById('corte-fecha-cierre').value = ymd(cierre);
+  onCorteParamsChange();
+  setTimeout(() => { const r = document.getElementById('corte-paso2'); if (r) r.scrollIntoView({behavior:'smooth',block:'start'}); }, 100);
+}
 
 // Poblar el selector de proveedores cuando hay datos de ingreso
 function initCortesProveedores() {
@@ -5355,6 +5520,7 @@ function initCortesProveedores() {
     cont.dataset.init = '1';
   }
   cargarCortesFavoritosRemoto();
+  renderCalendarioCortes();
 }
 
 // Orden de selección de columnas (refleja el orden en que el usuario las marca)
@@ -5607,11 +5773,16 @@ function generarCorte() {
           <thead><tr style="background:${headColor}">${colsDef.map(c => `<th ${c.num?'class="num"':''} style="border-bottom:2px solid ${color}">${c.label}</th>`).join('')}${mostrarColValor?`<th class="num" style="border-bottom:2px solid ${color}">Valor (COP)</th>`:''}</tr></thead>
           <tbody>`;
     regs.forEach((r, idx) => {
-      const bg = idx % 2 === 1 ? `background:${filaColor}` : '';
+      // ¿La fecha del registro cae en domingo o festivo en Colombia? → resaltar
+      const esEspecial = esDomingoOFestivo(fechaYMDdeRegistro(r));
+      let bg = idx % 2 === 1 ? `background:${filaColor}` : '';
+      if (esEspecial) bg = 'background:#fff4e0'; // resaltado ámbar suave para domingo/festivo
       let valorFila = mostrarColValor ? valorDeFila(r) : 0;
-      html += `<tr style="${bg}">` + colsDef.map(c => {
+      html += `<tr style="${bg}"${esEspecial?' title="Domingo o festivo en Colombia"':''}>` + colsDef.map(c => {
         let v = c.get(r);
         if (c.num) v = fmt(Math.round(v));
+        // Marcar la celda del día con un puntico si es especial
+        if (c.id === 'diaSem' && esEspecial) return `<td style="font-weight:800;color:#b45309">${v||'—'} ●</td>`;
         return `<td ${c.num?'class="num"':''}>${v||'—'}</td>`;
       }).join('') + (mostrarColValor ? `<td class="num" style="color:${color};font-weight:600">${fmtCOP(valorFila)}</td>` : '') + '</tr>';
     });
@@ -5708,8 +5879,10 @@ function exportarCorteExcel() {
     c.colsDef.forEach(col => { if (col.num) totales[col.id] = 0; });
     let valorGrupoTotal = 0;
     c.grupos[clave].forEach((r, idx) => {
-      const styleZebra = idx % 2 === 1 ? ' ss:StyleID="zebra"' : '';
-      const styleZebraNum = idx % 2 === 1 ? 'numZebra' : 'num';
+      const esEspecial = esDomingoOFestivo(fechaYMDdeRegistro(r));
+      // Si es domingo/festivo usa estilo destacado; si no, zebra normal
+      const styleZebra = esEspecial ? ' ss:StyleID="festivo"' : (idx % 2 === 1 ? ' ss:StyleID="zebra"' : '');
+      const styleZebraNum = esEspecial ? 'festivoNum' : (idx % 2 === 1 ? 'numZebra' : 'num');
       let valorFila = 0;
       if (c.mostrarColValor) { valorFila = _valorFilaCorte(c, r); valorGrupoTotal += valorFila; }
       rowsXml += '<Row>' + c.colsDef.map(col => {
@@ -5756,6 +5929,8 @@ function exportarCorteExcel() {
  <Style ss:ID="num"><Alignment ss:Horizontal="Right"/></Style>
  <Style ss:ID="zebra"><Interior ss:Color="${zebraColor}" ss:Pattern="Solid"/></Style>
  <Style ss:ID="numZebra"><Alignment ss:Horizontal="Right"/><Interior ss:Color="${zebraColor}" ss:Pattern="Solid"/></Style>
+ <Style ss:ID="festivo"><Interior ss:Color="#FFF4E0" ss:Pattern="Solid"/><Font ss:Color="#B45309"/></Style>
+ <Style ss:ID="festivoNum"><Alignment ss:Horizontal="Right"/><Interior ss:Color="#FFF4E0" ss:Pattern="Solid"/><Font ss:Color="#B45309"/></Style>
  <Style ss:ID="total"><Font ss:Bold="1" ss:Color="${color}"/><Interior ss:Color="#f0f0ee" ss:Pattern="Solid"/><Alignment ss:Horizontal="Right"/></Style>
  <Style ss:ID="totalLbl"><Font ss:Bold="1" ss:Color="${color}"/><Interior ss:Color="#f0f0ee" ss:Pattern="Solid"/></Style>
 </Styles>
