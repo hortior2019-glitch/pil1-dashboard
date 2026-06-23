@@ -1691,6 +1691,15 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
         <input type="checkbox" id="corte-solo-total" onchange="generarCorte()" style="width:18px;height:18px;accent-color:var(--navy)">
         <span style="font-size:14px;color:var(--ink)">Mostrar solo la suma total (sin columna de valor por fila ni precio unitario)</span>
       </label>
+
+      <!-- Precio por material (aparece solo si la operación tiene más de 1 material) -->
+      <div id="corte-precio-material-wrap" style="display:none;margin-top:16px;border-top:1px dashed var(--rule);padding-top:16px">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:12px">
+          <input type="checkbox" id="corte-precio-por-material" onchange="togglePrecioPorMaterial()" style="width:18px;height:18px;accent-color:var(--gold)">
+          <span style="font-size:14px;color:var(--ink);font-weight:700">Asignar un precio distinto por cada material</span>
+        </label>
+        <div id="corte-precio-material-lista" style="display:none;flex-direction:column;gap:8px;padding-left:4px"></div>
+      </div>
     </div>
 
     <!-- Guardar como favorito -->
@@ -5391,12 +5400,63 @@ function onCorteParamsChange() {
       const fmtF = s => { const d = new Date(s+'T00:00:00'); return d.getDate()+' '+MESES[d.getMonth()]+' '+d.getFullYear(); };
       info.innerHTML = 'Corte de <strong>'+prov+'</strong> desde <strong>'+fmtF(ini)+' 12:00 am</strong> hasta <strong>'+fmtF(cie)+' 11:59 pm</strong>';
     }
+    actualizarPreciosPorMaterial(prov, ini, cie);
     generarCorte();
   } else {
     if (paso2) paso2.style.display = 'none';
     if (info) info.textContent = '';
     document.getElementById('corte-resultado').innerHTML = '';
   }
+}
+
+// Materiales disponibles para la operación/rango y sus precios asignados (id material → precio)
+let _cortePreciosMaterial = {};
+
+// Detecta los materiales del corte. Si hay más de 1, muestra la opción de precio por material.
+function actualizarPreciosPorMaterial(prov, ini, cie) {
+  const wrap = document.getElementById('corte-precio-material-wrap');
+  const lista = document.getElementById('corte-precio-material-lista');
+  if (!wrap || !lista) return;
+
+  const registros = filtrarRegistrosCorte(prov, ini, cie);
+  // Materiales únicos del rango
+  const materiales = [...new Set(registros.map(r =>
+    (r['RESIDUO']||r['Residuo']||r['residuo']||'').trim() || 'Sin clasificar'
+  ))].sort();
+
+  if (materiales.length <= 1) {
+    // Una sola operación con un material: ocultar la sección de precio por material
+    wrap.style.display = 'none';
+    const chk = document.getElementById('corte-precio-por-material');
+    if (chk) chk.checked = false;
+    lista.style.display = 'none';
+    return;
+  }
+
+  wrap.style.display = '';
+  // Construir un input por material (conservando valores ya escritos)
+  lista.innerHTML = materiales.map(m => {
+    const valGuardado = _cortePreciosMaterial[m] != null ? _cortePreciosMaterial[m] : '';
+    return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:13px;font-weight:600;color:var(--ink);min-width:180px">${m}</span>
+      <input type="number" class="corte-precio-mat" data-material="${m.replace(/"/g,'&quot;')}" value="${valGuardado}" placeholder="Precio (COP)" min="0" step="any" oninput="onPrecioMaterialInput(this)" style="border:1px solid var(--rule);background:var(--white);padding:7px 10px;font-size:13px;border-radius:4px;color:var(--ink);width:140px;font-family:'Source Sans 3',sans-serif">
+    </div>`;
+  }).join('');
+}
+
+function togglePrecioPorMaterial() {
+  const chk = document.getElementById('corte-precio-por-material');
+  const lista = document.getElementById('corte-precio-material-lista');
+  if (lista) lista.style.display = (chk && chk.checked) ? 'flex' : 'none';
+  generarCorte();
+}
+
+function onPrecioMaterialInput(input) {
+  const mat = input.dataset.material;
+  const val = parseFloat(input.value);
+  if (!isNaN(val) && val >= 0) _cortePreciosMaterial[mat] = val;
+  else delete _cortePreciosMaterial[mat];
+  generarCorte();
 }
 
 // Filtra los registros del proveedor dentro del rango (12:00 am inicio → 11:59 pm cierre)
@@ -5440,7 +5500,29 @@ function generarCorte() {
   }
 
   const colsDef = colsSel.map(id => CORTE_COLUMNAS_DISP.find(c => c.id === id)).filter(Boolean);
-  const tieneTarifa = tarifaTipo && tarifaValor > 0;
+
+  // ¿Precio por material activo? (solo aplica si la operación tiene >1 material y el checkbox está marcado)
+  const precioPorMaterialOn = (document.getElementById('corte-precio-por-material')||{}).checked
+    && (document.getElementById('corte-precio-material-wrap')||{}).style.display !== 'none';
+
+  // Helper: material de un registro
+  const matDe = r => (r['RESIDUO']||r['Residuo']||r['residuo']||'').trim() || 'Sin clasificar';
+
+  // Helper unificado: valor monetario de una fila
+  const valorDeFila = r => {
+    if (precioPorMaterialOn) {
+      // Precio por material × kg de esa fila
+      const p = _cortePreciosMaterial[matDe(r)] || 0;
+      return getPesoNeto(r) * p;
+    }
+    if (!tarifaTipo || tarifaValor <= 0) return 0;
+    return tarifaTipo === 'viaje' ? tarifaValor : getPesoNeto(r) * tarifaValor;
+  };
+
+  // ¿Hay algún valor monetario que mostrar?
+  const tieneTarifa = precioPorMaterialOn
+    ? Object.keys(_cortePreciosMaterial).some(k => _cortePreciosMaterial[k] > 0)
+    : (tarifaTipo && tarifaValor > 0);
   // Si "solo total" está activo: hay tarifa para el valor total, pero NO se muestra la columna de valor por fila
   const mostrarColValor = tieneTarifa && !soloTotal;
 
@@ -5463,8 +5545,7 @@ function generarCorte() {
   // Calcular valor monetario total del corte completo (para el header)
   let valorTotalCorte = 0;
   if (tieneTarifa) {
-    if (tarifaTipo === 'viaje') valorTotalCorte = registros.length * tarifaValor;
-    else valorTotalCorte = registros.reduce((s,r) => s + getPesoNeto(r), 0) * tarifaValor;
+    valorTotalCorte = registros.reduce((s,r) => s + valorDeFila(r), 0);
   }
 
   // Logo y color corporativo del proveedor
@@ -5481,7 +5562,7 @@ function generarCorte() {
           <div style="font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,.7);margin-bottom:6px">Corte de Materia Recibida</div>
           <div style="font-family:'Playfair Display',serif;font-size:32px;font-weight:700;line-height:1.1">${prov}</div>
           <div style="font-size:13px;color:rgba(255,255,255,.85);margin-top:8px">${fmtF(ini)} 12:00 am — ${fmtF(cie)} 11:59 pm</div>
-          ${tieneTarifa && !soloTotal ? `<div style="font-size:12px;color:rgba(255,255,255,.65);margin-top:4px">Tarifa: ${fmtCOP(tarifaValor)} por ${tarifaTipo === 'viaje' ? 'viaje' : 'kg'}</div>` : ''}
+          ${tieneTarifa && !soloTotal ? `<div style="font-size:12px;color:rgba(255,255,255,.65);margin-top:4px">${precioPorMaterialOn ? 'Precio por material (ver tabla)' : 'Tarifa: '+fmtCOP(tarifaValor)+' por '+(tarifaTipo === 'viaje' ? 'viaje' : 'kg')}</div>` : ''}
         </div>
         <div style="text-align:right;flex-shrink:0">
           <div style="font-family:'Libre Baskerville',serif;font-size:44px;font-weight:800;line-height:1;font-variant-numeric:lining-nums tabular-nums">${fmt(registros.length)}</div>
@@ -5499,7 +5580,7 @@ function generarCorte() {
     </div>`;
 
   // Guardar para exportación (incluye datos de tarifa)
-  window._corteActual = { prov, ini, cie, colsDef, grupos, tarifaTipo, tarifaValor, tieneTarifa, soloTotal, mostrarColValor };
+  window._corteActual = { prov, ini, cie, colsDef, grupos, tarifaTipo, tarifaValor, tieneTarifa, soloTotal, mostrarColValor, precioPorMaterialOn, preciosMaterial: {..._cortePreciosMaterial} };
 
   // Color de la empresa para el interlineado (versión muy clara)
   const filaColor = hexToRgba(color, 0.07);
@@ -5513,8 +5594,7 @@ function generarCorte() {
     // Valor monetario del grupo
     let valorGrupo = 0;
     if (tieneTarifa) {
-      if (tarifaTipo === 'viaje') valorGrupo = regs.length * tarifaValor;
-      else valorGrupo = regs.reduce((s,r) => s + getPesoNeto(r), 0) * tarifaValor;
+      valorGrupo = regs.reduce((s,r) => s + valorDeFila(r), 0);
     }
 
     html += `<div style="padding:18px 24px 8px">
@@ -5528,8 +5608,7 @@ function generarCorte() {
           <tbody>`;
     regs.forEach((r, idx) => {
       const bg = idx % 2 === 1 ? `background:${filaColor}` : '';
-      let valorFila = 0;
-      if (mostrarColValor) valorFila = tarifaTipo === 'viaje' ? tarifaValor : getPesoNeto(r) * tarifaValor;
+      let valorFila = mostrarColValor ? valorDeFila(r) : 0;
       html += `<tr style="${bg}">` + colsDef.map(c => {
         let v = c.get(r);
         if (c.num) v = fmt(Math.round(v));
@@ -5550,6 +5629,17 @@ function generarCorte() {
   cont.innerHTML = html;
 }
 
+// Helper compartido: valor monetario de una fila según la config del corte (tarifa global o precio por material)
+function _valorFilaCorte(c, r) {
+  const mat = (r['RESIDUO']||r['Residuo']||r['residuo']||'').trim() || 'Sin clasificar';
+  if (c.precioPorMaterialOn) {
+    const p = (c.preciosMaterial && c.preciosMaterial[mat]) || 0;
+    return getPesoNeto(r) * p;
+  }
+  if (!c.tarifaTipo || c.tarifaValor <= 0) return 0;
+  return c.tarifaTipo === 'viaje' ? c.tarifaValor : getPesoNeto(r) * c.tarifaValor;
+}
+
 // Exporta el corte actual a CSV
 function exportarCorteCSV() {
   const c = window._corteActual;
@@ -5560,8 +5650,7 @@ function exportarCorteCSV() {
     if (clave !== 'Todos') csv += '\n' + clave + '\n';
     csv += c.colsDef.map(col => '"'+col.label+'"').join(',') + (c.mostrarColValor ? ',"Valor (COP)"' : '') + '\n';
     c.grupos[clave].forEach(r => {
-      let valorFila = 0;
-      if (c.mostrarColValor) valorFila = c.tarifaTipo === 'viaje' ? c.tarifaValor : getPesoNeto(r) * c.tarifaValor;
+      let valorFila = c.mostrarColValor ? _valorFilaCorte(c, r) : 0;
       csv += c.colsDef.map(col => {
         let v = col.get(r);
         if (col.num) v = Math.round(v);
@@ -5600,7 +5689,7 @@ function exportarCorteExcel() {
   if (c.tieneTarifa) {
     var _vt = 0;
     Object.keys(c.grupos).forEach(function(k){
-      c.grupos[k].forEach(function(r){ _vt += (c.tarifaTipo==='viaje'? c.tarifaValor : getPesoNeto(r)*c.tarifaValor); });
+      c.grupos[k].forEach(function(r){ _vt += _valorFilaCorte(c, r); });
     });
     rowsXml += `<Row><Cell ss:StyleID="titulo"><Data ss:Type="String">VALOR TOTAL: $${esc(Math.round(_vt).toLocaleString('es-CO'))}</Data></Cell></Row>`;
   }
@@ -5622,7 +5711,7 @@ function exportarCorteExcel() {
       const styleZebra = idx % 2 === 1 ? ' ss:StyleID="zebra"' : '';
       const styleZebraNum = idx % 2 === 1 ? 'numZebra' : 'num';
       let valorFila = 0;
-      if (c.mostrarColValor) { valorFila = c.tarifaTipo === 'viaje' ? c.tarifaValor : getPesoNeto(r) * c.tarifaValor; valorGrupoTotal += valorFila; }
+      if (c.mostrarColValor) { valorFila = _valorFilaCorte(c, r); valorGrupoTotal += valorFila; }
       rowsXml += '<Row>' + c.colsDef.map(col => {
         let v = col.get(r);
         if (col.num) {
@@ -5720,12 +5809,16 @@ function guardarCorteFavorito() {
   const tarifaTipo  = (document.getElementById('corte-tarifa-tipo')||{}).value || '';
   const tarifaValor = parseFloat((document.getElementById('corte-tarifa-valor')||{}).value) || 0;
   const soloTotal   = (document.getElementById('corte-solo-total')||{}).checked;
+  const precioPorMaterial = (document.getElementById('corte-precio-por-material')||{}).checked;
 
   // Guardar también el "patrón de día" para reutilizar (ej: del 20 al 20)
   const diaIni = ini ? new Date(ini+'T00:00:00').getDate() : null;
   const diaCie = cie ? new Date(cie+'T00:00:00').getDate() : null;
 
-  const payload = { accion:'guardar', nombre, prov, ini, cie, diaIni, diaCie, colsSel, sepMaterial, sepEmpresa, tarifaTipo, tarifaValor, soloTotal };
+  // Precios por material como JSON string (para guardar en una sola celda)
+  const preciosMaterialJson = JSON.stringify(_cortePreciosMaterial || {});
+
+  const payload = { accion:'guardar', nombre, prov, ini, cie, diaIni, diaCie, colsSel, sepMaterial, sepEmpresa, tarifaTipo, tarifaValor, soloTotal, precioPorMaterial, preciosMaterialJson };
 
   const statusEl = document.getElementById('corte-fav-status');
   if (statusEl) statusEl.textContent = 'Guardando favorito...';
@@ -5798,7 +5891,16 @@ function _aplicarFav(f, ini, cie) {
   document.getElementById('corte-tarifa-tipo').value = f.tarifaTipo || '';
   document.getElementById('corte-tarifa-valor').value = f.tarifaValor || '';
   const stChk = document.getElementById('corte-solo-total'); if (stChk) stChk.checked = !!f.soloTotal;
+  // Restaurar precios por material
+  try { _cortePreciosMaterial = f.preciosMaterialJson ? JSON.parse(f.preciosMaterialJson) : (f.preciosMaterial || {}); }
+  catch(e) { _cortePreciosMaterial = {}; }
+  const ppmChk = document.getElementById('corte-precio-por-material'); if (ppmChk) ppmChk.checked = !!f.precioPorMaterial;
   onCorteParamsChange();
+  // Re-aplicar estado del precio por material después de que se reconstruya la lista
+  setTimeout(() => {
+    const ppm = document.getElementById('corte-precio-por-material');
+    if (ppm) { ppm.checked = !!f.precioPorMaterial; togglePrecioPorMaterial(); }
+  }, 150);
   // Scroll al resultado
   setTimeout(() => { const r = document.getElementById('corte-resultado'); if (r) r.scrollIntoView({behavior:'smooth',block:'start'}); }, 100);
 }
