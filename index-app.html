@@ -2037,7 +2037,6 @@ function aplicarPermisosNav() {
   }
   // Usuario normal: aplicar config (si no hay config para él, ve todo por defecto)
   const permitidas = _permisosConfig[u.usuario];
-  console.log('[PERMISOS] usuario:', JSON.stringify(u.usuario), '| config encontrada:', permitidas, '| claves disponibles:', Object.keys(_permisosConfig));
   document.querySelectorAll('.nav-tab[data-panel]').forEach(t => {
     const panel = t.getAttribute('data-panel');
     if (panel === 'permisos') { t.style.display = 'none'; return; }
@@ -2045,6 +2044,13 @@ function aplicarPermisosNav() {
     if (!permitidas) { t.style.display = ''; return; }
     t.style.display = permitidas.includes(panel) ? '' : 'none';
   });
+  // Si la pestaña activa quedó oculta, activar la primera pestaña visible
+  const activa = document.querySelector('.nav-tab.active');
+  if (activa && activa.style.display === 'none') {
+    const primeraVisible = [...document.querySelectorAll('.nav-tab[data-panel]')]
+      .find(t => t.style.display !== 'none' && t.getAttribute('data-panel') !== 'permisos');
+    if (primeraVisible) primeraVisible.click();
+  }
 }
 
 // Carga la config de permisos desde el Apps Script
@@ -2233,6 +2239,13 @@ function intentarLoginDash() {
   const app = document.getElementById('dash-app');
   app.style.display = 'block';
   aplicarNavWrapGuardado();
+  // Para usuarios normales: ocultar pestañas controlables de inmediato para evitar el parpadeo
+  // (se revelan solo las permitidas cuando llega la config fresca del Sheet)
+  if (!_usuarioActual.admin) {
+    document.querySelectorAll('.nav-tab[data-panel]').forEach(t => {
+      if (t.getAttribute('data-admin-only') !== '1') t.style.display = 'none';
+    });
+  }
   aplicarPermisosNav();           // aplica con lo que haya en cache de inmediato
   cargarPermisosRemoto();         // recarga permisos frescos del Sheet y re-aplica al terminar
   requestAnimationFrame(function(){ ajustarPosiciones(); setTimeout(ajustarPosiciones, 200); });
