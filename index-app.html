@@ -1655,6 +1655,25 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
       </label>
     </div>
 
+    <!-- Tarifa: valor por kg o por viaje -->
+    <div style="border-top:1px solid var(--rule-l);padding-top:16px;margin-top:16px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink-l);margin-bottom:12px">Tarifa (opcional) · agrega el valor en pesos al corte</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <label style="font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-l)">Cobrar por</label>
+          <select id="corte-tarifa-tipo" onchange="generarCorte()" style="border:1px solid var(--rule);background:var(--white);padding:9px 12px;font-size:14px;border-radius:4px;color:var(--ink);font-family:'Source Sans 3',sans-serif">
+            <option value="">— Sin tarifa —</option>
+            <option value="kg">Valor por kg</option>
+            <option value="viaje">Valor por viaje</option>
+          </select>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <label style="font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-l)">Valor unitario (COP)</label>
+          <input type="number" id="corte-tarifa-valor" placeholder="Ej: 350" min="0" step="any" oninput="generarCorte()" style="border:1px solid var(--rule);background:var(--white);padding:9px 12px;font-size:14px;border-radius:4px;color:var(--ink);width:160px;font-family:'Source Sans 3',sans-serif">
+        </div>
+      </div>
+    </div>
+
     <!-- Guardar como favorito -->
     <div style="border-top:1px solid var(--rule-l);padding-top:16px;margin-top:16px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
       <div style="display:flex;flex-direction:column;gap:5px;flex:1;min-width:200px">
@@ -1663,11 +1682,15 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
       </div>
       <button onclick="guardarCorteFavorito()" style="padding:10px 20px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Guardar favorito</button>
     </div>
+    <div id="corte-fav-status" style="font-size:11px;color:var(--ink-l);margin-top:8px"></div>
   </div>
 
   <!-- Favoritos guardados -->
   <div class="card" id="corte-favoritos-card" style="margin-bottom:20px;padding:20px 24px;display:none">
-    <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--gold);margin-bottom:14px">Cortes favoritos guardados</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--gold)">Cortes favoritos guardados</div>
+      <div id="corte-fav-loading" style="font-size:10px;color:var(--ink-l)"></div>
+    </div>
     <div id="corte-favoritos-lista" style="display:flex;flex-direction:column;gap:8px"></div>
   </div>
 
@@ -5202,8 +5225,12 @@ function limpiarFiltrosEquipo() {
 // CORTES A PROVEEDOR
 // Genera reportes de materia recibida por proveedor en un rango de fechas.
 // Las columnas disponibles se detectan de los datos de ingreso.
-// Favoritos se guardan en localStorage (funciona en GitHub Pages).
+// Favoritos se guardan en un Google Sheet remoto (vía Apps Script), compartidos
+// entre todos los usuarios del dashboard — no en localStorage.
 // ═══════════════════════════════════════════════════════════
+
+// URL del Apps Script Web App para favoritos de cortes (reemplazar con la URL real al implementar)
+const CORTES_FAV_API = "https://script.google.com/macros/s/AKfycbw6VAF6KaJfznpTEU_YrJNOuzgqB9FD6-0I4YgSpnblx6KwPix_Db2aq-f80JhC-lqt/exec";
 
 // Columnas candidatas para el corte (label visible → función que extrae el valor de un registro)
 const CORTE_COLUMNAS_DISP = [
@@ -5240,7 +5267,7 @@ function initCortesProveedores() {
       </label>`).join('');
     cont.dataset.init = '1';
   }
-  renderCortesFavoritos();
+  cargarCortesFavoritosRemoto();
 }
 
 // Cada vez que cambian proveedor o fechas
@@ -5291,6 +5318,8 @@ function generarCorte() {
   const colsSel = [...document.querySelectorAll('.corte-col-chk:checked')].map(c => c.value);
   const sepMaterial = (document.getElementById('corte-separar-material')||{}).checked;
   const sepEmpresa  = (document.getElementById('corte-separar-empresa')||{}).checked;
+  const tarifaTipo  = (document.getElementById('corte-tarifa-tipo')||{}).value || '';
+  const tarifaValor = parseFloat((document.getElementById('corte-tarifa-valor')||{}).value) || 0;
   const cont = document.getElementById('corte-resultado');
 
   if (colsSel.length === 0) { cont.innerHTML = '<div class="card" style="padding:24px;text-align:center;color:var(--ink-l)">Selecciona al menos una columna</div>'; return; }
@@ -5302,6 +5331,7 @@ function generarCorte() {
   }
 
   const colsDef = colsSel.map(id => CORTE_COLUMNAS_DISP.find(c => c.id === id)).filter(Boolean);
+  const tieneTarifa = tarifaTipo && tarifaValor > 0;
 
   // Determinar agrupación
   const grupos = {}; // clave de grupo → array de registros
@@ -5317,11 +5347,18 @@ function generarCorte() {
 
   const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
   const fmtF = s => { const d = new Date(s+'T00:00:00'); return d.getDate()+' '+MESES[d.getMonth()]+' '+d.getFullYear(); };
+  const fmtCOP = n => '$ ' + Math.round(n).toLocaleString('es-CO');
+
+  // Calcular valor monetario total del corte completo (para el header)
+  let valorTotalCorte = 0;
+  if (tieneTarifa) {
+    if (tarifaTipo === 'viaje') valorTotalCorte = registros.length * tarifaValor;
+    else valorTotalCorte = registros.reduce((s,r) => s + getPesoNeto(r), 0) * tarifaValor;
+  }
 
   // Logo y color corporativo del proveedor
   const logoUrl = getClientLogo(prov);
   const color = getClientColor(prov);
-  const colorOscuro = hexToRgba(color, 1);
 
   // Construir tablas por grupo
   let html = `<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px">
@@ -5333,10 +5370,12 @@ function generarCorte() {
           <div style="font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,.7);margin-bottom:6px">Corte de Materia Recibida</div>
           <div style="font-family:'Playfair Display',serif;font-size:32px;font-weight:700;line-height:1.1">${prov}</div>
           <div style="font-size:13px;color:rgba(255,255,255,.85);margin-top:8px">${fmtF(ini)} 1:00 am — ${fmtF(cie)} 12:59 pm</div>
+          ${tieneTarifa ? `<div style="font-size:12px;color:rgba(255,255,255,.65);margin-top:4px">Tarifa: ${fmtCOP(tarifaValor)} por ${tarifaTipo === 'viaje' ? 'viaje' : 'kg'}</div>` : ''}
         </div>
         <div style="text-align:right;flex-shrink:0">
           <div style="font-family:'Libre Baskerville',serif;font-size:44px;font-weight:800;line-height:1;font-variant-numeric:lining-nums tabular-nums">${fmt(registros.length)}</div>
           <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.7);margin-top:4px">Registros</div>
+          ${tieneTarifa ? `<div style="font-family:'Libre Baskerville',serif;font-size:26px;font-weight:800;line-height:1;margin-top:10px;color:#fff">${fmtCOP(valorTotalCorte)}</div><div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.7);margin-top:2px">Valor total</div>` : ''}
         </div>
       </div>
     </div>
@@ -5348,8 +5387,8 @@ function generarCorte() {
       <button onclick="exportarCorteCSV()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Descargar CSV</button>
     </div>`;
 
-  // Guardar para exportación
-  window._corteActual = { prov, ini, cie, colsDef, grupos };
+  // Guardar para exportación (incluye datos de tarifa)
+  window._corteActual = { prov, ini, cie, colsDef, grupos, tarifaTipo, tarifaValor, tieneTarifa };
 
   // Color de la empresa para el interlineado (versión muy clara)
   const filaColor = hexToRgba(color, 0.07);
@@ -5360,27 +5399,38 @@ function generarCorte() {
     // Totales de columnas numéricas
     const totales = {};
     colsDef.forEach(c => { if (c.num) totales[c.id] = regs.reduce((s,r)=> s + (parseFloat(c.get(r))||0), 0); });
+    // Valor monetario del grupo
+    let valorGrupo = 0;
+    if (tieneTarifa) {
+      if (tarifaTipo === 'viaje') valorGrupo = regs.length * tarifaValor;
+      else valorGrupo = regs.reduce((s,r) => s + getPesoNeto(r), 0) * tarifaValor;
+    }
 
     html += `<div style="padding:18px 24px 8px">
-      ${clave !== 'Todos' ? `<div style="font-size:15px;font-weight:800;color:${color};margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid ${color}">${clave} <span style="font-weight:600;color:var(--ink-l);font-size:13px">· ${fmt(regs.length)} registros</span></div>` : ''}
+      ${clave !== 'Todos' ? `<div style="font-size:15px;font-weight:800;color:${color};margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid ${color};display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+        <span>${clave} <span style="font-weight:600;color:var(--ink-l);font-size:13px">· ${fmt(regs.length)} registros</span></span>
+        ${tieneTarifa ? `<span style="font-weight:800;color:${color};font-size:16px">${fmtCOP(valorGrupo)}</span>` : ''}
+      </div>` : ''}
       <div style="overflow-x:auto">
         <table class="tbl" style="font-size:13px;border-collapse:collapse;width:100%">
-          <thead><tr style="background:${headColor}">${colsDef.map(c => `<th ${c.num?'class="num"':''} style="border-bottom:2px solid ${color}">${c.label}</th>`).join('')}</tr></thead>
+          <thead><tr style="background:${headColor}">${colsDef.map(c => `<th ${c.num?'class="num"':''} style="border-bottom:2px solid ${color}">${c.label}</th>`).join('')}${tieneTarifa?`<th class="num" style="border-bottom:2px solid ${color}">Valor (COP)</th>`:''}</tr></thead>
           <tbody>`;
     regs.forEach((r, idx) => {
       const bg = idx % 2 === 1 ? `background:${filaColor}` : '';
+      let valorFila = 0;
+      if (tieneTarifa) valorFila = tarifaTipo === 'viaje' ? tarifaValor : getPesoNeto(r) * tarifaValor;
       html += `<tr style="${bg}">` + colsDef.map(c => {
         let v = c.get(r);
         if (c.num) v = fmt(Math.round(v));
         return `<td ${c.num?'class="num"':''}>${v||'—'}</td>`;
-      }).join('') + '</tr>';
+      }).join('') + (tieneTarifa ? `<td class="num" style="color:${color};font-weight:600">${fmtCOP(valorFila)}</td>` : '') + '</tr>';
     });
     // Fila de totales
-    if (Object.keys(totales).length) {
+    if (Object.keys(totales).length || tieneTarifa) {
       html += `<tr style="border-top:2px solid ${color};font-weight:800;background:${headColor}">` + colsDef.map((c,i) => {
         if (c.num) return `<td class="num" style="color:${color}">${fmt(Math.round(totales[c.id]))}</td>`;
         return i === 0 ? `<td style="color:${color}">TOTAL</td>` : '<td></td>';
-      }).join('') + '</tr>';
+      }).join('') + (tieneTarifa ? `<td class="num" style="color:${color}">${fmtCOP(valorGrupo)}</td>` : '') + '</tr>';
     }
     html += `</tbody></table></div></div>`;
   });
@@ -5393,16 +5443,19 @@ function generarCorte() {
 function exportarCorteCSV() {
   const c = window._corteActual;
   if (!c) return;
+  const fmtCOP2 = n => Math.round(n);
   let csv = '';
   Object.keys(c.grupos).sort().forEach(clave => {
     if (clave !== 'Todos') csv += '\n' + clave + '\n';
-    csv += c.colsDef.map(col => '"'+col.label+'"').join(',') + '\n';
+    csv += c.colsDef.map(col => '"'+col.label+'"').join(',') + (c.tieneTarifa ? ',"Valor (COP)"' : '') + '\n';
     c.grupos[clave].forEach(r => {
+      let valorFila = 0;
+      if (c.tieneTarifa) valorFila = c.tarifaTipo === 'viaje' ? c.tarifaValor : getPesoNeto(r) * c.tarifaValor;
       csv += c.colsDef.map(col => {
         let v = col.get(r);
         if (col.num) v = Math.round(v);
         return '"' + String(v).replace(/"/g,'""') + '"';
-      }).join(',') + '\n';
+      }).join(',') + (c.tieneTarifa ? ',"'+fmtCOP2(valorFila)+'"' : '') + '\n';
     });
   });
   const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8'});
@@ -5429,6 +5482,9 @@ function exportarCorteExcel() {
   // Fila título
   rowsXml += `<Row><Cell ss:StyleID="titulo"><Data ss:Type="String">Corte de Materia Recibida — ${esc(c.prov)}</Data></Cell></Row>`;
   rowsXml += `<Row><Cell ss:StyleID="subtitulo"><Data ss:Type="String">${esc(c.ini)} 1:00 am  →  ${esc(c.cie)} 12:59 pm</Data></Cell></Row>`;
+  if (c.tieneTarifa) {
+    rowsXml += `<Row><Cell ss:StyleID="subtitulo"><Data ss:Type="String">Tarifa: $${esc(Math.round(c.tarifaValor).toLocaleString('es-CO'))} por ${c.tarifaTipo === 'viaje' ? 'viaje' : 'kg'}</Data></Cell></Row>`;
+  }
   rowsXml += `<Row></Row>`;
 
   Object.keys(c.grupos).sort().forEach(clave => {
@@ -5438,13 +5494,16 @@ function exportarCorteExcel() {
     // Encabezados
     rowsXml += '<Row>' + c.colsDef.map(col =>
       `<Cell ss:StyleID="header"><Data ss:Type="String">${esc(col.label)}</Data></Cell>`
-    ).join('') + '</Row>';
+    ).join('') + (c.tieneTarifa ? '<Cell ss:StyleID="header"><Data ss:Type="String">Valor (COP)</Data></Cell>' : '') + '</Row>';
     // Datos
     const totales = {};
     c.colsDef.forEach(col => { if (col.num) totales[col.id] = 0; });
+    let valorGrupoTotal = 0;
     c.grupos[clave].forEach((r, idx) => {
       const styleZebra = idx % 2 === 1 ? ' ss:StyleID="zebra"' : '';
       const styleZebraNum = idx % 2 === 1 ? 'numZebra' : 'num';
+      let valorFila = 0;
+      if (c.tieneTarifa) { valorFila = c.tarifaTipo === 'viaje' ? c.tarifaValor : getPesoNeto(r) * c.tarifaValor; valorGrupoTotal += valorFila; }
       rowsXml += '<Row>' + c.colsDef.map(col => {
         let v = col.get(r);
         if (col.num) {
@@ -5453,14 +5512,14 @@ function exportarCorteExcel() {
           return `<Cell ss:StyleID="${styleZebraNum}"><Data ss:Type="Number">${Math.round(n)}</Data></Cell>`;
         }
         return `<Cell${styleZebra}><Data ss:Type="String">${esc(v)}</Data></Cell>`;
-      }).join('') + '</Row>';
+      }).join('') + (c.tieneTarifa ? `<Cell ss:StyleID="${styleZebraNum}"><Data ss:Type="Number">${Math.round(valorFila)}</Data></Cell>` : '') + '</Row>';
     });
     // Totales
-    if (Object.keys(totales).length) {
+    if (Object.keys(totales).length || c.tieneTarifa) {
       rowsXml += '<Row>' + c.colsDef.map((col,i) => {
         if (col.num) return `<Cell ss:StyleID="total"><Data ss:Type="Number">${Math.round(totales[col.id])}</Data></Cell>`;
         return i === 0 ? `<Cell ss:StyleID="totalLbl"><Data ss:Type="String">TOTAL</Data></Cell>` : '<Cell ss:StyleID="total"></Cell>';
-      }).join('') + '</Row>';
+      }).join('') + (c.tieneTarifa ? `<Cell ss:StyleID="total"><Data ss:Type="Number">${Math.round(valorGrupoTotal)}</Data></Cell>` : '') + '</Row>';
     }
     rowsXml += '<Row></Row>';
   });
@@ -5494,7 +5553,7 @@ function exportarCorteExcel() {
 </Styles>
 <Worksheet ss:Name="Corte">
 <Table>
-${c.colsDef.map(()=>'<Column ss:Width="120"/>').join('')}
+${c.colsDef.map(()=>'<Column ss:Width="120"/>').join('')}${c.tieneTarifa?'<Column ss:Width="120"/>':''}
 ${rowsXml}
 </Table>
 </Worksheet>
@@ -5509,13 +5568,24 @@ ${rowsXml}
   URL.revokeObjectURL(url);
 }
 
-// ── FAVORITOS (localStorage) ──
-function getCorteFavoritos() {
-  try { return JSON.parse(localStorage.getItem('horti_cortes_fav') || '[]'); }
-  catch(e) { return []; }
-}
-function setCorteFavoritos(arr) {
-  try { localStorage.setItem('horti_cortes_fav', JSON.stringify(arr)); } catch(e) {}
+// ── FAVORITOS (Google Sheet remoto vía Apps Script) ──
+// Cache local de favoritos cargados (se refresca al entrar al panel)
+let _cortesFavoritosCache = [];
+
+async function cargarCortesFavoritosRemoto() {
+  const loadingEl = document.getElementById('corte-fav-loading');
+  if (loadingEl) loadingEl.textContent = 'Cargando favoritos...';
+  try {
+    const res = await fetch(CORTES_FAV_API + '?accion=listar', { redirect: 'follow' });
+    const data = await res.json();
+    if (data.ok) {
+      _cortesFavoritosCache = data.favoritos || [];
+    }
+  } catch(e) {
+    console.error('Error cargando favoritos de cortes:', e);
+  }
+  if (loadingEl) loadingEl.textContent = '';
+  renderCortesFavoritos();
 }
 
 function guardarCorteFavorito() {
@@ -5527,42 +5597,56 @@ function guardarCorteFavorito() {
   const colsSel = [...document.querySelectorAll('.corte-col-chk:checked')].map(c => c.value);
   const sepMaterial = (document.getElementById('corte-separar-material')||{}).checked;
   const sepEmpresa  = (document.getElementById('corte-separar-empresa')||{}).checked;
+  const tarifaTipo  = (document.getElementById('corte-tarifa-tipo')||{}).value || '';
+  const tarifaValor = parseFloat((document.getElementById('corte-tarifa-valor')||{}).value) || 0;
 
   // Guardar también el "patrón de día" para reutilizar (ej: del 20 al 20)
   const diaIni = ini ? new Date(ini+'T00:00:00').getDate() : null;
   const diaCie = cie ? new Date(cie+'T00:00:00').getDate() : null;
 
-  const favs = getCorteFavoritos();
-  favs.push({ nombre, prov, ini, cie, diaIni, diaCie, colsSel, sepMaterial, sepEmpresa });
-  setCorteFavoritos(favs);
-  document.getElementById('corte-fav-nombre').value = '';
-  renderCortesFavoritos();
+  const payload = { accion:'guardar', nombre, prov, ini, cie, diaIni, diaCie, colsSel, sepMaterial, sepEmpresa, tarifaTipo, tarifaValor };
+
+  const statusEl = document.getElementById('corte-fav-status');
+  if (statusEl) statusEl.textContent = 'Guardando favorito...';
+
+  fetch(CORTES_FAV_API, { method:'POST', redirect:'follow', body: JSON.stringify(payload) })
+    .then(r => r.json())
+    .then(data => {
+      if (statusEl) statusEl.textContent = data.ok ? 'Favorito guardado correctamente' : 'Error al guardar';
+      document.getElementById('corte-fav-nombre').value = '';
+      cargarCortesFavoritosRemoto();
+      setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 3000);
+    })
+    .catch(e => {
+      console.error('Error guardando favorito:', e);
+      if (statusEl) statusEl.textContent = 'Error de conexión al guardar';
+    });
 }
 
 function renderCortesFavoritos() {
   const card = document.getElementById('corte-favoritos-card');
   const lista = document.getElementById('corte-favoritos-lista');
   if (!card || !lista) return;
-  const favs = getCorteFavoritos();
-  if (favs.length === 0) { card.style.display = 'none'; return; }
+  const favs = _cortesFavoritosCache;
+  if (!favs || favs.length === 0) { card.style.display = 'none'; return; }
   card.style.display = '';
   lista.innerHTML = favs.map((f, i) => `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border:1px solid var(--rule-l);border-radius:6px;flex-wrap:wrap">
       <div style="flex:1;min-width:160px">
         <div style="font-size:14px;font-weight:800;color:var(--ink)">${f.nombre}</div>
-        <div style="font-size:11px;color:var(--ink-l);margin-top:2px">${f.prov} · ${f.colsSel.length} columnas${f.sepMaterial?' · por material':''}${f.sepEmpresa?' · por empresa':''}${f.diaIni?' · día '+f.diaIni+' al '+f.diaCie:''}</div>
+        <div style="font-size:11px;color:var(--ink-l);margin-top:2px">${f.prov} · ${(f.colsSel||[]).length} columnas${f.sepMaterial?' · por material':''}${f.sepEmpresa?' · por empresa':''}${f.diaIni?' · día '+f.diaIni+' al '+f.diaCie:''}${f.tarifaTipo?' · $'+Math.round(f.tarifaValor).toLocaleString('es-CO')+'/'+(f.tarifaTipo==='viaje'?'viaje':'kg'):''}</div>
       </div>
       <div style="display:flex;gap:6px">
         <button onclick="aplicarCorteFavorito(${i})" style="padding:7px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Usar</button>
         <button onclick="aplicarCorteFavoritoMesActual(${i})" style="padding:7px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--gold);color:white;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif" title="Aplica el mismo patrón de días pero al periodo más reciente">Periodo actual</button>
-        <button onclick="eliminarCorteFavorito(${i})" style="padding:7px 12px;font-size:10px;font-weight:700;background:var(--rule-l);color:var(--red);border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">✕</button>
+        <button onclick="eliminarCorteFavorito('${f.id}')" style="padding:7px 12px;font-size:10px;font-weight:700;background:var(--rule-l);color:var(--red);border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">✕</button>
       </div>
     </div>`).join('');
 }
 
 // Aplica el favorito tal cual fue guardado (mismas fechas exactas)
 function aplicarCorteFavorito(i) {
-  const f = getCorteFavoritos()[i];
+  const f = _cortesFavoritosCache[i];
   if (!f) return;
   _aplicarFav(f, f.ini, f.cie);
 }
@@ -5570,7 +5654,7 @@ function aplicarCorteFavorito(i) {
 // Aplica el favorito pero corriendo el patrón de días al periodo más reciente
 // Ej: si guardaste "del 20 al 20", lo aplica al 20 del mes pasado → 20 de este mes
 function aplicarCorteFavoritoMesActual(i) {
-  const f = getCorteFavoritos()[i];
+  const f = _cortesFavoritosCache[i];
   if (!f || !f.diaIni || !f.diaCie) { aplicarCorteFavorito(i); return; }
   const hoy = new Date();
   // Cierre = día diaCie de este mes; Inicio = día diaIni del mes anterior
@@ -5585,19 +5669,22 @@ function _aplicarFav(f, ini, cie) {
   document.getElementById('corte-fecha-inicio').value = ini;
   document.getElementById('corte-fecha-cierre').value = cie;
   // Restaurar columnas
-  document.querySelectorAll('.corte-col-chk').forEach(chk => { chk.checked = f.colsSel.includes(chk.value); });
+  document.querySelectorAll('.corte-col-chk').forEach(chk => { chk.checked = (f.colsSel||[]).includes(chk.value); });
   document.getElementById('corte-separar-material').checked = !!f.sepMaterial;
   document.getElementById('corte-separar-empresa').checked = !!f.sepEmpresa;
+  document.getElementById('corte-tarifa-tipo').value = f.tarifaTipo || '';
+  document.getElementById('corte-tarifa-valor').value = f.tarifaValor || '';
   onCorteParamsChange();
   // Scroll al resultado
   setTimeout(() => { const r = document.getElementById('corte-resultado'); if (r) r.scrollIntoView({behavior:'smooth',block:'start'}); }, 100);
 }
 
-function eliminarCorteFavorito(i) {
-  const favs = getCorteFavoritos();
-  favs.splice(i, 1);
-  setCorteFavoritos(favs);
-  renderCortesFavoritos();
+function eliminarCorteFavorito(id) {
+  if (!confirm('¿Eliminar este favorito?')) return;
+  fetch(CORTES_FAV_API, { method:'POST', redirect:'follow', body: JSON.stringify({ accion:'eliminar', id }) })
+    .then(r => r.json())
+    .then(() => cargarCortesFavoritosRemoto())
+    .catch(e => console.error('Error eliminando favorito:', e));
 }
 
 // ── VIAJES INTERNOS ───────────────────────────────
