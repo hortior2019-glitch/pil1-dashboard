@@ -1629,7 +1629,8 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 
   <!-- PASO 2: Columnas y opciones (oculto hasta tener paso 1) -->
   <div class="card" id="corte-paso2" style="margin-bottom:20px;padding:24px;display:none">
-    <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy);margin-bottom:16px">Paso 2 · Elige columnas del corte</div>
+    <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy);margin-bottom:6px">Paso 2 · Elige columnas del corte</div>
+    <div style="font-size:11px;color:var(--ink-l);margin-bottom:16px">El orden en que las marques define el orden de las columnas (1 = primera a la izquierda)</div>
     <div id="corte-columnas" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:20px"></div>
 
     <div style="border-top:1px solid var(--rule-l);padding-top:16px;margin-top:4px">
@@ -5225,6 +5226,7 @@ const CORTES_FAV_API = "https://script.google.com/macros/s/AKfycbw6VAF6KaJfznpTE
 const CORTE_COLUMNAS_DISP = [
   { id:'marca',    label:'Marca temporal',    get:r => getMarcaTemporal(r) },
   { id:'fecha',    label:'Fecha disposición', get:r => (r['FECHA DISPOSICION PLANTA']||r['FECHA DISPOSICION']||'').trim() || (parseDate(getMarcaTemporal(r))?toYMD(getMarcaTemporal(r)):'') },
+  { id:'hora',     label:'Hora disposición',  get:r => (r['HORA DISPOSICION PLANTA']||r['HORA DISPOSICION']||'').trim() },
   { id:'empresa',  label:'Empresa / Operación', get:r => normEmpresa(r['OPERACION']||r['Operacion']||r['operacion']||r['OPERACIÓN']||'') },
   { id:'material', label:'Material / Residuo', get:r => (r['RESIDUO']||r['Residuo']||r['residuo']||'').trim() || 'Sin clasificar' },
   { id:'pesoNeto', label:'Peso neto (kg)',     get:r => getPesoNeto(r), num:true },
@@ -5249,14 +5251,43 @@ function initCortesProveedores() {
   // Construir la lista de checkboxes de columnas (una sola vez)
   const cont = document.getElementById('corte-columnas');
   if (cont && !cont.dataset.init) {
-    cont.innerHTML = CORTE_COLUMNAS_DISP.map(c => `
+    cont.innerHTML = CORTE_COLUMNAS_DISP.map((c, idx) => `
       <label style="display:flex;align-items:center;gap:9px;cursor:pointer;padding:8px 10px;border:1px solid var(--rule-l);border-radius:4px">
-        <input type="checkbox" class="corte-col-chk" value="${c.id}" ${['marca','empresa','material','pesoNeto'].includes(c.id)?'checked':''} onchange="generarCorte()" style="width:17px;height:17px;accent-color:var(--navy)">
+        <input type="checkbox" class="corte-col-chk" value="${c.id}" data-orden="${idx}" onchange="onColumnaToggle(this)" style="width:17px;height:17px;accent-color:var(--navy)">
         <span style="font-size:13px;color:var(--ink)">${c.label}</span>
+        <span class="corte-col-num" style="margin-left:auto;font-size:11px;font-weight:800;color:var(--navy);min-width:18px;text-align:center"></span>
       </label>`).join('');
     cont.dataset.init = '1';
   }
   cargarCortesFavoritosRemoto();
+}
+
+// Orden de selección de columnas (refleja el orden en que el usuario las marca)
+let _ordenColumnas = [];
+
+// Cada vez que se marca/desmarca una columna, actualiza el orden y regenera
+function onColumnaToggle(chk) {
+  const id = chk.value;
+  if (chk.checked) {
+    // Agregar al final si no estaba
+    if (!_ordenColumnas.includes(id)) _ordenColumnas.push(id);
+  } else {
+    // Quitar del orden
+    _ordenColumnas = _ordenColumnas.filter(x => x !== id);
+  }
+  actualizarNumerosColumnas();
+  generarCorte();
+}
+
+// Muestra el número de posición (1, 2, 3...) junto a cada columna marcada
+function actualizarNumerosColumnas() {
+  document.querySelectorAll('.corte-col-chk').forEach(chk => {
+    const label = chk.closest('label');
+    const num = label ? label.querySelector('.corte-col-num') : null;
+    if (!num) return;
+    const pos = _ordenColumnas.indexOf(chk.value);
+    num.textContent = pos >= 0 ? (pos + 1) : '';
+  });
 }
 
 // Cada vez que cambian proveedor o fechas
@@ -5304,7 +5335,9 @@ function generarCorte() {
   const cie  = (document.getElementById('corte-fecha-cierre')||{}).value || '';
   if (!prov || !ini || !cie) return;
 
-  const colsSel = [...document.querySelectorAll('.corte-col-chk:checked')].map(c => c.value);
+  // Columnas en el ORDEN en que el usuario las seleccionó
+  const colsSel = _ordenColumnas.filter(id =>
+    document.querySelector('.corte-col-chk[value="'+id+'"]:checked'));
   const sepMaterial = (document.getElementById('corte-separar-material')||{}).checked;
   const sepEmpresa  = (document.getElementById('corte-separar-empresa')||{}).checked;
   const tarifaTipo  = (document.getElementById('corte-tarifa-tipo')||{}).value || '';
@@ -5583,7 +5616,8 @@ function guardarCorteFavorito() {
   const prov = (document.getElementById('corte-proveedor')||{}).value || '';
   const ini  = (document.getElementById('corte-fecha-inicio')||{}).value || '';
   const cie  = (document.getElementById('corte-fecha-cierre')||{}).value || '';
-  const colsSel = [...document.querySelectorAll('.corte-col-chk:checked')].map(c => c.value);
+  const colsSel = _ordenColumnas.filter(id =>
+    document.querySelector('.corte-col-chk[value="'+id+'"]:checked'));
   const sepMaterial = (document.getElementById('corte-separar-material')||{}).checked;
   const sepEmpresa  = (document.getElementById('corte-separar-empresa')||{}).checked;
   const tarifaTipo  = (document.getElementById('corte-tarifa-tipo')||{}).value || '';
@@ -5657,8 +5691,10 @@ function _aplicarFav(f, ini, cie) {
   document.getElementById('corte-proveedor').value = f.prov;
   document.getElementById('corte-fecha-inicio').value = ini;
   document.getElementById('corte-fecha-cierre').value = cie;
-  // Restaurar columnas
+  // Restaurar columnas y su orden de selección guardado
   document.querySelectorAll('.corte-col-chk').forEach(chk => { chk.checked = (f.colsSel||[]).includes(chk.value); });
+  _ordenColumnas = [...(f.colsSel||[])]; // respeta el orden guardado
+  actualizarNumerosColumnas();
   document.getElementById('corte-separar-material').checked = !!f.sepMaterial;
   document.getElementById('corte-separar-empresa').checked = !!f.sepEmpresa;
   document.getElementById('corte-tarifa-tipo').value = f.tarifaTipo || '';
