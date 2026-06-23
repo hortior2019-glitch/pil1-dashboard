@@ -1645,14 +1645,18 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
       </div>
       <span id="cal-cortes-flecha" style="font-size:12px;color:var(--gold);font-weight:700">▼ ver</span>
     </div>
-    <div id="cal-cortes-body" style="display:none;padding:8px 0 0">
-      <div style="font-size:11px;color:var(--ink-l);padding:0 24px 12px">Referencia de la fecha de corte habitual por empresa. Haz clic en una fila para precargar el rango sugerido (mes actual).</div>
-      <div style="overflow-x:auto">
-        <table class="tbl" style="font-size:13px">
-          <thead><tr><th>Empresa</th><th>Día de corte</th><th>Frecuencia / Notas</th></tr></thead>
-          <tbody id="cal-cortes-tbody"></tbody>
-        </table>
+    <div id="cal-cortes-body" style="display:none;padding:16px 24px 20px">
+      <div style="font-size:11px;color:var(--ink-l);margin-bottom:14px">Calendario de cortes base por empresa. Los días con corte programado aparecen marcados; haz clic en un día para ver qué empresas cortan y precargar su rango.</div>
+      <!-- Navegación de mes -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <button onclick="cambiarMesCalendario(-1)" style="width:34px;height:34px;border:1px solid var(--rule);background:var(--white);border-radius:6px;cursor:pointer;font-size:16px;color:var(--ink);display:flex;align-items:center;justify-content:center">‹</button>
+        <div id="cal-cortes-titulo" style="font-family:'Playfair Display',serif;font-size:18px;font-weight:700;color:var(--ink);text-transform:capitalize">—</div>
+        <button onclick="cambiarMesCalendario(1)" style="width:34px;height:34px;border:1px solid var(--rule);background:var(--white);border-radius:6px;cursor:pointer;font-size:16px;color:var(--ink);display:flex;align-items:center;justify-content:center">›</button>
       </div>
+      <!-- Grilla del calendario -->
+      <div id="cal-cortes-grid"></div>
+      <!-- Detalle del día seleccionado (lista desplegable) -->
+      <div id="cal-cortes-detalle" style="margin-top:14px"></div>
     </div>
   </div>
 
@@ -1693,6 +1697,10 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
       <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
         <input type="checkbox" id="corte-separar-empresa" onchange="generarCorte()" style="width:18px;height:18px;accent-color:var(--navy)">
         <span style="font-size:14px;color:var(--ink)">Separar por empresa / operación</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:10px">
+        <input type="checkbox" id="corte-resaltar-festivos" checked onchange="generarCorte()" style="width:18px;height:18px;accent-color:#b45309">
+        <span style="font-size:14px;color:var(--ink)">Resaltar domingos y festivos de Colombia</span>
       </label>
     </div>
 
@@ -5423,39 +5431,136 @@ const CORTE_COLUMNAS_DISP = [
 // ── CALENDARIO GUÍA DE CORTES BASE (datos de referencia de Natalia) ──
 // dia: número del mes para el corte (o texto si es variable). diaSugerido: para precargar rango.
 const CORTES_BASE = [
-  { empresa:'Familia',            dia:'21',        diaCorte:21, freq:'Corte mensual, el 21 de cada mes' },
-  { empresa:'Softys',             dia:'27',        diaCorte:27, freq:'Corte mensual, el 27. Patricia Nieto envía el corte para comparación' },
-  { empresa:'Recreo',             dia:'27',        diaCorte:27, freq:'Corte mensual, el 27 de cada mes' },
-  { empresa:'Bavaria',            dia:'24',        diaCorte:24, freq:'Corte mensual, el 24 de cada mes' },
-  { empresa:'McCain',             dia:'23',        diaCorte:23, freq:'Corte mensual, el 23 de cada mes' },
-  { empresa:'Samsa',              dia:'30',        diaCorte:30, freq:'Corte mensual, el 30 de cada mes' },
-  { empresa:'Valrex (Gloria)',    dia:'30',        diaCorte:30, freq:'Corte mensual, el 30 de cada mes' },
-  { empresa:'3R',                 dia:'30',        diaCorte:30, freq:'Corte mensual, el 30 de cada mes' },
-  { empresa:'Campo Verde (Alquería)', dia:'15 y 30', diaCorte:30, freq:'Corte quincenal, 15 y 30 de cada mes' },
-  { empresa:'Alpina',             dia:'15 y 30',   diaCorte:30, freq:'Corte quincenal, 15 y 30. Viajes todos los días' },
-  { empresa:'Pomar',              dia:'15 y 30',   diaCorte:30, freq:'Corte quincenal, 15 y 30 de cada mes' },
-  { empresa:'Brinsa',             dia:'15 y 30',   diaCorte:30, freq:'Corte quincenal, 15 y 30 de cada mes' },
-  { empresa:'Pomar-Felipe',       dia:'Lunes',     diaCorte:null, freq:'Corte semanal, cada lunes' },
-  { empresa:'EPZ',                dia:'1er hábil', diaCorte:1,  freq:'Corte mensual, primer día hábil del mes' },
-  { empresa:'EPC',                dia:'Últ. miérc.',diaCorte:null, freq:'Corte mensual, último miércoles del mes' },
-  { empresa:'Fundación Residuos Colombia (Alquería)', dia:'11, 21 y 30', diaCorte:30, freq:'Cortes parciales: 11, 21 y corte mensual el 30' },
-  { empresa:'Ayura',              dia:'~3 meses',  diaCorte:null, freq:'Corte con acumulado del periodo, cada 3 meses aprox' },
-  { empresa:'Plastilene',         dia:'Esporádico',diaCorte:null, freq:'Viajes no frecuentes, sin corte. Se factura por tiquete (solicitar O.C)' },
-  { empresa:'Zasiago',            dia:'Esporádico',diaCorte:null, freq:'Viajes no frecuentes, sin corte. Se factura por tiquete' },
-  { empresa:'Cosmolac',           dia:'Esporádico',diaCorte:null, freq:'Viajes no frecuentes, sin corte. Se factura por tiquete' },
-  { empresa:'Prodensa',           dia:'Esporádico',diaCorte:null, freq:'No se envía corte, se informa a contabilidad para facturación' },
-  { empresa:'Frigorífico',        dia:'Esporádico',diaCorte:null, freq:'Esporádico, no se factura por corte' },
+  { empresa:'Familia',            dia:'21',        diaCorte:21, dias:[21],       freq:'Corte mensual, el 21 de cada mes' },
+  { empresa:'Softys',             dia:'27',        diaCorte:27, dias:[27],       freq:'Corte mensual, el 27. Patricia Nieto envía el corte para comparación' },
+  { empresa:'Recreo',             dia:'27',        diaCorte:27, dias:[27],       freq:'Corte mensual, el 27 de cada mes' },
+  { empresa:'Bavaria',            dia:'24',        diaCorte:24, dias:[24],       freq:'Corte mensual, el 24 de cada mes' },
+  { empresa:'McCain',             dia:'23',        diaCorte:23, dias:[23],       freq:'Corte mensual, el 23 de cada mes' },
+  { empresa:'Samsa',              dia:'30',        diaCorte:30, dias:[30],       freq:'Corte mensual, el 30 de cada mes' },
+  { empresa:'Valrex (Gloria)',    dia:'30',        diaCorte:30, dias:[30],       freq:'Corte mensual, el 30 de cada mes' },
+  { empresa:'3R',                 dia:'30',        diaCorte:30, dias:[30],       freq:'Corte mensual, el 30 de cada mes' },
+  { empresa:'Campo Verde (Alquería)', dia:'15 y 30', diaCorte:30, dias:[15,30], freq:'Corte quincenal, 15 y 30 de cada mes' },
+  { empresa:'Alpina',             dia:'15 y 30',   diaCorte:30, dias:[15,30],    freq:'Corte quincenal, 15 y 30. Viajes todos los días' },
+  { empresa:'Pomar',              dia:'15 y 30',   diaCorte:30, dias:[15,30],    freq:'Corte quincenal, 15 y 30 de cada mes' },
+  { empresa:'Brinsa',             dia:'15 y 30',   diaCorte:30, dias:[15,30],    freq:'Corte quincenal, 15 y 30 de cada mes' },
+  { empresa:'Pomar-Felipe',       dia:'Lunes',     diaCorte:null, dias:[],       freq:'Corte semanal, cada lunes' },
+  { empresa:'EPZ',                dia:'1er hábil', diaCorte:1,  dias:[1],        freq:'Corte mensual, primer día hábil del mes' },
+  { empresa:'EPC',                dia:'Últ. miérc.',diaCorte:null, dias:[],      freq:'Corte mensual, último miércoles del mes' },
+  { empresa:'Fundación Residuos Colombia (Alquería)', dia:'11, 21 y 30', diaCorte:30, dias:[11,21,30], freq:'Cortes parciales: 11, 21 y corte mensual el 30' },
+  { empresa:'Ayura',              dia:'~3 meses',  diaCorte:null, dias:[],       freq:'Corte con acumulado del periodo, cada 3 meses aprox' },
+  { empresa:'Plastilene',         dia:'Esporádico',diaCorte:null, dias:[],       freq:'Viajes no frecuentes, sin corte. Se factura por tiquete (solicitar O.C)' },
+  { empresa:'Zasiago',            dia:'Esporádico',diaCorte:null, dias:[],       freq:'Viajes no frecuentes, sin corte. Se factura por tiquete' },
+  { empresa:'Cosmolac',           dia:'Esporádico',diaCorte:null, dias:[],       freq:'Viajes no frecuentes, sin corte. Se factura por tiquete' },
+  { empresa:'Prodensa',           dia:'Esporádico',diaCorte:null, dias:[],       freq:'No se envía corte, se informa a contabilidad para facturación' },
+  { empresa:'Frigorífico',        dia:'Esporádico',diaCorte:null, dias:[],       freq:'Esporádico, no se factura por corte' },
 ];
 
+// Estado del calendario: mes/año visible y día seleccionado
+let _calMes = new Date().getMonth();
+let _calAnio = new Date().getFullYear();
+let _calDiaSel = null;
+
+// Construye un mapa día → empresas que cortan ese día (para el mes visible)
+function _empresasPorDia() {
+  const mapa = {};
+  CORTES_BASE.forEach(c => {
+    (c.dias||[]).forEach(d => {
+      // Ajustar día 30 a fin de mes si el mes tiene menos días
+      const ultimoDia = new Date(_calAnio, _calMes+1, 0).getDate();
+      const diaReal = d > ultimoDia ? ultimoDia : d;
+      if (!mapa[diaReal]) mapa[diaReal] = [];
+      mapa[diaReal].push(c);
+    });
+  });
+  return mapa;
+}
+
 function renderCalendarioCortes() {
-  const tb = document.getElementById('cal-cortes-tbody');
-  if (!tb) return;
-  tb.innerHTML = CORTES_BASE.map((c, i) => `
-    <tr style="cursor:pointer" onclick="precargarCorteBase(${i})" title="Clic para precargar el rango de este corte">
-      <td style="font-weight:700;color:var(--ink)">${c.empresa}</td>
-      <td style="font-weight:700;color:var(--gold)">${c.dia}</td>
-      <td style="font-size:12px;color:var(--ink-m)">${c.freq}</td>
-    </tr>`).join('');
+  const grid = document.getElementById('cal-cortes-grid');
+  const titulo = document.getElementById('cal-cortes-titulo');
+  if (!grid) return;
+
+  const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  if (titulo) titulo.textContent = MESES[_calMes] + ' de ' + _calAnio;
+
+  const primerDia = new Date(_calAnio, _calMes, 1).getDay(); // 0=DOM
+  const diasMes = new Date(_calAnio, _calMes+1, 0).getDate();
+  const cortesPorDia = _empresasPorDia();
+
+  const hoy = new Date();
+  const esHoy = d => d === hoy.getDate() && _calMes === hoy.getMonth() && _calAnio === hoy.getFullYear();
+
+  const DIAS_CAB = ['DO','LU','MA','MI','JU','VI','SA'];
+  let html = '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">';
+  // Cabecera
+  html += DIAS_CAB.map(d => `<div style="text-align:center;font-size:10px;font-weight:800;letter-spacing:.5px;color:var(--ink-l);padding:4px 0">${d}</div>`).join('');
+  // Celdas vacías antes del día 1
+  for (let i = 0; i < primerDia; i++) html += '<div></div>';
+  // Días del mes
+  for (let d = 1; d <= diasMes; d++) {
+    const ymd = _calAnio+'-'+String(_calMes+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+    const festivo = esDomingoOFestivo(ymd);
+    const tieneCorte = cortesPorDia[d] && cortesPorDia[d].length > 0;
+    const sel = _calDiaSel === d;
+
+    let bg = 'var(--white)', border = '1px solid var(--rule-l)', colorNum = 'var(--ink)';
+    if (festivo) { bg = '#fff4e0'; colorNum = '#b45309'; }
+    if (tieneCorte) { bg = 'var(--navy)'; colorNum = '#fff'; border = '1px solid var(--navy)'; }
+    if (sel) border = '2px solid var(--gold)';
+
+    const cursor = tieneCorte ? 'cursor:pointer' : 'cursor:default';
+    html += `<div onclick="${tieneCorte?`seleccionarDiaCalendario(${d})`:''}" style="${cursor};position:relative;aspect-ratio:1;border-radius:8px;background:${bg};border:${border};display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:42px">
+      <span style="font-size:14px;font-weight:${tieneCorte||esHoy(d)?'800':'600'};color:${colorNum}">${d}</span>
+      ${tieneCorte ? `<span style="position:absolute;bottom:4px;font-size:8px;font-weight:700;color:rgba(255,255,255,.85)">${cortesPorDia[d].length} corte${cortesPorDia[d].length>1?'s':''}</span>` : ''}
+      ${esHoy(d) && !tieneCorte ? '<span style="position:absolute;bottom:5px;width:5px;height:5px;border-radius:50%;background:var(--gold)"></span>' : ''}
+    </div>`;
+  }
+  html += '</div>';
+  grid.innerHTML = html;
+
+  // Si hay un día seleccionado, mostrar su detalle
+  if (_calDiaSel) renderDetalleDiaCalendario();
+}
+
+function cambiarMesCalendario(delta) {
+  _calMes += delta;
+  if (_calMes < 0) { _calMes = 11; _calAnio--; }
+  if (_calMes > 11) { _calMes = 0; _calAnio++; }
+  _calDiaSel = null;
+  document.getElementById('cal-cortes-detalle').innerHTML = '';
+  renderCalendarioCortes();
+}
+
+function seleccionarDiaCalendario(d) {
+  _calDiaSel = (_calDiaSel === d) ? null : d;
+  renderCalendarioCortes();
+}
+
+// Lista desplegable de empresas que cortan el día seleccionado
+function renderDetalleDiaCalendario() {
+  const det = document.getElementById('cal-cortes-detalle');
+  if (!det) return;
+  const cortesPorDia = _empresasPorDia();
+  const empresas = cortesPorDia[_calDiaSel] || [];
+  if (empresas.length === 0) { det.innerHTML = ''; return; }
+
+  const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  det.innerHTML = `
+    <div style="background:var(--s2);border-radius:8px;padding:14px 16px;border-left:4px solid var(--navy)">
+      <div style="font-size:12px;font-weight:800;color:var(--navy);margin-bottom:10px">${_calDiaSel} de ${MESES[_calMes]} · ${empresas.length} corte${empresas.length>1?'s':''} programado${empresas.length>1?'s':''}</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${empresas.map(c => {
+          const idx = CORTES_BASE.indexOf(c);
+          return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--white);border:1px solid var(--rule-l);border-radius:6px;padding:10px 12px;flex-wrap:wrap">
+            <div style="flex:1;min-width:140px">
+              <div style="font-size:13px;font-weight:700;color:var(--ink)">${c.empresa}</div>
+              <div style="font-size:11px;color:var(--ink-l)">${c.freq}</div>
+            </div>
+            <button onclick="precargarCorteBase(${idx})" style="padding:7px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Usar este corte</button>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
 }
 
 function toggleCalendarioCortes() {
@@ -5465,7 +5570,7 @@ function toggleCalendarioCortes() {
   const abierto = body.style.display !== 'none';
   body.style.display = abierto ? 'none' : '';
   if (flecha) flecha.textContent = abierto ? '▼ ver' : '▲ ocultar';
-  if (!abierto && !document.getElementById('cal-cortes-tbody').innerHTML) renderCalendarioCortes();
+  if (!abierto) renderCalendarioCortes();
 }
 
 // Precarga el rango sugerido de un corte base (del día de corte del mes anterior al de este mes)
@@ -5479,7 +5584,6 @@ function precargarCorteBase(i) {
   const sel = document.getElementById('corte-proveedor');
   if (sel) {
     const opts = [...sel.options].map(o => o.value);
-    // Buscar por coincidencia parcial (primera palabra del nombre base)
     const clave = c.empresa.split(/[\s(]/)[0].toLowerCase();
     const match = opts.find(o => o.toLowerCase().includes(clave));
     if (match) sel.value = match;
@@ -5655,6 +5759,7 @@ function generarCorte() {
   const tarifaTipo  = (document.getElementById('corte-tarifa-tipo')||{}).value || '';
   const tarifaValor = parseFloat((document.getElementById('corte-tarifa-valor')||{}).value) || 0;
   const soloTotal   = (document.getElementById('corte-solo-total')||{}).checked;
+  const resaltarFestivos = (document.getElementById('corte-resaltar-festivos')||{checked:true}).checked;
   const cont = document.getElementById('corte-resultado');
 
   if (colsSel.length === 0) { cont.innerHTML = '<div class="card" style="padding:24px;text-align:center;color:var(--ink-l)">Selecciona al menos una columna</div>'; return; }
@@ -5746,7 +5851,7 @@ function generarCorte() {
     </div>`;
 
   // Guardar para exportación (incluye datos de tarifa)
-  window._corteActual = { prov, ini, cie, colsDef, grupos, tarifaTipo, tarifaValor, tieneTarifa, soloTotal, mostrarColValor, precioPorMaterialOn, preciosMaterial: {..._cortePreciosMaterial} };
+  window._corteActual = { prov, ini, cie, colsDef, grupos, tarifaTipo, tarifaValor, tieneTarifa, soloTotal, mostrarColValor, precioPorMaterialOn, preciosMaterial: {..._cortePreciosMaterial}, resaltarFestivos };
 
   // Color de la empresa para el interlineado (versión muy clara)
   const filaColor = hexToRgba(color, 0.07);
@@ -5773,8 +5878,8 @@ function generarCorte() {
           <thead><tr style="background:${headColor}">${colsDef.map(c => `<th ${c.num?'class="num"':''} style="border-bottom:2px solid ${color}">${c.label}</th>`).join('')}${mostrarColValor?`<th class="num" style="border-bottom:2px solid ${color}">Valor (COP)</th>`:''}</tr></thead>
           <tbody>`;
     regs.forEach((r, idx) => {
-      // ¿La fecha del registro cae en domingo o festivo en Colombia? → resaltar
-      const esEspecial = esDomingoOFestivo(fechaYMDdeRegistro(r));
+      // ¿La fecha del registro cae en domingo o festivo en Colombia? → resaltar (si el toggle está activo)
+      const esEspecial = resaltarFestivos && esDomingoOFestivo(fechaYMDdeRegistro(r));
       let bg = idx % 2 === 1 ? `background:${filaColor}` : '';
       if (esEspecial) bg = 'background:#fff4e0'; // resaltado ámbar suave para domingo/festivo
       let valorFila = mostrarColValor ? valorDeFila(r) : 0;
@@ -5879,7 +5984,7 @@ function exportarCorteExcel() {
     c.colsDef.forEach(col => { if (col.num) totales[col.id] = 0; });
     let valorGrupoTotal = 0;
     c.grupos[clave].forEach((r, idx) => {
-      const esEspecial = esDomingoOFestivo(fechaYMDdeRegistro(r));
+      const esEspecial = (c.resaltarFestivos !== false) && esDomingoOFestivo(fechaYMDdeRegistro(r));
       // Si es domingo/festivo usa estilo destacado; si no, zebra normal
       const styleZebra = esEspecial ? ' ss:StyleID="festivo"' : (idx % 2 === 1 ? ' ss:StyleID="zebra"' : '');
       const styleZebraNum = esEspecial ? 'festivoNum' : (idx % 2 === 1 ? 'numZebra' : 'num');
