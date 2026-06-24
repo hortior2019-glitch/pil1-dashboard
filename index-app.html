@@ -1783,6 +1783,21 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
         </label>
         <div id="corte-precio-material-lista" style="display:none;flex-direction:column;gap:8px;padding-left:4px"></div>
       </div>
+
+      <!-- Valor transporte: adicional fijo por viaje, separado del valor del material -->
+      <div style="margin-top:16px;border-top:1px dashed var(--rule);padding-top:16px">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px">
+          <input type="checkbox" id="corte-cobrar-transporte" onchange="toggleCobrarTransporte()" style="width:18px;height:18px;accent-color:var(--gold)">
+          <span style="font-size:14px;color:var(--ink);font-weight:700">Cobrar un adicional de transporte por viaje</span>
+        </label>
+        <div id="corte-transporte-wrap" style="display:none;align-items:flex-end;gap:16px;flex-wrap:wrap;padding-left:4px">
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <label style="font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-l)">Valor transporte por viaje (COP)</label>
+            <input type="number" id="corte-transporte-valor" placeholder="Ej: 25000" min="0" step="any" oninput="generarCorte()" style="border:1px solid var(--rule);background:var(--white);padding:9px 12px;font-size:14px;border-radius:4px;color:var(--ink);width:160px;font-family:'Source Sans 3',sans-serif">
+          </div>
+          <div style="font-size:11px;color:var(--ink-l);max-width:280px">Se suma a cada viaje además del valor del material. En el corte aparecerán "Valor material", "Valor transporte" y el total combinado.</div>
+        </div>
+      </div>
     </div>
 
     <!-- Guardar como favorito -->
@@ -6133,6 +6148,13 @@ function togglePrecioPorMaterial() {
   generarCorte();
 }
 
+function toggleCobrarTransporte() {
+  const chk = document.getElementById('corte-cobrar-transporte');
+  const wrap = document.getElementById('corte-transporte-wrap');
+  if (wrap) wrap.style.display = (chk && chk.checked) ? 'flex' : 'none';
+  generarCorte();
+}
+
 function onPrecioMaterialInput(input) {
   const mat = input.dataset.material;
   const val = parseFloat(input.value);
@@ -6173,6 +6195,8 @@ function generarCorte() {
   const tarifaValor = parseFloat((document.getElementById('corte-tarifa-valor')||{}).value) || 0;
   const soloTotal   = (document.getElementById('corte-solo-total')||{}).checked;
   const resaltarFestivos = (document.getElementById('corte-resaltar-festivos')||{checked:true}).checked;
+  const cobrarTransporte = (document.getElementById('corte-cobrar-transporte')||{}).checked;
+  const transporteValor  = parseFloat((document.getElementById('corte-transporte-valor')||{}).value) || 0;
   const cont = document.getElementById('corte-resultado');
 
   if (colsSel.length === 0) { cont.innerHTML = '<div class="card" style="padding:24px;text-align:center;color:var(--ink-l)">Selecciona al menos una columna</div>'; return; }
@@ -6192,8 +6216,8 @@ function generarCorte() {
   // Helper: material de un registro
   const matDe = r => (r['RESIDUO']||r['Residuo']||r['residuo']||'').trim() || 'Sin clasificar';
 
-  // Helper unificado: valor monetario de una fila
-  const valorDeFila = r => {
+  // Valor del MATERIAL de una fila (tarifa global o precio por material)
+  const valorMaterialDeFila = r => {
     if (precioPorMaterialOn) {
       // Precio por material × kg de esa fila
       const p = _cortePreciosMaterial[matDe(r)] || 0;
@@ -6202,11 +6226,17 @@ function generarCorte() {
     if (!tarifaTipo || tarifaValor <= 0) return 0;
     return tarifaTipo === 'viaje' ? tarifaValor : getPesoNeto(r) * tarifaValor;
   };
+  // Valor del TRANSPORTE de una fila (adicional fijo por viaje, independiente del material)
+  const valorTransporteDeFila = r => (cobrarTransporte && transporteValor > 0) ? transporteValor : 0;
+  // Valor TOTAL de una fila = material + transporte
+  const valorDeFila = r => valorMaterialDeFila(r) + valorTransporteDeFila(r);
 
-  // ¿Hay algún valor monetario que mostrar?
-  const tieneTarifa = precioPorMaterialOn
+  // ¿Hay algún valor monetario que mostrar? (material O transporte)
+  const tieneTarifaMaterial = precioPorMaterialOn
     ? Object.keys(_cortePreciosMaterial).some(k => _cortePreciosMaterial[k] > 0)
     : (tarifaTipo && tarifaValor > 0);
+  const tieneTransporte = cobrarTransporte && transporteValor > 0;
+  const tieneTarifa = tieneTarifaMaterial || tieneTransporte;
   // Si "solo total" está activo: hay tarifa para el valor total, pero NO se muestra la columna de valor por fila
   const mostrarColValor = tieneTarifa && !soloTotal;
 
@@ -6234,9 +6264,11 @@ function generarCorte() {
   const fmtCOP = n => '$ ' + Math.round(n).toLocaleString('es-CO');
 
   // Calcular valor monetario total del corte completo (para el header)
-  let valorTotalCorte = 0;
+  let valorTotalCorte = 0, valorMaterialTotal = 0, valorTransporteTotal = 0;
   if (tieneTarifa) {
-    valorTotalCorte = registros.reduce((s,r) => s + valorDeFila(r), 0);
+    valorMaterialTotal = registros.reduce((s,r) => s + valorMaterialDeFila(r), 0);
+    valorTransporteTotal = registros.reduce((s,r) => s + valorTransporteDeFila(r), 0);
+    valorTotalCorte = valorMaterialTotal + valorTransporteTotal;
   }
 
   // Logo y color corporativo del proveedor
@@ -6253,12 +6285,25 @@ function generarCorte() {
           <div style="font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,.7);margin-bottom:6px">Corte de Materia Recibida</div>
           <div style="font-family:'Playfair Display',serif;font-size:32px;font-weight:700;line-height:1.1">${prov}</div>
           <div style="font-size:13px;color:rgba(255,255,255,.85);margin-top:8px">${fmtF(ini)} 12:00 am — ${fmtF(cie)} 11:59 pm</div>
-          ${tieneTarifa && !soloTotal ? `<div style="font-size:12px;color:rgba(255,255,255,.65);margin-top:4px">${precioPorMaterialOn ? 'Precio por material (ver tabla)' : 'Tarifa: '+fmtCOP(tarifaValor)+' por '+(tarifaTipo === 'viaje' ? 'viaje' : 'kg')}</div>` : ''}
+          ${tieneTarifaMaterial && !soloTotal ? `<div style="font-size:12px;color:rgba(255,255,255,.65);margin-top:4px">${precioPorMaterialOn ? 'Precio por material (ver tabla)' : 'Tarifa: '+fmtCOP(tarifaValor)+' por '+(tarifaTipo === 'viaje' ? 'viaje' : 'kg')}</div>` : ''}
+          ${tieneTransporte && !soloTotal ? `<div style="font-size:12px;color:rgba(255,255,255,.65);margin-top:2px">Transporte: ${fmtCOP(transporteValor)} por viaje</div>` : ''}
         </div>
         <div style="text-align:right;flex-shrink:0">
           <div style="font-family:'Libre Baskerville',serif;font-size:44px;font-weight:800;line-height:1;font-variant-numeric:lining-nums tabular-nums">${fmt(registros.length)}</div>
           <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.7);margin-top:4px">Registros</div>
-          ${tieneTarifa ? `<div style="font-family:'Libre Baskerville',serif;font-size:26px;font-weight:800;line-height:1;margin-top:10px;color:#fff">${fmtCOP(valorTotalCorte)}</div><div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.7);margin-top:2px">Valor total</div>` : ''}
+          ${tieneTarifa ? `
+            ${(tieneTarifaMaterial && tieneTransporte) ? `
+              <div style="margin-top:10px">
+                <div style="font-size:11px;color:rgba(255,255,255,.7)">Valor material: <strong style="color:#fff">${fmtCOP(valorMaterialTotal)}</strong></div>
+                <div style="font-size:11px;color:rgba(255,255,255,.7);margin-top:2px">Valor transporte: <strong style="color:#fff">${fmtCOP(valorTransporteTotal)}</strong></div>
+              </div>
+              <div style="font-family:'Libre Baskerville',serif;font-size:26px;font-weight:800;line-height:1;margin-top:6px;color:#fff">${fmtCOP(valorTotalCorte)}</div>
+              <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.7);margin-top:2px">Valor total</div>
+            ` : `
+              <div style="font-family:'Libre Baskerville',serif;font-size:26px;font-weight:800;line-height:1;margin-top:10px;color:#fff">${fmtCOP(valorTotalCorte)}</div>
+              <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.7);margin-top:2px">Valor total</div>
+            `}
+          ` : ''}
         </div>
       </div>
     </div>
@@ -6271,7 +6316,7 @@ function generarCorte() {
     </div>`;
 
   // Guardar para exportación (incluye datos de tarifa)
-  window._corteActual = { prov, ini, cie, colsDef, grupos, tarifaTipo, tarifaValor, tieneTarifa, soloTotal, mostrarColValor, precioPorMaterialOn, preciosMaterial: {..._cortePreciosMaterial}, resaltarFestivos, consecutivoMap: _consecutivoMap };
+  window._corteActual = { prov, ini, cie, colsDef, grupos, tarifaTipo, tarifaValor, tieneTarifa, tieneTarifaMaterial, tieneTransporte, cobrarTransporte, transporteValor, soloTotal, mostrarColValor, precioPorMaterialOn, preciosMaterial: {..._cortePreciosMaterial}, resaltarFestivos, consecutivoMap: _consecutivoMap };
 
   // Color de la empresa para el interlineado (versión muy clara)
   const filaColor = hexToRgba(color, 0.07);
@@ -6282,11 +6327,14 @@ function generarCorte() {
     // Totales de columnas numéricas
     const totales = {};
     colsDef.forEach(c => { if (c.num) totales[c.id] = regs.reduce((s,r)=> s + (parseFloat(c.get(r))||0), 0); });
-    // Valor monetario del grupo
-    let valorGrupo = 0;
+    // Valor monetario del grupo (material, transporte y total)
+    let valorGrupoMaterial = 0, valorGrupoTransporte = 0, valorGrupo = 0;
     if (tieneTarifa) {
-      valorGrupo = regs.reduce((s,r) => s + valorDeFila(r), 0);
+      valorGrupoMaterial = regs.reduce((s,r) => s + valorMaterialDeFila(r), 0);
+      valorGrupoTransporte = regs.reduce((s,r) => s + valorTransporteDeFila(r), 0);
+      valorGrupo = valorGrupoMaterial + valorGrupoTransporte;
     }
+    const mostrarDosColumnas = mostrarColValor && tieneTarifaMaterial && tieneTransporte;
 
     html += `<div style="padding:18px 24px 8px">
       ${clave !== 'Todos' ? `<div style="font-size:15px;font-weight:800;color:${color};margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid ${color};display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
@@ -6295,14 +6343,19 @@ function generarCorte() {
       </div>` : ''}
       <div style="overflow-x:auto">
         <table class="tbl" style="font-size:13px;border-collapse:collapse;width:100%">
-          <thead><tr style="background:${headColor}">${colsDef.map(c => `<th ${c.num?'class="num"':''} style="border-bottom:2px solid ${color}">${c.label}</th>`).join('')}${mostrarColValor?`<th class="num" style="border-bottom:2px solid ${color}">Valor (COP)</th>`:''}</tr></thead>
+          <thead><tr style="background:${headColor}">${colsDef.map(c => `<th ${c.num?'class="num"':''} style="border-bottom:2px solid ${color}">${c.label}</th>`).join('')}${mostrarDosColumnas?`<th class="num" style="border-bottom:2px solid ${color}">Valor material</th><th class="num" style="border-bottom:2px solid ${color}">Valor transporte</th><th class="num" style="border-bottom:2px solid ${color}">Total</th>`:(mostrarColValor?`<th class="num" style="border-bottom:2px solid ${color}">Valor (COP)</th>`:'')}</tr></thead>
           <tbody>`;
     regs.forEach((r, idx) => {
       // ¿La fecha del registro cae en domingo o festivo en Colombia? → resaltar (si el toggle está activo)
       const esEspecial = resaltarFestivos && esDomingoOFestivo(fechaYMDdeRegistro(r));
       let bg = idx % 2 === 1 ? `background:${filaColor}` : '';
       if (esEspecial) bg = 'background:#fff4e0'; // resaltado ámbar suave para domingo/festivo
-      let valorFila = mostrarColValor ? valorDeFila(r) : 0;
+      let valorFilaMaterial = mostrarColValor ? valorMaterialDeFila(r) : 0;
+      let valorFilaTransporte = mostrarColValor ? valorTransporteDeFila(r) : 0;
+      let valorFilaTotal = valorFilaMaterial + valorFilaTransporte;
+      const celdasValor = mostrarDosColumnas
+        ? `<td class="num" style="color:${color}">${fmtCOP(valorFilaMaterial)}</td><td class="num" style="color:${color}">${fmtCOP(valorFilaTransporte)}</td><td class="num" style="color:${color};font-weight:600">${fmtCOP(valorFilaTotal)}</td>`
+        : (mostrarColValor ? `<td class="num" style="color:${color};font-weight:600">${fmtCOP(valorFilaTotal)}</td>` : '');
       html += `<tr style="${bg}"${esEspecial?' title="Domingo o festivo en Colombia"':''}>` + colsDef.map(c => {
         if (c.secuencial) return `<td style="font-weight:700">${getConsecutivo(r)}</td>`;
         let v = c.get(r);
@@ -6310,14 +6363,17 @@ function generarCorte() {
         // Marcar la celda del día con un puntico si es especial
         if (c.id === 'diaSem' && esEspecial) return `<td style="font-weight:800;color:#b45309">${v||'—'} ●</td>`;
         return `<td ${c.num?'class="num"':''}>${v||'—'}</td>`;
-      }).join('') + (mostrarColValor ? `<td class="num" style="color:${color};font-weight:600">${fmtCOP(valorFila)}</td>` : '') + '</tr>';
+      }).join('') + celdasValor + '</tr>';
     });
     // Fila de totales
     if (Object.keys(totales).length || mostrarColValor) {
+      const celdasTotalValor = mostrarDosColumnas
+        ? `<td class="num" style="color:${color}">${fmtCOP(valorGrupoMaterial)}</td><td class="num" style="color:${color}">${fmtCOP(valorGrupoTransporte)}</td><td class="num" style="color:${color}">${fmtCOP(valorGrupo)}</td>`
+        : (mostrarColValor ? `<td class="num" style="color:${color}">${fmtCOP(valorGrupo)}</td>` : '');
       html += `<tr style="border-top:2px solid ${color};font-weight:800;background:${headColor}">` + colsDef.map((c,i) => {
         if (c.num) return `<td class="num" style="color:${color}">${fmt(Math.round(totales[c.id]))}</td>`;
         return i === 0 ? `<td style="color:${color}">TOTAL</td>` : '<td></td>';
-      }).join('') + (mostrarColValor ? `<td class="num" style="color:${color}">${fmtCOP(valorGrupo)}</td>` : '') + '</tr>';
+      }).join('') + celdasTotalValor + '</tr>';
     }
     html += `</tbody></table></div></div>`;
   });
@@ -6326,8 +6382,8 @@ function generarCorte() {
   cont.innerHTML = html;
 }
 
-// Helper compartido: valor monetario de una fila según la config del corte (tarifa global o precio por material)
-function _valorFilaCorte(c, r) {
+// Helpers compartidos para exports: valor material, valor transporte y total de una fila
+function _valorMaterialFilaCorte(c, r) {
   const mat = (r['RESIDUO']||r['Residuo']||r['residuo']||'').trim() || 'Sin clasificar';
   if (c.precioPorMaterialOn) {
     const p = (c.preciosMaterial && c.preciosMaterial[mat]) || 0;
@@ -6336,24 +6392,35 @@ function _valorFilaCorte(c, r) {
   if (!c.tarifaTipo || c.tarifaValor <= 0) return 0;
   return c.tarifaTipo === 'viaje' ? c.tarifaValor : getPesoNeto(r) * c.tarifaValor;
 }
+function _valorTransporteFilaCorte(c, r) {
+  return (c.cobrarTransporte && c.transporteValor > 0) ? c.transporteValor : 0;
+}
+function _valorFilaCorte(c, r) {
+  return _valorMaterialFilaCorte(c, r) + _valorTransporteFilaCorte(c, r);
+}
 
 // Exporta el corte actual a CSV
 function exportarCorteCSV() {
   const c = window._corteActual;
   if (!c) return;
   const fmtCOP2 = n => Math.round(n);
+  const mostrarDosCSV = c.mostrarColValor && c.tieneTarifaMaterial && c.tieneTransporte;
   let csv = '';
   Object.keys(c.grupos).sort().forEach(clave => {
     if (clave !== 'Todos') csv += '\n' + clave + '\n';
-    csv += c.colsDef.map(col => '"'+col.label+'"').join(',') + (c.mostrarColValor ? ',"Valor (COP)"' : '') + '\n';
+    csv += c.colsDef.map(col => '"'+col.label+'"').join(',') +
+      (mostrarDosCSV ? ',"Valor material","Valor transporte","Total"' : (c.mostrarColValor ? ',"Valor (COP)"' : '')) + '\n';
     c.grupos[clave].forEach(r => {
-      let valorFila = c.mostrarColValor ? _valorFilaCorte(c, r) : 0;
+      const vMat = c.mostrarColValor ? _valorMaterialFilaCorte(c, r) : 0;
+      const vTra = c.mostrarColValor ? _valorTransporteFilaCorte(c, r) : 0;
+      const vTot = vMat + vTra;
       csv += c.colsDef.map(col => {
         if (col.secuencial) return '"' + (c.consecutivoMap.get(r) ?? '') + '"';
         let v = col.get(r);
         if (col.num) v = Math.round(v);
         return '"' + String(v).replace(/"/g,'""') + '"';
-      }).join(',') + (c.mostrarColValor ? ',"'+fmtCOP2(valorFila)+'"' : '') + '\n';
+      }).join(',') +
+        (mostrarDosCSV ? ',"'+fmtCOP2(vMat)+'","'+fmtCOP2(vTra)+'","'+fmtCOP2(vTot)+'"' : (c.mostrarColValor ? ',"'+fmtCOP2(vTot)+'"' : '')) + '\n';
     });
   });
   const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8'});
@@ -6380,16 +6447,23 @@ function exportarCorteExcel() {
   // Fila título
   rowsXml += `<Row><Cell ss:StyleID="titulo"><Data ss:Type="String">Corte de Materia Recibida — ${esc(c.prov)}</Data></Cell></Row>`;
   rowsXml += `<Row><Cell ss:StyleID="subtitulo"><Data ss:Type="String">${esc(c.ini)} 12:00 am  →  ${esc(c.cie)} 11:59 pm</Data></Cell></Row>`;
-  if (c.tieneTarifa && !c.soloTotal) {
+  if (c.tieneTarifaMaterial && !c.soloTotal) {
     rowsXml += `<Row><Cell ss:StyleID="subtitulo"><Data ss:Type="String">Tarifa: $${esc(Math.round(c.tarifaValor).toLocaleString('es-CO'))} por ${c.tarifaTipo === 'viaje' ? 'viaje' : 'kg'}</Data></Cell></Row>`;
   }
+  if (c.tieneTransporte && !c.soloTotal) {
+    rowsXml += `<Row><Cell ss:StyleID="subtitulo"><Data ss:Type="String">Transporte: $${esc(Math.round(c.transporteValor).toLocaleString('es-CO'))} por viaje</Data></Cell></Row>`;
+  }
   // Valor total del corte (siempre que haya tarifa)
+  const mostrarDosExcel = c.mostrarColValor && c.tieneTarifaMaterial && c.tieneTransporte;
   if (c.tieneTarifa) {
-    var _vt = 0;
+    var _vtMat = 0, _vtTra = 0;
     Object.keys(c.grupos).forEach(function(k){
-      c.grupos[k].forEach(function(r){ _vt += _valorFilaCorte(c, r); });
+      c.grupos[k].forEach(function(r){ _vtMat += _valorMaterialFilaCorte(c, r); _vtTra += _valorTransporteFilaCorte(c, r); });
     });
-    rowsXml += `<Row><Cell ss:StyleID="titulo"><Data ss:Type="String">VALOR TOTAL: $${esc(Math.round(_vt).toLocaleString('es-CO'))}</Data></Cell></Row>`;
+    if (mostrarDosExcel) {
+      rowsXml += `<Row><Cell ss:StyleID="subtitulo"><Data ss:Type="String">Valor material: $${esc(Math.round(_vtMat).toLocaleString('es-CO'))}  ·  Valor transporte: $${esc(Math.round(_vtTra).toLocaleString('es-CO'))}</Data></Cell></Row>`;
+    }
+    rowsXml += `<Row><Cell ss:StyleID="titulo"><Data ss:Type="String">VALOR TOTAL: $${esc(Math.round(_vtMat+_vtTra).toLocaleString('es-CO'))}</Data></Cell></Row>`;
   }
   rowsXml += `<Row></Row>`;
 
@@ -6400,18 +6474,27 @@ function exportarCorteExcel() {
     // Encabezados
     rowsXml += '<Row>' + c.colsDef.map(col =>
       `<Cell ss:StyleID="header"><Data ss:Type="String">${esc(col.label)}</Data></Cell>`
-    ).join('') + (c.mostrarColValor ? '<Cell ss:StyleID="header"><Data ss:Type="String">Valor (COP)</Data></Cell>' : '') + '</Row>';
+    ).join('') + (mostrarDosExcel
+        ? '<Cell ss:StyleID="header"><Data ss:Type="String">Valor material</Data></Cell><Cell ss:StyleID="header"><Data ss:Type="String">Valor transporte</Data></Cell><Cell ss:StyleID="header"><Data ss:Type="String">Total</Data></Cell>'
+        : (c.mostrarColValor ? '<Cell ss:StyleID="header"><Data ss:Type="String">Valor (COP)</Data></Cell>' : '')
+      ) + '</Row>';
     // Datos
     const totales = {};
     c.colsDef.forEach(col => { if (col.num) totales[col.id] = 0; });
-    let valorGrupoTotal = 0;
+    let valorGrupoMaterial = 0, valorGrupoTransporte = 0, valorGrupoTotal = 0;
     c.grupos[clave].forEach((r, idx) => {
       const esEspecial = (c.resaltarFestivos !== false) && esDomingoOFestivo(fechaYMDdeRegistro(r));
       // Si es domingo/festivo usa estilo destacado; si no, zebra normal
       const styleZebra = esEspecial ? ' ss:StyleID="festivo"' : (idx % 2 === 1 ? ' ss:StyleID="zebra"' : '');
       const styleZebraNum = esEspecial ? 'festivoNum' : (idx % 2 === 1 ? 'numZebra' : 'num');
-      let valorFila = 0;
-      if (c.mostrarColValor) { valorFila = _valorFilaCorte(c, r); valorGrupoTotal += valorFila; }
+      let valorFilaMaterial = 0, valorFilaTransporte = 0;
+      if (c.mostrarColValor) {
+        valorFilaMaterial = _valorMaterialFilaCorte(c, r);
+        valorFilaTransporte = _valorTransporteFilaCorte(c, r);
+        valorGrupoMaterial += valorFilaMaterial;
+        valorGrupoTransporte += valorFilaTransporte;
+        valorGrupoTotal += valorFilaMaterial + valorFilaTransporte;
+      }
       rowsXml += '<Row>' + c.colsDef.map(col => {
         if (col.secuencial) {
           const num = c.consecutivoMap.get(r) ?? '';
@@ -6424,14 +6507,20 @@ function exportarCorteExcel() {
           return `<Cell ss:StyleID="${styleZebraNum}"><Data ss:Type="Number">${Math.round(n)}</Data></Cell>`;
         }
         return `<Cell${styleZebra}><Data ss:Type="String">${esc(v)}</Data></Cell>`;
-      }).join('') + (c.mostrarColValor ? `<Cell ss:StyleID="${styleZebraNum}"><Data ss:Type="Number">${Math.round(valorFila)}</Data></Cell>` : '') + '</Row>';
+      }).join('') + (mostrarDosExcel
+          ? `<Cell ss:StyleID="${styleZebraNum}"><Data ss:Type="Number">${Math.round(valorFilaMaterial)}</Data></Cell><Cell ss:StyleID="${styleZebraNum}"><Data ss:Type="Number">${Math.round(valorFilaTransporte)}</Data></Cell><Cell ss:StyleID="${styleZebraNum}"><Data ss:Type="Number">${Math.round(valorFilaMaterial+valorFilaTransporte)}</Data></Cell>`
+          : (c.mostrarColValor ? `<Cell ss:StyleID="${styleZebraNum}"><Data ss:Type="Number">${Math.round(valorFilaMaterial+valorFilaTransporte)}</Data></Cell>` : '')
+        ) + '</Row>';
     });
     // Totales
     if (Object.keys(totales).length || c.mostrarColValor) {
       rowsXml += '<Row>' + c.colsDef.map((col,i) => {
         if (col.num) return `<Cell ss:StyleID="total"><Data ss:Type="Number">${Math.round(totales[col.id])}</Data></Cell>`;
         return i === 0 ? `<Cell ss:StyleID="totalLbl"><Data ss:Type="String">TOTAL</Data></Cell>` : '<Cell ss:StyleID="total"></Cell>';
-      }).join('') + (c.mostrarColValor ? `<Cell ss:StyleID="total"><Data ss:Type="Number">${Math.round(valorGrupoTotal)}</Data></Cell>` : '') + '</Row>';
+      }).join('') + (mostrarDosExcel
+          ? `<Cell ss:StyleID="total"><Data ss:Type="Number">${Math.round(valorGrupoMaterial)}</Data></Cell><Cell ss:StyleID="total"><Data ss:Type="Number">${Math.round(valorGrupoTransporte)}</Data></Cell><Cell ss:StyleID="total"><Data ss:Type="Number">${Math.round(valorGrupoTotal)}</Data></Cell>`
+          : (c.mostrarColValor ? `<Cell ss:StyleID="total"><Data ss:Type="Number">${Math.round(valorGrupoTotal)}</Data></Cell>` : '')
+        ) + '</Row>';
     }
     rowsXml += '<Row></Row>';
   });
@@ -6467,7 +6556,7 @@ function exportarCorteExcel() {
 </Styles>
 <Worksheet ss:Name="Corte">
 <Table>
-${c.colsDef.map(()=>'<Column ss:Width="120"/>').join('')}${c.mostrarColValor?'<Column ss:Width="120"/>':''}
+${c.colsDef.map(()=>'<Column ss:Width="120"/>').join('')}${(c.mostrarColValor && c.tieneTarifaMaterial && c.tieneTransporte)?'<Column ss:Width="120"/><Column ss:Width="120"/><Column ss:Width="120"/>':(c.mostrarColValor?'<Column ss:Width="120"/>':'')}
 ${rowsXml}
 </Table>
 </Worksheet>
@@ -6516,6 +6605,8 @@ function guardarCorteFavorito() {
   const tarifaValor = parseFloat((document.getElementById('corte-tarifa-valor')||{}).value) || 0;
   const soloTotal   = (document.getElementById('corte-solo-total')||{}).checked;
   const precioPorMaterial = (document.getElementById('corte-precio-por-material')||{}).checked;
+  const cobrarTransporte = (document.getElementById('corte-cobrar-transporte')||{}).checked;
+  const transporteValor  = parseFloat((document.getElementById('corte-transporte-valor')||{}).value) || 0;
 
   // Guardar también el "patrón de día" para reutilizar (ej: del 20 al 20)
   const diaIni = ini ? new Date(ini+'T00:00:00').getDate() : null;
@@ -6524,7 +6615,7 @@ function guardarCorteFavorito() {
   // Precios por material como JSON string (para guardar en una sola celda)
   const preciosMaterialJson = JSON.stringify(_cortePreciosMaterial || {});
 
-  const payload = { accion:'guardar', nombre, prov, ini, cie, diaIni, diaCie, colsSel, sepMaterial, sepEmpresa, tarifaTipo, tarifaValor, soloTotal, precioPorMaterial, preciosMaterialJson };
+  const payload = { accion:'guardar', nombre, prov, ini, cie, diaIni, diaCie, colsSel, sepMaterial, sepEmpresa, tarifaTipo, tarifaValor, soloTotal, precioPorMaterial, preciosMaterialJson, cobrarTransporte, transporteValor };
 
   const statusEl = document.getElementById('corte-fav-status');
   if (statusEl) statusEl.textContent = 'Guardando favorito...';
@@ -6597,6 +6688,10 @@ function _aplicarFav(f, ini, cie) {
   document.getElementById('corte-tarifa-tipo').value = f.tarifaTipo || '';
   document.getElementById('corte-tarifa-valor').value = f.tarifaValor || '';
   const stChk = document.getElementById('corte-solo-total'); if (stChk) stChk.checked = !!f.soloTotal;
+  // Restaurar transporte adicional
+  const ctChk = document.getElementById('corte-cobrar-transporte'); if (ctChk) ctChk.checked = !!f.cobrarTransporte;
+  const ctVal = document.getElementById('corte-transporte-valor'); if (ctVal) ctVal.value = f.transporteValor || '';
+  const ctWrap = document.getElementById('corte-transporte-wrap'); if (ctWrap) ctWrap.style.display = f.cobrarTransporte ? 'flex' : 'none';
   // Restaurar precios por material
   try { _cortePreciosMaterial = f.preciosMaterialJson ? JSON.parse(f.preciosMaterialJson) : (f.preciosMaterial || {}); }
   catch(e) { _cortePreciosMaterial = {}; }
