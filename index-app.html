@@ -5618,6 +5618,25 @@ function getFestivosColombia(anio) {
   _festivosCache[anio] = fechas;
   return fechas;
 }
+// Obtiene la fecha de DISPOSICIÓN (columna C, "FECHA DISPOSICION PLANTA") de un registro como objeto Date.
+// Esta es la fecha que se usa para generar los cortes (no la marca temporal).
+function getFechaDisposicion(r) {
+  const raw = (r['FECHA DISPOSICION PLANTA']||r['FECHA DISPOSICION']||r['Fecha Disposicion']||'').toString().trim();
+  if (!raw) return null;
+  // Formato YYYY-MM-DD (el que usa la columna en el Sheet)
+  let m = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) {
+    const d = new Date(parseInt(m[1],10), parseInt(m[2],10)-1, parseInt(m[3],10));
+    if (!isNaN(d.getTime())) return d;
+  }
+  // Formato D/M/YYYY (por si la columna viene en formato alterno)
+  m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) {
+    const d = new Date(parseInt(m[3],10), parseInt(m[2],10)-1, parseInt(m[1],10));
+    if (!isNaN(d.getTime())) return d;
+  }
+  return null;
+}
 function esDomingoOFestivo(fechaYMD) {
   if (!fechaYMD) return false;
   const d = new Date(fechaYMD+'T12:00:00');
@@ -5627,19 +5646,19 @@ function esDomingoOFestivo(fechaYMD) {
 }
 const _DIAS_SEM = ['DOM','LUN','MAR','MIE','JUE','VIE','SAB'];
 function diaSemanaDe(r) {
-  const dt = parseDateTime(getMarcaTemporal(r)) || parseDate(getMarcaTemporal(r));
+  const dt = getFechaDisposicion(r);
   if (!dt || isNaN(dt.getTime())) return '';
   return _DIAS_SEM[dt.getDay()];
 }
 function fechaYMDdeRegistro(r) {
-  const dt = parseDateTime(getMarcaTemporal(r)) || parseDate(getMarcaTemporal(r));
+  const dt = getFechaDisposicion(r);
   if (!dt || isNaN(dt.getTime())) return '';
   return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
 }
 
 const CORTE_COLUMNAS_DISP = [
   { id:'marca',    label:'Marca temporal',    get:r => getMarcaTemporal(r) },
-  { id:'fecha',    label:'Fecha disposición', get:r => (r['FECHA DISPOSICION PLANTA']||r['FECHA DISPOSICION']||'').trim() || (parseDate(getMarcaTemporal(r))?toYMD(getMarcaTemporal(r)):'') },
+  { id:'fecha',    label:'Fecha disposición', get:r => fechaYMDdeRegistro(r) || (r['FECHA DISPOSICION PLANTA']||r['FECHA DISPOSICION']||'').trim() },
   { id:'diaSem',   label:'Día',               get:r => diaSemanaDe(r) },
   { id:'hora',     label:'Hora disposición',  get:r => (r['HORA DISPOSICION PLANTA']||r['HORA DISPOSICION']||'').trim() },
   { id:'empresa',  label:'Empresa / Operación', get:r => normEmpresa(r['OPERACION']||r['Operacion']||r['operacion']||r['OPERACIÓN']||'') },
@@ -6118,12 +6137,13 @@ function onPrecioMaterialInput(input) {
 function filtrarRegistrosCorte(prov, ini, cie) {
   if (!window.dataIngreso) return [];
   // Rango: desde 00:00:00 del día inicio hasta 23:59:59 del día cierre (día completo)
+  // Se filtra por FECHA DISPOSICIÓN (columna C), no por marca temporal
   const desde = new Date(ini+'T00:00:00');
   const hasta = new Date(cie+'T23:59:59');
   return window.dataIngreso.filter(r => {
     const empresa = normEmpresa(r['OPERACION']||r['Operacion']||r['operacion']||r['OPERACIÓN']||'');
     if (empresa !== prov) return false;
-    const dt = parseDateTime(getMarcaTemporal(r));
+    const dt = getFechaDisposicion(r);
     if (!dt) return false;
     return dt >= desde && dt <= hasta;
   });
