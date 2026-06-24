@@ -1695,8 +1695,10 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
       </div>
       <!-- Grilla del calendario -->
       <div id="cal-cortes-grid"></div>
-      <!-- Detalle del día seleccionado (lista desplegable) -->
-      <div id="cal-cortes-detalle" style="margin-top:14px"></div>
+      <!-- Detalle del día seleccionado -->
+      <div id="cal-cortes-detalle"></div>
+      <!-- Lista completa siempre visible (y editable) -->
+      <div id="cal-cortes-lista" data-editando="0"></div>
     </div>
   </div>
 
@@ -5652,7 +5654,8 @@ const CORTE_COLUMNAS_DISP = [
 
 // ── CALENDARIO GUÍA DE CORTES BASE (datos de referencia de Natalia) ──
 // dia: número del mes para el corte (o texto si es variable). diaSugerido: para precargar rango.
-const CORTES_BASE = [
+// Lista base de cortes (se sobrescribe con la del Sheet si existe). Editable y compartida.
+let CORTES_BASE = [
   { empresa:'Familia',            dia:'21',        diaCorte:21, dias:[21],       freq:'Corte mensual, el 21 de cada mes' },
   { empresa:'Softys',             dia:'27',        diaCorte:27, dias:[27],       freq:'Corte mensual, el 27. Patricia Nieto envía el corte para comparación' },
   { empresa:'Recreo',             dia:'27',        diaCorte:27, dias:[27],       freq:'Corte mensual, el 27 de cada mes' },
@@ -5681,13 +5684,63 @@ const CORTES_BASE = [
 let _calMes = new Date().getMonth();
 let _calAnio = new Date().getFullYear();
 let _calDiaSel = null;
+let _calendarioCargado = false;
+
+// Carga el calendario desde el Sheet (si hay datos guardados, reemplaza la lista base)
+async function cargarCalendarioRemoto() {
+  if (typeof CORTES_FAV_API === 'undefined' || CORTES_FAV_API.includes('PEGAR')) { return; }
+  try {
+    const res = await fetch(CORTES_FAV_API + '?accion=listarCalendario', { redirect:'follow' });
+    const data = await res.json();
+    if (data.ok && Array.isArray(data.calendario) && data.calendario.length > 0) {
+      // Reconstruir CORTES_BASE desde el Sheet
+      CORTES_BASE = data.calendario.map(c => ({
+        empresa: c.empresa,
+        dias: c.dias || [],
+        diaCorte: c.diaCorte != null ? c.diaCorte : ((c.dias && c.dias.length) ? c.dias[c.dias.length-1] : null),
+        dia: (c.dias && c.dias.length) ? c.dias.join(', ') : (c.freq || '—'),
+        freq: c.freq || ''
+      }));
+    }
+  } catch(e) { console.warn('No se pudo cargar el calendario remoto, usando base local:', e); }
+  _calendarioCargado = true;
+  renderCalendarioCortes();
+}
+
+// Guarda el calendario actual en el Sheet
+function guardarCalendarioRemoto() {
+  const st = document.getElementById('cal-cortes-guardar-status');
+  if (typeof CORTES_FAV_API === 'undefined' || CORTES_FAV_API.includes('PEGAR')) {
+    if (st) { st.style.color = 'var(--red)'; st.textContent = 'Falta configurar la URL del Apps Script.'; }
+    return;
+  }
+  if (st) { st.style.color = 'var(--ink-l)'; st.textContent = 'Guardando calendario...'; }
+  const payload = { accion:'guardarCalendario', calendario: CORTES_BASE.map(c => ({ empresa:c.empresa, dias:c.dias||[], diaCorte:c.diaCorte, freq:c.freq||'' })) };
+  const timeout = setTimeout(() => {
+    if (st) { st.style.color = 'var(--green)'; st.textContent = 'Calendario enviado.'; }
+    setTimeout(() => { if (st) st.textContent=''; }, 3000);
+  }, 12000);
+  fetch(CORTES_FAV_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(payload) })
+    .then(r => r.json())
+    .then(data => {
+      clearTimeout(timeout);
+      if (st) { st.style.color = 'var(--green)'; st.textContent = 'Calendario guardado correctamente'; }
+      setTimeout(() => { if (st) st.textContent=''; }, 3000);
+    })
+    .catch(e => {
+      clearTimeout(timeout);
+      console.warn('Respuesta no legible al guardar calendario:', e);
+      if (st) { st.style.color = 'var(--green)'; st.textContent = 'Calendario guardado'; }
+      setTimeout(() => { if (st) st.textContent=''; }, 3000);
+    });
+}
 
 // Construye un mapa día → empresas que cortan ese día (para el mes visible)
 function _empresasPorDia() {
   const mapa = {};
   CORTES_BASE.forEach(c => {
     (c.dias||[]).forEach(d => {
-      // Ajustar día 30 a fin de mes si el mes tiene menos días
+      // Ajustar día 30+ a fin de mes si el mes tiene menos días
       const ultimoDia = new Date(_calAnio, _calMes+1, 0).getDate();
       const diaReal = d > ultimoDia ? ultimoDia : d;
       if (!mapa[diaReal]) mapa[diaReal] = [];
@@ -5714,11 +5767,8 @@ function renderCalendarioCortes() {
 
   const DIAS_CAB = ['DO','LU','MA','MI','JU','VI','SA'];
   let html = '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">';
-  // Cabecera
   html += DIAS_CAB.map(d => `<div style="text-align:center;font-size:10px;font-weight:800;letter-spacing:.5px;color:var(--ink-l);padding:4px 0">${d}</div>`).join('');
-  // Celdas vacías antes del día 1
   for (let i = 0; i < primerDia; i++) html += '<div></div>';
-  // Días del mes
   for (let d = 1; d <= diasMes; d++) {
     const ymd = _calAnio+'-'+String(_calMes+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
     const festivo = esDomingoOFestivo(ymd);
@@ -5730,8 +5780,7 @@ function renderCalendarioCortes() {
     if (tieneCorte) { bg = 'var(--navy)'; colorNum = '#fff'; border = '1px solid var(--navy)'; }
     if (sel) border = '2px solid var(--gold)';
 
-    const cursor = tieneCorte ? 'cursor:pointer' : 'cursor:default';
-    html += `<div onclick="${tieneCorte?`seleccionarDiaCalendario(${d})`:''}" style="${cursor};position:relative;aspect-ratio:1;border-radius:8px;background:${bg};border:${border};display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:42px">
+    html += `<div onclick="seleccionarDiaCalendario(${d})" style="cursor:pointer;position:relative;aspect-ratio:1;border-radius:8px;background:${bg};border:${border};display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:42px">
       <span style="font-size:14px;font-weight:${tieneCorte||esHoy(d)?'800':'600'};color:${colorNum}">${d}</span>
       ${tieneCorte ? `<span style="position:absolute;bottom:4px;font-size:8px;font-weight:700;color:rgba(255,255,255,.85)">${cortesPorDia[d].length} corte${cortesPorDia[d].length>1?'s':''}</span>` : ''}
       ${esHoy(d) && !tieneCorte ? '<span style="position:absolute;bottom:5px;width:5px;height:5px;border-radius:50%;background:var(--gold)"></span>' : ''}
@@ -5740,8 +5789,93 @@ function renderCalendarioCortes() {
   html += '</div>';
   grid.innerHTML = html;
 
-  // Si hay un día seleccionado, mostrar su detalle
+  // Lista completa siempre visible debajo del calendario
+  renderListaCortesBase();
+  // Detalle del día seleccionado (si hay)
   if (_calDiaSel) renderDetalleDiaCalendario();
+  else { const det = document.getElementById('cal-cortes-detalle'); if (det) det.innerHTML = ''; }
+}
+
+// Lista pequeña siempre visible de todas las empresas y sus días (editable)
+function renderListaCortesBase() {
+  const cont = document.getElementById('cal-cortes-lista');
+  if (!cont) return;
+  const editando = cont.dataset.editando === '1';
+
+  if (!editando) {
+    // Vista normal: lista compacta agrupada
+    cont.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:18px 0 10px">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l)">Empresas y días de corte</div>
+        <button onclick="activarEdicionCalendario()" style="padding:6px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--gold-l);color:var(--gold);border:1px solid var(--gold);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Editar calendario</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px">
+        ${CORTES_BASE.map((c,i) => `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--white);border:1px solid var(--rule-l);border-radius:6px;padding:8px 12px">
+            <div style="min-width:0">
+              <div style="font-size:12px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.empresa}</div>
+              <div style="font-size:10px;color:var(--ink-l)">${(c.dias&&c.dias.length)?('Días: '+c.dias.join(', ')):(c.freq||'Variable')}</div>
+            </div>
+            ${(c.dias&&c.dias.length)?`<button onclick="precargarCorteBase(${i})" style="flex-shrink:0;padding:5px 10px;font-size:9px;font-weight:700;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:4px;cursor:pointer">Usar</button>`:''}
+          </div>`).join('')}
+      </div>`;
+  } else {
+    // Vista de edición: cada empresa con sus días editables
+    cont.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:18px 0 10px;flex-wrap:wrap;gap:8px">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold)">Editando calendario</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span id="cal-cortes-guardar-status" style="font-size:11px;font-weight:700"></span>
+          <button onclick="agregarEmpresaCalendario()" style="padding:6px 12px;font-size:10px;font-weight:700;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer">+ Empresa</button>
+          <button onclick="guardarYsalirCalendario()" style="padding:6px 14px;font-size:10px;font-weight:700;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:4px;cursor:pointer">Guardar</button>
+          <button onclick="cancelarEdicionCalendario()" style="padding:6px 12px;font-size:10px;font-weight:700;text-transform:uppercase;background:transparent;color:var(--ink-l);border:1px solid var(--rule);border-radius:4px;cursor:pointer">Cancelar</button>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${CORTES_BASE.map((c,i) => `
+          <div style="display:flex;align-items:center;gap:10px;background:var(--white);border:1px solid var(--rule-l);border-radius:6px;padding:10px 12px;flex-wrap:wrap">
+            <input type="text" value="${(c.empresa||'').replace(/"/g,'&quot;')}" onchange="editarEmpresaNombre(${i},this.value)" placeholder="Empresa" style="flex:1;min-width:140px;border:1px solid var(--rule);padding:6px 9px;font-size:12px;border-radius:4px;font-family:'Source Sans 3',sans-serif">
+            <input type="text" value="${(c.dias||[]).join(', ')}" onchange="editarEmpresaDias(${i},this.value)" placeholder="Días (ej: 15, 30)" style="width:120px;border:1px solid var(--rule);padding:6px 9px;font-size:12px;border-radius:4px;font-family:'Source Sans 3',sans-serif" title="Días del mes separados por coma">
+            <input type="text" value="${(c.freq||'').replace(/"/g,'&quot;')}" onchange="editarEmpresaFreq(${i},this.value)" placeholder="Nota / frecuencia" style="flex:1;min-width:140px;border:1px solid var(--rule);padding:6px 9px;font-size:12px;border-radius:4px;font-family:'Source Sans 3',sans-serif">
+            <button onclick="eliminarEmpresaCalendario(${i})" style="flex-shrink:0;padding:6px 10px;font-size:11px;font-weight:700;background:var(--rule-l);color:var(--red);border:none;border-radius:4px;cursor:pointer" title="Quitar empresa">✕</button>
+          </div>`).join('')}
+      </div>
+      <div style="font-size:11px;color:var(--ink-l);margin-top:10px">Escribe los días del mes separados por coma (ej: <strong>15, 30</strong>). Deja vacío si el corte es variable o esporádico.</div>`;
+  }
+}
+
+function activarEdicionCalendario() {
+  const cont = document.getElementById('cal-cortes-lista');
+  if (cont) { cont.dataset.editando = '1'; renderListaCortesBase(); }
+}
+function cancelarEdicionCalendario() {
+  const cont = document.getElementById('cal-cortes-lista');
+  if (cont) { cont.dataset.editando = '0'; }
+  cargarCalendarioRemoto(); // recargar desde el Sheet para descartar cambios locales
+}
+function guardarYsalirCalendario() {
+  guardarCalendarioRemoto();
+  const cont = document.getElementById('cal-cortes-lista');
+  if (cont) { cont.dataset.editando = '0'; }
+  renderCalendarioCortes();
+}
+function editarEmpresaNombre(i, val) { if (CORTES_BASE[i]) CORTES_BASE[i].empresa = val.trim(); }
+function editarEmpresaFreq(i, val)   { if (CORTES_BASE[i]) CORTES_BASE[i].freq = val.trim(); }
+function editarEmpresaDias(i, val) {
+  if (!CORTES_BASE[i]) return;
+  const dias = val.split(',').map(s => parseInt(s.trim(),10)).filter(n => !isNaN(n) && n>=1 && n<=31);
+  CORTES_BASE[i].dias = dias;
+  CORTES_BASE[i].diaCorte = dias.length ? dias[dias.length-1] : null;
+  renderCalendarioCortes(); // refrescar la grilla en vivo
+}
+function agregarEmpresaCalendario() {
+  CORTES_BASE.push({ empresa:'Nueva empresa', dias:[], diaCorte:null, dia:'', freq:'' });
+  renderListaCortesBase();
+}
+function eliminarEmpresaCalendario(i) {
+  if (!confirm('¿Quitar esta empresa del calendario?')) return;
+  CORTES_BASE.splice(i,1);
+  renderCalendarioCortes();
 }
 
 function cambiarMesCalendario(delta) {
@@ -5749,7 +5883,6 @@ function cambiarMesCalendario(delta) {
   if (_calMes < 0) { _calMes = 11; _calAnio--; }
   if (_calMes > 11) { _calMes = 0; _calAnio++; }
   _calDiaSel = null;
-  document.getElementById('cal-cortes-detalle').innerHTML = '';
   renderCalendarioCortes();
 }
 
@@ -5758,17 +5891,19 @@ function seleccionarDiaCalendario(d) {
   renderCalendarioCortes();
 }
 
-// Lista desplegable de empresas que cortan el día seleccionado
+// Detalle del día seleccionado: empresas que cortan ese día
 function renderDetalleDiaCalendario() {
   const det = document.getElementById('cal-cortes-detalle');
   if (!det) return;
   const cortesPorDia = _empresasPorDia();
   const empresas = cortesPorDia[_calDiaSel] || [];
-  if (empresas.length === 0) { det.innerHTML = ''; return; }
-
   const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  if (empresas.length === 0) {
+    det.innerHTML = `<div style="background:var(--s2);border-radius:8px;padding:12px 16px;font-size:12px;color:var(--ink-l);margin-top:12px">No hay cortes programados el ${_calDiaSel} de ${MESES[_calMes]}.</div>`;
+    return;
+  }
   det.innerHTML = `
-    <div style="background:var(--s2);border-radius:8px;padding:14px 16px;border-left:4px solid var(--navy)">
+    <div style="background:var(--s2);border-radius:8px;padding:14px 16px;border-left:4px solid var(--navy);margin-top:12px">
       <div style="font-size:12px;font-weight:800;color:var(--navy);margin-bottom:10px">${_calDiaSel} de ${MESES[_calMes]} · ${empresas.length} corte${empresas.length>1?'s':''} programado${empresas.length>1?'s':''}</div>
       <div style="display:flex;flex-direction:column;gap:8px">
         ${empresas.map(c => {
@@ -5776,7 +5911,7 @@ function renderDetalleDiaCalendario() {
           return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--white);border:1px solid var(--rule-l);border-radius:6px;padding:10px 12px;flex-wrap:wrap">
             <div style="flex:1;min-width:140px">
               <div style="font-size:13px;font-weight:700;color:var(--ink)">${c.empresa}</div>
-              <div style="font-size:11px;color:var(--ink-l)">${c.freq}</div>
+              <div style="font-size:11px;color:var(--ink-l)">${c.freq||''}</div>
             </div>
             <button onclick="precargarCorteBase(${idx})" style="padding:7px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Usar este corte</button>
           </div>`;
@@ -5846,7 +5981,8 @@ function initCortesProveedores() {
     cont.dataset.init = '1';
   }
   cargarCortesFavoritosRemoto();
-  renderCalendarioCortes();
+  if (!_calendarioCargado) cargarCalendarioRemoto();
+  else renderCalendarioCortes();
 }
 
 // Orden de selección de columnas (refleja el orden en que el usuario las marca)
