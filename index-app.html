@@ -5826,10 +5826,19 @@ function renderListaCortesBase() {
         <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold)">Editando calendario</div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <span id="cal-cortes-guardar-status" style="font-size:11px;font-weight:700"></span>
-          <button onclick="agregarEmpresaCalendario()" style="padding:6px 12px;font-size:10px;font-weight:700;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer">+ Empresa</button>
           <button onclick="guardarYsalirCalendario()" style="padding:6px 14px;font-size:10px;font-weight:700;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:4px;cursor:pointer">Guardar</button>
           <button onclick="cancelarEdicionCalendario()" style="padding:6px 12px;font-size:10px;font-weight:700;text-transform:uppercase;background:transparent;color:var(--ink-l);border:1px solid var(--rule);border-radius:4px;cursor:pointer">Cancelar</button>
         </div>
+      </div>
+      <!-- Agregar empresa: desplegable de proveedores guardados + opción manual -->
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;padding:12px;background:var(--gold-l);border-radius:6px">
+        <span style="font-size:11px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.5px">Agregar corte:</span>
+        <select id="cal-cortes-add-select" style="flex:1;min-width:180px;border:1px solid var(--rule);background:var(--white);padding:8px 10px;font-size:13px;border-radius:4px;font-family:'Source Sans 3',sans-serif">
+          <option value="">— Elige un proveedor guardado —</option>
+          ${_proveedoresDisponiblesCalendario().map(p => `<option value="${p.replace(/"/g,'&quot;')}">${p}</option>`).join('')}
+          <option value="__manual__">+ Escribir empresa manualmente</option>
+        </select>
+        <button onclick="agregarEmpresaDesdeSelect()" style="padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:4px;cursor:pointer">Agregar</button>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px">
         ${CORTES_BASE.map((c,i) => `
@@ -5837,7 +5846,7 @@ function renderListaCortesBase() {
             <input type="text" value="${(c.empresa||'').replace(/"/g,'&quot;')}" onchange="editarEmpresaNombre(${i},this.value)" placeholder="Empresa" style="flex:1;min-width:140px;border:1px solid var(--rule);padding:6px 9px;font-size:12px;border-radius:4px;font-family:'Source Sans 3',sans-serif">
             <input type="text" value="${(c.dias||[]).join(', ')}" onchange="editarEmpresaDias(${i},this.value)" placeholder="Días (ej: 15, 30)" style="width:120px;border:1px solid var(--rule);padding:6px 9px;font-size:12px;border-radius:4px;font-family:'Source Sans 3',sans-serif" title="Días del mes separados por coma">
             <input type="text" value="${(c.freq||'').replace(/"/g,'&quot;')}" onchange="editarEmpresaFreq(${i},this.value)" placeholder="Nota / frecuencia" style="flex:1;min-width:140px;border:1px solid var(--rule);padding:6px 9px;font-size:12px;border-radius:4px;font-family:'Source Sans 3',sans-serif">
-            <button onclick="eliminarEmpresaCalendario(${i})" style="flex-shrink:0;padding:6px 10px;font-size:11px;font-weight:700;background:var(--rule-l);color:var(--red);border:none;border-radius:4px;cursor:pointer" title="Quitar empresa">✕</button>
+            <button onclick="eliminarEmpresaCalendario(${i})" style="flex-shrink:0;padding:6px 12px;font-size:11px;font-weight:700;background:#fee2e2;color:var(--red);border:1px solid #fca5a5;border-radius:4px;cursor:pointer" title="Quitar empresa">✕ Borrar</button>
           </div>`).join('')}
       </div>
       <div style="font-size:11px;color:var(--ink-l);margin-top:10px">Escribe los días del mes separados por coma (ej: <strong>15, 30</strong>). Deja vacío si el corte es variable o esporádico.</div>`;
@@ -5868,8 +5877,28 @@ function editarEmpresaDias(i, val) {
   CORTES_BASE[i].diaCorte = dias.length ? dias[dias.length-1] : null;
   renderCalendarioCortes(); // refrescar la grilla en vivo
 }
-function agregarEmpresaCalendario() {
-  CORTES_BASE.push({ empresa:'Nueva empresa', dias:[], diaCorte:null, dia:'', freq:'' });
+// Lista de proveedores disponibles para agregar (los del selector que no estén ya en el calendario)
+function _proveedoresDisponiblesCalendario() {
+  const sel = document.getElementById('corte-proveedor');
+  if (!sel) return [];
+  const yaEnCalendario = CORTES_BASE.map(c => (c.empresa||'').trim().toLowerCase());
+  return [...sel.options]
+    .map(o => o.value)
+    .filter(Boolean)
+    .filter(p => !yaEnCalendario.includes(p.trim().toLowerCase()));
+}
+
+// Agrega la empresa elegida en el desplegable
+function agregarEmpresaDesdeSelect() {
+  const sel = document.getElementById('cal-cortes-add-select');
+  if (!sel) return;
+  const val = sel.value;
+  if (!val) { alert('Elige un proveedor del desplegable.'); return; }
+  if (val === '__manual__') {
+    CORTES_BASE.push({ empresa:'Nueva empresa', dias:[], diaCorte:null, dia:'', freq:'' });
+  } else {
+    CORTES_BASE.push({ empresa:val, dias:[], diaCorte:null, dia:'', freq:'' });
+  }
   renderListaCortesBase();
 }
 function eliminarEmpresaCalendario(i) {
