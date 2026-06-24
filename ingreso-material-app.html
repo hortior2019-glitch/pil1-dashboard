@@ -297,23 +297,13 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   <div style="max-width:900px;margin:0 auto;padding:0 18px 48px">
 
     <div class="filter-bar">
-      <button class="fbtn active" id="fbtn-hoy" onclick="setFiltro('hoy',this)">Hoy</button>
-      <button class="fbtn" onclick="setFiltro('hora',this)">Ultima hora</button>
-      <button class="fbtn" onclick="setFiltro('semana',this)">Esta semana</button>
-      <button class="fbtn" onclick="setFiltro('mes',this)">Este mes</button>
-      <button class="fbtn" onclick="setFiltro('total',this)">Total</button>
-      <div class="date-filter-wrap">
-        <input type="date" id="filtro-fecha-cal" onchange="setFiltroFecha(this.value)" title="Filtrar por fecha especifica">
-      </div>
+      <span style="padding:5px 9px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--navy)">Ultimas 24 horas</span>
       <select id="filtro-operario" onchange="renderConsulta()" style="padding:5px 9px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);font-family:'Source Sans 3',sans-serif;cursor:pointer">
         <option value="">Todos los operarios</option>
         <option value="Alexander">Alexander</option>
         <option value="Idaldo">Idaldo</option>
         <option value="Deivi">Deivi</option>
         <option value="Saul">Saúl</option>
-      </select>
-      <select id="filtro-operacion" onchange="renderConsulta()" style="padding:5px 9px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);font-family:'Source Sans 3',sans-serif;cursor:pointer">
-        <option value="">Todas las operaciones</option>
       </select>
       <button class="refresh-btn" onclick="cargarRegistros()">Actualizar</button>
     </div>
@@ -779,23 +769,13 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 <div class="wrapper">
 
   <div class="filter-bar">
-    <button class="fbtn active" id="fbtn-hoy" onclick="setFiltro('hoy',this)">Hoy</button>
-    <button class="fbtn" onclick="setFiltro('hora',this)">Ultima hora</button>
-    <button class="fbtn" onclick="setFiltro('semana',this)">Esta semana</button>
-    <button class="fbtn" onclick="setFiltro('mes',this)">Este mes</button>
-    <button class="fbtn" onclick="setFiltro('total',this)">Total</button>
-    <div class="date-filter-wrap">
-      <input type="date" id="filtro-fecha-cal" onchange="setFiltroFecha(this.value)" title="Filtrar por fecha especifica">
-    </div>
+    <span style="padding:5px 9px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--navy)">Ultimas 24 horas</span>
     <select id="filtro-operario-2" onchange="renderConsulta()" style="padding:5px 9px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);font-family:'Source Sans 3',sans-serif;cursor:pointer">
       <option value="">Todos los operarios</option>
       <option value="Alexander">Alexander</option>
       <option value="Idaldo">Idaldo</option>
       <option value="Deivi">Deivi</option>
       <option value="Saul">Saúl</option>
-    </select>
-    <select id="filtro-operacion-2" onchange="renderConsulta()" style="padding:5px 9px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);font-family:'Source Sans 3',sans-serif;cursor:pointer">
-      <option value="">Todas las operaciones</option>
     </select>
     <button class="refresh-btn" onclick="cargarRegistros()">Actualizar</button>
   </div>
@@ -1096,7 +1076,7 @@ const OP_MAP = {
   'softys': 'op-softys',
 };
 
-let filtroActual = 'hoy';
+let filtroActual = '24h';
 let filtroFechaEsp = null;
 let registrosData = [];
 let bavConfirmado = false;
@@ -1679,6 +1659,7 @@ function inPeriodo(str, f) {
     return d >= fd && d < new Date(fd.getTime() + 86400000);
   }
   if (f === 'total')  return true;
+  if (f === '24h')    return (now - d) <= 86400000;
   if (f === 'hora')   return (now - d) <= 3600000;
   if (f === 'hoy')    return d >= today;
   if (f === 'semana') { var wk = new Date(today); wk.setDate(today.getDate() - today.getDay()); return d >= wk; }
@@ -1702,7 +1683,7 @@ function setFiltro(f,el) {
   filtroActual=f; filtroFechaEsp=null;
   document.querySelectorAll('.fbtn').forEach(function(b){b.classList.remove('active');});
   if(el) el.classList.add('active');
-  document.getElementById('filtro-fecha-cal').value='';
+  var cal=document.getElementById('filtro-fecha-cal'); if(cal) cal.value='';
   renderConsulta();
 }
 function setFiltroFecha(val) {
@@ -1756,7 +1737,7 @@ function renderConsulta() {
 
   // Poblar select de operaciones con los datos del periodo
   var selOp = document.getElementById('filtro-operacion');
-  var currentOp = selOp.value;
+  var currentOp = selOp ? selOp.value : '';
   var todasOps = [...new Set(registrosData
     .filter(function(r){ return inPeriodo(getMarcaTemporalR(r), filtroActual); })
     .map(function(r){ return getField(r,['OPERACION','operacion']); })
@@ -1789,7 +1770,7 @@ function renderConsulta() {
   document.getElementById('c-ops').textContent   = ops.size;
 
   if (filtered.length === 0) {
-    document.getElementById('tbody-consulta').innerHTML = '<tr><td colspan="11" class="empty">Sin registros para el periodo seleccionado</td></tr>';
+    document.getElementById('tbody-consulta').innerHTML = '<tr><td colspan="11" class="empty">Sin registros en las ultimas 24 horas</td></tr>';
     return;
   }
 
