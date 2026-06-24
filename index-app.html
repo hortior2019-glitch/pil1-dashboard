@@ -1784,18 +1784,18 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
         <div id="corte-precio-material-lista" style="display:none;flex-direction:column;gap:8px;padding-left:4px"></div>
       </div>
 
-      <!-- Valor transporte: adicional fijo por viaje, separado del valor del material -->
+      <!-- Valor transporte: adicional por kg, separado del valor del material -->
       <div style="margin-top:16px;border-top:1px dashed var(--rule);padding-top:16px">
         <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px">
           <input type="checkbox" id="corte-cobrar-transporte" onchange="toggleCobrarTransporte()" style="width:18px;height:18px;accent-color:var(--gold)">
-          <span style="font-size:14px;color:var(--ink);font-weight:700">Cobrar un adicional de transporte por viaje</span>
+          <span style="font-size:14px;color:var(--ink);font-weight:700">Cobrar un adicional de transporte por kilo</span>
         </label>
         <div id="corte-transporte-wrap" style="display:none;align-items:flex-end;gap:16px;flex-wrap:wrap;padding-left:4px">
           <div style="display:flex;flex-direction:column;gap:5px">
-            <label style="font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-l)">Valor transporte por viaje (COP)</label>
-            <input type="number" id="corte-transporte-valor" placeholder="Ej: 25000" min="0" step="any" oninput="generarCorte()" style="border:1px solid var(--rule);background:var(--white);padding:9px 12px;font-size:14px;border-radius:4px;color:var(--ink);width:160px;font-family:'Source Sans 3',sans-serif">
+            <label style="font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-l)">Valor transporte por kg (COP)</label>
+            <input type="number" id="corte-transporte-valor" placeholder="Ej: 25" min="0" step="any" oninput="generarCorte()" style="border:1px solid var(--rule);background:var(--white);padding:9px 12px;font-size:14px;border-radius:4px;color:var(--ink);width:160px;font-family:'Source Sans 3',sans-serif">
           </div>
-          <div style="font-size:11px;color:var(--ink-l);max-width:280px">Se suma a cada viaje además del valor del material. En el corte aparecerán "Valor material", "Valor transporte" y el total combinado.</div>
+          <div style="font-size:11px;color:var(--ink-l);max-width:280px">Se multiplica por los kilos de cada registro y se suma al valor del material. En el corte aparecerán "Valor material", "Valor transporte" y el total combinado.</div>
         </div>
       </div>
     </div>
@@ -5687,8 +5687,8 @@ const CORTE_COLUMNAS_DISP = [
   { id:'empresa',  label:'Empresa / Operación', get:r => normEmpresa(r['OPERACION']||r['Operacion']||r['operacion']||r['OPERACIÓN']||'') },
   { id:'material', label:'Material / Residuo', get:r => (r['RESIDUO']||r['Residuo']||r['residuo']||'').trim() || 'Sin clasificar' },
   { id:'pesoNeto', label:'Peso neto (kg)',     get:r => getPesoNeto(r), num:true },
-  { id:'pesoEnt',  label:'Peso lleno (kg)',    get:r => parseFloat((r['PESO LLENO']||r['Peso Lleno']||r['peso lleno']||r['PESO ENTRADA  SEGÚN TICKET']||r['PESO ENTRADA  Según ticket']||r['PESO ENTRADA']||r['H']||'0').toString().replace(/[^0-9.]/g,''))||0, num:true },
-  { id:'pesoSal',  label:'Peso vacío (kg)',    get:r => parseFloat((r['PESO VACIO']||r['PESO VACÍO']||r['Peso Vacio']||r['peso vacio']||r['PESO SALIDA  SEGÚN TICKET']||r['PESO SALIDA  Según ticket']||r['PESO SALIDA']||r['I']||'0').toString().replace(/[^0-9.]/g,''))||0, num:true },
+  { id:'pesoEnt',  label:'Peso lleno (kg)',    get:r => parseFloat((r['PESO LLENO']||r['Peso Lleno']||r['peso lleno']||r['PESO ENTRADA  SEGÚN TICKET']||r['PESO ENTRADA  Según ticket']||r['PESO ENTRADA']||r['H']||'0').toString().replace(/[^0-9.]/g,''))||0, num:true, noTotal:true },
+  { id:'pesoSal',  label:'Peso vacío (kg)',    get:r => parseFloat((r['PESO VACIO']||r['PESO VACÍO']||r['Peso Vacio']||r['peso vacio']||r['PESO SALIDA  SEGÚN TICKET']||r['PESO SALIDA  Según ticket']||r['PESO SALIDA']||r['I']||'0').toString().replace(/[^0-9.]/g,''))||0, num:true, noTotal:true },
   { id:'placa',    label:'Placa',             get:r => (r['PLACA']||r['Placa']||r['placa']||'').trim() },
   { id:'conductor',label:'Conductor',         get:r => (r['CONDUCTOR - PRIMER NOMBRE Y PRIMER APELLIDO']||r['CONDUCTOR - PRIME NOMBRE Y PRIMER APELLIDO']||r['CONDUCTOR']||r['Conductor']||r['conductor']||'').trim() },
   { id:'ticket',   label:'N° Tiquete',        get:r => (r['NUMERO TIQUETE']||r['NÚMERO TIQUETE']||r['TIQUETE']||r['Tiquete']||r['tiquete']||r['TICKET']||'').trim() },
@@ -6226,8 +6226,8 @@ function generarCorte() {
     if (!tarifaTipo || tarifaValor <= 0) return 0;
     return tarifaTipo === 'viaje' ? tarifaValor : getPesoNeto(r) * tarifaValor;
   };
-  // Valor del TRANSPORTE de una fila (adicional fijo por viaje, independiente del material)
-  const valorTransporteDeFila = r => (cobrarTransporte && transporteValor > 0) ? transporteValor : 0;
+  // Valor del TRANSPORTE de una fila (adicional por kg, independiente del material)
+  const valorTransporteDeFila = r => (cobrarTransporte && transporteValor > 0) ? getPesoNeto(r) * transporteValor : 0;
   // Valor TOTAL de una fila = material + transporte
   const valorDeFila = r => valorMaterialDeFila(r) + valorTransporteDeFila(r);
 
@@ -6286,7 +6286,7 @@ function generarCorte() {
           <div style="font-family:'Playfair Display',serif;font-size:32px;font-weight:700;line-height:1.1">${prov}</div>
           <div style="font-size:13px;color:rgba(255,255,255,.85);margin-top:8px">${fmtF(ini)} 12:00 am — ${fmtF(cie)} 11:59 pm</div>
           ${tieneTarifaMaterial && !soloTotal ? `<div style="font-size:12px;color:rgba(255,255,255,.65);margin-top:4px">${precioPorMaterialOn ? 'Precio por material (ver tabla)' : 'Tarifa: '+fmtCOP(tarifaValor)+' por '+(tarifaTipo === 'viaje' ? 'viaje' : 'kg')}</div>` : ''}
-          ${tieneTransporte && !soloTotal ? `<div style="font-size:12px;color:rgba(255,255,255,.65);margin-top:2px">Transporte: ${fmtCOP(transporteValor)} por viaje</div>` : ''}
+          ${tieneTransporte && !soloTotal ? `<div style="font-size:12px;color:rgba(255,255,255,.65);margin-top:2px">Transporte: ${fmtCOP(transporteValor)} por kg</div>` : ''}
         </div>
         <div style="text-align:right;flex-shrink:0">
           <div style="font-family:'Libre Baskerville',serif;font-size:44px;font-weight:800;line-height:1;font-variant-numeric:lining-nums tabular-nums">${fmt(registros.length)}</div>
@@ -6326,7 +6326,7 @@ function generarCorte() {
     const regs = grupos[clave];
     // Totales de columnas numéricas
     const totales = {};
-    colsDef.forEach(c => { if (c.num) totales[c.id] = regs.reduce((s,r)=> s + (parseFloat(c.get(r))||0), 0); });
+    colsDef.forEach(c => { if (c.num && !c.noTotal) totales[c.id] = regs.reduce((s,r)=> s + (parseFloat(c.get(r))||0), 0); });
     // Valor monetario del grupo (material, transporte y total)
     let valorGrupoMaterial = 0, valorGrupoTransporte = 0, valorGrupo = 0;
     if (tieneTarifa) {
@@ -6371,7 +6371,8 @@ function generarCorte() {
         ? `<td class="num" style="color:${color}">${fmtCOP(valorGrupoMaterial)}</td><td class="num" style="color:${color}">${fmtCOP(valorGrupoTransporte)}</td><td class="num" style="color:${color}">${fmtCOP(valorGrupo)}</td>`
         : (mostrarColValor ? `<td class="num" style="color:${color}">${fmtCOP(valorGrupo)}</td>` : '');
       html += `<tr style="border-top:2px solid ${color};font-weight:800;background:${headColor}">` + colsDef.map((c,i) => {
-        if (c.num) return `<td class="num" style="color:${color}">${fmt(Math.round(totales[c.id]))}</td>`;
+        if (c.num && !c.noTotal) return `<td class="num" style="color:${color}">${fmt(Math.round(totales[c.id]))}</td>`;
+        if (c.num && c.noTotal) return '<td></td>';
         return i === 0 ? `<td style="color:${color}">TOTAL</td>` : '<td></td>';
       }).join('') + celdasTotalValor + '</tr>';
     }
@@ -6393,7 +6394,7 @@ function _valorMaterialFilaCorte(c, r) {
   return c.tarifaTipo === 'viaje' ? c.tarifaValor : getPesoNeto(r) * c.tarifaValor;
 }
 function _valorTransporteFilaCorte(c, r) {
-  return (c.cobrarTransporte && c.transporteValor > 0) ? c.transporteValor : 0;
+  return (c.cobrarTransporte && c.transporteValor > 0) ? getPesoNeto(r) * c.transporteValor : 0;
 }
 function _valorFilaCorte(c, r) {
   return _valorMaterialFilaCorte(c, r) + _valorTransporteFilaCorte(c, r);
@@ -6451,7 +6452,7 @@ function exportarCorteExcel() {
     rowsXml += `<Row><Cell ss:StyleID="subtitulo"><Data ss:Type="String">Tarifa: $${esc(Math.round(c.tarifaValor).toLocaleString('es-CO'))} por ${c.tarifaTipo === 'viaje' ? 'viaje' : 'kg'}</Data></Cell></Row>`;
   }
   if (c.tieneTransporte && !c.soloTotal) {
-    rowsXml += `<Row><Cell ss:StyleID="subtitulo"><Data ss:Type="String">Transporte: $${esc(Math.round(c.transporteValor).toLocaleString('es-CO'))} por viaje</Data></Cell></Row>`;
+    rowsXml += `<Row><Cell ss:StyleID="subtitulo"><Data ss:Type="String">Transporte: $${esc(Math.round(c.transporteValor).toLocaleString('es-CO'))} por kg</Data></Cell></Row>`;
   }
   // Valor total del corte (siempre que haya tarifa)
   const mostrarDosExcel = c.mostrarColValor && c.tieneTarifaMaterial && c.tieneTransporte;
@@ -6480,7 +6481,7 @@ function exportarCorteExcel() {
       ) + '</Row>';
     // Datos
     const totales = {};
-    c.colsDef.forEach(col => { if (col.num) totales[col.id] = 0; });
+    c.colsDef.forEach(col => { if (col.num && !col.noTotal) totales[col.id] = 0; });
     let valorGrupoMaterial = 0, valorGrupoTransporte = 0, valorGrupoTotal = 0;
     c.grupos[clave].forEach((r, idx) => {
       const esEspecial = (c.resaltarFestivos !== false) && esDomingoOFestivo(fechaYMDdeRegistro(r));
@@ -6503,7 +6504,7 @@ function exportarCorteExcel() {
         let v = col.get(r);
         if (col.num) {
           const n = parseFloat(v)||0;
-          totales[col.id] += n;
+          if (!col.noTotal) totales[col.id] += n;
           return `<Cell ss:StyleID="${styleZebraNum}"><Data ss:Type="Number">${Math.round(n)}</Data></Cell>`;
         }
         return `<Cell${styleZebra}><Data ss:Type="String">${esc(v)}</Data></Cell>`;
@@ -6515,7 +6516,8 @@ function exportarCorteExcel() {
     // Totales
     if (Object.keys(totales).length || c.mostrarColValor) {
       rowsXml += '<Row>' + c.colsDef.map((col,i) => {
-        if (col.num) return `<Cell ss:StyleID="total"><Data ss:Type="Number">${Math.round(totales[col.id])}</Data></Cell>`;
+        if (col.num && !col.noTotal) return `<Cell ss:StyleID="total"><Data ss:Type="Number">${Math.round(totales[col.id])}</Data></Cell>`;
+        if (col.num && col.noTotal) return '<Cell ss:StyleID="total"></Cell>';
         return i === 0 ? `<Cell ss:StyleID="totalLbl"><Data ss:Type="String">TOTAL</Data></Cell>` : '<Cell ss:StyleID="total"></Cell>';
       }).join('') + (mostrarDosExcel
           ? `<Cell ss:StyleID="total"><Data ss:Type="Number">${Math.round(valorGrupoMaterial)}</Data></Cell><Cell ss:StyleID="total"><Data ss:Type="Number">${Math.round(valorGrupoTransporte)}</Data></Cell><Cell ss:StyleID="total"><Data ss:Type="Number">${Math.round(valorGrupoTotal)}</Data></Cell>`
