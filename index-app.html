@@ -396,6 +396,12 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 /* ══ IFRAME PANELS ══ */
 .iframe-panel { width:100%; height:calc(100vh - 120px); border:none; display:block; }
 .panel-iframe-wrap { margin:-32px -40px; }
+/* ════════ INFORME / CERTIFICADO DE CORTE ════════ */
+#corte-informe .inf-field{display:flex;flex-direction:column;gap:5px}
+#corte-informe .inf-lbl{font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-l)}
+#corte-informe .inf-input{border:1px solid var(--rule);background:var(--white);padding:9px 11px;font-size:14px;border-radius:4px;color:var(--ink);font-family:'Source Sans 3',sans-serif;width:100%;box-sizing:border-box}
+#corte-informe .inf-fixed{background:var(--s2);border:1px solid var(--rule);padding:9px 11px;font-size:15px;font-weight:700;border-radius:4px;color:var(--navy)}
+
 /* ════════ DALAS SOLUTIONS — franjas de cumplimiento ════════ */
 #panel-dalas .dls-prog{display:flex;flex-wrap:wrap;align-items:flex-end;gap:16px;padding:16px 18px}
 .dls-prog-field{display:flex;flex-direction:column;gap:5px}
@@ -602,7 +608,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
         <label>Conductores turno noche</label>
         <input type="number" id="dls-noche" min="0" value="1" oninput="recalcDls()">
       </div>
-      <button class="dls-refresh" onclick="cargarDalasIndicadores()">↻ Actualizar indicadores</button>
+      <button class="dls-refresh" onclick="cargarDalasIndicadores()">Actualizar indicadores</button>
       <span class="dls-updated" id="dls-updated"></span>
     </div>
   </div>
@@ -1883,6 +1889,9 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   <!-- RESULTADO DEL CORTE -->
   <div id="corte-resultado"></div>
 
+  <!-- INFORME / CERTIFICADO DE FACTURACIÓN (se llena tras generar un corte) -->
+  <div id="corte-informe"></div>
+
   </div><!-- fin corte-contenido-protegido -->
 </div>
 
@@ -2100,6 +2109,7 @@ const PESTANAS_CONTROLABLES = [
   { id:'horasextras',     label:'Horas Extras' },
   { id:'accesos',         label:'Control Accesos' },
   { id:'kpi',             label:'KPIs Operarios' },
+  { id:'dalas',           label:'Dalas_Solutions' },
 ];
 
 // Config de permisos cargada: { usuario: [listaDePestañasPermitidas] }
@@ -6442,6 +6452,312 @@ function generarCorte() {
 
   html += '</div>';
   cont.innerHTML = html;
+
+  // Construir el informe/certificado de facturación en paralelo
+  renderInformeCorte();
+}
+
+// ── INFORME / CERTIFICADO DE FACTURACIÓN ──
+// Formato de pesos completo (sin abreviar) para el informe
+function fmtPesoInf(n) { return '$ ' + Math.round(n).toLocaleString('es-CO'); }
+// Estado: archivo de factura subido (link) por sesión
+let _informeFacturaLink = '';
+let _informeFacturaNombre = '';
+
+function renderInformeCorte() {
+  const cont = document.getElementById('corte-informe');
+  const c = window._corteActual;
+  if (!cont || !c) return;
+
+  // Materiales presentes en el corte
+  const registros = filtrarRegistrosCorte(c.prov, c.ini, c.cie);
+  const materiales = [...new Set(registros.map(r =>
+    (r['RESIDUO']||r['Residuo']||r['residuo']||'').trim() || 'Sin clasificar'
+  ))].sort();
+
+  // Nombre del corte sugerido (del campo de guardar favorito, si lo escribió)
+  const nombreSugerido = (document.getElementById('corte-fav-nombre')||{}).value || '';
+
+  const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const fmtF = s => { const d = new Date(s+'T00:00:00'); return d.getDate()+' '+MESES[d.getMonth()]+' '+d.getFullYear(); };
+  const periodo = fmtF(c.ini) + ' — ' + fmtF(c.cie);
+
+  cont.innerHTML = `
+    <div class="card" style="padding:0;overflow:hidden;margin-top:24px">
+      <div style="background:linear-gradient(135deg,var(--navy) 0%,#14492a 100%);padding:20px 24px;color:#fff">
+        <div style="font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,.7);margin-bottom:4px">Informe de certificación</div>
+        <div style="font-family:'Playfair Display',serif;font-size:22px;font-weight:700">Certificado de facturación del corte</div>
+      </div>
+      <div style="padding:24px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:20px">
+          <!-- OPERACIÓN (forzada, no editable) -->
+          <div class="inf-field">
+            <label class="inf-lbl">Operación</label>
+            <div class="inf-fixed">${c.prov}</div>
+          </div>
+          <!-- Nombre del corte -->
+          <div class="inf-field">
+            <label class="inf-lbl">Nombre del corte</label>
+            <input type="text" id="inf-nombre" value="${nombreSugerido.replace(/"/g,'&quot;')}" placeholder="Ej: Corte mayo Familia" class="inf-input">
+          </div>
+          <!-- Material a certificar -->
+          <div class="inf-field">
+            <label class="inf-lbl">Material que se certifica</label>
+            <select id="inf-material" onchange="recalcInforme()" class="inf-input">
+              ${materiales.length > 1 ? '<option value="__todos__">Todos los materiales</option>' : ''}
+              ${materiales.map(m => `<option value="${m.replace(/"/g,'&quot;')}">${m}</option>`).join('')}
+            </select>
+          </div>
+          <!-- Periodo (informativo) -->
+          <div class="inf-field">
+            <label class="inf-lbl">Periodo</label>
+            <div class="inf-fixed" style="font-size:13px">${periodo}</div>
+          </div>
+        </div>
+
+        <!-- Valores calculados automáticamente -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:20px;padding:18px;background:var(--s2);border-radius:8px">
+          <div>
+            <div class="inf-lbl">Sumatoria de viajes</div>
+            <div id="inf-viajes" style="font-family:'Libre Baskerville',serif;font-size:24px;font-weight:800;color:var(--navy)">—</div>
+          </div>
+          <div>
+            <div class="inf-lbl">Sumatoria KG (peso neto)</div>
+            <div id="inf-kg" style="font-family:'Libre Baskerville',serif;font-size:24px;font-weight:800;color:var(--navy)">—</div>
+          </div>
+          <div>
+            <div class="inf-lbl">Valor generado por el sistema</div>
+            <div id="inf-valor-sistema" style="font-family:'Libre Baskerville',serif;font-size:24px;font-weight:800;color:var(--gold)">—</div>
+          </div>
+        </div>
+
+        <!-- Precios (editables, prellenados con la config del corte) -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:20px">
+          <div class="inf-field">
+            <label class="inf-lbl">Precio disposición de material (por kg)</label>
+            <input type="number" id="inf-precio-disp" min="0" step="any" oninput="recalcInforme()" class="inf-input" placeholder="0">
+          </div>
+          <div class="inf-field">
+            <label class="inf-lbl" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="inf-cobrar-viaje" onchange="recalcInforme()" style="width:16px;height:16px;accent-color:var(--gold)">
+              Precio por viaje (si aplica)
+            </label>
+            <input type="number" id="inf-precio-viaje" min="0" step="any" oninput="recalcInforme()" class="inf-input" placeholder="0" style="margin-top:6px">
+          </div>
+        </div>
+
+        <!-- Datos de facturación (manuales) -->
+        <div style="border-top:1px solid var(--rule);padding-top:20px;margin-bottom:20px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--navy);margin-bottom:14px">Datos de facturación</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">
+            <div class="inf-field">
+              <label class="inf-lbl"># de factura</label>
+              <input type="text" id="inf-num-factura" placeholder="Ej: FE-1234" class="inf-input">
+            </div>
+            <div class="inf-field">
+              <label class="inf-lbl">Adjuntar factura</label>
+              <input type="file" id="inf-archivo" onchange="subirFacturaInforme(this)" class="inf-input" style="padding:6px">
+              <div id="inf-archivo-estado" style="font-size:11px;color:var(--ink-l);margin-top:4px"></div>
+            </div>
+            <div class="inf-field">
+              <label class="inf-lbl">Valor real facturado por proveedor</label>
+              <input type="number" id="inf-valor-real" min="0" step="any" oninput="recalcInforme()" class="inf-input" placeholder="0">
+            </div>
+          </div>
+        </div>
+
+        <!-- Pendiente por facturar (calculado, con color) -->
+        <div id="inf-pendiente-box" style="padding:18px 22px;border-radius:8px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+          <div>
+            <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;opacity:.85">Pendiente por facturar</div>
+            <div style="font-size:11px;opacity:.7;margin-top:2px" id="inf-pendiente-nota"></div>
+          </div>
+          <div id="inf-pendiente-valor" style="font-family:'Libre Baskerville',serif;font-size:30px;font-weight:800">—</div>
+        </div>
+
+        <!-- Observaciones -->
+        <div class="inf-field" style="margin-bottom:20px">
+          <label class="inf-lbl">Observaciones</label>
+          <textarea id="inf-observaciones" rows="3" placeholder="Notas, aclaraciones, acuerdos..." class="inf-input" style="resize:vertical;font-family:'Source Sans 3',sans-serif"></textarea>
+        </div>
+
+        <!-- Acciones -->
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <button onclick="guardarInformeCorte()" style="padding:11px 24px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Guardar informe</button>
+          <span id="inf-guardar-estado" style="font-size:12px;font-weight:700;min-height:16px"></span>
+        </div>
+      </div>
+    </div>`;
+
+  // Prellenar precios con la config del corte
+  const inpDisp = document.getElementById('inf-precio-disp');
+  if (inpDisp && c.tarifaTipo === 'kg' && c.tarifaValor > 0) inpDisp.value = c.tarifaValor;
+  if (c.cobrarTransporte && c.transporteValor > 0) {
+    const chkViaje = document.getElementById('inf-cobrar-viaje');
+    const inpViaje = document.getElementById('inf-precio-viaje');
+    // El transporte del corte es por kg; lo dejamos como referencia en precio por viaje solo si era tarifa por viaje
+  }
+  if (c.tarifaTipo === 'viaje' && c.tarifaValor > 0) {
+    const chkViaje = document.getElementById('inf-cobrar-viaje');
+    const inpViaje = document.getElementById('inf-precio-viaje');
+    if (chkViaje) chkViaje.checked = true;
+    if (inpViaje) inpViaje.value = c.tarifaValor;
+  }
+
+  recalcInforme();
+}
+
+// Recalcula los valores del informe según el material elegido y los precios
+function recalcInforme() {
+  const c = window._corteActual;
+  if (!c) return;
+  const matSel = (document.getElementById('inf-material')||{}).value || '';
+  const registros = filtrarRegistrosCorte(c.prov, c.ini, c.cie)
+    .filter(r => {
+      if (!matSel || matSel === '__todos__') return true;
+      return ((r['RESIDUO']||r['Residuo']||r['residuo']||'').trim() || 'Sin clasificar') === matSel;
+    });
+
+  const viajes = registros.length;
+  const kg = registros.reduce((s,r) => s + getPesoNeto(r), 0);
+
+  const precioDisp = parseFloat((document.getElementById('inf-precio-disp')||{}).value) || 0;
+  const cobrarViaje = (document.getElementById('inf-cobrar-viaje')||{}).checked;
+  const precioViaje = cobrarViaje ? (parseFloat((document.getElementById('inf-precio-viaje')||{}).value) || 0) : 0;
+
+  // Valor del sistema = (kg × precio disposición) + (viajes × precio por viaje)
+  const valorSistema = (kg * precioDisp) + (viajes * precioViaje);
+
+  // Pintar calculados
+  const elV = document.getElementById('inf-viajes'); if (elV) elV.textContent = fmt(viajes);
+  const elK = document.getElementById('inf-kg'); if (elK) elK.textContent = fmt(Math.round(kg)) + ' kg';
+  const elS = document.getElementById('inf-valor-sistema'); if (elS) elS.textContent = fmtPesoInf(valorSistema);
+
+  // Pendiente por facturar
+  const valorReal = parseFloat((document.getElementById('inf-valor-real')||{}).value);
+  const box = document.getElementById('inf-pendiente-box');
+  const elP = document.getElementById('inf-pendiente-valor');
+  const elN = document.getElementById('inf-pendiente-nota');
+  if (!box || !elP) return;
+
+  if (isNaN(valorReal)) {
+    // Aún no digita valor real → pendiente = todo el valor del sistema (rojo)
+    box.style.background = '#fde8e8';
+    box.style.color = '#b91c1c';
+    elP.textContent = '-' + fmtPesoInf(valorSistema);
+    if (elN) elN.textContent = 'Aún no se digita el valor facturado por el proveedor';
+  } else {
+    const diferencia = valorSistema - valorReal;
+    if (Math.abs(diferencia) < 0.5) {
+      // Coinciden → $0 verde
+      box.style.background = '#e6f4ea';
+      box.style.color = '#1a7f37';
+      elP.textContent = fmtPesoInf(0);
+      if (elN) elN.textContent = 'El valor facturado coincide con el del sistema';
+    } else {
+      // No coinciden → muestra el excedente (diferencia), rojo más claro
+      box.style.background = '#fef2f2';
+      box.style.color = '#dc6868';
+      elP.textContent = (diferencia > 0 ? '-' : '+') + fmtPesoInf(Math.abs(diferencia));
+      if (elN) elN.textContent = diferencia > 0
+        ? 'Falta facturar ' + fmtPesoInf(Math.abs(diferencia)) + ' respecto al sistema'
+        : 'El proveedor facturó ' + fmtPesoInf(Math.abs(diferencia)) + ' de más respecto al sistema';
+    }
+  }
+}
+
+// Sube el archivo de factura al Apps Script (Drive)
+function subirFacturaInforme(input) {
+  const estado = document.getElementById('inf-archivo-estado');
+  const file = input.files && input.files[0];
+  if (!file) return;
+  if (estado) { estado.style.color = 'var(--ink-l)'; estado.textContent = 'Subiendo archivo...'; }
+
+  const reader = new FileReader();
+  reader.onload = function() {
+    const base64 = reader.result.split(',')[1];
+    fetch(CORTES_FAV_API, {
+      method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ accion:'subirFactura', base64, nombreArchivo: file.name, mimeType: file.type })
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok && data.link) {
+          _informeFacturaLink = data.link;
+          _informeFacturaNombre = file.name;
+          if (estado) { estado.style.color = 'var(--green)'; estado.innerHTML = 'Archivo subido: <a href="'+data.link+'" target="_blank" style="color:var(--navy);font-weight:700">ver factura</a>'; }
+        } else {
+          if (estado) { estado.style.color = 'var(--red)'; estado.textContent = 'Error al subir: ' + (data.error||'desconocido'); }
+        }
+      })
+      .catch(e => {
+        console.error('Error subiendo factura:', e);
+        if (estado) { estado.style.color = 'var(--red)'; estado.textContent = 'Error de conexión al subir'; }
+      });
+  };
+  reader.readAsDataURL(file);
+}
+
+// Guarda el informe en el Sheet
+function guardarInformeCorte() {
+  const c = window._corteActual;
+  if (!c) return;
+  const estado = document.getElementById('inf-guardar-estado');
+  const matSel = (document.getElementById('inf-material')||{}).value || '';
+  const registros = filtrarRegistrosCorte(c.prov, c.ini, c.cie)
+    .filter(r => {
+      if (!matSel || matSel === '__todos__') return true;
+      return ((r['RESIDUO']||r['Residuo']||r['residuo']||'').trim() || 'Sin clasificar') === matSel;
+    });
+  const viajes = registros.length;
+  const kg = registros.reduce((s,r) => s + getPesoNeto(r), 0);
+  const precioDisp = parseFloat((document.getElementById('inf-precio-disp')||{}).value) || 0;
+  const cobrarViaje = (document.getElementById('inf-cobrar-viaje')||{}).checked;
+  const precioViaje = cobrarViaje ? (parseFloat((document.getElementById('inf-precio-viaje')||{}).value) || 0) : 0;
+  const valorSistema = (kg * precioDisp) + (viajes * precioViaje);
+  const valorReal = parseFloat((document.getElementById('inf-valor-real')||{}).value) || 0;
+
+  const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const fmtF = s => { const d = new Date(s+'T00:00:00'); return d.getDate()+' '+MESES[d.getMonth()]+' '+d.getFullYear(); };
+
+  const payload = {
+    accion: 'guardarInforme',
+    operacion: c.prov,
+    nombreCorte: (document.getElementById('inf-nombre')||{}).value || '',
+    material: matSel === '__todos__' ? 'Todos' : matSel,
+    viajes: viajes,
+    kgNeto: Math.round(kg),
+    precioDisposicion: precioDisp,
+    precioPorViaje: precioViaje,
+    valorSistema: Math.round(valorSistema),
+    numeroFactura: (document.getElementById('inf-num-factura')||{}).value || '',
+    linkFactura: _informeFacturaLink || '',
+    valorRealFacturado: valorReal,
+    observaciones: (document.getElementById('inf-observaciones')||{}).value || '',
+    periodo: fmtF(c.ini) + ' — ' + fmtF(c.cie)
+  };
+
+  if (estado) { estado.style.color = 'var(--ink-l)'; estado.textContent = 'Guardando informe...'; }
+  const timeout = setTimeout(() => {
+    if (estado) { estado.style.color = 'var(--green)'; estado.textContent = 'Informe enviado.'; }
+    setTimeout(() => { if (estado) estado.textContent = ''; }, 3000);
+  }, 12000);
+  fetch(CORTES_FAV_API, {
+    method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify(payload)
+  })
+    .then(r => r.json())
+    .then(data => {
+      clearTimeout(timeout);
+      if (estado) { estado.style.color = 'var(--green)'; estado.textContent = (data && data.ok) ? 'Informe guardado correctamente' : 'Informe guardado'; }
+      setTimeout(() => { if (estado) estado.textContent = ''; }, 3000);
+    })
+    .catch(e => {
+      clearTimeout(timeout);
+      console.warn('Respuesta no legible al guardar informe:', e);
+      if (estado) { estado.style.color = 'var(--green)'; estado.textContent = 'Informe guardado'; }
+      setTimeout(() => { if (estado) estado.textContent = ''; }, 3000);
+    });
 }
 
 // Helpers compartidos para exports: valor material, valor transporte y total de una fila
@@ -7550,7 +7866,7 @@ function renderPedidos(data) {
         cont.innerHTML = '<div class="dls-loading">No se pudieron cargar los indicadores.</div>';
       }
     } catch (e) {
-      cont.innerHTML = '<div class="dls-loading">⚠ Error de conexión al cargar indicadores.</div>';
+      cont.innerHTML = '<div class="dls-loading">Error de conexión al cargar indicadores.</div>';
     }
   };
 
