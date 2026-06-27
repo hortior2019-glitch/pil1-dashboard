@@ -396,6 +396,33 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 /* ══ IFRAME PANELS ══ */
 .iframe-panel { width:100%; height:calc(100vh - 120px); border:none; display:block; }
 .panel-iframe-wrap { margin:-32px -40px; }
+/* ════════ DALAS SOLUTIONS — franjas de cumplimiento ════════ */
+#panel-dalas .dls-prog{display:flex;flex-wrap:wrap;align-items:flex-end;gap:16px;padding:16px 18px}
+.dls-prog-field{display:flex;flex-direction:column;gap:5px}
+.dls-prog-field label{font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)}
+.dls-prog-field input{padding:7px 10px;font-size:14px;border:1px solid var(--rule);background:var(--bg);font-family:'Source Sans 3',sans-serif;color:var(--ink);width:120px}
+.dls-refresh{padding:8px 16px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);cursor:pointer;font-family:'Source Sans 3',sans-serif}
+.dls-refresh:hover{background:var(--s2)}
+.dls-updated{font-size:10px;color:var(--ink-l);margin-left:auto;align-self:center}
+.dls-loading{padding:30px;text-align:center;color:var(--ink-l);font-size:13px}
+.dls-card{background:var(--white);border:1px solid var(--rule);border-left:5px solid var(--ink-l);padding:15px 18px;margin-bottom:12px}
+.dls-card.ok{border-left-color:#2d8a4e}
+.dls-card.warn{border-left-color:#e0860a}
+.dls-card.fail{border-left-color:#ff1414}
+.dls-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:9px}
+.dls-name{font-family:'Source Sans 3',sans-serif;font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--ink)}
+.dls-count{font-family:'Libre Baskerville',serif;font-size:22px;color:var(--ink);white-space:nowrap}
+.dls-count .meta{font-size:14px;color:var(--ink-l)}
+.dls-band{height:11px;background:#ece9e3;overflow:hidden;border-radius:6px}
+.dls-fill{height:100%;border-radius:6px;transition:width .5s ease}
+.dls-card.ok .dls-fill{background:#2d8a4e}
+.dls-card.warn .dls-fill{background:#e0860a}
+.dls-card.fail .dls-fill{background:#ff1414}
+.dls-note{margin-top:8px;font-size:11px;color:var(--ink-m);display:flex;align-items:center;gap:7px}
+.dls-pill{font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:3px 9px;border-radius:20px}
+.dls-card.ok .dls-pill{background:var(--green-l);color:#1a5c35}
+.dls-card.warn .dls-pill{background:var(--orange-l);color:#7a3d00}
+.dls-card.fail .dls-pill{background:var(--red-l);color:#ff1414}
 </style>
 </head>
 <body>
@@ -491,6 +518,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   <div class="nav-sep"></div>
   <div class="nav-tab" data-panel="preopvolquetas" onclick="showPanel('preopvolquetas',this)"><span class="nav-lbl">Preop. Volquetas</span></div>
   <div class="nav-tab" data-panel="preopequipo" onclick="showPanel('preopequipo',this)"><span class="nav-lbl">Preop. Equipo Pesado</span></div>
+  <div class="nav-tab" data-panel="dalas" onclick="showPanel('dalas',this)"><span class="nav-lbl">Dalas Solutions</span></div>
   <div class="nav-sep"></div>
   <div class="nav-tab" data-panel="cortes" onclick="showPanel('cortes',this)"><span class="nav-lbl">Cortes a Proveedor</span></div>
   <div class="nav-sep"></div>
@@ -552,6 +580,38 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 <div class="status-bar" id="status-bar">Conectando con Google Sheets...</div>
 
 <div class="wrapper">
+
+<!-- ═══════════════════════════════════════════════════════════
+  PANEL: DALAS SOLUTIONS — Franjas de cumplimiento Bavaria (tiempo real)
+  - Lee getIndicadores del Apps Script del preoperacional
+  - Mismos indicadores que la app de conductores
+  ═══════════════════════════════════════════════════════════ -->
+<div class="panel" id="panel-dalas">
+  <div class="sec-hdr">
+    <div class="sec-title">Dalas Solutions — Cumplimiento Bavaria</div>
+    <div class="sec-sub">Indicadores del día en tiempo real · franjas de cumplimiento</div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="dls-prog">
+      <div class="dls-prog-field">
+        <label>Conductores turno día</label>
+        <input type="number" id="dls-dia" min="0" value="1" oninput="recalcDls()">
+      </div>
+      <div class="dls-prog-field">
+        <label>Conductores turno noche</label>
+        <input type="number" id="dls-noche" min="0" value="1" oninput="recalcDls()">
+      </div>
+      <button class="dls-refresh" onclick="cargarDalasIndicadores()">↻ Actualizar indicadores</button>
+      <span class="dls-updated" id="dls-updated"></span>
+    </div>
+  </div>
+
+  <div id="dls-container">
+    <div class="dls-loading">Cargando indicadores…</div>
+  </div>
+</div>
+<!-- /PANEL DALAS -->
 
 <!--
   ═══════════════════════════════════════════════════════════
@@ -2994,6 +3054,7 @@ function showPanel(id, el) {
     restaurarBotonesPeriodo();
   }
   if (id === 'accesos') renderAccesos();
+  if (id === 'dalas') { try { cargarDalasIndicadores(); } catch(e){} }
 
   // Re-renderizar gráficas del panel recién mostrado (las canvas dibujadas
   // mientras el panel estaba oculto salen en tamaño 0; aquí se corrigen).
@@ -7466,6 +7527,73 @@ function renderPedidos(data) {
     </tr>`;
   }).join('');
 }
+</script>
+<script>
+/* ════════ DALAS SOLUTIONS — indicadores en vivo ════════ */
+(function () {
+  const DALAS_URL = 'https://script.google.com/macros/s/AKfycby3cf76Wz-GSF4VM6iBlsUTknnUMlhe93eYVlX8xtiqhe6eQtNXUubXcPYtAWRgpqKWIw/exec';
+  let dalasData = null;
+
+  window.cargarDalasIndicadores = async function () {
+    const cont = document.getElementById('dls-container');
+    if (!cont) return;
+    cont.innerHTML = '<div class="dls-loading">Cargando indicadores…</div>';
+    try {
+      const res  = await fetch(DALAS_URL + '?action=getIndicadores');
+      const json = await res.json();
+      if (json && json.ok) {
+        dalasData = json;
+        recalcDls();
+        const u = document.getElementById('dls-updated');
+        if (u) u.textContent = 'Actualizado ' + new Date().toLocaleTimeString('es-CO');
+      } else {
+        cont.innerHTML = '<div class="dls-loading">No se pudieron cargar los indicadores.</div>';
+      }
+    } catch (e) {
+      cont.innerHTML = '<div class="dls-loading">⚠ Error de conexión al cargar indicadores.</div>';
+    }
+  };
+
+  function bandClass(done, target) {
+    if (target <= 0)    return 'ok';
+    if (done >= target) return 'ok';
+    if (done > 0)       return 'warn';
+    return 'fail';
+  }
+  function statusText(c) { return c === 'ok' ? 'Cumple' : c === 'warn' ? 'Parcial' : 'Sin avance'; }
+
+  function card(name, done, target, note) {
+    const c = bandClass(done, target);
+    let pct;
+    if (c === 'fail')      pct = 100;   // sin avance → barra llena en rojo violento
+    else if (c === 'ok')   pct = 100;   // cumple     → barra llena en verde
+    else pct = (target > 0 ? Math.min(100, Math.round(done / target * 100)) : (done > 0 ? 100 : 0));
+    return '<div class="dls-card ' + c + '">' +
+        '<div class="dls-top">' +
+          '<span class="dls-name">' + name + '</span>' +
+          '<span class="dls-count">' + done + '<span class="meta"> / ' + target + '</span></span>' +
+        '</div>' +
+        '<div class="dls-band"><div class="dls-fill" style="width:' + pct + '%"></div></div>' +
+        '<div class="dls-note"><span class="dls-pill">' + statusText(c) + '</span>' + (note || '') + '</div>' +
+      '</div>';
+  }
+
+  window.recalcDls = function () {
+    if (!dalasData) return;
+    const dia   = parseInt(document.getElementById('dls-dia').value)   || 0;
+    const noche = parseInt(document.getElementById('dls-noche').value) || 0;
+    const cond  = dia + noche;
+    const d = dalasData;
+    const cont = document.getElementById('dls-container');
+    let h = '';
+    h += card('Preoperacionales (antes 9:00 a. m.)', d.preop.antes9, 5, 'Total registrados hoy: ' + d.preop.total);
+    h += card('Monitoreo diario OutSafety', d.monitoreo.diario, cond, 'Meta = conductores programados (' + cond + ')');
+    h += card('Monitoreo semanal OutSafety', d.monitoreo.semanal, 1, 'Esta semana (L–V)');
+    h += card('Monitoreo mensual OutSafety', d.monitoreo.mensual, 1, 'Este mes');
+    h += card('Alcoholimetrías', d.alcohol.total, cond, 'Día: ' + d.alcohol.dia + ' · Noche: ' + d.alcohol.noche);
+    cont.innerHTML = h;
+  };
+})();
 </script>
 </body>
 </html>
