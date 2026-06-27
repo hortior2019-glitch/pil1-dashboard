@@ -1492,6 +1492,28 @@ function kpiCard(name, done, target, note) {
     '</div>';
 }
 
+// Tarjeta especial de preoperacionales:
+//  verde  = los 5 registrados antes de 9:00 a. m.
+//  naranja= hay registros pero no los 5 a tiempo (registrado, fuera de hora)
+//  rojo   = ningún registro hoy
+function kpiPreop(antes9, total) {
+  const target = 5;
+  let cls, pct;
+  if (total <= 0)            { cls = 'fail'; pct = 100; }
+  else if (antes9 >= target) { cls = 'ok';   pct = 100; }
+  else { cls = 'warn'; pct = Math.min(100, Math.round(Math.min(total, target) / target * 100)); }
+  const status = cls === 'ok' ? 'A tiempo' : cls === 'warn' ? 'No a tiempo' : 'Sin avance';
+  return '<div class="kpi-card ' + cls + '">' +
+      '<div class="kpi-top">' +
+        '<span class="kpi-name">Preoperacionales (antes 9:00 a. m.)</span>' +
+        '<span class="kpi-count">' + total + '<span class="meta"> / ' + target + '</span></span>' +
+      '</div>' +
+      '<div class="kpi-band"><div class="kpi-fill" style="width:' + pct + '%"></div></div>' +
+      '<div class="kpi-note"><span class="kpi-status-pill">' + status + '</span>' +
+        antes9 + ' a tiempo (antes 9:00 a. m.)</div>' +
+    '</div>';
+}
+
 function recalcularIndicadores() {
   if (!indicadoresData) return;
   const dia   = parseInt(document.getElementById('prog-dia').value)   || 0;
@@ -1501,8 +1523,7 @@ function recalcularIndicadores() {
   const cont = document.getElementById('kpi-container');
 
   let html = '';
-  html += kpiCard('Preoperacionales (antes 9:00 a. m.)', d.preop.antes9, 5,
-                  'Total registrados hoy: ' + d.preop.total);
+  html += kpiPreop(d.preop.antes9, d.preop.total);
   html += kpiCard('Monitoreo diario OutSafety', d.monitoreo.diario, conductores,
                   'Meta = conductores programados (' + conductores + ')');
   html += kpiCard('Monitoreo semanal OutSafety', d.monitoreo.semanal, 1, 'Esta semana (L–V)');
