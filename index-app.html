@@ -7104,9 +7104,16 @@ function renderInformesGuardados() {
   });
 
   // 2) Informes que NO corresponden a ningún favorito (ej: creados manualmente) → también mostrarlos
+  // Se deduplica por id Y por nombre+operación para evitar mostrar el mismo corte dos veces.
+  const claveItem = it => ((it.nombreCorte||'').trim().toLowerCase() + '||' + (it.operacion||'').trim().toLowerCase());
+  const clavesYaMostradas = new Set(items.map(claveItem));
   _informesGuardados.forEach(inf => {
-    const yaIncluido = items.find(it => it.id === inf.id);
-    if (!yaIncluido) items.push({ ...inf, favIndex: -1 });
+    const yaPorId = items.find(it => it.id === inf.id);
+    const yaPorNombre = clavesYaMostradas.has(claveItem(inf));
+    if (!yaPorId && !yaPorNombre) {
+      items.push({ ...inf, favIndex: -1 });
+      clavesYaMostradas.add(claveItem(inf));
+    }
   });
 
   if (items.length === 0) {
@@ -7164,7 +7171,7 @@ function renderInformesGuardados() {
       <!-- Header con logo y color del proveedor -->
       <div style="background:linear-gradient(135deg,${color} 0%,${hexToRgba(color,.8)} 100%);padding:18px 22px;display:flex;align-items:center;gap:16px;position:relative;overflow:hidden">
         <div style="position:absolute;right:-40px;top:-40px;width:160px;height:160px;border-radius:50%;background:rgba(255,255,255,.07);pointer-events:none"></div>
-        ${logo ? `<div style="background:#fff;border-radius:12px;padding:9px;width:62px;height:62px;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.12);position:relative;z-index:1"><img src="${logo}" style="max-width:100%;max-height:100%;object-fit:contain" onerror="this.parentElement.style.display='none'"></div>` : ''}
+        ${logo ? `<div style="background:#fff;border-radius:14px;padding:11px;width:86px;height:86px;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.12);position:relative;z-index:1"><img src="${logo}" style="max-width:100%;max-height:100%;object-fit:contain" onerror="this.parentElement.style.display='none'"></div>` : ''}
         <div style="flex:1;min-width:0;color:#fff;position:relative;z-index:1">
           <div style="font-family:'Playfair Display',serif;font-size:19px;font-weight:700;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${inf.nombreCorte || inf.operacion}</div>
           <div style="font-size:12px;color:rgba(255,255,255,.82);margin-top:2px;font-weight:500">${inf.operacion}${inf.material && inf.material!=='Todos' ? ' · '+inf.material : ''}</div>
@@ -7189,10 +7196,13 @@ function renderInformesGuardados() {
       </div>
 
       <div style="padding:20px 22px">
-        <!-- Config y periodo -->
-        <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--rule-l)">
-          <div style="font-size:13px;color:var(--ink);font-weight:600">${inf.periodo || '—'}</div>
-          ${inf.favorito ? `<div style="font-size:11px;color:var(--ink-l)">${(inf.favorito.colsSel||[]).length} columnas${inf.favorito.sepMaterial?' · por material':''}${inf.favorito.diaIni?' · día '+inf.favorito.diaIni+' al '+inf.favorito.diaCie:''}${inf.favorito.tarifaTipo?' · $'+Math.round(inf.favorito.tarifaValor).toLocaleString('es-CO')+'/'+(inf.favorito.tarifaTipo==='viaje'?'viaje':'kg'):''}</div>` : ''}
+        <!-- Periodo (destacado) y config -->
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--rule-l)">
+          <div>
+            <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">Periodo</div>
+            <div style="font-family:'Libre Baskerville',serif;font-size:18px;font-weight:800;color:var(--navy);line-height:1.1">${inf.periodo || '—'}</div>
+          </div>
+          ${inf.favorito ? `<div style="font-size:11px;color:var(--ink-l);text-align:right">${(inf.favorito.colsSel||[]).length} columnas${inf.favorito.sepMaterial?' · por material':''}${inf.favorito.diaIni?' · día '+inf.favorito.diaIni+' al '+inf.favorito.diaCie:''}${inf.favorito.tarifaTipo?' · $'+Math.round(inf.favorito.tarifaValor).toLocaleString('es-CO')+'/'+(inf.favorito.tarifaTipo==='viaje'?'viaje':'kg'):''}</div>` : ''}
         </div>
 
         <!-- Estado de facturación (solo lectura) -->
@@ -7610,6 +7620,13 @@ function crearInformeDesdeFavorito(nombre, prov, ini, cie) {
   const c = window._corteActual;
   // Solo si el favorito corresponde al corte actualmente generado
   if (c.prov !== prov || c.ini !== ini || c.cie !== cie) return;
+
+  // No crear si ya existe un informe con ese nombre + operación (evita duplicados)
+  const yaExiste = (_informesGuardados||[]).find(inf =>
+    (inf.nombreCorte||'').trim().toLowerCase() === (nombre||'').trim().toLowerCase() &&
+    (inf.operacion||'').trim().toLowerCase() === (prov||'').trim().toLowerCase()
+  );
+  if (yaExiste) { setTimeout(cargarInformesGuardados, 400); return; }
 
   const registros = filtrarRegistrosCorte(prov, ini, cie);
   if (registros.length === 0) return;
