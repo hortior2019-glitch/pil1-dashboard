@@ -6808,21 +6808,92 @@ function cargarInformesGuardados() {
     });
 }
 
+// Calcula viajes/kg/valor de un favorito al momento, usando su periodo (patrón de día → periodo actual)
+function _calcularValoresFavorito(f) {
+  // Determinar el rango: si tiene patrón de día, usar periodo actual; si no, las fechas guardadas
+  let ini = f.ini, cie = f.cie;
+  if (f.diaIni && f.diaCie) {
+    const hoy = new Date();
+    const cierre = new Date(hoy.getFullYear(), hoy.getMonth(), f.diaCie);
+    const inicio = new Date(hoy.getFullYear(), hoy.getMonth()-1, f.diaIni);
+    const ymd = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    ini = ymd(inicio); cie = ymd(cierre);
+  }
+  const registros = filtrarRegistrosCorte(f.prov, ini, cie);
+  const viajes = registros.length;
+  const kg = registros.reduce((s,r) => s + getPesoNeto(r), 0);
+
+  // Reconstruir config mínima de tarifa para calcular valor
+  let preciosMaterial = {};
+  try { preciosMaterial = f.preciosMaterialJson ? JSON.parse(f.preciosMaterialJson) : {}; } catch(e) {}
+  const cfg = {
+    tarifaTipo: f.tarifaTipo || '',
+    tarifaValor: parseFloat(f.tarifaValor) || 0,
+    precioPorMaterialOn: !!f.precioPorMaterial,
+    preciosMaterial: preciosMaterial,
+    cobrarTransporte: !!f.cobrarTransporte,
+    transporteValor: parseFloat(f.transporteValor) || 0
+  };
+  const valorSistema = registros.reduce((s,r) => s + _valorFilaCorte(cfg, r), 0);
+
+  const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const fmtF = s => { const d = new Date(s+'T00:00:00'); return d.getDate()+' '+MESES[d.getMonth()]+' '+d.getFullYear(); };
+
+  return { viajes, kgNeto: Math.round(kg), valorSistema: Math.round(valorSistema), periodo: fmtF(ini)+' — '+fmtF(cie) };
+}
+
 function renderInformesGuardados() {
   const card = document.getElementById('corte-resumen-card');
   const lista = document.getElementById('corte-resumen-lista');
   if (!lista) return;
 
-  if (_informesGuardados.length === 0) {
+  // Fusionar: cada favorito → su informe guardado si existe; si no, calcular al momento
+  const favs = _cortesFavoritosCache || [];
+  const items = [];
+
+  // 1) Por cada favorito, buscar si ya tiene informe (match por nombre + operación)
+  favs.forEach(f => {
+    const infExistente = _informesGuardados.find(inf =>
+      (inf.nombreCorte||'').trim().toLowerCase() === (f.nombre||'').trim().toLowerCase() &&
+      (inf.operacion||'').trim().toLowerCase() === (f.prov||'').trim().toLowerCase()
+    );
+    if (infExistente) {
+      items.push(infExistente);
+    } else {
+      // Favorito sin informe → calcular valores al momento
+      const calc = _calcularValoresFavorito(f);
+      items.push({
+        id: '__fav__' + (f.id || f.nombre),
+        esFavoritoSinInforme: true,
+        favorito: f,
+        operacion: f.prov,
+        nombreCorte: f.nombre,
+        material: 'Todos',
+        viajes: calc.viajes,
+        kgNeto: calc.kgNeto,
+        valorSistema: calc.valorSistema,
+        numeroFactura: '',
+        linkFactura: '',
+        valorRealFacturado: 0,
+        observaciones: '',
+        periodo: calc.periodo
+      });
+    }
+  });
+
+  // 2) Informes que NO corresponden a ningún favorito (ej: creados manualmente) → también mostrarlos
+  _informesGuardados.forEach(inf => {
+    const yaIncluido = items.find(it => it.id === inf.id);
+    if (!yaIncluido) items.push(inf);
+  });
+
+  if (items.length === 0) {
     if (card) card.style.display = 'none';
     return;
   }
   if (card) card.style.display = '';
 
-  // Más recientes primero
-  const ordenados = [..._informesGuardados].reverse();
-
-  lista.innerHTML = ordenados.map(inf => {
+  lista.innerHTML = items.map(inf => {
     const color = getClientColor(inf.operacion) || '#1a5c35';
     const logo = getClientLogo(inf.operacion);
     const valorSistema = parseFloat(inf.valorSistema) || 0;
@@ -6959,16 +7030,17 @@ function guardarTarjetaInforme(id) {
   const fileInfo = document.getElementById('resf-fileinfo-'+id);
   const linkNuevo = (fileInfo && fileInfo.dataset.link) ? fileInfo.dataset.link : (inf.linkFactura || '');
 
+  // Si es un favorito sin informe (id ficticio __fav__), crear informe nuevo (sin enviar id)
+  const esFavSinInforme = inf.esFavoritoSinInforme === true;
   const payload = {
     accion: 'guardarInforme',
-    id: id, // id existente → actualiza la fila
     operacion: inf.operacion,
     nombreCorte: inf.nombreCorte,
     material: inf.material,
     viajes: inf.viajes,
     kgNeto: inf.kgNeto,
-    precioDisposicion: inf.precioDisposicion,
-    precioPorViaje: inf.precioPorViaje,
+    precioDisposicion: inf.precioDisposicion || 0,
+    precioPorViaje: inf.precioPorViaje || 0,
     valorSistema: inf.valorSistema,
     numeroFactura: numFactura,
     linkFactura: linkNuevo,
@@ -6976,6 +7048,8 @@ function guardarTarjetaInforme(id) {
     observaciones: inf.observaciones || '',
     periodo: inf.periodo
   };
+  // Solo enviar id si es un informe real existente (para actualizar la fila)
+  if (!esFavSinInforme) payload.id = id;
 
   if (estado) { estado.style.color = 'var(--ink-l)'; estado.textContent = 'Guardando...'; }
   const timeout = setTimeout(() => { if (estado) { estado.style.color = 'var(--green)'; estado.textContent = 'Guardado.'; } setTimeout(cargarInformesGuardados, 500); }, 10000);
@@ -6999,6 +7073,11 @@ function guardarTarjetaInforme(id) {
 
 // Elimina un informe del resumen
 function eliminarTarjetaInforme(id) {
+  // Si es un favorito sin informe, no hay nada que borrar en la hoja Informes
+  if (id && id.indexOf('__fav__') === 0) {
+    alert('Este corte aún no tiene factura registrada. Para quitarlo, elimina el corte favorito desde la lista de arriba.');
+    return;
+  }
   if (!confirm('¿Eliminar este informe del resumen de facturación?')) return;
   fetch(CORTES_FAV_API, {
     method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
@@ -7217,6 +7296,8 @@ async function cargarCortesFavoritosRemoto() {
   }
   if (loadingEl) loadingEl.textContent = '';
   renderCortesFavoritos();
+  // Re-renderizar el resumen de facturación (que ahora también lista los favoritos)
+  renderInformesGuardados();
 }
 
 function guardarCorteFavorito() {
