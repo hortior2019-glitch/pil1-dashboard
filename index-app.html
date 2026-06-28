@@ -1821,6 +1821,25 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
         <input type="checkbox" id="corte-resaltar-festivos" checked onchange="generarCorte()" style="width:18px;height:18px;accent-color:#b45309">
         <span style="font-size:14px;color:var(--ink)">Resaltar domingos y festivos de Colombia</span>
       </label>
+
+      <!-- Rellenar pesos netos faltantes (0 o 1) con un promedio -->
+      <div style="margin-top:14px;border-top:1px dashed var(--rule-l);padding-top:14px">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+          <input type="checkbox" id="corte-rellenar-peso" onchange="toggleRellenarPeso()" style="width:18px;height:18px;accent-color:var(--navy)">
+          <span style="font-size:14px;color:var(--ink);font-weight:700">Rellenar pesos netos faltantes (0 o 1 kg) con un promedio</span>
+        </label>
+        <div id="corte-rellenar-peso-opts" style="display:none;flex-direction:column;gap:8px;margin-top:10px;padding-left:28px">
+          <label style="display:flex;align-items:center;gap:9px;cursor:pointer">
+            <input type="radio" name="corte-rellenar-modo" value="corte" checked onchange="generarCorte()" style="width:16px;height:16px;accent-color:var(--navy)">
+            <span style="font-size:13px;color:var(--ink)">Opción 1 · Promedio de todo el corte (todas las placas con peso válido)</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:9px;cursor:pointer">
+            <input type="radio" name="corte-rellenar-modo" value="placa" onchange="generarCorte()" style="width:16px;height:16px;accent-color:var(--navy)">
+            <span style="font-size:13px;color:var(--ink)">Opción 2 · Promedio de la misma placa en este corte</span>
+          </label>
+          <div style="font-size:11px;color:var(--ink-l);margin-top:2px">El peso estimado reemplaza los valores en 0 o 1 y cuenta en los totales y el valor del corte. Si una placa no tiene ningún peso válido (Opción 2), se usa el promedio del corte como respaldo.</div>
+        </div>
+      </div>
     </div>
 
     <!-- Tarifa: valor por kg o por viaje -->
@@ -2486,6 +2505,58 @@ function getPesoNeto(r) {
   var e = parseFloat((r['PESO LLENO']||r['Peso Lleno']||r['peso lleno']||r['PESO ENTRADA  SEGÚN TICKET']||r['PESO ENTRADA  Según ticket']||r['PESO ENTRADA Según ticket']||r['PESO ENTRADA']||r['H']||'0').toString().replace(/[^0-9.]/g,''))||0;
   var s = parseFloat((r['PESO VACIO']||r['PESO VACÍO']||r['Peso Vacio']||r['peso vacio']||r['PESO SALIDA  SEGÚN TICKET']||r['PESO SALIDA  Según ticket']||r['PESO SALIDA Según ticket']||r['PESO SALIDA']||r['I']||'0').toString().replace(/[^0-9.]/g,''))||0;
   return Math.max(0, e - s);
+}
+
+// Placa de un registro (para promedios por placa)
+function getPlacaReg(r) {
+  return (r['PLACA']||r['Placa']||r['placa']||'').trim().toUpperCase();
+}
+
+// Estado del relleno de pesos para el corte actual (se calcula al generar el corte)
+let _rellenoPesoActivo = false;
+let _rellenoPesoModo = 'corte';      // 'corte' | 'placa'
+let _rellenoPromedioCorte = 0;        // promedio global de pesos válidos
+let _rellenoPromedioPlaca = {};       // promedio por placa
+
+// Calcula los promedios de relleno a partir de los registros del corte.
+// "Peso válido" = peso neto real > 1 (ignora 0 y 1, que son los que se rellenan).
+function calcularPromediosRelleno(registros) {
+  _rellenoPromedioPlaca = {};
+  let sumaCorte = 0, nCorte = 0;
+  const porPlaca = {}; // placa → {suma, n}
+  registros.forEach(r => {
+    const peso = getPesoNeto(r);
+    if (peso > 1) {
+      sumaCorte += peso; nCorte++;
+      const pl = getPlacaReg(r);
+      if (pl) {
+        if (!porPlaca[pl]) porPlaca[pl] = { suma:0, n:0 };
+        porPlaca[pl].suma += peso; porPlaca[pl].n++;
+      }
+    }
+  });
+  _rellenoPromedioCorte = nCorte > 0 ? (sumaCorte / nCorte) : 0;
+  Object.keys(porPlaca).forEach(pl => {
+    _rellenoPromedioPlaca[pl] = porPlaca[pl].n > 0 ? (porPlaca[pl].suma / porPlaca[pl].n) : 0;
+  });
+}
+
+// Peso neto ajustado: si el relleno está activo y el peso real es 0 o 1, devuelve el promedio
+// (por placa o por corte según la opción). Si no, devuelve el peso real.
+function pesoNetoAjustado(r) {
+  const real = getPesoNeto(r);
+  if (!_rellenoPesoActivo) return real;
+  if (real > 1) return real; // peso válido, no se toca
+  // Peso faltante (0 o 1): rellenar con promedio
+  if (_rellenoPesoModo === 'placa') {
+    const pl = getPlacaReg(r);
+    const prom = pl ? _rellenoPromedioPlaca[pl] : 0;
+    if (prom && prom > 0) return prom;
+    // Respaldo: promedio del corte si la placa no tiene pesos válidos
+    return _rellenoPromedioCorte > 0 ? _rellenoPromedioCorte : real;
+  }
+  // Modo corte
+  return _rellenoPromedioCorte > 0 ? _rellenoPromedioCorte : real;
 }
 
 function parseCSV(text) {
@@ -5768,7 +5839,7 @@ const CORTE_COLUMNAS_DISP = [
   { id:'hora',     label:'Hora disposición',  get:r => (r['HORA DISPOSICION PLANTA']||r['HORA DISPOSICION']||'').trim() },
   { id:'empresa',  label:'Empresa / Operación', get:r => normEmpresa(r['OPERACION']||r['Operacion']||r['operacion']||r['OPERACIÓN']||'') },
   { id:'material', label:'Material / Residuo', get:r => (r['RESIDUO']||r['Residuo']||r['residuo']||'').trim() || 'Sin clasificar' },
-  { id:'pesoNeto', label:'Peso neto (kg)',     get:r => getPesoNeto(r), num:true },
+  { id:'pesoNeto', label:'Peso neto (kg)',     get:r => pesoNetoAjustado(r), num:true },
   { id:'pesoEnt',  label:'Peso lleno (kg)',    get:r => parseFloat((r['PESO LLENO']||r['Peso Lleno']||r['peso lleno']||r['PESO ENTRADA  SEGÚN TICKET']||r['PESO ENTRADA  Según ticket']||r['PESO ENTRADA']||r['H']||'0').toString().replace(/[^0-9.]/g,''))||0, num:true, noTotal:true },
   { id:'pesoSal',  label:'Peso vacío (kg)',    get:r => parseFloat((r['PESO VACIO']||r['PESO VACÍO']||r['Peso Vacio']||r['peso vacio']||r['PESO SALIDA  SEGÚN TICKET']||r['PESO SALIDA  Según ticket']||r['PESO SALIDA']||r['I']||'0').toString().replace(/[^0-9.]/g,''))||0, num:true, noTotal:true },
   { id:'placa',    label:'Placa',             get:r => (r['PLACA']||r['Placa']||r['placa']||'').trim() },
@@ -6257,6 +6328,14 @@ function toggleCobrarTransporte() {
   generarCorte();
 }
 
+// Muestra/oculta las opciones de relleno de peso y regenera
+function toggleRellenarPeso() {
+  const chk = document.getElementById('corte-rellenar-peso');
+  const opts = document.getElementById('corte-rellenar-peso-opts');
+  if (opts) opts.style.display = (chk && chk.checked) ? 'flex' : 'none';
+  generarCorte();
+}
+
 function onPrecioMaterialInput(input) {
   const mat = input.dataset.material;
   const val = parseFloat(input.value);
@@ -6309,6 +6388,12 @@ function generarCorte() {
     return;
   }
 
+  // Relleno de pesos faltantes (0 o 1) con promedio, si está activo
+  _rellenoPesoActivo = (document.getElementById('corte-rellenar-peso')||{}).checked;
+  const modoEl = document.querySelector('input[name="corte-rellenar-modo"]:checked');
+  _rellenoPesoModo = modoEl ? modoEl.value : 'corte';
+  if (_rellenoPesoActivo) calcularPromediosRelleno(registros);
+
   const colsDef = colsSel.map(id => CORTE_COLUMNAS_DISP.find(c => c.id === id)).filter(Boolean);
 
   // ¿Precio por material activo? (solo aplica si la operación tiene >1 material y el checkbox está marcado)
@@ -6323,13 +6408,13 @@ function generarCorte() {
     if (precioPorMaterialOn) {
       // Precio por material × kg de esa fila
       const p = _cortePreciosMaterial[matDe(r)] || 0;
-      return getPesoNeto(r) * p;
+      return pesoNetoAjustado(r) * p;
     }
     if (!tarifaTipo || tarifaValor <= 0) return 0;
-    return tarifaTipo === 'viaje' ? tarifaValor : getPesoNeto(r) * tarifaValor;
+    return tarifaTipo === 'viaje' ? tarifaValor : pesoNetoAjustado(r) * tarifaValor;
   };
   // Valor del TRANSPORTE de una fila (adicional por kg, independiente del material)
-  const valorTransporteDeFila = r => (cobrarTransporte && transporteValor > 0) ? getPesoNeto(r) * transporteValor : 0;
+  const valorTransporteDeFila = r => (cobrarTransporte && transporteValor > 0) ? pesoNetoAjustado(r) * transporteValor : 0;
   // Valor TOTAL de una fila = material + transporte
   const valorDeFila = r => valorMaterialDeFila(r) + valorTransporteDeFila(r);
 
@@ -6670,7 +6755,7 @@ function recalcInforme() {
     });
 
   const viajes = registros.length;
-  const kg = registros.reduce((s,r) => s + getPesoNeto(r), 0);
+  const kg = registros.reduce((s,r) => s + pesoNetoAjustado(r), 0);
 
   const precioDisp = parseFloat((document.getElementById('inf-precio-disp')||{}).value) || 0;
   const cobrarViaje = (document.getElementById('inf-cobrar-viaje')||{}).checked;
@@ -6761,7 +6846,7 @@ function guardarInformeCorte() {
       return ((r['RESIDUO']||r['Residuo']||r['residuo']||'').trim() || 'Sin clasificar') === matSel;
     });
   const viajes = registros.length;
-  const kg = registros.reduce((s,r) => s + getPesoNeto(r), 0);
+  const kg = registros.reduce((s,r) => s + pesoNetoAjustado(r), 0);
   const precioDisp = parseFloat((document.getElementById('inf-precio-disp')||{}).value) || 0;
   const cobrarViaje = (document.getElementById('inf-cobrar-viaje')||{}).checked;
   const precioViaje = cobrarViaje ? (parseFloat((document.getElementById('inf-precio-viaje')||{}).value) || 0) : 0;
@@ -6848,7 +6933,10 @@ function _calcularValoresFavorito(f) {
   }
   const registros = filtrarRegistrosCorte(f.prov, ini, cie);
   const viajes = registros.length;
-  const kg = registros.reduce((s,r) => s + getPesoNeto(r), 0);
+  // En la previsualización de la lista no se aplica relleno (usa pesos reales)
+  const _prevRelleno = _rellenoPesoActivo;
+  _rellenoPesoActivo = false;
+  const kg = registros.reduce((s,r) => s + pesoNetoAjustado(r), 0);
 
   // Reconstruir config mínima de tarifa para calcular valor
   let preciosMaterial = {};
@@ -6862,6 +6950,7 @@ function _calcularValoresFavorito(f) {
     transporteValor: parseFloat(f.transporteValor) || 0
   };
   const valorSistema = registros.reduce((s,r) => s + _valorFilaCorte(cfg, r), 0);
+  _rellenoPesoActivo = _prevRelleno; // restaurar estado de relleno
 
   const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
   const fmtF = s => { const d = new Date(s+'T00:00:00'); return d.getDate()+' '+MESES[d.getMonth()]+' '+d.getFullYear(); };
@@ -6913,9 +7002,41 @@ function togglePaso2() {
   if (flecha) flecha.textContent = oculto ? '▴ ocultar' : '▾ editar columnas y tarifa';
 }
 
+// Restablece TODOS los controles del Paso 2 a su estado por defecto (sin columnas marcadas,
+// sin agrupaciones, sin tarifa; solo "Resaltar festivos" queda activo por defecto)
+function limpiarSeleccionPaso2() {
+  // Desmarcar todas las columnas
+  document.querySelectorAll('.corte-col-chk').forEach(chk => { chk.checked = false; });
+  _ordenColumnas = [];
+  if (typeof actualizarNumerosColumnas === 'function') actualizarNumerosColumnas();
+  // Opciones de agrupación
+  const sm = document.getElementById('corte-separar-material'); if (sm) sm.checked = false;
+  const se = document.getElementById('corte-separar-empresa'); if (se) se.checked = false;
+  // Festivos: activo por defecto
+  const rf = document.getElementById('corte-resaltar-festivos'); if (rf) rf.checked = true;
+  // Tarifa
+  const tt = document.getElementById('corte-tarifa-tipo'); if (tt) tt.value = 'kg';
+  const tv = document.getElementById('corte-tarifa-valor'); if (tv) tv.value = '';
+  const st = document.getElementById('corte-solo-total'); if (st) st.checked = false;
+  // Consecutivo inicio
+  const ci = document.getElementById('corte-consecutivo-inicio'); if (ci) ci.value = '1';
+  // Precio por material
+  const ppm = document.getElementById('corte-precio-por-material'); if (ppm) { ppm.checked = false; }
+  _cortePreciosMaterial = {};
+  const ppmWrap = document.getElementById('corte-precio-material-wrap'); if (ppmWrap) ppmWrap.style.display = 'none';
+  // Transporte
+  const ct = document.getElementById('corte-cobrar-transporte'); if (ct) ct.checked = false;
+  const ctv = document.getElementById('corte-transporte-valor'); if (ctv) ctv.value = '';
+  const ctWrap = document.getElementById('corte-transporte-wrap'); if (ctWrap) ctWrap.style.display = 'none';
+  // Relleno de pesos faltantes
+  const rp = document.getElementById('corte-rellenar-peso'); if (rp) rp.checked = false;
+  const rpOpts = document.getElementById('corte-rellenar-peso-opts'); if (rpOpts) rpOpts.style.display = 'none';
+  const rpModo = document.querySelector('input[name="corte-rellenar-modo"][value="corte"]'); if (rpModo) rpModo.checked = true;
+  _rellenoPesoActivo = false;
+}
+
 // Cancela la selección/edición actual SIN guardar y vuelve al menú default (lista de cortes)
-function cancelarSeleccionCorte() {
-  _corteEnfocado = null;
+function cancelarSeleccionCorte() {  _corteEnfocado = null;
 
   // Ocultar y limpiar todo el bloque operativo
   const paso2 = document.getElementById('corte-paso2');
@@ -6931,6 +7052,9 @@ function cancelarSeleccionCorte() {
   const fi = document.getElementById('corte-fecha-inicio'); if (fi) fi.value = '';
   const fc = document.getElementById('corte-fecha-cierre'); if (fc) fc.value = '';
   const nombre = document.getElementById('corte-fav-nombre'); if (nombre) nombre.value = '';
+
+  // Limpiar columnas y opciones del Paso 2 (todo a su estado por defecto)
+  limpiarSeleccionPaso2();
 
   renderInformesGuardados();
 
@@ -7227,13 +7351,13 @@ function _valorMaterialFilaCorte(c, r) {
   const mat = (r['RESIDUO']||r['Residuo']||r['residuo']||'').trim() || 'Sin clasificar';
   if (c.precioPorMaterialOn) {
     const p = (c.preciosMaterial && c.preciosMaterial[mat]) || 0;
-    return getPesoNeto(r) * p;
+    return pesoNetoAjustado(r) * p;
   }
   if (!c.tarifaTipo || c.tarifaValor <= 0) return 0;
-  return c.tarifaTipo === 'viaje' ? c.tarifaValor : getPesoNeto(r) * c.tarifaValor;
+  return c.tarifaTipo === 'viaje' ? c.tarifaValor : pesoNetoAjustado(r) * c.tarifaValor;
 }
 function _valorTransporteFilaCorte(c, r) {
-  return (c.cobrarTransporte && c.transporteValor > 0) ? getPesoNeto(r) * c.transporteValor : 0;
+  return (c.cobrarTransporte && c.transporteValor > 0) ? pesoNetoAjustado(r) * c.transporteValor : 0;
 }
 function _valorFilaCorte(c, r) {
   return _valorMaterialFilaCorte(c, r) + _valorTransporteFilaCorte(c, r);
@@ -7490,7 +7614,7 @@ function crearInformeDesdeFavorito(nombre, prov, ini, cie) {
   const registros = filtrarRegistrosCorte(prov, ini, cie);
   if (registros.length === 0) return;
   const viajes = registros.length;
-  const kg = registros.reduce((s,r) => s + getPesoNeto(r), 0);
+  const kg = registros.reduce((s,r) => s + pesoNetoAjustado(r), 0);
   // Valor del sistema = suma de material + transporte de todas las filas
   const valorSistema = registros.reduce((s,r) => s + _valorFilaCorte(c, r), 0);
 
