@@ -1886,6 +1886,18 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
     <div id="corte-favoritos-lista" style="display:flex;flex-direction:column;gap:8px"></div>
   </div>
 
+  <!-- RESUMEN DE FACTURACIÓN (informes guardados, vista gerencia) -->
+  <div class="card" id="corte-resumen-card" style="margin-bottom:20px;padding:20px 24px;display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy)">Resumen de facturación</div>
+        <div style="font-size:11px;color:var(--ink-l);margin-top:2px">Estado de los cortes certificados — verde: facturado · rojo: pendiente</div>
+      </div>
+      <button onclick="cargarInformesGuardados()" style="padding:7px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Actualizar</button>
+    </div>
+    <div id="corte-resumen-lista" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px"></div>
+  </div>
+
   <!-- INFORME / CERTIFICADO DE FACTURACIÓN (se llena tras generar un corte) -->
   <div id="corte-informe"></div>
 
@@ -6121,6 +6133,7 @@ function initCortesProveedores() {
     cont.dataset.init = '1';
   }
   cargarCortesFavoritosRemoto();
+  cargarInformesGuardados();
   if (!_calendarioCargado) cargarCalendarioRemoto();
   else renderCalendarioCortes();
 }
@@ -6762,13 +6775,111 @@ function guardarInformeCorte() {
       clearTimeout(timeout);
       if (estado) { estado.style.color = 'var(--green)'; estado.textContent = (data && data.ok) ? 'Informe guardado correctamente' : 'Informe guardado'; }
       setTimeout(() => { if (estado) estado.textContent = ''; }, 3000);
+      // Refrescar el resumen de facturación arriba
+      setTimeout(cargarInformesGuardados, 800);
     })
     .catch(e => {
       clearTimeout(timeout);
       console.warn('Respuesta no legible al guardar informe:', e);
       if (estado) { estado.style.color = 'var(--green)'; estado.textContent = 'Informe guardado'; }
       setTimeout(() => { if (estado) estado.textContent = ''; }, 3000);
+      setTimeout(cargarInformesGuardados, 800);
     });
+}
+
+// ── RESUMEN DE FACTURACIÓN (informes guardados, vista gerencia) ──
+let _informesGuardados = [];
+
+function cargarInformesGuardados() {
+  if (typeof CORTES_FAV_API === 'undefined' || CORTES_FAV_API.includes('PEGAR')) return;
+  const card = document.getElementById('corte-resumen-card');
+  const lista = document.getElementById('corte-resumen-lista');
+  if (lista) lista.innerHTML = '<div style="color:var(--ink-l);font-size:13px;padding:8px">Cargando informes...</div>';
+  if (card) card.style.display = '';
+  fetch(CORTES_FAV_API + '?accion=listarInformes', { redirect:'follow' })
+    .then(r => r.json())
+    .then(data => {
+      _informesGuardados = (data && data.ok && Array.isArray(data.informes)) ? data.informes : [];
+      renderInformesGuardados();
+    })
+    .catch(e => {
+      console.error('Error cargando informes:', e);
+      if (lista) lista.innerHTML = '<div style="color:var(--red);font-size:13px;padding:8px">No se pudieron cargar los informes.</div>';
+    });
+}
+
+function renderInformesGuardados() {
+  const card = document.getElementById('corte-resumen-card');
+  const lista = document.getElementById('corte-resumen-lista');
+  if (!lista) return;
+
+  if (_informesGuardados.length === 0) {
+    if (card) card.style.display = 'none';
+    return;
+  }
+  if (card) card.style.display = '';
+
+  // Más recientes primero
+  const ordenados = [..._informesGuardados].reverse();
+
+  lista.innerHTML = ordenados.map(inf => {
+    const color = getClientColor(inf.operacion) || '#1a5c35';
+    const logo = getClientLogo(inf.operacion);
+    const valorSistema = parseFloat(inf.valorSistema) || 0;
+    const valorReal = parseFloat(inf.valorRealFacturado);
+    const tieneReal = !isNaN(valorReal) && valorReal > 0;
+
+    // Estado de facturación
+    let estadoColor, estadoBg, estadoTexto, pendienteTexto;
+    if (!tieneReal) {
+      estadoColor = '#b91c1c'; estadoBg = '#fde8e8';
+      estadoTexto = 'PENDIENTE'; pendienteTexto = '-' + fmtPesoInf(valorSistema);
+    } else {
+      const dif = valorSistema - valorReal;
+      if (Math.abs(dif) < 0.5) {
+        estadoColor = '#1a7f37'; estadoBg = '#e6f4ea';
+        estadoTexto = 'FACTURADO'; pendienteTexto = fmtPesoInf(0);
+      } else {
+        estadoColor = '#dc6868'; estadoBg = '#fef2f2';
+        estadoTexto = 'DIFERENCIA'; pendienteTexto = (dif > 0 ? '-' : '+') + fmtPesoInf(Math.abs(dif));
+      }
+    }
+
+    return `<div style="border:1px solid var(--rule-l);border-radius:10px;overflow:hidden;background:var(--white)">
+      <div style="background:linear-gradient(135deg,${color} 0%,${hexToRgba(color,.78)} 100%);padding:12px 14px;display:flex;align-items:center;gap:12px">
+        ${logo ? `<div style="background:#fff;border-radius:8px;padding:6px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><img src="${logo}" style="max-width:100%;max-height:100%;object-fit:contain" onerror="this.parentElement.style.display='none'"></div>` : ''}
+        <div style="flex:1;min-width:0;color:#fff">
+          <div style="font-size:14px;font-weight:800;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${inf.nombreCorte || inf.operacion}</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.85)">${inf.operacion}${inf.material && inf.material!=='Todos' ? ' · '+inf.material : ''}</div>
+        </div>
+        <div style="background:${estadoBg};color:${estadoColor};font-size:9px;font-weight:800;letter-spacing:.5px;padding:5px 9px;border-radius:20px;flex-shrink:0">${estadoTexto}</div>
+      </div>
+      <div style="padding:12px 14px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
+          <span style="color:var(--ink-l)">Periodo</span>
+          <span style="color:var(--ink);font-weight:600">${inf.periodo || '—'}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
+          <span style="color:var(--ink-l)">Viajes · KG</span>
+          <span style="color:var(--ink);font-weight:600">${fmt(inf.viajes||0)} · ${fmt(inf.kgNeto||0)} kg</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
+          <span style="color:var(--ink-l)">Valor sistema</span>
+          <span style="color:var(--ink);font-weight:700">${fmtPesoInf(valorSistema)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
+          <span style="color:var(--ink-l)">Facturado proveedor</span>
+          <span style="color:var(--ink);font-weight:700">${tieneReal ? fmtPesoInf(valorReal) : '—'}</span>
+        </div>
+        ${inf.numeroFactura ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px"><span style="color:var(--ink-l)"># Factura</span><span style="color:var(--ink);font-weight:600">${inf.numeroFactura}</span></div>` : ''}
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--rule-l)">
+          <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-l)">Pendiente</span>
+          <span style="font-family:'Libre Baskerville',serif;font-size:18px;font-weight:800;color:${estadoColor}">${pendienteTexto}</span>
+        </div>
+        ${inf.linkFactura ? `<a href="${inf.linkFactura}" target="_blank" style="display:block;text-align:center;margin-top:10px;padding:7px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;background:${hexToRgba(color,.1)};color:${color};border-radius:5px;text-decoration:none">Ver factura adjunta</a>` : ''}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 // Helpers compartidos para exports: valor material, valor transporte y total de una fila
