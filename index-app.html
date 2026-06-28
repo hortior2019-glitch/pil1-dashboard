@@ -6586,9 +6586,9 @@ function generarCorte() {
 // ── INFORME / CERTIFICADO DE FACTURACIÓN ──
 // Formato de pesos completo (sin abreviar) para el informe
 function fmtPesoInf(n) { return '$ ' + Math.round(n).toLocaleString('es-CO'); }
-// Estado: archivo de factura subido (link) por sesión
-let _informeFacturaLink = '';
-let _informeFacturaNombre = '';
+// Estado: lista de facturas del informe actual. Cada una: {material, numero, link, valor, archivoNombre, subiendo}
+let _informeFacturas = [];
+let _informeMateriales = []; // materiales disponibles del corte actual (para "dividir por material")
 
 function renderInformeCorte() {
   const cont = document.getElementById('corte-informe');
@@ -6676,24 +6676,16 @@ function renderInformeCorte() {
           <span style="color:var(--ink-l);font-size:11px;margin-left:auto">Para cambiar precios, edita el Paso 2 ↓</span>
         </div>
 
-        <!-- Datos de facturación (manuales) -->
+        <!-- Datos de facturación (manuales — soporta varias facturas por material) -->
         <div style="border-top:1px solid var(--rule);padding-top:20px;margin-bottom:20px">
-          <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--navy);margin-bottom:14px">Datos de facturación</div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">
-            <div class="inf-field">
-              <label class="inf-lbl"># de factura</label>
-              <input type="text" id="inf-num-factura" placeholder="Ej: FE-1234" class="inf-input">
-            </div>
-            <div class="inf-field">
-              <label class="inf-lbl">Adjuntar factura</label>
-              <input type="file" id="inf-archivo" onchange="subirFacturaInforme(this)" class="inf-input" style="padding:6px">
-              <div id="inf-archivo-estado" style="font-size:11px;color:var(--ink-l);margin-top:4px"></div>
-            </div>
-            <div class="inf-field">
-              <label class="inf-lbl">Valor real facturado por proveedor</label>
-              <input type="number" id="inf-valor-real" min="0" step="any" oninput="recalcInforme()" class="inf-input" placeholder="0">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+            <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--navy)">Datos de facturación</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button type="button" onclick="dividirFacturasPorMaterial()" id="inf-btn-dividir" style="display:none;padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:transparent;color:var(--navy);border:1px solid var(--navy);border-radius:6px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Dividir por material</button>
+              <button type="button" onclick="agregarFacturaInforme()" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:'Source Sans 3',sans-serif">+ Agregar factura</button>
             </div>
           </div>
+          <div id="inf-facturas-lista" style="display:flex;flex-direction:column;gap:12px"></div>
         </div>
 
         <!-- Pendiente por facturar (calculado, con color) -->
@@ -6718,6 +6710,37 @@ function renderInformeCorte() {
         </div>
       </div>
     </div>`;
+
+  // Materiales disponibles del corte (para "dividir por material")
+  _informeMateriales = materiales.slice();
+
+  // Inicializar las facturas: desde el informe guardado si existe, si no una vacía
+  const infGuardado = (_informesGuardados||[]).find(inf =>
+    (inf.nombreCorte||'').trim().toLowerCase() === (nombreSugerido||'').trim().toLowerCase() &&
+    (inf.operacion||'').trim().toLowerCase() === (c.prov||'').trim().toLowerCase()
+  );
+  _informeFacturas = [];
+  if (infGuardado && infGuardado.facturasJson) {
+    try {
+      const arr = JSON.parse(infGuardado.facturasJson);
+      if (Array.isArray(arr) && arr.length) {
+        _informeFacturas = arr.map(f => ({ material:f.material||'', numero:f.numero||'', link:f.link||'', valor:(f.valor!=null?f.valor:''), archivoNombre:'' }));
+      }
+    } catch(e) {}
+  }
+  // Compatibilidad: si no hay array pero sí un valor real guardado, crear una factura con esos datos
+  if (_informeFacturas.length === 0 && infGuardado && (parseFloat(infGuardado.valorRealFacturado) > 0 || infGuardado.numeroFactura)) {
+    _informeFacturas = [{ material:'', numero:infGuardado.numeroFactura||'', link:infGuardado.linkFactura||'', valor:(parseFloat(infGuardado.valorRealFacturado)||''), archivoNombre:'' }];
+  }
+  if (_informeFacturas.length === 0) _informeFacturas = [{ material:'', numero:'', link:'', valor:'', archivoNombre:'' }];
+
+  renderFacturasInforme();
+
+  // Restaurar observaciones del informe guardado
+  if (infGuardado && infGuardado.observaciones) {
+    const obs = document.getElementById('inf-observaciones');
+    if (obs) obs.value = infGuardado.observaciones;
+  }
 
   // El valor del sistema y la tarifa se toman del corte (Paso 2) — no hay campos de precio propios
   recalcInforme();
@@ -6756,46 +6779,137 @@ function recalcInforme() {
   const elK = document.getElementById('inf-kg'); if (elK) elK.textContent = fmt(Math.round(kg)) + ' kg';
   const elS = document.getElementById('inf-valor-sistema'); if (elS) elS.textContent = fmtPesoInf(valorSistema);
 
-  // Pendiente por facturar
-  const valorReal = parseFloat((document.getElementById('inf-valor-real')||{}).value);
+  // Pendiente por facturar = valor del sistema − suma de todas las facturas digitadas
+  const sumaFacturas = (_informeFacturas || []).reduce((s, f) => s + (parseFloat(f.valor) || 0), 0);
+  const hayAlgunValor = (_informeFacturas || []).some(f => parseFloat(f.valor) > 0);
+  const valorReal = hayAlgunValor ? sumaFacturas : NaN;
   const box = document.getElementById('inf-pendiente-box');
   const elP = document.getElementById('inf-pendiente-valor');
   const elN = document.getElementById('inf-pendiente-nota');
   if (!box || !elP) return;
 
   if (isNaN(valorReal)) {
-    // Aún no digita valor real → pendiente = todo el valor del sistema (rojo)
+    // Aún no digita ningún valor → pendiente = todo el valor del sistema (rojo)
     box.style.background = '#fde8e8';
     box.style.color = '#b91c1c';
     elP.textContent = '-' + fmtPesoInf(valorSistema);
     if (elN) elN.textContent = 'Aún no se digita el valor facturado por el proveedor';
   } else {
     const diferencia = valorSistema - valorReal;
+    const nFact = (_informeFacturas||[]).filter(f => parseFloat(f.valor) > 0).length;
+    const sufFact = nFact > 1 ? ' (suma de ' + nFact + ' facturas)' : '';
     if (Math.abs(diferencia) < 0.5) {
       // Coinciden → $0 verde
       box.style.background = '#e6f4ea';
       box.style.color = '#1a7f37';
       elP.textContent = fmtPesoInf(0);
-      if (elN) elN.textContent = 'El valor facturado coincide con el del sistema';
+      if (elN) elN.textContent = 'El valor facturado coincide con el del sistema' + sufFact;
     } else {
-      // No coinciden → muestra el excedente (diferencia), rojo más claro
+      // No coinciden → muestra la diferencia, rojo más claro
       box.style.background = '#fef2f2';
       box.style.color = '#dc6868';
       elP.textContent = (diferencia > 0 ? '-' : '+') + fmtPesoInf(Math.abs(diferencia));
-      if (elN) elN.textContent = diferencia > 0
+      if (elN) elN.textContent = (diferencia > 0
         ? 'Falta facturar ' + fmtPesoInf(Math.abs(diferencia)) + ' respecto al sistema'
-        : 'El proveedor facturó ' + fmtPesoInf(Math.abs(diferencia)) + ' de más respecto al sistema';
+        : 'El proveedor facturó ' + fmtPesoInf(Math.abs(diferencia)) + ' de más respecto al sistema') + sufFact;
     }
   }
 }
 
-// Sube el archivo de factura al Apps Script (Drive)
-function subirFacturaInforme(input) {
-  const estado = document.getElementById('inf-archivo-estado');
-  const file = input.files && input.files[0];
-  if (!file) return;
-  if (estado) { estado.style.color = 'var(--ink-l)'; estado.textContent = 'Subiendo archivo...'; }
+// ── GESTIÓN DE FACTURAS DEL INFORME (varias por material si el usuario quiere) ──
 
+// Renderiza la lista de facturas en el informe
+function renderFacturasInforme() {
+  const cont = document.getElementById('inf-facturas-lista');
+  if (!cont) return;
+  if (!_informeFacturas || _informeFacturas.length === 0) _informeFacturas = [{ material:'', numero:'', link:'', valor:'', archivoNombre:'' }];
+
+  const hayVariosMat = (_informeMateriales || []).length > 1;
+  const varias = _informeFacturas.length > 1;
+
+  cont.innerHTML = _informeFacturas.map((f, idx) => {
+    // Selector de material (solo si el corte tiene varios materiales)
+    const matSelector = hayVariosMat ? `
+      <div class="inf-field">
+        <label class="inf-lbl">Material de esta factura</label>
+        <select onchange="onFacturaCampo(${idx},'material',this.value)" class="inf-input">
+          <option value="" ${!f.material?'selected':''}>General / todo el corte</option>
+          ${_informeMateriales.map(m => `<option value="${m.replace(/"/g,'&quot;')}" ${f.material===m?'selected':''}>${m}</option>`).join('')}
+        </select>
+      </div>` : '';
+    const linkHtml = f.link
+      ? `<a href="${f.link}" target="_blank" style="color:var(--navy);font-weight:700;font-size:11px">ver factura adjunta</a>`
+      : (f.subiendo ? '<span style="font-size:11px;color:var(--ink-l)">Subiendo archivo...</span>' : '');
+    const quitarBtn = varias
+      ? `<button type="button" onclick="quitarFacturaInforme(${idx})" title="Quitar esta factura" style="position:absolute;top:10px;right:10px;width:24px;height:24px;border-radius:50%;border:1px solid var(--rule);background:var(--white);color:var(--ink-l);cursor:pointer;font-size:13px;line-height:1">✕</button>`
+      : '';
+    return `
+      <div style="position:relative;padding:16px;background:var(--s2);border:1px solid var(--rule-l);border-radius:10px">
+        ${quitarBtn}
+        ${varias ? `<div style="font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--navy);margin-bottom:10px">Factura ${idx+1}</div>` : ''}
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px">
+          ${matSelector}
+          <div class="inf-field">
+            <label class="inf-lbl"># de factura</label>
+            <input type="text" value="${(f.numero||'').replace(/"/g,'&quot;')}" oninput="onFacturaCampo(${idx},'numero',this.value)" placeholder="Ej: FE-1234" class="inf-input">
+          </div>
+          <div class="inf-field">
+            <label class="inf-lbl">Adjuntar factura</label>
+            <input type="file" onchange="subirFacturaInformeIdx(${idx}, this)" class="inf-input" style="padding:6px">
+            <div style="margin-top:4px">${linkHtml}</div>
+          </div>
+          <div class="inf-field">
+            <label class="inf-lbl">Valor facturado</label>
+            <input type="number" min="0" step="any" value="${f.valor!==''&&f.valor!=null?f.valor:''}" oninput="onFacturaCampo(${idx},'valor',this.value)" placeholder="0" class="inf-input">
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Mostrar el botón "Dividir por material" solo si hay varios materiales
+  const btnDiv = document.getElementById('inf-btn-dividir');
+  if (btnDiv) btnDiv.style.display = hayVariosMat ? '' : 'none';
+}
+
+// Actualiza un campo de una factura y recalcula
+function onFacturaCampo(idx, campo, valor) {
+  if (!_informeFacturas[idx]) return;
+  _informeFacturas[idx][campo] = valor;
+  recalcInforme();
+}
+
+// Agrega una factura vacía
+function agregarFacturaInforme() {
+  _informeFacturas.push({ material:'', numero:'', link:'', valor:'', archivoNombre:'' });
+  renderFacturasInforme();
+  recalcInforme();
+}
+
+// Quita una factura
+function quitarFacturaInforme(idx) {
+  _informeFacturas.splice(idx, 1);
+  if (_informeFacturas.length === 0) _informeFacturas = [{ material:'', numero:'', link:'', valor:'', archivoNombre:'' }];
+  renderFacturasInforme();
+  recalcInforme();
+}
+
+// Crea una factura por cada material del corte (reemplaza la lista actual)
+function dividirFacturasPorMaterial() {
+  if (!_informeMateriales || _informeMateriales.length <= 1) return;
+  if (_informeFacturas.some(f => f.numero || f.valor || f.link)) {
+    if (!confirm('Esto reemplazará las facturas actuales por una por cada material. ¿Continuar?')) return;
+  }
+  _informeFacturas = _informeMateriales.map(m => ({ material:m, numero:'', link:'', valor:'', archivoNombre:'' }));
+  renderFacturasInforme();
+  recalcInforme();
+}
+
+// Sube el archivo de factura de una fila específica al Apps Script (Drive)
+function subirFacturaInformeIdx(idx, input) {
+  const file = input.files && input.files[0];
+  if (!file || !_informeFacturas[idx]) return;
+  _informeFacturas[idx].subiendo = true;
+  renderFacturasInforme();
   const reader = new FileReader();
   reader.onload = function() {
     const base64 = reader.result.split(',')[1];
@@ -6805,17 +6919,20 @@ function subirFacturaInforme(input) {
     })
       .then(r => r.json())
       .then(data => {
+        _informeFacturas[idx].subiendo = false;
         if (data.ok && data.link) {
-          _informeFacturaLink = data.link;
-          _informeFacturaNombre = file.name;
-          if (estado) { estado.style.color = 'var(--green)'; estado.innerHTML = 'Archivo subido: <a href="'+data.link+'" target="_blank" style="color:var(--navy);font-weight:700">ver factura</a>'; }
+          _informeFacturas[idx].link = data.link;
+          _informeFacturas[idx].archivoNombre = file.name;
         } else {
-          if (estado) { estado.style.color = 'var(--red)'; estado.textContent = 'Error al subir: ' + (data.error||'desconocido'); }
+          alert('Error al subir el archivo: ' + (data.error||'desconocido'));
         }
+        renderFacturasInforme();
       })
       .catch(e => {
         console.error('Error subiendo factura:', e);
-        if (estado) { estado.style.color = 'var(--red)'; estado.textContent = 'Error de conexión al subir'; }
+        _informeFacturas[idx].subiendo = false;
+        renderFacturasInforme();
+        alert('Error de conexión al subir el archivo.');
       });
   };
   reader.readAsDataURL(file);
@@ -6839,7 +6956,14 @@ function guardarInformeCorte() {
   // Precio de referencia para guardar (informativo): la tarifa del corte
   const precioDisp = (c.tarifaTipo === 'kg' && c.tarifaValor > 0) ? c.tarifaValor : 0;
   const precioViaje = (c.tarifaTipo === 'viaje' && c.tarifaValor > 0) ? c.tarifaValor : 0;
-  const valorReal = parseFloat((document.getElementById('inf-valor-real')||{}).value) || 0;
+  // Facturas: sumar valores, juntar números y links para los campos de compatibilidad
+  const facturas = (_informeFacturas || []).filter(f => (f.numero||'') || parseFloat(f.valor) > 0 || (f.link||''));
+  const valorReal = facturas.reduce((s,f) => s + (parseFloat(f.valor)||0), 0);
+  const numeroFactura = facturas.map(f => f.numero).filter(Boolean).join(', ');
+  const linkFactura = (facturas.find(f => f.link) || {}).link || '';
+  const facturasJson = JSON.stringify(facturas.map(f => ({
+    material: f.material||'', numero: f.numero||'', link: f.link||'', valor: parseFloat(f.valor)||0
+  })));
 
   const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
   const fmtF = s => { const d = new Date(s+'T00:00:00'); return d.getDate()+' '+MESES[d.getMonth()]+' '+d.getFullYear(); };
@@ -6854,9 +6978,10 @@ function guardarInformeCorte() {
     precioDisposicion: precioDisp,
     precioPorViaje: precioViaje,
     valorSistema: Math.round(valorSistema),
-    numeroFactura: (document.getElementById('inf-num-factura')||{}).value || '',
-    linkFactura: _informeFacturaLink || '',
+    numeroFactura: numeroFactura,
+    linkFactura: linkFactura,
     valorRealFacturado: valorReal,
+    facturasJson: facturasJson,
     observaciones: (document.getElementById('inf-observaciones')||{}).value || '',
     periodo: fmtF(c.ini) + ' — ' + fmtF(c.cie)
   };
@@ -7459,11 +7584,10 @@ function renderInformesGuardados() {
           <span style="font-family:'Libre Baskerville',serif;font-size:24px;font-weight:800;color:${estadoColor};line-height:1">${pendienteTexto}</span>
         </div>
 
-        <!-- Acciones: entrar a editar (Usar), duplicar al periodo actual, u ocultar -->
+        <!-- Acciones: entrar a editar (Usar) o eliminar -->
         ${inf.favIndex >= 0 ? `
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
-          <button onclick="aplicarCorteFavorito(${inf.favIndex})" style="padding:12px;font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:8px;cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:opacity .15s" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'" title="Abre este corte para revisarlo y facturarlo">Usar / Editar</button>
-          <button onclick="duplicarCortePeriodoActual(${inf.favIndex})" style="padding:12px;font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;background:var(--gold);color:white;border:none;border-radius:8px;cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:opacity .15s" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'" title="Duplica el corte al periodo actual (nuevo mes) para volver a facturarlo">Periodo actual</button>
+        <div style="margin-bottom:8px">
+          <button onclick="aplicarCorteFavorito(${inf.favIndex})" style="width:100%;padding:12px;font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:8px;cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:opacity .15s" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'" title="Abre este corte para revisarlo y facturarlo">Usar / Editar</button>
         </div>
         <div style="display:flex;justify-content:flex-end">
           <button onclick="ocultarCorteFavorito('${inf.favorito ? inf.favorito.id : ''}')" style="padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:transparent;color:var(--ink-l);border:1px solid var(--rule);border-radius:8px;cursor:pointer;transition:all .15s" onmouseover="this.style.color='var(--red)';this.style.borderColor='var(--red)'" onmouseout="this.style.color='var(--ink-l)';this.style.borderColor='var(--rule)'" title="Eliminar">Eliminar</button>
