@@ -7135,7 +7135,148 @@ function renderNavegadorMeses() {
         <button onclick="cambiarAnioResumen(1)" style="width:26px;height:26px;border:1px solid var(--rule);background:var(--white);border-radius:6px;cursor:pointer;color:var(--ink-m);font-weight:700">›</button>
         <button onclick="toggleVerTodosMeses()" style="margin-left:6px;padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;border:1px solid ${_resumenVerTodos?'var(--navy)':'var(--rule)'};background:${_resumenVerTodos?'var(--navy)':'transparent'};color:${_resumenVerTodos?'#fff':'var(--ink-m)'};border-radius:6px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Todos</button>
       </div>
+    </div>
+    <div style="margin:-8px 0 16px;display:flex;justify-content:flex-end">
+      <button onclick="abrirTraerPeriodoActual()" style="padding:7px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:transparent;color:var(--gold);border:1px solid var(--gold);border-radius:6px;cursor:pointer;font-family:'Source Sans 3',sans-serif" title="Selecciona cortes de un mes y duplícalos al periodo actual">+ Traer cortes al periodo actual</button>
+    </div>
+    <div id="corte-traer-panel"></div>`;
+}
+
+// Abre un panel para seleccionar cortes (del mes anterior por defecto) y traerlos al periodo actual
+function abrirTraerPeriodoActual() {
+  const panel = document.getElementById('corte-traer-panel');
+  if (!panel) return;
+  // Si ya está abierto, cerrarlo (toggle)
+  if (panel.dataset.abierto === '1') { panel.innerHTML = ''; panel.dataset.abierto = '0'; return; }
+  panel.dataset.abierto = '1';
+
+  // Mes anterior al actual
+  const hoy = new Date();
+  const mesAnt = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+  const mesAntIdx = mesAnt.getMonth();
+  const anioAnt = mesAnt.getFullYear();
+
+  // Construir lista de cortes de ese mes (a partir de los informes guardados y favoritos con periodo de ese mes)
+  const candidatos = [];
+  (_cortesFavoritosCache || []).forEach((f, fIdx) => {
+    if (f.activo === false) return;
+    // Buscar informe de ese favorito en el mes anterior
+    const infMesAnt = _informesGuardados.find(inf => {
+      if ((inf.operacion||'').trim().toLowerCase() !== (f.prov||'').trim().toLowerCase()) return false;
+      const ma = _mesAnioDeCard(inf);
+      return ma && ma.mes === mesAntIdx && ma.anio === anioAnt &&
+        (inf.nombreCorte||'').toLowerCase().includes((f.nombre||'').toLowerCase().split(' · ')[0]);
+    });
+    candidatos.push({ favIndex: fIdx, nombre: f.nombre, prov: f.prov, tieneMesAnt: !!infMesAnt });
+  });
+  // También informes huérfanos del mes anterior
+  _informesGuardados.forEach(inf => {
+    const ma = _mesAnioDeCard(inf);
+    if (!ma || ma.mes !== mesAntIdx || ma.anio !== anioAnt) return;
+    const yaEsta = candidatos.find(c => (c.prov||'').toLowerCase() === (inf.operacion||'').toLowerCase());
+    if (!yaEsta) {
+      // Intentar mapear a un favorito por operación
+      const fIdx = (_cortesFavoritosCache||[]).findIndex(f => (f.prov||'').toLowerCase() === (inf.operacion||'').toLowerCase() && f.activo !== false);
+      if (fIdx >= 0) candidatos.push({ favIndex: fIdx, nombre: _cortesFavoritosCache[fIdx].nombre, prov: inf.operacion, tieneMesAnt: true });
+    }
+  });
+
+  const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const nombreMesAnt = MESES[mesAntIdx] + ' ' + anioAnt;
+  const MESES_AC = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const nombreMesAct = MESES_AC[hoy.getMonth()] + ' ' + hoy.getFullYear();
+
+  if (candidatos.length === 0) {
+    panel.innerHTML = `<div style="padding:16px 18px;background:var(--s2);border-radius:10px;margin-bottom:16px;font-size:13px;color:var(--ink-l)">No hay cortes de ${nombreMesAnt} para traer.</div>`;
+    return;
+  }
+
+  panel.innerHTML = `
+    <div style="padding:16px 18px;background:var(--s2);border:1px solid var(--rule-l);border-radius:10px;margin-bottom:16px">
+      <div style="font-size:12px;font-weight:800;color:var(--navy);margin-bottom:4px">Traer cortes de ${nombreMesAnt} → ${nombreMesAct}</div>
+      <div style="font-size:11px;color:var(--ink-l);margin-bottom:12px">Selecciona los cortes a duplicar. Se crearán tarjetas nuevas para el periodo actual (las de ${nombreMesAnt} se conservan).</div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
+        ${candidatos.map((c, idx) => `
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 10px;background:var(--white);border:1px solid var(--rule-l);border-radius:6px">
+            <input type="checkbox" class="traer-chk" data-favindex="${c.favIndex}" checked style="width:16px;height:16px;accent-color:var(--gold)">
+            <span style="font-size:13px;color:var(--ink);font-weight:600">${c.nombre}</span>
+            <span style="font-size:11px;color:var(--ink-l)">${c.prov}</span>
+          </label>`).join('')}
+      </div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button onclick="ejecutarTraerPeriodoActual()" style="padding:10px 18px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--gold);color:#fff;border:none;border-radius:7px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Traer seleccionados</button>
+        <button onclick="abrirTraerPeriodoActual()" style="padding:10px 18px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:transparent;color:var(--ink-l);border:1px solid var(--rule);border-radius:7px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Cancelar</button>
+        <span id="traer-estado" style="font-size:12px;font-weight:700;color:var(--ink-l)"></span>
+      </div>
     </div>`;
+}
+
+// Duplica al periodo actual (en silencio) todos los favoritos seleccionados
+function ejecutarTraerPeriodoActual() {
+  const checks = [...document.querySelectorAll('.traer-chk:checked')];
+  if (checks.length === 0) { alert('Selecciona al menos un corte.'); return; }
+  const estado = document.getElementById('traer-estado');
+  const indices = checks.map(ch => parseInt(ch.dataset.favindex, 10)).filter(n => !isNaN(n));
+
+  if (estado) estado.textContent = 'Procesando ' + indices.length + ' corte(s)...';
+
+  let creados = 0, omitidos = 0;
+  const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+
+  // Procesar secuencialmente con un pequeño retraso entre cada uno (para no saturar el Apps Script)
+  let pos = 0;
+  function procesarSiguiente() {
+    if (pos >= indices.length) {
+      if (estado) estado.textContent = `Listo: ${creados} creado(s)${omitidos?', '+omitidos+' ya existían':''}.`;
+      setTimeout(() => { cargarInformesGuardados(); const p = document.getElementById('corte-traer-panel'); if (p) { p.innerHTML=''; p.dataset.abierto='0'; } }, 1200);
+      return;
+    }
+    const f = _cortesFavoritosCache[indices[pos]];
+    pos++;
+    if (!f) { procesarSiguiente(); return; }
+
+    const per = _periodoActualFavorito(f);
+    const dCie = new Date(per.cie + 'T00:00:00');
+    const sufijo = MESES[dCie.getMonth()] + ' ' + dCie.getFullYear();
+    const nombreNuevo = f.nombre.split(' · ')[0] + ' · ' + sufijo;
+
+    // ¿Ya existe ese informe?
+    const yaExiste = _informesGuardados.find(inf =>
+      (inf.nombreCorte||'').trim().toLowerCase() === nombreNuevo.trim().toLowerCase() &&
+      (inf.operacion||'').trim().toLowerCase() === (f.prov||'').trim().toLowerCase()
+    );
+    if (yaExiste) { omitidos++; procesarSiguiente(); return; }
+
+    // Calcular valores del periodo actual y crear el informe directamente (sin cargar la UI)
+    const valores = _calcularValoresFavorito(f); // usa periodo actual
+    const precioDisp = (f.tarifaTipo === 'kg' && f.tarifaValor > 0) ? f.tarifaValor : 0;
+    const precioViaje = (f.tarifaTipo === 'viaje' && f.tarifaValor > 0) ? f.tarifaValor : 0;
+    const payload = {
+      accion: 'guardarInforme',
+      operacion: f.prov,
+      nombreCorte: nombreNuevo,
+      material: 'Todos',
+      viajes: valores.viajes,
+      kgNeto: valores.kgNeto,
+      precioDisposicion: precioDisp,
+      precioPorViaje: precioViaje,
+      valorSistema: valores.valorSistema,
+      numeroFactura: '',
+      linkFactura: '',
+      valorRealFacturado: 0,
+      observaciones: '',
+      periodo: valores.periodo
+    };
+    // Agregar localmente para que el chequeo de duplicados funcione en el siguiente
+    _informesGuardados.push({ ...payload, id: '__temp__' + Date.now() });
+    creados++;
+    if (estado) estado.textContent = `Creando ${creados} de ${indices.length}...`;
+
+    fetch(CORTES_FAV_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(payload) })
+      .then(() => setTimeout(procesarSiguiente, 300))
+      .catch(e => { console.warn('Error al traer corte:', e); setTimeout(procesarSiguiente, 300); });
+  }
+  procesarSiguiente();
 }
 
 function renderInformesGuardados() {
@@ -7325,7 +7466,7 @@ function renderInformesGuardados() {
           <button onclick="duplicarCortePeriodoActual(${inf.favIndex})" style="padding:12px;font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;background:var(--gold);color:white;border:none;border-radius:8px;cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:opacity .15s" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'" title="Duplica el corte al periodo actual (nuevo mes) para volver a facturarlo">Periodo actual</button>
         </div>
         <div style="display:flex;justify-content:flex-end">
-          <button onclick="ocultarCorteFavorito('${inf.favorito ? inf.favorito.id : ''}')" style="padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:transparent;color:var(--ink-l);border:1px solid var(--rule);border-radius:8px;cursor:pointer;transition:all .15s" onmouseover="this.style.color='var(--ink)';this.style.borderColor='var(--ink-l)'" onmouseout="this.style.color='var(--ink-l)';this.style.borderColor='var(--rule)'" title="Quita este corte de la vista (sigue guardado)">Ocultar de la vista</button>
+          <button onclick="ocultarCorteFavorito('${inf.favorito ? inf.favorito.id : ''}')" style="padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:transparent;color:var(--ink-l);border:1px solid var(--rule);border-radius:8px;cursor:pointer;transition:all .15s" onmouseover="this.style.color='var(--red)';this.style.borderColor='var(--red)'" onmouseout="this.style.color='var(--ink-l)';this.style.borderColor='var(--rule)'" title="Eliminar">Eliminar</button>
         </div>` : `
         <div style="display:flex;justify-content:flex-end">
           <button onclick="eliminarTarjetaInforme('${inf.id}')" style="padding:9px 16px;font-size:11px;font-weight:700;background:transparent;color:var(--ink-l);border:1px solid var(--rule);border-radius:8px;cursor:pointer" title="Eliminar informe">Eliminar</button>
@@ -7461,7 +7602,7 @@ function eliminarTarjetaInforme(id) {
 // Oculta un corte de la vista marcándolo como inactivo en el Sheet (NO lo borra del favorito)
 function ocultarCorteFavorito(favId) {
   if (!favId) { alert('No se pudo identificar el corte.'); return; }
-  if (!confirm('¿Ocultar este corte de la vista?\n\nSeguirá guardado en tus favoritos (marcado como inactivo). Para volver a mostrarlo, cambia su columna "Activo" a TRUE en la hoja de cálculo.')) return;
+  if (!confirm('¿Eliminar este corte?')) return;
   // Marcar inactivo localmente para reflejarlo de inmediato
   const fav = (_cortesFavoritosCache||[]).find(f => f.id === favId);
   if (fav) fav.activo = false;
