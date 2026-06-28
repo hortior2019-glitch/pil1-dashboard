@@ -1919,6 +1919,8 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
       </div>
       <button onclick="cargarInformesGuardados()" style="padding:7px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Actualizar</button>
     </div>
+    <!-- Navegador de meses (filtra las tarjetas por el periodo) -->
+    <div id="corte-resumen-nav"></div>
     <div id="corte-resumen-lista" style="display:flex;flex-direction:column;gap:16px"></div>
   </div>
 
@@ -7066,6 +7068,76 @@ function cancelarSeleccionCorte() {  _corteEnfocado = null;
   if (paso1) setTimeout(() => paso1.scrollIntoView({ behavior:'smooth', block:'start' }), 100);
 }
 
+// ── NAVEGADOR DE MESES (filtra las tarjetas del resumen por periodo) ──
+const _MESES_NAV = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+const _MESES_AB = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+let _resumenMes = new Date().getMonth();    // mes seleccionado (0-11)
+let _resumenAnio = new Date().getFullYear();// año seleccionado
+let _resumenVerTodos = false;               // si true, ignora el filtro de mes
+
+// Extrae {mes, anio} del periodo de una tarjeta (usa la fecha de cierre del periodo)
+function _mesAnioDeCard(inf) {
+  const p = (inf.periodo || '').split('—');
+  const parte = (p[1] || p[0] || '').trim(); // ej "20 jun 2026"
+  const m = parte.match(/([a-zA-Z]{3})\s+(\d{4})/);
+  if (!m) return null;
+  const mes = _MESES_AB.indexOf(m[1].toLowerCase());
+  const anio = parseInt(m[2], 10);
+  if (mes < 0 || isNaN(anio)) return null;
+  return { mes, anio };
+}
+
+// Cambia el mes seleccionado y re-renderiza
+function seleccionarMesResumen(mes) {
+  _resumenMes = mes;
+  _resumenVerTodos = false;
+  renderInformesGuardados();
+}
+function cambiarAnioResumen(delta) {
+  _resumenAnio += delta;
+  _resumenVerTodos = false;
+  renderInformesGuardados();
+}
+function setAnioResumen(v) {
+  _resumenAnio = parseInt(v, 10) || new Date().getFullYear();
+  _resumenVerTodos = false;
+  renderInformesGuardados();
+}
+function toggleVerTodosMeses() {
+  _resumenVerTodos = !_resumenVerTodos;
+  renderInformesGuardados();
+}
+
+// Dibuja el header con los 12 meses + selector de año
+function renderNavegadorMeses() {
+  const nav = document.getElementById('corte-resumen-nav');
+  if (!nav) return;
+  // Años disponibles para el selector (año actual ±2)
+  const anioBase = new Date().getFullYear();
+  const anios = [];
+  for (let a = anioBase - 3; a <= anioBase + 1; a++) anios.push(a);
+  if (!anios.includes(_resumenAnio)) anios.push(_resumenAnio);
+  anios.sort();
+
+  nav.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;padding:12px 14px;background:var(--s2);border-radius:10px">
+      <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;flex:1">
+        ${_MESES_NAV.map((m, i) => {
+          const activo = !_resumenVerTodos && i === _resumenMes;
+          return `<button onclick="seleccionarMesResumen(${i})" style="padding:6px 11px;font-size:11px;font-weight:${activo?'800':'600'};border:none;border-radius:6px;cursor:pointer;font-family:'Source Sans 3',sans-serif;background:${activo?'var(--navy)':'transparent'};color:${activo?'#fff':'var(--ink-m)'};transition:all .12s">${m}</button>`;
+        }).join('')}
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <button onclick="cambiarAnioResumen(-1)" style="width:26px;height:26px;border:1px solid var(--rule);background:var(--white);border-radius:6px;cursor:pointer;color:var(--ink-m);font-weight:700">‹</button>
+        <select onchange="setAnioResumen(this.value)" style="padding:5px 8px;font-size:13px;font-weight:700;border:1px solid var(--rule);border-radius:6px;background:var(--white);color:var(--navy);cursor:pointer;font-family:'Source Sans 3',sans-serif">
+          ${anios.map(a => `<option value="${a}" ${a===_resumenAnio?'selected':''}>${a}</option>`).join('')}
+        </select>
+        <button onclick="cambiarAnioResumen(1)" style="width:26px;height:26px;border:1px solid var(--rule);background:var(--white);border-radius:6px;cursor:pointer;color:var(--ink-m);font-weight:700">›</button>
+        <button onclick="toggleVerTodosMeses()" style="margin-left:6px;padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;border:1px solid ${_resumenVerTodos?'var(--navy)':'var(--rule)'};background:${_resumenVerTodos?'var(--navy)':'transparent'};color:${_resumenVerTodos?'#fff':'var(--ink-m)'};border-radius:6px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Todos</button>
+      </div>
+    </div>`;
+}
+
 function renderInformesGuardados() {
   const card = document.getElementById('corte-resumen-card');
   const lista = document.getElementById('corte-resumen-lista');
@@ -7077,6 +7149,8 @@ function renderInformesGuardados() {
 
   // 1) Por cada favorito, buscar si ya tiene informe (match por nombre + operación)
   favs.forEach((f, fIdx) => {
+    // Saltar favoritos marcados como inactivos (ocultos de la vista)
+    if (f.activo === false) return;
     const infExistente = _informesGuardados.find(inf =>
       (inf.nombreCorte||'').trim().toLowerCase() === (f.nombre||'').trim().toLowerCase() &&
       (inf.operacion||'').trim().toLowerCase() === (f.prov||'').trim().toLowerCase()
@@ -7119,15 +7193,31 @@ function renderInformesGuardados() {
     }
   });
 
+  // Filtrar por mes/año seleccionado en el navegador (salvo que esté en "Todos")
+  let itemsFiltrados = items;
+  if (!_resumenVerTodos && !_corteEnfocado) {
+    itemsFiltrados = items.filter(inf => {
+      const ma = _mesAnioDeCard(inf);
+      if (!ma) return true; // si no se puede leer el periodo, no lo ocultamos
+      return ma.mes === _resumenMes && ma.anio === _resumenAnio;
+    });
+  }
+
+  // Si no hay NINGÚN favorito/informe en absoluto, ocultar toda la tarjeta
   if (items.length === 0) {
     if (card) card.style.display = 'none';
     return;
   }
   if (card) card.style.display = '';
 
+  // Dibujar el navegador de meses (siempre que la tarjeta esté visible y no en modo enfoque)
+  const nav = document.getElementById('corte-resumen-nav');
+  if (nav) nav.style.display = _corteEnfocado ? 'none' : '';
+  if (!_corteEnfocado) renderNavegadorMeses();
+
   // MODO ENFOQUE: si hay un corte seleccionado, ocultar las tarjetas resumen
   // (el "Informe de certificación" detallado de abajo las reemplaza) y dejar solo la barra para volver.
-  let itemsAMostrar = items;
+  let itemsAMostrar = itemsFiltrados;
   let barraColapso = '';
   if (_corteEnfocado) {
     const enfocado = items.find(it =>
@@ -7145,6 +7235,12 @@ function renderInformesGuardados() {
       // El corte enfocado ya no existe → salir del modo enfoque
       _corteEnfocado = null;
     }
+  }
+
+  // Mensaje si el mes elegido no tiene cortes
+  if (!_corteEnfocado && itemsAMostrar.length === 0) {
+    lista.innerHTML = `<div style="text-align:center;padding:32px;color:var(--ink-l);font-size:13px">No hay cortes en <strong>${_MESES_NAV[_resumenMes]} ${_resumenAnio}</strong>. <span onclick="toggleVerTodosMeses()" style="color:var(--navy);font-weight:700;cursor:pointer;text-decoration:underline">Ver todos los meses</span></div>`;
+    return;
   }
 
   lista.innerHTML = barraColapso + itemsAMostrar.map(inf => {
@@ -7222,11 +7318,14 @@ function renderInformesGuardados() {
           <span style="font-family:'Libre Baskerville',serif;font-size:24px;font-weight:800;color:${estadoColor};line-height:1">${pendienteTexto}</span>
         </div>
 
-        <!-- Acciones: solo entrar a editar (Usar) o duplicar al periodo actual -->
+        <!-- Acciones: entrar a editar (Usar), duplicar al periodo actual, u ocultar -->
         ${inf.favIndex >= 0 ? `
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
           <button onclick="aplicarCorteFavorito(${inf.favIndex})" style="padding:12px;font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:8px;cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:opacity .15s" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'" title="Abre este corte para revisarlo y facturarlo">Usar / Editar</button>
           <button onclick="duplicarCortePeriodoActual(${inf.favIndex})" style="padding:12px;font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;background:var(--gold);color:white;border:none;border-radius:8px;cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:opacity .15s" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'" title="Duplica el corte al periodo actual (nuevo mes) para volver a facturarlo">Periodo actual</button>
+        </div>
+        <div style="display:flex;justify-content:flex-end">
+          <button onclick="ocultarCorteFavorito('${inf.favorito ? inf.favorito.id : ''}')" style="padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:transparent;color:var(--ink-l);border:1px solid var(--rule);border-radius:8px;cursor:pointer;transition:all .15s" onmouseover="this.style.color='var(--ink)';this.style.borderColor='var(--ink-l)'" onmouseout="this.style.color='var(--ink-l)';this.style.borderColor='var(--rule)'" title="Quita este corte de la vista (sigue guardado)">Ocultar de la vista</button>
         </div>` : `
         <div style="display:flex;justify-content:flex-end">
           <button onclick="eliminarTarjetaInforme('${inf.id}')" style="padding:9px 16px;font-size:11px;font-weight:700;background:transparent;color:var(--ink-l);border:1px solid var(--rule);border-radius:8px;cursor:pointer" title="Eliminar informe">Eliminar</button>
@@ -7357,6 +7456,24 @@ function eliminarTarjetaInforme(id) {
     .then(r => r.json())
     .then(() => { setTimeout(cargarInformesGuardados, 500); })
     .catch(e => { console.warn(e); setTimeout(cargarInformesGuardados, 500); });
+}
+
+// Oculta un corte de la vista marcándolo como inactivo en el Sheet (NO lo borra del favorito)
+function ocultarCorteFavorito(favId) {
+  if (!favId) { alert('No se pudo identificar el corte.'); return; }
+  if (!confirm('¿Ocultar este corte de la vista?\n\nSeguirá guardado en tus favoritos (marcado como inactivo). Para volver a mostrarlo, cambia su columna "Activo" a TRUE en la hoja de cálculo.')) return;
+  // Marcar inactivo localmente para reflejarlo de inmediato
+  const fav = (_cortesFavoritosCache||[]).find(f => f.id === favId);
+  if (fav) fav.activo = false;
+  renderInformesGuardados();
+  // Persistir en el Sheet
+  fetch(CORTES_FAV_API, {
+    method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({ accion:'marcarActivo', id: favId, activo: false })
+  })
+    .then(r => r.json())
+    .then(() => { setTimeout(cargarCortesFavoritosRemoto, 600); })
+    .catch(e => { console.warn('No se pudo marcar inactivo:', e); });
 }
 
 // Helpers compartidos para exports: valor material, valor transporte y total de una fila
