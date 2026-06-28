@@ -6667,19 +6667,11 @@ function renderInformeCorte() {
           </div>
         </div>
 
-        <!-- Precios (editables, prellenados con la config del corte) -->
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:20px">
-          <div class="inf-field">
-            <label class="inf-lbl">Precio disposición de material (por kg)</label>
-            <input type="number" id="inf-precio-disp" min="0" step="any" oninput="recalcInforme()" class="inf-input" placeholder="0">
-          </div>
-          <div class="inf-field">
-            <label class="inf-lbl" style="display:flex;align-items:center;gap:8px;cursor:pointer">
-              <input type="checkbox" id="inf-cobrar-viaje" onchange="recalcInforme()" style="width:16px;height:16px;accent-color:var(--gold)">
-              Precio por viaje (si aplica)
-            </label>
-            <input type="number" id="inf-precio-viaje" min="0" step="any" oninput="recalcInforme()" class="inf-input" placeholder="0" style="margin-top:6px">
-          </div>
+        <!-- Tarifa del corte (solo lectura — se define en el Paso 2, fuente única) -->
+        <div id="inf-tarifa-resumen" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:20px;padding:14px 18px;background:#fff;border:1px dashed var(--rule);border-radius:8px;font-size:13px;color:var(--ink-m)">
+          <span style="font-weight:600">Tarifa del corte:</span>
+          <span id="inf-tarifa-texto" style="color:var(--ink)">—</span>
+          <span style="color:var(--ink-l);font-size:11px;margin-left:auto">Para cambiar precios, edita el Paso 2 ↓</span>
         </div>
 
         <!-- Datos de facturación (manuales) -->
@@ -6725,21 +6717,7 @@ function renderInformeCorte() {
       </div>
     </div>`;
 
-  // Prellenar precios con la config del corte
-  const inpDisp = document.getElementById('inf-precio-disp');
-  if (inpDisp && c.tarifaTipo === 'kg' && c.tarifaValor > 0) inpDisp.value = c.tarifaValor;
-  if (c.cobrarTransporte && c.transporteValor > 0) {
-    const chkViaje = document.getElementById('inf-cobrar-viaje');
-    const inpViaje = document.getElementById('inf-precio-viaje');
-    // El transporte del corte es por kg; lo dejamos como referencia en precio por viaje solo si era tarifa por viaje
-  }
-  if (c.tarifaTipo === 'viaje' && c.tarifaValor > 0) {
-    const chkViaje = document.getElementById('inf-cobrar-viaje');
-    const inpViaje = document.getElementById('inf-precio-viaje');
-    if (chkViaje) chkViaje.checked = true;
-    if (inpViaje) inpViaje.value = c.tarifaValor;
-  }
-
+  // El valor del sistema y la tarifa se toman del corte (Paso 2) — no hay campos de precio propios
   recalcInforme();
 }
 
@@ -6757,12 +6735,19 @@ function recalcInforme() {
   const viajes = registros.length;
   const kg = registros.reduce((s,r) => s + pesoNetoAjustado(r), 0);
 
-  const precioDisp = parseFloat((document.getElementById('inf-precio-disp')||{}).value) || 0;
-  const cobrarViaje = (document.getElementById('inf-cobrar-viaje')||{}).checked;
-  const precioViaje = cobrarViaje ? (parseFloat((document.getElementById('inf-precio-viaje')||{}).value) || 0) : 0;
+  // Valor del sistema = MISMO cálculo del corte (material + transporte), filtrado por material.
+  // Fuente única: la tarifa definida en el Paso 2 (no hay campos de precio propios en el informe).
+  const valorSistema = registros.reduce((s,r) => s + _valorFilaCorte(c, r), 0);
 
-  // Valor del sistema = (kg × precio disposición) + (viajes × precio por viaje)
-  const valorSistema = (kg * precioDisp) + (viajes * precioViaje);
+  // Mostrar la tarifa del corte en el resumen de solo lectura
+  const tTexto = document.getElementById('inf-tarifa-texto');
+  if (tTexto) {
+    const partes = [];
+    if (c.precioPorMaterialOn) partes.push('Precio por material (ver tabla del corte)');
+    else if (c.tarifaTipo && c.tarifaValor > 0) partes.push('$' + Math.round(c.tarifaValor).toLocaleString('es-CO') + ' por ' + (c.tarifaTipo === 'viaje' ? 'viaje' : 'kg'));
+    if (c.cobrarTransporte && c.transporteValor > 0) partes.push('Transporte $' + Math.round(c.transporteValor).toLocaleString('es-CO') + ' por kg');
+    tTexto.textContent = partes.length ? partes.join('  ·  ') : 'Sin tarifa definida';
+  }
 
   // Pintar calculados
   const elV = document.getElementById('inf-viajes'); if (elV) elV.textContent = fmt(viajes);
@@ -6847,10 +6832,11 @@ function guardarInformeCorte() {
     });
   const viajes = registros.length;
   const kg = registros.reduce((s,r) => s + pesoNetoAjustado(r), 0);
-  const precioDisp = parseFloat((document.getElementById('inf-precio-disp')||{}).value) || 0;
-  const cobrarViaje = (document.getElementById('inf-cobrar-viaje')||{}).checked;
-  const precioViaje = cobrarViaje ? (parseFloat((document.getElementById('inf-precio-viaje')||{}).value) || 0) : 0;
-  const valorSistema = (kg * precioDisp) + (viajes * precioViaje);
+  // Valor del sistema = mismo cálculo del corte (material + transporte). Fuente única: Paso 2.
+  const valorSistema = registros.reduce((s,r) => s + _valorFilaCorte(c, r), 0);
+  // Precio de referencia para guardar (informativo): la tarifa del corte
+  const precioDisp = (c.tarifaTipo === 'kg' && c.tarifaValor > 0) ? c.tarifaValor : 0;
+  const precioViaje = (c.tarifaTipo === 'viaje' && c.tarifaValor > 0) ? c.tarifaValor : 0;
   const valorReal = parseFloat((document.getElementById('inf-valor-real')||{}).value) || 0;
 
   const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
