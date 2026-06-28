@@ -6942,7 +6942,8 @@ function renderInformesGuardados() {
   }
   if (card) card.style.display = '';
 
-  // MODO ENFOQUE: si hay un corte seleccionado, mostrar solo ese y colapsar los demás
+  // MODO ENFOQUE: si hay un corte seleccionado, ocultar las tarjetas resumen
+  // (el "Informe de certificación" detallado de abajo las reemplaza) y dejar solo la barra para volver.
   let itemsAMostrar = items;
   let barraColapso = '';
   if (_corteEnfocado) {
@@ -6951,11 +6952,11 @@ function renderInformesGuardados() {
       (it.operacion||'').trim().toLowerCase() === (_corteEnfocado.prov||'').trim().toLowerCase()
     );
     if (enfocado) {
-      itemsAMostrar = [enfocado];
-      const ocultos = items.length - 1;
+      itemsAMostrar = []; // no mostrar tarjeta resumen; el informe detallado abajo es el que se edita
       barraColapso = `
-        <div onclick="mostrarTodosLosCortes()" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:11px;background:var(--s2);border:1px dashed var(--rule);border-radius:10px;cursor:pointer;margin-bottom:4px" title="Mostrar todos los cortes">
-          <span style="font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-m)">▾ Ver todos los cortes (${ocultos} más)</span>
+        <div onclick="mostrarTodosLosCortes()" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:14px 18px;background:${hexToRgba(getClientColor(enfocado.operacion)||'#1a5c35',.08)};border:1px solid ${hexToRgba(getClientColor(enfocado.operacion)||'#1a5c35',.25)};border-radius:12px;cursor:pointer" title="Volver a la lista completa de cortes">
+          <span style="font-size:12px;font-weight:700;color:var(--ink-m)">Editando: <strong style="color:${getClientColor(enfocado.operacion)||'var(--navy)'}">${enfocado.nombreCorte||enfocado.operacion}</strong> — el detalle está abajo ↓</span>
+          <span style="font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-l);white-space:nowrap">▾ Ver todos (${items.length})</span>
         </div>`;
     } else {
       // El corte enfocado ya no existe → salir del modo enfoque
@@ -7016,48 +7017,34 @@ function renderInformesGuardados() {
 
       <div style="padding:20px 22px">
         <!-- Config y periodo -->
-        <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--rule-l)">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--rule-l)">
           <div style="font-size:13px;color:var(--ink);font-weight:600">${inf.periodo || '—'}</div>
           ${inf.favorito ? `<div style="font-size:11px;color:var(--ink-l)">${(inf.favorito.colsSel||[]).length} columnas${inf.favorito.sepMaterial?' · por material':''}${inf.favorito.diaIni?' · día '+inf.favorito.diaIni+' al '+inf.favorito.diaCie:''}${inf.favorito.tarifaTipo?' · $'+Math.round(inf.favorito.tarifaValor).toLocaleString('es-CO')+'/'+(inf.favorito.tarifaTipo==='viaje'?'viaje':'kg'):''}</div>` : ''}
         </div>
 
-        <!-- Datos de factura editables -->
-        <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:18px">
-          <div style="display:grid;grid-template-columns:110px 1fr;align-items:center;gap:12px">
-            <label style="font-size:11px;font-weight:600;color:var(--ink-m)"># de factura</label>
-            <input type="text" id="resf-num-${inf.id}" value="${(inf.numeroFactura||'').replace(/"/g,'&quot;')}" placeholder="Ej: FE-1234" style="border:1px solid var(--rule);padding:10px 12px;font-size:14px;border-radius:7px;font-family:'Source Sans 3',sans-serif;color:var(--ink);transition:border-color .15s" onfocus="this.style.borderColor='${color}'" onblur="this.style.borderColor='var(--rule)'">
-          </div>
-          <div style="display:grid;grid-template-columns:110px 1fr;align-items:center;gap:12px">
-            <label style="font-size:11px;font-weight:600;color:var(--ink-m)">Valor facturado</label>
-            <input type="number" id="resf-real-${inf.id}" value="${valorReal||''}" placeholder="Valor real facturado" min="0" step="any" oninput="recalcTarjetaInforme('${inf.id}',${valorSistema})" style="border:1px solid var(--rule);padding:10px 12px;font-size:14px;border-radius:7px;font-family:'Source Sans 3',sans-serif;color:var(--ink);transition:border-color .15s" onfocus="this.style.borderColor='${color}'" onblur="this.style.borderColor='var(--rule)'">
-          </div>
-          <div style="display:grid;grid-template-columns:110px 1fr;align-items:center;gap:12px">
-            <label style="font-size:11px;font-weight:600;color:var(--ink-m)">Soporte</label>
-            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-              <input type="file" id="resf-file-${inf.id}" onchange="subirFacturaTarjeta('${inf.id}',this)" style="font-size:12px;color:var(--ink-m)">
-              <span id="resf-fileinfo-${inf.id}" style="font-size:12px;color:var(--ink-l)">${inf.linkFactura ? '<a href="'+inf.linkFactura+'" target="_blank" style="color:'+color+';font-weight:700;text-decoration:none">Ver factura ✓</a>' : ''}</span>
-            </div>
-          </div>
+        <!-- Estado de facturación (solo lectura) -->
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+          <span style="font-size:12px;color:var(--ink-l)">Facturación</span>
+          ${tieneReal
+            ? `<span style="font-size:13px;color:var(--ink);font-weight:600;text-align:right">${inf.numeroFactura ? 'Factura '+inf.numeroFactura+' · ' : ''}${fmtPesoInf(valorReal)}${inf.linkFactura ? ' · <a href="'+inf.linkFactura+'" target="_blank" style="color:'+color+';font-weight:700;text-decoration:none">ver soporte</a>' : ''}</span>`
+            : `<span style="font-size:12px;font-weight:700;color:#b91c1c;background:#fde8e8;padding:4px 12px;border-radius:20px">Sin facturar</span>`}
         </div>
 
         <!-- Pendiente destacado -->
         <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 18px;background:${estadoBg};border-radius:10px;margin-bottom:18px">
           <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${estadoColor}">Pendiente por facturar</span>
-          <span id="resf-pend-${inf.id}" style="font-family:'Libre Baskerville',serif;font-size:24px;font-weight:800;color:${estadoColor};line-height:1">${pendienteTexto}</span>
+          <span style="font-family:'Libre Baskerville',serif;font-size:24px;font-weight:800;color:${estadoColor};line-height:1">${pendienteTexto}</span>
         </div>
 
-        <!-- Acciones -->
+        <!-- Acciones: solo entrar a editar (Usar) o duplicar al periodo actual -->
         ${inf.favIndex >= 0 ? `
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
-          <button onclick="aplicarCorteFavorito(${inf.favIndex})" style="padding:11px;font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:8px;cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:opacity .15s" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'" title="Carga este corte con sus fechas originales">Usar</button>
-          <button onclick="duplicarCortePeriodoActual(${inf.favIndex})" style="padding:11px;font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;background:var(--gold);color:white;border:none;border-radius:8px;cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:opacity .15s" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'" title="Duplica el corte al periodo actual (nuevo mes) para volver a facturarlo">Periodo actual</button>
-        </div>` : ''}
-
-        <div style="display:flex;gap:10px">
-          <button onclick="guardarTarjetaInforme('${inf.id}')" style="flex:1;padding:12px;font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;background:${color};color:white;border:none;border-radius:8px;cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:opacity .15s" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'">Guardar factura</button>
-          <button onclick="eliminarTarjetaInforme('${inf.id}')" style="padding:12px 16px;font-size:13px;font-weight:700;background:transparent;color:var(--ink-l);border:1px solid var(--rule);border-radius:8px;cursor:pointer;transition:all .15s" onmouseover="this.style.color='var(--red)';this.style.borderColor='var(--red)'" onmouseout="this.style.color='var(--ink-l)';this.style.borderColor='var(--rule)'" title="Eliminar">✕</button>
-        </div>
-        <span id="resf-estado-${inf.id}" style="font-size:12px;font-weight:700;display:block;margin-top:10px;min-height:16px;text-align:center"></span>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <button onclick="aplicarCorteFavorito(${inf.favIndex})" style="padding:12px;font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:8px;cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:opacity .15s" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'" title="Abre este corte para revisarlo y facturarlo">Usar / Editar</button>
+          <button onclick="duplicarCortePeriodoActual(${inf.favIndex})" style="padding:12px;font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;background:var(--gold);color:white;border:none;border-radius:8px;cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:opacity .15s" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'" title="Duplica el corte al periodo actual (nuevo mes) para volver a facturarlo">Periodo actual</button>
+        </div>` : `
+        <div style="display:flex;justify-content:flex-end">
+          <button onclick="eliminarTarjetaInforme('${inf.id}')" style="padding:9px 16px;font-size:11px;font-weight:700;background:transparent;color:var(--ink-l);border:1px solid var(--rule);border-radius:8px;cursor:pointer" title="Eliminar informe">Eliminar</button>
+        </div>`}
       </div>
     </div>`;
   }).join('');
@@ -7541,6 +7528,10 @@ function duplicarCortePeriodoActual(i) {
   const sufijo = MESES[dCie.getMonth()] + ' ' + dCie.getFullYear();
   const nombreNuevo = f.nombre + ' · ' + sufijo;
 
+  // Sobrescribir el nombre del corte con el del periodo (para que el informe detallado lo use)
+  const nombreEl = document.getElementById('corte-fav-nombre');
+  if (nombreEl) nombreEl.value = nombreNuevo;
+
   // Esperar a que el corte se genere y luego crear el informe duplicado
   setTimeout(() => {
     // Verificar que no exista ya un informe con ese nombre+periodo (evitar duplicados)
@@ -7555,6 +7546,8 @@ function duplicarCortePeriodoActual(i) {
     crearInformeDesdeFavorito(nombreNuevo, f.prov, ini, cie);
     // Enfocar el corte nuevo del periodo actual
     enfocarCorte(f.prov, nombreNuevo);
+    // Re-renderizar el informe detallado para que tome el nombre del periodo
+    if (typeof renderInformeCorte === 'function') renderInformeCorte();
     // Feedback visual
     const card = document.getElementById('corte-resumen-card');
     if (card) card.scrollIntoView({behavior:'smooth', block:'start'});
@@ -7565,6 +7558,9 @@ function _aplicarFav(f, ini, cie) {
   document.getElementById('corte-proveedor').value = f.prov;
   document.getElementById('corte-fecha-inicio').value = ini;
   document.getElementById('corte-fecha-cierre').value = cie;
+  // Prellenar el nombre del corte (para que el informe detallado actualice la tarjeta correcta)
+  const nombreEl = document.getElementById('corte-fav-nombre');
+  if (nombreEl) nombreEl.value = f.nombre || '';
   // Restaurar columnas y su orden de selección guardado
   document.querySelectorAll('.corte-col-chk').forEach(chk => { chk.checked = (f.colsSel||[]).includes(chk.value); });
   _ordenColumnas = [...(f.colsSel||[])]; // respeta el orden guardado
