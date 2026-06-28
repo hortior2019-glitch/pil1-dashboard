@@ -1792,7 +1792,11 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 
   <!-- PASO 2: Columnas y opciones (oculto hasta tener paso 1) -->
   <div class="card" id="corte-paso2" style="margin-bottom:20px;padding:24px;display:none">
-    <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy);margin-bottom:6px">Paso 2 · Elige columnas del corte</div>
+    <div onclick="togglePaso2()" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;margin-bottom:6px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy)">Paso 2 · Elige columnas del corte</div>
+      <span id="paso2-flecha" style="font-size:12px;font-weight:700;color:var(--navy)">▴ ocultar</span>
+    </div>
+    <div id="corte-paso2-contenido">
     <div style="font-size:11px;color:var(--ink-l);margin-bottom:16px">El orden en que las marques define el orden de las columnas (1 = primera a la izquierda)</div>
     <div id="corte-columnas" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:14px"></div>
 
@@ -1875,6 +1879,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
       <button onclick="guardarCorteFavorito()" style="padding:10px 20px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Guardar favorito</button>
     </div>
     <div id="corte-fav-status" style="font-size:11px;color:var(--ink-l);margin-top:8px"></div>
+    </div><!-- fin corte-paso2-contenido -->
   </div>
 
   <!-- Favoritos guardados -->
@@ -6136,6 +6141,21 @@ function initCortesProveedores() {
   cargarInformesGuardados();
   if (!_calendarioCargado) cargarCalendarioRemoto();
   else renderCalendarioCortes();
+
+  // Reubicar el Paso 2 para que quede pegado al Informe (todo junto en la fase operativa)
+  reubicarPaso2();
+}
+
+// Mueve el bloque del Paso 2 para que aparezca justo encima del Informe de certificación
+let _paso2Reubicado = false;
+function reubicarPaso2() {
+  if (_paso2Reubicado) return;
+  const paso2 = document.getElementById('corte-paso2');
+  const informe = document.getElementById('corte-informe');
+  if (!paso2 || !informe || !informe.parentNode) return;
+  // Insertar el Paso 2 justo antes del contenedor del informe
+  informe.parentNode.insertBefore(paso2, informe);
+  _paso2Reubicado = true;
 }
 
 // Orden de selección de columnas (refleja el orden en que el usuario las marca)
@@ -6842,6 +6862,34 @@ function _calcularValoresFavorito(f) {
   return { viajes, kgNeto: Math.round(kg), valorSistema: Math.round(valorSistema), periodo: fmtF(ini)+' — '+fmtF(cie) };
 }
 
+// Corte actualmente enfocado (en edición). Cuando hay uno, los demás se colapsan.
+let _corteEnfocado = null;
+
+// Activa el modo enfoque sobre un corte (esconde los demás de la lista)
+function enfocarCorte(prov, nombre) {
+  _corteEnfocado = { prov, nombre };
+  renderInformesGuardados();
+  // Mostrar el Paso 2 (controles operativos) al enfocar
+  const paso2 = document.getElementById('corte-paso2');
+  if (paso2) paso2.style.display = '';
+}
+
+// Vuelve a mostrar todos los cortes
+function mostrarTodosLosCortes() {
+  _corteEnfocado = null;
+  renderInformesGuardados();
+}
+
+// Muestra/oculta los controles operativos del Paso 2 (columnas, tarifa, etc.)
+function togglePaso2() {
+  const cont = document.getElementById('corte-paso2-contenido');
+  const flecha = document.getElementById('paso2-flecha');
+  if (!cont) return;
+  const oculto = cont.style.display === 'none';
+  cont.style.display = oculto ? '' : 'none';
+  if (flecha) flecha.textContent = oculto ? '▴ ocultar' : '▾ editar columnas y tarifa';
+}
+
 function renderInformesGuardados() {
   const card = document.getElementById('corte-resumen-card');
   const lista = document.getElementById('corte-resumen-lista');
@@ -6894,7 +6942,28 @@ function renderInformesGuardados() {
   }
   if (card) card.style.display = '';
 
-  lista.innerHTML = items.map(inf => {
+  // MODO ENFOQUE: si hay un corte seleccionado, mostrar solo ese y colapsar los demás
+  let itemsAMostrar = items;
+  let barraColapso = '';
+  if (_corteEnfocado) {
+    const enfocado = items.find(it =>
+      (it.nombreCorte||'').trim().toLowerCase() === (_corteEnfocado.nombre||'').trim().toLowerCase() &&
+      (it.operacion||'').trim().toLowerCase() === (_corteEnfocado.prov||'').trim().toLowerCase()
+    );
+    if (enfocado) {
+      itemsAMostrar = [enfocado];
+      const ocultos = items.length - 1;
+      barraColapso = `
+        <div onclick="mostrarTodosLosCortes()" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:11px;background:var(--s2);border:1px dashed var(--rule);border-radius:10px;cursor:pointer;margin-bottom:4px" title="Mostrar todos los cortes">
+          <span style="font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-m)">▾ Ver todos los cortes (${ocultos} más)</span>
+        </div>`;
+    } else {
+      // El corte enfocado ya no existe → salir del modo enfoque
+      _corteEnfocado = null;
+    }
+  }
+
+  lista.innerHTML = barraColapso + itemsAMostrar.map(inf => {
     const color = getClientColor(inf.operacion) || '#1a5c35';
     const logo = getClientLogo(inf.operacion);
     const valorSistema = parseFloat(inf.valorSistema) || 0;
@@ -7430,6 +7499,8 @@ function aplicarCorteFavorito(i) {
   const f = _cortesFavoritosCache[i];
   if (!f) return;
   _aplicarFav(f, f.ini, f.cie);
+  // Enfocar este corte: colapsa los demás para trabajar concentrado
+  enfocarCorte(f.prov, f.nombre);
 }
 
 // Aplica el favorito pero corriendo el patrón de días al periodo más reciente
@@ -7482,6 +7553,8 @@ function duplicarCortePeriodoActual(i) {
       return;
     }
     crearInformeDesdeFavorito(nombreNuevo, f.prov, ini, cie);
+    // Enfocar el corte nuevo del periodo actual
+    enfocarCorte(f.prov, nombreNuevo);
     // Feedback visual
     const card = document.getElementById('corte-resumen-card');
     if (card) card.scrollIntoView({behavior:'smooth', block:'start'});
