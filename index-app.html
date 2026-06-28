@@ -1769,7 +1769,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   </div>
 
   <!-- PASO 1: Parámetros base -->
-  <div class="card" style="margin-bottom:20px;padding:24px">
+  <div class="card" id="corte-paso1" style="margin-bottom:20px;padding:24px">
     <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy);margin-bottom:16px">Paso 1 · Selecciona proveedor y rango</div>
     <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
       <div style="display:flex;flex-direction:column;gap:5px;min-width:220px;flex:1">
@@ -6536,6 +6536,7 @@ function renderInformeCorte() {
             <div style="font-family:'Playfair Display',serif;font-size:26px;font-weight:700;line-height:1.1">${c.prov}</div>
             <div style="font-size:12px;color:rgba(255,255,255,.85);margin-top:6px">Certificado de facturación del corte</div>
           </div>
+          <button onclick="cancelarSeleccionCorte()" style="flex-shrink:0;padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:8px;cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.3)'" onmouseout="this.style.background='rgba(255,255,255,.18)'" title="Cancelar y volver a la lista de cortes">✕ Cancelar</button>
         </div>
       </div>
       <div style="padding:24px">
@@ -6910,6 +6911,32 @@ function togglePaso2() {
   const oculto = cont.style.display === 'none';
   cont.style.display = oculto ? '' : 'none';
   if (flecha) flecha.textContent = oculto ? '▴ ocultar' : '▾ editar columnas y tarifa';
+}
+
+// Cancela la selección/edición actual SIN guardar y vuelve al menú default (lista de cortes)
+function cancelarSeleccionCorte() {
+  _corteEnfocado = null;
+
+  // Ocultar y limpiar todo el bloque operativo
+  const paso2 = document.getElementById('corte-paso2');
+  if (paso2) paso2.style.display = 'none';
+  const informe = document.getElementById('corte-informe');
+  if (informe) informe.innerHTML = '';
+  const resultado = document.getElementById('corte-resultado');
+  if (resultado) resultado.innerHTML = '';
+  window._corteActual = null;
+
+  // Restablecer el Paso 1 (proveedor y fechas) al estado vacío
+  const prov = document.getElementById('corte-proveedor'); if (prov) prov.value = '';
+  const fi = document.getElementById('corte-fecha-inicio'); if (fi) fi.value = '';
+  const fc = document.getElementById('corte-fecha-cierre'); if (fc) fc.value = '';
+  const nombre = document.getElementById('corte-fav-nombre'); if (nombre) nombre.value = '';
+
+  renderInformesGuardados();
+
+  // Llevar la vista de vuelta al Paso 1
+  const paso1 = document.getElementById('corte-paso1') || document.getElementById('corte-proveedor');
+  if (paso1) setTimeout(() => paso1.scrollIntoView({ behavior:'smooth', block:'start' }), 100);
 }
 
 function renderInformesGuardados() {
@@ -7510,6 +7537,11 @@ function aplicarCorteFavorito(i) {
   _aplicarFav(f, f.ini, f.cie);
   // Enfocar este corte: colapsa los demás para trabajar concentrado
   enfocarCorte(f.prov, f.nombre);
+  // Llevar al inicio del header de edición (el informe de certificación)
+  setTimeout(() => {
+    const h = document.getElementById('corte-informe');
+    if (h) h.scrollIntoView({ behavior:'smooth', block:'start' });
+  }, 250);
 }
 
 // Aplica el favorito pero corriendo el patrón de días al periodo más reciente
@@ -7570,6 +7602,11 @@ function duplicarCortePeriodoActual(i) {
     enfocarCorte(f.prov, nombreNuevo);
     // Re-renderizar el informe detallado para que tome el nombre del periodo
     if (typeof renderInformeCorte === 'function') renderInformeCorte();
+    // Llevar al inicio del header de edición
+    setTimeout(() => {
+      const h = document.getElementById('corte-informe');
+      if (h) h.scrollIntoView({ behavior:'smooth', block:'start' });
+    }, 200);
   }, 600);
 }
 
