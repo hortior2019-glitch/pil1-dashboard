@@ -6906,17 +6906,34 @@ function cargarInformesGuardados() {
     });
 }
 
+// Calcula el "periodo actual" de un favorito según su patrón de días, respetando si el
+// corte original abarcaba un solo mes (ej: del 1 al 20) o cruzaba a otro mes (ej: del 21 may al 22 jun).
+function _periodoActualFavorito(f) {
+  // Sin patrón de día → usar las fechas originales guardadas
+  if (!f.diaIni || !f.diaCie) return { ini: f.ini, cie: f.cie };
+  const hoy = new Date();
+  const ymd = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  // ¿El corte original cruzaba de un mes a otro?
+  let cruzaMes;
+  if (f.ini && f.cie) {
+    const oi = new Date(f.ini+'T00:00:00'), oc = new Date(f.cie+'T00:00:00');
+    cruzaMes = (oi.getMonth() !== oc.getMonth()) || (oi.getFullYear() !== oc.getFullYear());
+  } else {
+    // Sin fechas originales: inferir por los días (si inicio >= cierre, cruza de mes)
+    cruzaMes = (f.diaIni >= f.diaCie);
+  }
+  const cierre = new Date(hoy.getFullYear(), hoy.getMonth(), f.diaCie);
+  const inicio = cruzaMes
+    ? new Date(hoy.getFullYear(), hoy.getMonth()-1, f.diaIni)  // del mes anterior a este
+    : new Date(hoy.getFullYear(), hoy.getMonth(), f.diaIni);   // todo dentro del mes actual
+  return { ini: ymd(inicio), cie: ymd(cierre) };
+}
+
 // Calcula viajes/kg/valor de un favorito al momento, usando su periodo (patrón de día → periodo actual)
 function _calcularValoresFavorito(f) {
-  // Determinar el rango: si tiene patrón de día, usar periodo actual; si no, las fechas guardadas
-  let ini = f.ini, cie = f.cie;
-  if (f.diaIni && f.diaCie) {
-    const hoy = new Date();
-    const cierre = new Date(hoy.getFullYear(), hoy.getMonth(), f.diaCie);
-    const inicio = new Date(hoy.getFullYear(), hoy.getMonth()-1, f.diaIni);
-    const ymd = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-    ini = ymd(inicio); cie = ymd(cierre);
-  }
+  // Determinar el rango usando el helper de periodo (respeta corte de un solo mes vs dos meses)
+  const per = _periodoActualFavorito(f);
+  let ini = per.ini, cie = per.cie;
   const registros = filtrarRegistrosCorte(f.prov, ini, cie);
   const viajes = registros.length;
   // En la previsualización de la lista no se aplica relleno (usa pesos reales)
@@ -7676,12 +7693,8 @@ function aplicarCorteFavorito(i) {
 function aplicarCorteFavoritoMesActual(i) {
   const f = _cortesFavoritosCache[i];
   if (!f || !f.diaIni || !f.diaCie) { aplicarCorteFavorito(i); return; }
-  const hoy = new Date();
-  // Cierre = día diaCie de este mes; Inicio = día diaIni del mes anterior
-  const cierre = new Date(hoy.getFullYear(), hoy.getMonth(), f.diaCie);
-  const inicio = new Date(hoy.getFullYear(), hoy.getMonth()-1, f.diaIni);
-  const ymd = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-  _aplicarFav(f, ymd(inicio), ymd(cierre));
+  const per = _periodoActualFavorito(f);
+  _aplicarFav(f, per.ini, per.cie);
 }
 
 // "Periodo actual": carga el corte al periodo más reciente Y crea un informe duplicado
@@ -7690,15 +7703,9 @@ function duplicarCortePeriodoActual(i) {
   const f = _cortesFavoritosCache[i];
   if (!f) return;
 
-  // Determinar fechas del periodo actual (patrón de día si existe)
-  let ini = f.ini, cie = f.cie;
-  if (f.diaIni && f.diaCie) {
-    const hoy = new Date();
-    const cierre = new Date(hoy.getFullYear(), hoy.getMonth(), f.diaCie);
-    const inicio = new Date(hoy.getFullYear(), hoy.getMonth()-1, f.diaIni);
-    const ymd = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-    ini = ymd(inicio); cie = ymd(cierre);
-  }
+  // Determinar fechas del periodo actual (respeta corte de un solo mes vs dos meses)
+  const per = _periodoActualFavorito(f);
+  let ini = per.ini, cie = per.cie;
 
   // Cargar el corte en pantalla con esas fechas
   _aplicarFav(f, ini, cie);
