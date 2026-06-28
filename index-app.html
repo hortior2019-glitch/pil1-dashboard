@@ -1890,12 +1890,12 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   <div class="card" id="corte-resumen-card" style="margin-bottom:20px;padding:20px 24px;display:none">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
       <div>
-        <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy)">Resumen de facturación</div>
-        <div style="font-size:11px;color:var(--ink-l);margin-top:2px">Estado de los cortes certificados — verde: facturado · rojo: pendiente</div>
+        <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy)">Cortes y facturación</div>
+        <div style="font-size:11px;color:var(--ink-l);margin-top:2px">Tus cortes guardados y su estado — verde: facturado · rojo: pendiente</div>
       </div>
       <button onclick="cargarInformesGuardados()" style="padding:7px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Actualizar</button>
     </div>
-    <div id="corte-resumen-lista" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px"></div>
+    <div id="corte-resumen-lista" style="display:flex;flex-direction:column;gap:12px"></div>
   </div>
 
   <!-- INFORME / CERTIFICADO DE FACTURACIÓN (se llena tras generar un corte) -->
@@ -6852,13 +6852,13 @@ function renderInformesGuardados() {
   const items = [];
 
   // 1) Por cada favorito, buscar si ya tiene informe (match por nombre + operación)
-  favs.forEach(f => {
+  favs.forEach((f, fIdx) => {
     const infExistente = _informesGuardados.find(inf =>
       (inf.nombreCorte||'').trim().toLowerCase() === (f.nombre||'').trim().toLowerCase() &&
       (inf.operacion||'').trim().toLowerCase() === (f.prov||'').trim().toLowerCase()
     );
     if (infExistente) {
-      items.push(infExistente);
+      items.push({ ...infExistente, favIndex: fIdx, favorito: f });
     } else {
       // Favorito sin informe → calcular valores al momento
       const calc = _calcularValoresFavorito(f);
@@ -6866,6 +6866,7 @@ function renderInformesGuardados() {
         id: '__fav__' + (f.id || f.nombre),
         esFavoritoSinInforme: true,
         favorito: f,
+        favIndex: fIdx,
         operacion: f.prov,
         nombreCorte: f.nombre,
         material: 'Todos',
@@ -6884,7 +6885,7 @@ function renderInformesGuardados() {
   // 2) Informes que NO corresponden a ningún favorito (ej: creados manualmente) → también mostrarlos
   _informesGuardados.forEach(inf => {
     const yaIncluido = items.find(it => it.id === inf.id);
-    if (!yaIncluido) items.push(inf);
+    if (!yaIncluido) items.push({ ...inf, favIndex: -1 });
   });
 
   if (items.length === 0) {
@@ -6926,6 +6927,7 @@ function renderInformesGuardados() {
         <div style="background:${estadoBg};color:${estadoColor};font-size:9px;font-weight:800;letter-spacing:.5px;padding:5px 9px;border-radius:20px;flex-shrink:0">${estadoTexto}</div>
       </div>
       <div style="padding:12px 14px">
+        ${inf.favorito ? `<div style="font-size:11px;color:var(--ink-l);margin-bottom:8px;padding-bottom:8px;border-bottom:1px dashed var(--rule-l)">${(inf.favorito.colsSel||[]).length} columnas${inf.favorito.sepMaterial?' · por material':''}${inf.favorito.sepEmpresa?' · por empresa':''}${inf.favorito.diaIni?' · día '+inf.favorito.diaIni+' al '+inf.favorito.diaCie:''}${inf.favorito.tarifaTipo?' · $'+Math.round(inf.favorito.tarifaValor).toLocaleString('es-CO')+'/'+(inf.favorito.tarifaTipo==='viaje'?'viaje':'kg'):''}</div>` : ''}
         <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
           <span style="color:var(--ink-l)">Periodo</span>
           <span style="color:var(--ink);font-weight:600">${inf.periodo || '—'}</span>
@@ -6961,7 +6963,13 @@ function renderInformesGuardados() {
           <span id="resf-pend-${inf.id}" style="font-family:'Libre Baskerville',serif;font-size:18px;font-weight:800;color:${estadoColor}">${pendienteTexto}</span>
         </div>
 
+        ${inf.favIndex >= 0 ? `
         <div style="display:flex;gap:6px;margin-top:10px">
+          <button onclick="aplicarCorteFavorito(${inf.favIndex})" style="flex:1;padding:8px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:5px;cursor:pointer;font-family:'Source Sans 3',sans-serif" title="Carga este corte con sus fechas originales">Usar</button>
+          <button onclick="duplicarCortePeriodoActual(${inf.favIndex})" style="flex:1;padding:8px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--gold);color:white;border:none;border-radius:5px;cursor:pointer;font-family:'Source Sans 3',sans-serif" title="Duplica el corte al periodo actual (nuevo mes) para volver a facturarlo">Periodo actual</button>
+        </div>` : ''}
+
+        <div style="display:flex;gap:6px;margin-top:6px">
           <button onclick="guardarTarjetaInforme('${inf.id}')" style="flex:1;padding:8px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:${color};color:white;border:none;border-radius:5px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Guardar factura</button>
           <button onclick="eliminarTarjetaInforme('${inf.id}')" style="padding:8px 12px;font-size:10px;font-weight:700;background:var(--rule-l);color:var(--red);border:none;border-radius:5px;cursor:pointer" title="Eliminar informe">✕</button>
         </div>
@@ -7073,9 +7081,15 @@ function guardarTarjetaInforme(id) {
 
 // Elimina un informe del resumen
 function eliminarTarjetaInforme(id) {
-  // Si es un favorito sin informe, no hay nada que borrar en la hoja Informes
+  // Si es un favorito sin informe, ofrecer eliminar el corte favorito directamente
   if (id && id.indexOf('__fav__') === 0) {
-    alert('Este corte aún no tiene factura registrada. Para quitarlo, elimina el corte favorito desde la lista de arriba.');
+    const item = (_cortesFavoritosCache||[]).find(f => ('__fav__' + (f.id || f.nombre)) === id);
+    if (item && item.id) {
+      if (!confirm('¿Eliminar el corte "' + item.nombre + '"? (aún no tiene factura registrada)')) return;
+      eliminarCorteFavorito(item.id);
+    } else {
+      alert('No se pudo identificar el corte a eliminar.');
+    }
     return;
   }
   if (!confirm('¿Eliminar este informe del resumen de facturación?')) return;
@@ -7390,24 +7404,10 @@ function crearInformeDesdeFavorito(nombre, prov, ini, cie) {
 }
 
 function renderCortesFavoritos() {
+  // La lista de favoritos se fusionó con el "Resumen de facturación".
+  // Mantenemos esta tarjeta oculta y delegamos el render a renderInformesGuardados.
   const card = document.getElementById('corte-favoritos-card');
-  const lista = document.getElementById('corte-favoritos-lista');
-  if (!card || !lista) return;
-  const favs = _cortesFavoritosCache;
-  if (!favs || favs.length === 0) { card.style.display = 'none'; return; }
-  card.style.display = '';
-  lista.innerHTML = favs.map((f, i) => `
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border:1px solid var(--rule-l);border-radius:6px;flex-wrap:wrap">
-      <div style="flex:1;min-width:160px">
-        <div style="font-size:14px;font-weight:800;color:var(--ink)">${f.nombre}</div>
-        <div style="font-size:11px;color:var(--ink-l);margin-top:2px">${f.prov} · ${(f.colsSel||[]).length} columnas${f.sepMaterial?' · por material':''}${f.sepEmpresa?' · por empresa':''}${f.diaIni?' · día '+f.diaIni+' al '+f.diaCie:''}${f.tarifaTipo?' · $'+Math.round(f.tarifaValor).toLocaleString('es-CO')+'/'+(f.tarifaTipo==='viaje'?'viaje':'kg'):''}</div>
-      </div>
-      <div style="display:flex;gap:6px">
-        <button onclick="aplicarCorteFavorito(${i})" style="padding:7px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Usar</button>
-        <button onclick="aplicarCorteFavoritoMesActual(${i})" style="padding:7px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--gold);color:white;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif" title="Aplica el mismo patrón de días pero al periodo más reciente">Periodo actual</button>
-        <button onclick="eliminarCorteFavorito('${f.id}')" style="padding:7px 12px;font-size:10px;font-weight:700;background:var(--rule-l);color:var(--red);border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">✕</button>
-      </div>
-    </div>`).join('');
+  if (card) card.style.display = 'none';
 }
 
 // Aplica el favorito tal cual fue guardado (mismas fechas exactas)
@@ -7428,6 +7428,49 @@ function aplicarCorteFavoritoMesActual(i) {
   const inicio = new Date(hoy.getFullYear(), hoy.getMonth()-1, f.diaIni);
   const ymd = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
   _aplicarFav(f, ymd(inicio), ymd(cierre));
+}
+
+// "Periodo actual": carga el corte al periodo más reciente Y crea un informe duplicado
+// para ese nuevo periodo, de modo que aparezca como una tarjeta nueva (a facturar este mes).
+function duplicarCortePeriodoActual(i) {
+  const f = _cortesFavoritosCache[i];
+  if (!f) return;
+
+  // Determinar fechas del periodo actual (patrón de día si existe)
+  let ini = f.ini, cie = f.cie;
+  if (f.diaIni && f.diaCie) {
+    const hoy = new Date();
+    const cierre = new Date(hoy.getFullYear(), hoy.getMonth(), f.diaCie);
+    const inicio = new Date(hoy.getFullYear(), hoy.getMonth()-1, f.diaIni);
+    const ymd = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    ini = ymd(inicio); cie = ymd(cierre);
+  }
+
+  // Cargar el corte en pantalla con esas fechas
+  _aplicarFav(f, ini, cie);
+
+  // Nombre del nuevo informe con el mes del periodo (para distinguirlo del original)
+  const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const dCie = new Date(cie+'T00:00:00');
+  const sufijo = MESES[dCie.getMonth()] + ' ' + dCie.getFullYear();
+  const nombreNuevo = f.nombre + ' · ' + sufijo;
+
+  // Esperar a que el corte se genere y luego crear el informe duplicado
+  setTimeout(() => {
+    // Verificar que no exista ya un informe con ese nombre+periodo (evitar duplicados)
+    const yaExiste = _informesGuardados.find(inf =>
+      (inf.nombreCorte||'').trim().toLowerCase() === nombreNuevo.trim().toLowerCase() &&
+      (inf.operacion||'').trim().toLowerCase() === (f.prov||'').trim().toLowerCase()
+    );
+    if (yaExiste) {
+      alert('Ya existe un corte para ' + sufijo + '. Búscalo en la lista.');
+      return;
+    }
+    crearInformeDesdeFavorito(nombreNuevo, f.prov, ini, cie);
+    // Feedback visual
+    const card = document.getElementById('corte-resumen-card');
+    if (card) card.scrollIntoView({behavior:'smooth', block:'start'});
+  }, 600);
 }
 
 function _aplicarFav(f, ini, cie) {
@@ -7465,7 +7508,7 @@ function eliminarCorteFavorito(id) {
   if (!confirm('¿Eliminar este favorito?')) return;
   fetch(CORTES_FAV_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ accion:'eliminar', id }) })
     .then(r => r.json())
-    .then(() => cargarCortesFavoritosRemoto())
+    .then(() => { cargarCortesFavoritosRemoto(); setTimeout(cargarInformesGuardados, 400); })
     .catch(e => console.error('Error eliminando favorito:', e));
 }
 
