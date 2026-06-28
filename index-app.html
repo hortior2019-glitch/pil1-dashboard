@@ -6863,23 +6863,150 @@ function renderInformesGuardados() {
           <span style="color:var(--ink-l)">Viajes · KG</span>
           <span style="color:var(--ink);font-weight:600">${fmt(inf.viajes||0)} · ${fmt(inf.kgNeto||0)} kg</span>
         </div>
-        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px">
           <span style="color:var(--ink-l)">Valor sistema</span>
           <span style="color:var(--ink);font-weight:700">${fmtPesoInf(valorSistema)}</span>
         </div>
-        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
-          <span style="color:var(--ink-l)">Facturado proveedor</span>
-          <span style="color:var(--ink);font-weight:700">${tieneReal ? fmtPesoInf(valorReal) : '—'}</span>
+
+        <!-- Datos de factura editables directamente en la tarjeta -->
+        <div style="border-top:1px solid var(--rule-l);padding-top:10px;margin-top:6px;display:flex;flex-direction:column;gap:7px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <label style="font-size:10px;color:var(--ink-l);width:80px;flex-shrink:0"># Factura</label>
+            <input type="text" id="resf-num-${inf.id}" value="${(inf.numeroFactura||'').replace(/"/g,'&quot;')}" placeholder="Ej: FE-1234" style="flex:1;border:1px solid var(--rule);padding:6px 8px;font-size:12px;border-radius:4px;font-family:'Source Sans 3',sans-serif">
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <label style="font-size:10px;color:var(--ink-l);width:80px;flex-shrink:0">Facturado</label>
+            <input type="number" id="resf-real-${inf.id}" value="${valorReal||''}" placeholder="Valor real $" min="0" step="any" oninput="recalcTarjetaInforme('${inf.id}',${valorSistema})" style="flex:1;border:1px solid var(--rule);padding:6px 8px;font-size:12px;border-radius:4px;font-family:'Source Sans 3',sans-serif">
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <label style="font-size:10px;color:var(--ink-l);width:80px;flex-shrink:0">Factura</label>
+            <input type="file" id="resf-file-${inf.id}" onchange="subirFacturaTarjeta('${inf.id}',this)" style="flex:1;font-size:11px">
+          </div>
+          <div id="resf-fileinfo-${inf.id}" style="font-size:10px;color:var(--ink-l)">${inf.linkFactura ? '<a href="'+inf.linkFactura+'" target="_blank" style="color:'+color+';font-weight:700">Ver factura adjunta</a>' : ''}</div>
         </div>
-        ${inf.numeroFactura ? `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px"><span style="color:var(--ink-l)"># Factura</span><span style="color:var(--ink);font-weight:600">${inf.numeroFactura}</span></div>` : ''}
+
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--rule-l)">
           <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-l)">Pendiente</span>
-          <span style="font-family:'Libre Baskerville',serif;font-size:18px;font-weight:800;color:${estadoColor}">${pendienteTexto}</span>
+          <span id="resf-pend-${inf.id}" style="font-family:'Libre Baskerville',serif;font-size:18px;font-weight:800;color:${estadoColor}">${pendienteTexto}</span>
         </div>
-        ${inf.linkFactura ? `<a href="${inf.linkFactura}" target="_blank" style="display:block;text-align:center;margin-top:10px;padding:7px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;background:${hexToRgba(color,.1)};color:${color};border-radius:5px;text-decoration:none">Ver factura adjunta</a>` : ''}
+
+        <div style="display:flex;gap:6px;margin-top:10px">
+          <button onclick="guardarTarjetaInforme('${inf.id}')" style="flex:1;padding:8px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:${color};color:white;border:none;border-radius:5px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Guardar factura</button>
+          <button onclick="eliminarTarjetaInforme('${inf.id}')" style="padding:8px 12px;font-size:10px;font-weight:700;background:var(--rule-l);color:var(--red);border:none;border-radius:5px;cursor:pointer" title="Eliminar informe">✕</button>
+        </div>
+        <span id="resf-estado-${inf.id}" style="font-size:11px;font-weight:700;display:block;margin-top:6px;min-height:14px"></span>
       </div>
     </div>`;
   }).join('');
+}
+
+// Recalcula el "pendiente" de una tarjeta en vivo al digitar el valor facturado
+function recalcTarjetaInforme(id, valorSistema) {
+  const inp = document.getElementById('resf-real-'+id);
+  const pend = document.getElementById('resf-pend-'+id);
+  if (!inp || !pend) return;
+  const valorReal = parseFloat(inp.value);
+  if (isNaN(valorReal) || valorReal <= 0) {
+    pend.style.color = '#b91c1c';
+    pend.textContent = '-' + fmtPesoInf(valorSistema);
+  } else {
+    const dif = valorSistema - valorReal;
+    if (Math.abs(dif) < 0.5) {
+      pend.style.color = '#1a7f37';
+      pend.textContent = fmtPesoInf(0);
+    } else {
+      pend.style.color = '#dc6868';
+      pend.textContent = (dif > 0 ? '-' : '+') + fmtPesoInf(Math.abs(dif));
+    }
+  }
+}
+
+// Sube la factura de una tarjeta concreta
+function subirFacturaTarjeta(id, input) {
+  const info = document.getElementById('resf-fileinfo-'+id);
+  const file = input.files && input.files[0];
+  if (!file) return;
+  if (info) { info.style.color = 'var(--ink-l)'; info.textContent = 'Subiendo archivo...'; }
+  const reader = new FileReader();
+  reader.onload = function() {
+    const base64 = reader.result.split(',')[1];
+    fetch(CORTES_FAV_API, {
+      method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ accion:'subirFactura', base64, nombreArchivo: file.name, mimeType: file.type })
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok && data.link) {
+          // Guardar el link temporalmente en el dataset de la tarjeta
+          const card = document.getElementById('resf-fileinfo-'+id);
+          if (card) { card.dataset.link = data.link; card.style.color = 'var(--green)'; card.innerHTML = '<a href="'+data.link+'" target="_blank" style="color:var(--navy);font-weight:700">Ver factura adjunta</a> (recuerda Guardar)'; }
+        } else {
+          if (info) { info.style.color = 'var(--red)'; info.textContent = 'Error al subir'; }
+        }
+      })
+      .catch(e => { console.error(e); if (info) { info.style.color = 'var(--red)'; info.textContent = 'Error de conexión'; } });
+  };
+  reader.readAsDataURL(file);
+}
+
+// Guarda los datos de factura editados de una tarjeta
+function guardarTarjetaInforme(id) {
+  const inf = _informesGuardados.find(x => x.id === id);
+  if (!inf) return;
+  const estado = document.getElementById('resf-estado-'+id);
+  const numFactura = (document.getElementById('resf-num-'+id)||{}).value || '';
+  const valorReal = parseFloat((document.getElementById('resf-real-'+id)||{}).value) || 0;
+  const fileInfo = document.getElementById('resf-fileinfo-'+id);
+  const linkNuevo = (fileInfo && fileInfo.dataset.link) ? fileInfo.dataset.link : (inf.linkFactura || '');
+
+  const payload = {
+    accion: 'guardarInforme',
+    id: id, // id existente → actualiza la fila
+    operacion: inf.operacion,
+    nombreCorte: inf.nombreCorte,
+    material: inf.material,
+    viajes: inf.viajes,
+    kgNeto: inf.kgNeto,
+    precioDisposicion: inf.precioDisposicion,
+    precioPorViaje: inf.precioPorViaje,
+    valorSistema: inf.valorSistema,
+    numeroFactura: numFactura,
+    linkFactura: linkNuevo,
+    valorRealFacturado: valorReal,
+    observaciones: inf.observaciones || '',
+    periodo: inf.periodo
+  };
+
+  if (estado) { estado.style.color = 'var(--ink-l)'; estado.textContent = 'Guardando...'; }
+  const timeout = setTimeout(() => { if (estado) { estado.style.color = 'var(--green)'; estado.textContent = 'Guardado.'; } setTimeout(cargarInformesGuardados, 500); }, 10000);
+  fetch(CORTES_FAV_API, {
+    method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify(payload)
+  })
+    .then(r => r.json())
+    .then(() => {
+      clearTimeout(timeout);
+      if (estado) { estado.style.color = 'var(--green)'; estado.textContent = 'Factura guardada'; }
+      setTimeout(cargarInformesGuardados, 600);
+    })
+    .catch(e => {
+      clearTimeout(timeout);
+      console.warn('Respuesta no legible al guardar tarjeta:', e);
+      if (estado) { estado.style.color = 'var(--green)'; estado.textContent = 'Factura guardada'; }
+      setTimeout(cargarInformesGuardados, 600);
+    });
+}
+
+// Elimina un informe del resumen
+function eliminarTarjetaInforme(id) {
+  if (!confirm('¿Eliminar este informe del resumen de facturación?')) return;
+  fetch(CORTES_FAV_API, {
+    method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({ accion:'eliminarInforme', id })
+  })
+    .then(r => r.json())
+    .then(() => { setTimeout(cargarInformesGuardados, 500); })
+    .catch(e => { console.warn(e); setTimeout(cargarInformesGuardados, 500); });
 }
 
 // Helpers compartidos para exports: valor material, valor transporte y total de una fila
@@ -7127,12 +7254,58 @@ function guardarCorteFavorito() {
       if (statusEl) statusEl.textContent = data.ok ? 'Favorito guardado correctamente' : 'Error al guardar';
       document.getElementById('corte-fav-nombre').value = '';
       cargarCortesFavoritosRemoto();
+      // También crear automáticamente la tarjeta de facturación (informe) con el nombre del favorito
+      crearInformeDesdeFavorito(nombre, prov, ini, cie);
       setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 3000);
     })
     .catch(e => {
       console.error('Error guardando favorito:', e);
       if (statusEl) statusEl.textContent = 'Error de conexión al guardar';
     });
+}
+
+// Crea automáticamente un informe de facturación a partir del corte recién guardado como favorito.
+// Calcula viajes, kg y valor del sistema; deja los datos de factura vacíos (estado PENDIENTE).
+function crearInformeDesdeFavorito(nombre, prov, ini, cie) {
+  if (!window._corteActual) return;
+  const c = window._corteActual;
+  // Solo si el favorito corresponde al corte actualmente generado
+  if (c.prov !== prov || c.ini !== ini || c.cie !== cie) return;
+
+  const registros = filtrarRegistrosCorte(prov, ini, cie);
+  if (registros.length === 0) return;
+  const viajes = registros.length;
+  const kg = registros.reduce((s,r) => s + getPesoNeto(r), 0);
+  // Valor del sistema = suma de material + transporte de todas las filas
+  const valorSistema = registros.reduce((s,r) => s + _valorFilaCorte(c, r), 0);
+
+  const precioDisp = (c.tarifaTipo === 'kg' && c.tarifaValor > 0) ? c.tarifaValor : 0;
+  const precioViaje = (c.tarifaTipo === 'viaje' && c.tarifaValor > 0) ? c.tarifaValor : 0;
+
+  const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const fmtF = s => { const d = new Date(s+'T00:00:00'); return d.getDate()+' '+MESES[d.getMonth()]+' '+d.getFullYear(); };
+
+  const payload = {
+    accion: 'guardarInforme',
+    operacion: prov,
+    nombreCorte: nombre,
+    material: 'Todos',
+    viajes: viajes,
+    kgNeto: Math.round(kg),
+    precioDisposicion: precioDisp,
+    precioPorViaje: precioViaje,
+    valorSistema: Math.round(valorSistema),
+    numeroFactura: '',
+    linkFactura: '',
+    valorRealFacturado: 0,
+    observaciones: '',
+    periodo: fmtF(ini) + ' — ' + fmtF(cie)
+  };
+
+  fetch(CORTES_FAV_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(payload) })
+    .then(r => r.json())
+    .then(() => { setTimeout(cargarInformesGuardados, 600); })
+    .catch(e => { console.warn('No se pudo crear el informe automático:', e); setTimeout(cargarInformesGuardados, 600); });
 }
 
 function renderCortesFavoritos() {
