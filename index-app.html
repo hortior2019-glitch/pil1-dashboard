@@ -7059,29 +7059,78 @@ function guardarInformeCorte() {
     payload.editadoPor = (_usuarioActual && _usuarioActual.nombre) || 'Usuario';
   }
 
+  // ── GUARDADO UNIFICADO: junto con el informe, guardar/actualizar la configuración completa
+  // del corte (columnas, agrupación, tarifa, transporte) como su favorito vinculado. Así este
+  // corte SIEMPRE queda editable después, sin depender de un paso manual aparte. ──
+  const colsSelActual = _ordenColumnas.filter(cid =>
+    document.querySelector('.corte-col-chk[value="'+cid+'"]:checked'));
+  const sepMaterialActual = (document.getElementById('corte-separar-material')||{}).checked;
+  const sepEmpresaActual = (document.getElementById('corte-separar-empresa')||{}).checked;
+  const soloTotalActual = (document.getElementById('corte-solo-total')||{}).checked;
+  const precioPorMaterialActual = (document.getElementById('corte-precio-por-material')||{}).checked;
+  const preciosMaterialJsonActual = JSON.stringify(_cortePreciosMaterial || {});
+  const diaIniActual = c.ini ? new Date(c.ini+'T00:00:00').getDate() : null;
+  const diaCieActual = c.cie ? new Date(c.cie+'T00:00:00').getDate() : null;
+
+  // Buscar el favorito de este mismo corte (por nombre+operación) para actualizarlo, no duplicarlo
+  const favExistente = (_cortesFavoritosCache||[]).find(f =>
+    (f.prov||'').trim().toLowerCase() === (c.prov||'').trim().toLowerCase() &&
+    (f.nombre||'').trim().toLowerCase() === (nombreCorteVal||'').trim().toLowerCase()
+  );
+  const payloadFav = {
+    accion: 'guardar',
+    nombre: nombreCorteVal,
+    prov: c.prov,
+    ini: c.ini,
+    cie: c.cie,
+    diaIni: diaIniActual,
+    diaCie: diaCieActual,
+    colsSel: colsSelActual,
+    sepMaterial: sepMaterialActual,
+    sepEmpresa: sepEmpresaActual,
+    tarifaTipo: c.tarifaTipo || '',
+    tarifaValor: c.tarifaValor || 0,
+    soloTotal: soloTotalActual,
+    precioPorMaterial: precioPorMaterialActual,
+    preciosMaterialJson: preciosMaterialJsonActual,
+    cobrarTransporte: c.cobrarTransporte || false,
+    transporteValor: c.transporteValor || 0
+  };
+  if (favExistente) payloadFav.id = favExistente.id; // actualizar el favorito existente, no duplicar
+
   if (estado) { estado.style.color = 'var(--ink-l)'; estado.textContent = 'Guardando informe...'; }
   const timeout = setTimeout(() => {
     if (estado) { estado.style.color = 'var(--green)'; estado.textContent = 'Informe enviado.'; }
     setTimeout(() => { if (estado) estado.textContent = ''; }, 3000);
   }, 12000);
-  fetch(CORTES_FAV_API, {
+
+  // 1) Guardar/actualizar la configuración del corte (favorito) — solo si hay un nombre para identificarlo
+  const guardarFavPromise = nombreCorteVal
+    ? fetch(CORTES_FAV_API, {
+        method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body: JSON.stringify(payloadFav)
+      }).then(r => r.json()).catch(e => { console.warn('No se pudo guardar la configuración del corte:', e); return null; })
+    : Promise.resolve(null);
+
+  // 2) Luego guardar el informe (datos financieros)
+  guardarFavPromise.then(() => fetch(CORTES_FAV_API, {
     method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
     body: JSON.stringify(payload)
-  })
+  }))
     .then(r => r.json())
     .then(data => {
       clearTimeout(timeout);
       if (estado) { estado.style.color = 'var(--green)'; estado.textContent = (data && data.ok) ? 'Informe guardado correctamente' : 'Informe guardado'; }
       setTimeout(() => { if (estado) estado.textContent = ''; }, 3000);
-      // Refrescar el resumen de facturación arriba
-      setTimeout(cargarInformesGuardados, 800);
+      // Refrescar el resumen de facturación arriba (favoritos + informes, ya que ambos se guardaron juntos)
+      setTimeout(() => { cargarCortesFavoritosRemoto(); cargarInformesGuardados(); }, 800);
     })
     .catch(e => {
       clearTimeout(timeout);
       console.warn('Respuesta no legible al guardar informe:', e);
       if (estado) { estado.style.color = 'var(--green)'; estado.textContent = 'Informe guardado'; }
       setTimeout(() => { if (estado) estado.textContent = ''; }, 3000);
-      setTimeout(cargarInformesGuardados, 800);
+      setTimeout(() => { cargarCortesFavoritosRemoto(); cargarInformesGuardados(); }, 800);
     });
 }
 
@@ -7283,6 +7332,70 @@ function _mesAnioDeCard(inf) {
   const anio = parseInt(m[2], 10);
   if (mes < 0 || isNaN(anio)) return null;
   return { mes, anio };
+}
+
+// Convierte un texto de periodo guardado ("1 jun 2026 — 28 jun 2026") a fechas ISO {ini, cie}.
+// Se usa para poder reabrir y editar un informe aunque no tenga un favorito vinculado.
+function _parsePeriodoTexto(periodo) {
+  const partes = (periodo || '').split('—').map(s => s.trim());
+  if (partes.length < 2) return null;
+  const parseUna = txt => {
+    const m = txt.match(/(\d{1,2})\s+([a-zA-Z]{3})\s+(\d{4})/);
+    if (!m) return null;
+    const dia = parseInt(m[1], 10);
+    const mes = _MESES_AB.indexOf(m[2].toLowerCase());
+    const anio = parseInt(m[3], 10);
+    if (mes < 0 || isNaN(dia) || isNaN(anio)) return null;
+    return anio + '-' + String(mes+1).padStart(2,'0') + '-' + String(dia).padStart(2,'0');
+  };
+  const ini = parseUna(partes[0]);
+  const cie = parseUna(partes[1]);
+  if (!ini || !cie) return null;
+  return { ini, cie };
+}
+
+// Reabre un informe SIN favorito vinculado para poder editarlo: reconstruye Paso 1 y la tarifa
+// a partir de los propios datos guardados en el informe (operación, periodo, precios).
+function aplicarInformeOrfano(id) {
+  const inf = (_informesGuardados||[]).find(i => i.id === id);
+  if (!inf) { alert('No se encontró este corte.'); return; }
+  const fechas = _parsePeriodoTexto(inf.periodo);
+  if (!fechas) { alert('No se pudo interpretar el periodo de este corte para reabrirlo.'); return; }
+
+  document.getElementById('corte-proveedor').value = inf.operacion || '';
+  document.getElementById('corte-fecha-inicio').value = fechas.ini;
+  document.getElementById('corte-fecha-cierre').value = fechas.cie;
+  const nombreEl = document.getElementById('corte-fav-nombre');
+  if (nombreEl) nombreEl.value = inf.nombreCorte || '';
+
+  // Columnas: este informe no guardó configuración de columnas (no tenía favorito), así que
+  // se preselecciona un set razonable; el usuario puede ajustarlas libremente en el Paso 2.
+  document.querySelectorAll('.corte-col-chk').forEach(chk => { chk.checked = false; });
+  const colsDefault = ['fecha','diaSem','material','pesoNeto','placa','ticket'];
+  _ordenColumnas = [];
+  colsDefault.forEach(cid => {
+    const chk = document.querySelector('.corte-col-chk[value="'+cid+'"]');
+    if (chk) { chk.checked = true; _ordenColumnas.push(cid); }
+  });
+  if (typeof actualizarNumerosColumnas === 'function') actualizarNumerosColumnas();
+
+  // Tarifa: restaurar desde los precios guardados en el informe
+  const tt = document.getElementById('corte-tarifa-tipo');
+  const tv = document.getElementById('corte-tarifa-valor');
+  if (parseFloat(inf.precioDisposicion) > 0) {
+    if (tt) tt.value = 'kg';
+    if (tv) tv.value = inf.precioDisposicion;
+  } else if (parseFloat(inf.precioPorViaje) > 0) {
+    if (tt) tt.value = 'viaje';
+    if (tv) tv.value = inf.precioPorViaje;
+  }
+
+  onCorteParamsChange();
+  enfocarCorte(inf.operacion, inf.nombreCorte);
+  setTimeout(() => {
+    const h = document.getElementById('corte-informe');
+    if (h) h.scrollIntoView({ behavior:'smooth', block:'start' });
+  }, 250);
 }
 
 // Cambia el mes seleccionado y re-renderiza
@@ -7705,8 +7818,11 @@ function renderInformesGuardados() {
         <div style="display:flex;justify-content:flex-end">
           <button onclick="ocultarCorteFavorito('${inf.favorito ? inf.favorito.id : ''}')" style="padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:transparent;color:var(--ink-l);border:1px solid var(--rule);border-radius:8px;cursor:pointer;transition:all .15s" onmouseover="this.style.color='var(--red)';this.style.borderColor='var(--red)'" onmouseout="this.style.color='var(--ink-l)';this.style.borderColor='var(--rule)'" title="Eliminar">Eliminar</button>
         </div>` : `
+        <div style="margin-bottom:8px">
+          <button onclick="aplicarInformeOrfano('${inf.id}')" style="width:100%;padding:12px;font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:8px;cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:opacity .15s" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'" title="Reabre este corte para editarlo (las columnas se preseleccionan, puedes ajustarlas)">Usar / Editar</button>
+        </div>
         <div style="display:flex;justify-content:flex-end">
-          <button onclick="eliminarTarjetaInforme('${inf.id}')" style="padding:9px 16px;font-size:11px;font-weight:700;background:transparent;color:var(--ink-l);border:1px solid var(--rule);border-radius:8px;cursor:pointer" title="Eliminar informe">Eliminar</button>
+          <button onclick="eliminarTarjetaInforme('${inf.id}')" style="padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:transparent;color:var(--ink-l);border:1px solid var(--rule);border-radius:8px;cursor:pointer;transition:all .15s" onmouseover="this.style.color='var(--red)';this.style.borderColor='var(--red)'" onmouseout="this.style.color='var(--ink-l)';this.style.borderColor='var(--rule)'" title="Eliminar informe">Eliminar</button>
         </div>`}
       </div>
     </div>`;
@@ -7844,14 +7960,29 @@ function ocultarCorteFavorito(favId) {
   const fav = (_cortesFavoritosCache||[]).find(f => f.id === favId);
   if (fav) fav.activo = false;
   renderInformesGuardados();
-  // Persistir en el Sheet
+  // Persistir en el Sheet — y verificar que el servidor confirme el cambio
   fetch(CORTES_FAV_API, {
     method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
     body: JSON.stringify({ accion:'marcarActivo', id: favId, activo: false })
   })
     .then(r => r.json())
-    .then(() => { setTimeout(cargarCortesFavoritosRemoto, 600); })
-    .catch(e => { console.warn('No se pudo marcar inactivo:', e); });
+    .then(data => {
+      if (!data || data.ok !== true) {
+        // No se pudo persistir: revertir el cambio local y avisar
+        if (fav) fav.activo = true;
+        renderInformesGuardados();
+        const detalle = (data && data.error) ? data.error : 'sin respuesta del servidor';
+        alert('No se pudo eliminar el corte (' + detalle + ').\n\nSi acabas de actualizar el Apps Script, asegúrate de haber vuelto a implementarlo como Nueva versión.');
+        return;
+      }
+      setTimeout(cargarCortesFavoritosRemoto, 600);
+    })
+    .catch(e => {
+      console.warn('No se pudo marcar inactivo:', e);
+      if (fav) fav.activo = true;
+      renderInformesGuardados();
+      alert('Error de conexión al eliminar el corte. Inténtalo de nuevo.');
+    });
 }
 
 // Helpers compartidos para exports: valor material, valor transporte y total de una fila
