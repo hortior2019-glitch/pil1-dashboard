@@ -6939,6 +6939,22 @@ function subirFacturaInformeIdx(idx, input) {
 }
 
 // Guarda el informe en el Sheet
+// Busca un informe ya guardado que corresponda al MISMO corte: por nombre+operación exactos,
+// o por operación+periodo exacto (cubre el caso de que el usuario cambie el nombre del informe
+// sin que deje de ser el mismo corte). Se usa para actualizar en vez de duplicar al guardar.
+function _buscarInformeExistente(operacion, periodo, nombreCorte) {
+  if (!_informesGuardados) return null;
+  const opLow = (operacion||'').trim().toLowerCase();
+  const nomLow = (nombreCorte||'').trim().toLowerCase();
+  const perLow = (periodo||'').trim().toLowerCase();
+  return _informesGuardados.find(inf => {
+    const opInf = (inf.operacion||'').trim().toLowerCase();
+    const matchNombre = (inf.nombreCorte||'').trim().toLowerCase() === nomLow && opInf === opLow;
+    const matchPeriodo = !!perLow && opInf === opLow && (inf.periodo||'').trim().toLowerCase() === perLow;
+    return matchNombre || matchPeriodo;
+  }) || null;
+}
+
 function guardarInformeCorte() {
   const c = window._corteActual;
   if (!c) return;
@@ -6967,11 +6983,19 @@ function guardarInformeCorte() {
 
   const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
   const fmtF = s => { const d = new Date(s+'T00:00:00'); return d.getDate()+' '+MESES[d.getMonth()]+' '+d.getFullYear(); };
+  const periodoStr = fmtF(c.ini) + ' — ' + fmtF(c.cie);
+  const nombreCorteVal = (document.getElementById('inf-nombre')||{}).value || '';
+
+  // Buscar si este corte YA tiene un informe guardado (por nombre+operación u operación+periodo)
+  // para actualizar esa misma fila en vez de crear una nueva (evita duplicados).
+  const existente = _buscarInformeExistente(c.prov, periodoStr, nombreCorteVal);
+  // Si ya estaba facturado (tenía un valor real > 0) ANTES de este guardado, registrar quién y cuándo lo editó
+  const yaEstabaFacturado = existente && parseFloat(existente.valorRealFacturado) > 0;
 
   const payload = {
     accion: 'guardarInforme',
     operacion: c.prov,
-    nombreCorte: (document.getElementById('inf-nombre')||{}).value || '',
+    nombreCorte: nombreCorteVal,
     material: matSel === '__todos__' ? 'Todos' : matSel,
     viajes: viajes,
     kgNeto: Math.round(kg),
@@ -6983,8 +7007,13 @@ function guardarInformeCorte() {
     valorRealFacturado: valorReal,
     facturasJson: facturasJson,
     observaciones: (document.getElementById('inf-observaciones')||{}).value || '',
-    periodo: fmtF(c.ini) + ' — ' + fmtF(c.cie)
+    periodo: periodoStr
   };
+  if (existente) payload.id = existente.id; // actualizar la fila existente, no duplicar
+  if (yaEstabaFacturado) {
+    payload.marcarEditado = true;
+    payload.editadoPor = (_usuarioActual && _usuarioActual.nombre) || 'Usuario';
+  }
 
   if (estado) { estado.style.color = 'var(--ink-l)'; estado.textContent = 'Guardando informe...'; }
   const timeout = setTimeout(() => {
@@ -7413,14 +7442,24 @@ function renderInformesGuardados() {
   const favs = _cortesFavoritosCache || [];
   const items = [];
 
-  // 1) Por cada favorito, buscar si ya tiene informe (match por nombre + operación)
+  // Helper: formatea un periodo igual que al guardar el informe ("1 jun 2026 — 28 jun 2026")
+  const _MESES_F = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const _fmtPeriodoFechas = (ini, cie) => {
+    const f = s => { const d = new Date(s+'T00:00:00'); return d.getDate()+' '+_MESES_F[d.getMonth()]+' '+d.getFullYear(); };
+    return f(ini) + ' — ' + f(cie);
+  };
+  // Clave de identidad de un corte: operación + periodo exacto (más confiable que el nombre,
+  // que el usuario puede cambiar libremente en el informe sin que deje de ser el MISMO corte)
+  const _claveOperPeriodo = it => ((it.operacion||'').trim().toLowerCase() + '||' + (it.periodo||'').trim().toLowerCase());
+
+  // 1) Por cada favorito, buscar si ya tiene informe (match por nombre+operación, o por
+  // operación+periodo exacto — evita duplicados si el usuario cambió el nombre del informe)
   favs.forEach((f, fIdx) => {
     // Saltar favoritos marcados como inactivos (ocultos de la vista)
     if (f.activo === false) return;
-    const infExistente = _informesGuardados.find(inf =>
-      (inf.nombreCorte||'').trim().toLowerCase() === (f.nombre||'').trim().toLowerCase() &&
-      (inf.operacion||'').trim().toLowerCase() === (f.prov||'').trim().toLowerCase()
-    );
+    const per = _periodoActualFavorito(f);
+    const periodoFav = (per.ini && per.cie) ? _fmtPeriodoFechas(per.ini, per.cie) : '';
+    const infExistente = _buscarInformeExistente(f.prov, periodoFav, f.nombre);
     if (infExistente) {
       items.push({ ...infExistente, favIndex: fIdx, favorito: f });
     } else {
@@ -7447,15 +7486,18 @@ function renderInformesGuardados() {
   });
 
   // 2) Informes que NO corresponden a ningún favorito (ej: creados manualmente) → también mostrarlos
-  // Se deduplica por id Y por nombre+operación para evitar mostrar el mismo corte dos veces.
+  // Se deduplica por id, por nombre+operación Y por operación+periodo (mismo corte aunque cambie el nombre).
   const claveItem = it => ((it.nombreCorte||'').trim().toLowerCase() + '||' + (it.operacion||'').trim().toLowerCase());
   const clavesYaMostradas = new Set(items.map(claveItem));
+  const clavesPeriodoYaMostradas = new Set(items.map(_claveOperPeriodo));
   _informesGuardados.forEach(inf => {
     const yaPorId = items.find(it => it.id === inf.id);
     const yaPorNombre = clavesYaMostradas.has(claveItem(inf));
-    if (!yaPorId && !yaPorNombre) {
+    const yaPorPeriodo = inf.periodo && clavesPeriodoYaMostradas.has(_claveOperPeriodo(inf));
+    if (!yaPorId && !yaPorNombre && !yaPorPeriodo) {
       items.push({ ...inf, favIndex: -1 });
       clavesYaMostradas.add(claveItem(inf));
+      clavesPeriodoYaMostradas.add(_claveOperPeriodo(inf));
     }
   });
 
@@ -7593,6 +7635,13 @@ function renderInformesGuardados() {
           <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${estadoColor}">${pendienteLabel}</span>
           <span style="font-family:'Libre Baskerville',serif;font-size:24px;font-weight:800;color:${estadoColor};line-height:1">${pendienteTexto}</span>
         </div>
+
+        <!-- Aviso: editado después de haber sido facturado -->
+        ${inf.editadoPor ? `
+        <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#fef9e7;border:1px solid #f5e2a3;border-radius:8px;margin-bottom:18px">
+          <span style="font-size:14px">⚠</span>
+          <span style="font-size:12px;color:#8a6d1f;font-weight:600">Editado${inf.editadoFecha ? ' el '+inf.editadoFecha : ''}${inf.editadoPor ? ' por '+inf.editadoPor : ''} — después de facturado</span>
+        </div>` : ''}
 
         <!-- Acciones: entrar a editar (Usar) o eliminar -->
         ${inf.favIndex >= 0 ? `
