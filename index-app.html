@@ -6632,7 +6632,6 @@ function fmtPesoInf(n) { return '$ ' + Math.round(n).toLocaleString('es-CO'); }
 // Estado: lista de facturas del informe actual. Cada una: {material, numero, link, valor, archivoNombre, subiendo}
 let _informeFacturas = [];
 let _informeMateriales = []; // materiales disponibles del corte actual (para "dividir por material")
-let _informePlacas = [];     // placas disponibles del corte actual (para dividir por entidad/razón social)
 
 function renderInformeCorte() {
   const cont = document.getElementById('corte-informe');
@@ -6644,8 +6643,6 @@ function renderInformeCorte() {
   const materiales = [...new Set(registros.map(r =>
     (r['RESIDUO']||r['Residuo']||r['residuo']||'').trim() || 'Sin clasificar'
   ))].sort();
-  // Placas presentes (para poder dividir el corte por entidad asignando placas específicas)
-  const placasDisponibles = [...new Set(registros.map(r => getPlacaReg(r)).filter(Boolean))].sort();
 
   // Nombre del corte sugerido (del campo de guardar favorito, si lo escribió)
   const nombreSugerido = (document.getElementById('corte-fav-nombre')||{}).value || '';
@@ -6759,8 +6756,6 @@ function renderInformeCorte() {
 
   // Materiales disponibles del corte (para "dividir por material")
   _informeMateriales = materiales.slice();
-  // Placas disponibles del corte (para asignar a divisiones por razón social)
-  _informePlacas = placasDisponibles.slice();
 
   // Inicializar las facturas: desde el informe guardado si existe, si no una vacía
   const infGuardado = (_informesGuardados||[]).find(inf =>
@@ -6775,16 +6770,16 @@ function renderInformeCorte() {
         _informeFacturas = arr.map(f => ({
           material: f.material||'', numero: f.numero||'', link: f.link||'',
           valor: (f.valor!=null?f.valor:''), archivoNombre:'',
-          nombre: f.nombre||'', placas: Array.isArray(f.placas) ? f.placas : []
+          nombre: f.nombre||''
         }));
       }
     } catch(e) {}
   }
   // Compatibilidad: si no hay array pero sí un valor real guardado, crear una factura con esos datos
   if (_informeFacturas.length === 0 && infGuardado && (parseFloat(infGuardado.valorRealFacturado) > 0 || infGuardado.numeroFactura)) {
-    _informeFacturas = [{ material:'', numero:infGuardado.numeroFactura||'', link:infGuardado.linkFactura||'', valor:(parseFloat(infGuardado.valorRealFacturado)||''), archivoNombre:'', nombre:'', placas:[] }];
+    _informeFacturas = [{ material:'', numero:infGuardado.numeroFactura||'', link:infGuardado.linkFactura||'', valor:(parseFloat(infGuardado.valorRealFacturado)||''), archivoNombre:'', nombre:'' }];
   }
-  if (_informeFacturas.length === 0) _informeFacturas = [{ material:'', numero:'', link:'', valor:'', archivoNombre:'', nombre:'', placas:[] }];
+  if (_informeFacturas.length === 0) _informeFacturas = [{ material:'', numero:'', link:'', valor:'', archivoNombre:'', nombre:'' }];
 
   renderFacturasInforme();
 
@@ -6870,25 +6865,13 @@ function recalcInforme() {
 
 // ── GESTIÓN DE FACTURAS DEL INFORME (varias por material si el usuario quiere) ──
 
-// Calcula viajes/kg reales para un subconjunto de placas (o el corte completo si no hay placas)
-function _calcRegPorPlacas(placas) {
-  const c = window._corteActual;
-  if (!c) return { viajes:0, kg:0 };
-  const todos = filtrarRegistrosCorte(c.prov, c.ini, c.cie);
-  const subset = (placas && placas.length) ? todos.filter(r => placas.includes(getPlacaReg(r))) : todos;
-  const viajes = subset.length;
-  const kg = subset.reduce((s,r) => s + pesoNetoAjustado(r), 0);
-  return { viajes, kg: Math.round(kg) };
-}
-
 // Renderiza la lista de facturas/divisiones del informe
 function renderFacturasInforme() {
   const cont = document.getElementById('inf-facturas-lista');
   if (!cont) return;
-  if (!_informeFacturas || _informeFacturas.length === 0) _informeFacturas = [{ material:'', numero:'', link:'', valor:'', archivoNombre:'', nombre:'', placas:[] }];
+  if (!_informeFacturas || _informeFacturas.length === 0) _informeFacturas = [{ material:'', numero:'', link:'', valor:'', archivoNombre:'', nombre:'' }];
 
   const hayVariosMat = (_informeMateriales || []).length > 1;
-  const hayVariasPlacas = (_informePlacas || []).length > 1;
   const varias = _informeFacturas.length > 1;
 
   cont.innerHTML = _informeFacturas.map((f, idx) => {
@@ -6901,21 +6884,6 @@ function renderFacturasInforme() {
           ${_informeMateriales.map(m => `<option value="${m.replace(/"/g,'&quot;')}" ${f.material===m?'selected':''}>${m}</option>`).join('')}
         </select>
       </div>` : '';
-    // Selector de placas (solo si hay más de una placa en el corte) — permite asignar viajes
-    // reales a esta división, para el caso de repartir por razón social con datos reales.
-    const placasSel = hayVariasPlacas ? `
-      <div class="inf-field">
-        <label class="inf-lbl">Placas de esta división <span style="font-weight:400;color:var(--ink-l)">(opcional)</span></label>
-        <select multiple onchange="onFacturaPlacas(${idx},this)" class="inf-input" style="height:74px">
-          ${_informePlacas.map(p => `<option value="${p.replace(/"/g,'&quot;')}" ${(f.placas||[]).includes(p)?'selected':''}>${p}</option>`).join('')}
-        </select>
-      </div>` : '';
-    // Referencia de viajes/kg: si hay placas asignadas, son las reales de esas placas;
-    // si no, es el total del corte (división por valor/porcentaje sobre los mismos viajes).
-    const ref = _calcRegPorPlacas(f.placas);
-    const refTexto = (f.placas && f.placas.length)
-      ? `${fmt(ref.viajes)} viajes · ${fmt(ref.kg)} kg (solo placas asignadas)`
-      : `${fmt(ref.viajes)} viajes · ${fmt(ref.kg)} kg (todo el corte — divide el valor manualmente)`;
     const linkHtml = f.link
       ? `<a href="${f.link}" target="_blank" style="color:var(--navy);font-weight:700;font-size:11px">ver factura adjunta</a>`
       : (f.subiendo ? '<span style="font-size:11px;color:var(--ink-l)">Subiendo archivo...</span>' : '');
@@ -6932,7 +6900,6 @@ function renderFacturasInforme() {
             <input type="text" value="${(f.nombre||'').replace(/"/g,'&quot;')}" oninput="onFacturaCampo(${idx},'nombre',this.value)" placeholder="Ej: Familia SAS" class="inf-input">
           </div>
           ${matSelector}
-          ${placasSel}
           <div class="inf-field">
             <label class="inf-lbl"># de factura</label>
             <input type="text" value="${(f.numero||'').replace(/"/g,'&quot;')}" oninput="onFacturaCampo(${idx},'numero',this.value)" placeholder="Ej: FE-1234" class="inf-input">
@@ -6947,7 +6914,6 @@ function renderFacturasInforme() {
             <input type="number" min="0" step="any" value="${f.valor!==''&&f.valor!=null?f.valor:''}" oninput="onFacturaCampo(${idx},'valor',this.value)" placeholder="0" class="inf-input">
           </div>
         </div>
-        <div style="font-size:11px;color:var(--ink-l);margin-top:10px">${refTexto}</div>
       </div>`;
   }).join('');
 
@@ -6963,18 +6929,9 @@ function onFacturaCampo(idx, campo, valor) {
   recalcInforme();
 }
 
-// Actualiza las placas asignadas a una división (multi-select) y refresca la referencia de viajes/kg
-function onFacturaPlacas(idx, selectEl) {
-  if (!_informeFacturas[idx]) return;
-  const seleccionadas = Array.from(selectEl.selectedOptions || []).map(o => o.value);
-  _informeFacturas[idx].placas = seleccionadas;
-  renderFacturasInforme();
-  recalcInforme();
-}
-
 // Agrega una factura/división vacía
 function agregarFacturaInforme() {
-  _informeFacturas.push({ material:'', numero:'', link:'', valor:'', archivoNombre:'', nombre:'', placas:[] });
+  _informeFacturas.push({ material:'', numero:'', link:'', valor:'', archivoNombre:'', nombre:'' });
   renderFacturasInforme();
   recalcInforme();
 }
@@ -6982,7 +6939,7 @@ function agregarFacturaInforme() {
 // Quita una factura
 function quitarFacturaInforme(idx) {
   _informeFacturas.splice(idx, 1);
-  if (_informeFacturas.length === 0) _informeFacturas = [{ material:'', numero:'', link:'', valor:'', archivoNombre:'', nombre:'', placas:[] }];
+  if (_informeFacturas.length === 0) _informeFacturas = [{ material:'', numero:'', link:'', valor:'', archivoNombre:'', nombre:'' }];
   renderFacturasInforme();
   recalcInforme();
 }
@@ -6993,7 +6950,7 @@ function dividirFacturasPorMaterial() {
   if (_informeFacturas.some(f => f.numero || f.valor || f.link)) {
     if (!confirm('Esto reemplazará las facturas actuales por una por cada material. ¿Continuar?')) return;
   }
-  _informeFacturas = _informeMateriales.map(m => ({ material:m, numero:'', link:'', valor:'', archivoNombre:'', nombre:'', placas:[] }));
+  _informeFacturas = _informeMateriales.map(m => ({ material:m, numero:'', link:'', valor:'', archivoNombre:'', nombre:'' }));
   renderFacturasInforme();
   recalcInforme();
 }
@@ -7067,13 +7024,13 @@ function guardarInformeCorte() {
   const precioDisp = (c.tarifaTipo === 'kg' && c.tarifaValor > 0) ? c.tarifaValor : 0;
   const precioViaje = (c.tarifaTipo === 'viaje' && c.tarifaValor > 0) ? c.tarifaValor : 0;
   // Facturas: sumar valores, juntar números y links para los campos de compatibilidad
-  const facturas = (_informeFacturas || []).filter(f => (f.numero||'') || parseFloat(f.valor) > 0 || (f.link||'') || (f.nombre||'') || (f.placas && f.placas.length));
+  const facturas = (_informeFacturas || []).filter(f => (f.numero||'') || parseFloat(f.valor) > 0 || (f.link||'') || (f.nombre||''));
   const valorReal = facturas.reduce((s,f) => s + (parseFloat(f.valor)||0), 0);
   const numeroFactura = facturas.map(f => f.numero).filter(Boolean).join(', ');
   const linkFactura = (facturas.find(f => f.link) || {}).link || '';
   const facturasJson = JSON.stringify(facturas.map(f => ({
     material: f.material||'', numero: f.numero||'', link: f.link||'', valor: parseFloat(f.valor)||0,
-    nombre: f.nombre||'', placas: f.placas||[]
+    nombre: f.nombre||''
   })));
 
   const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
