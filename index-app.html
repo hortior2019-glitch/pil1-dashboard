@@ -1933,15 +1933,14 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
       </div>
     </div>
 
-    <!-- Guardar como favorito -->
-    <div style="border-top:1px solid var(--rule-l);padding-top:16px;margin-top:16px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
-      <div style="display:flex;flex-direction:column;gap:5px;flex:1;min-width:200px">
-        <label style="font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-l)">Guardar configuración como favorito</label>
+    <!-- Nombre de este corte (se guarda junto con el informe al darle "Guardar informe" más abajo) -->
+    <div style="border-top:1px solid var(--rule-l);padding-top:16px;margin-top:16px">
+      <div style="display:flex;flex-direction:column;gap:5px;max-width:420px">
+        <label style="font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-l)">Nombre de este corte</label>
         <input type="text" id="corte-fav-nombre" placeholder="Ej: Corte mensual Bavaria" style="border:1px solid var(--rule);background:var(--white);padding:9px 12px;font-size:14px;border-radius:4px;color:var(--ink);font-family:'Source Sans 3',sans-serif">
+        <div style="font-size:10px;color:var(--ink-l)">Este nombre, las columnas y la tarifa se guardan automáticamente al darle "Guardar informe" más abajo.</div>
       </div>
-      <button onclick="guardarCorteFavorito()" style="padding:10px 20px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Guardar favorito</button>
     </div>
-    <div id="corte-fav-status" style="font-size:11px;color:var(--ink-l);margin-top:8px"></div>
     </div><!-- fin corte-paso2-contenido -->
   </div>
 
@@ -8195,51 +8194,6 @@ async function cargarCortesFavoritosRemoto() {
   renderCortesFavoritos();
   // Re-renderizar el resumen de facturación (que ahora también lista los favoritos)
   renderInformesGuardados();
-}
-
-function guardarCorteFavorito() {
-  const nombre = (document.getElementById('corte-fav-nombre')||{}).value.trim();
-  if (!nombre) { alert('Escribe un nombre para el favorito'); return; }
-  const prov = (document.getElementById('corte-proveedor')||{}).value || '';
-  const ini  = (document.getElementById('corte-fecha-inicio')||{}).value || '';
-  const cie  = (document.getElementById('corte-fecha-cierre')||{}).value || '';
-  const colsSel = _ordenColumnas.filter(id =>
-    document.querySelector('.corte-col-chk[value="'+id+'"]:checked'));
-  const sepMaterial = (document.getElementById('corte-separar-material')||{}).checked;
-  const sepEmpresa  = (document.getElementById('corte-separar-empresa')||{}).checked;
-  const tarifaTipo  = (document.getElementById('corte-tarifa-tipo')||{}).value || '';
-  const tarifaValor = parseFloat((document.getElementById('corte-tarifa-valor')||{}).value) || 0;
-  const soloTotal   = (document.getElementById('corte-solo-total')||{}).checked;
-  const precioPorMaterial = (document.getElementById('corte-precio-por-material')||{}).checked;
-  const cobrarTransporte = (document.getElementById('corte-cobrar-transporte')||{}).checked;
-  const transporteValor  = parseFloat((document.getElementById('corte-transporte-valor')||{}).value) || 0;
-
-  // Guardar también el "patrón de día" para reutilizar (ej: del 20 al 20)
-  const diaIni = ini ? new Date(ini+'T00:00:00').getDate() : null;
-  const diaCie = cie ? new Date(cie+'T00:00:00').getDate() : null;
-
-  // Precios por material como JSON string (para guardar en una sola celda)
-  const preciosMaterialJson = JSON.stringify(_cortePreciosMaterial || {});
-
-  const payload = { accion:'guardar', nombre, prov, ini, cie, diaIni, diaCie, colsSel, sepMaterial, sepEmpresa, tarifaTipo, tarifaValor, soloTotal, precioPorMaterial, preciosMaterialJson, cobrarTransporte, transporteValor };
-
-  const statusEl = document.getElementById('corte-fav-status');
-  if (statusEl) statusEl.textContent = 'Guardando favorito...';
-
-  fetch(CORTES_FAV_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(payload) })
-    .then(r => r.json())
-    .then(data => {
-      if (statusEl) statusEl.textContent = data.ok ? 'Favorito guardado correctamente' : 'Error al guardar';
-      document.getElementById('corte-fav-nombre').value = '';
-      cargarCortesFavoritosRemoto();
-      // También crear automáticamente la tarjeta de facturación (informe) con el nombre del favorito
-      crearInformeDesdeFavorito(nombre, prov, ini, cie);
-      setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 3000);
-    })
-    .catch(e => {
-      console.error('Error guardando favorito:', e);
-      if (statusEl) statusEl.textContent = 'Error de conexión al guardar';
-    });
 }
 
 // Crea automáticamente un informe de facturación a partir del corte recién guardado como favorito.
