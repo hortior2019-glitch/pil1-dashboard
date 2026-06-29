@@ -6422,7 +6422,14 @@ function quitarSociedadDivision(idx) {
 function onSociedadCampo(idx, campo, valor) {
   if (!_corteDivisionSociedades[idx]) return;
   _corteDivisionSociedades[idx][campo] = valor;
-  renderSociedadesDivision();
+  if (campo === 'modo') {
+    // El modo cambia la etiqueta (% ↔ COP), así que sí hay que re-renderizar las filas
+    renderSociedadesDivision();
+  } else {
+    // Al escribir nombre/valor NO reconstruimos los inputs (eso quita el foco). Solo
+    // actualizamos el resumen de validación.
+    actualizarResumenSociedades();
+  }
   generarCorte();
 }
 
@@ -6438,6 +6445,24 @@ function _calcDivisionDesde(lista, valorTotalCorte) {
 }
 function calcularDivisionSociedades(valorTotalCorte) {
   return _calcDivisionDesde(_corteDivisionSociedades, valorTotalCorte);
+}
+
+// Actualiza solo el texto de resumen (sin reconstruir los inputs, para no perder el foco)
+function actualizarResumenSociedades() {
+  const resumen = document.getElementById('corte-sociedades-resumen');
+  if (!resumen) return;
+  const c = window._corteActual;
+  const valorTotal = c ? (function(){
+    let vt = 0;
+    Object.keys(c.grupos||{}).forEach(k => c.grupos[k].forEach(r => { vt += _valorMaterialFilaCorte(c, r) + _valorTransporteFilaCorte(c, r); }));
+    return vt;
+  })() : 0;
+  const divs = calcularDivisionSociedades(valorTotal);
+  const sumaAsignada = divs.reduce((s,d) => s + d.valor, 0);
+  const diferencia = valorTotal - sumaAsignada;
+  if (divs.length === 0) { resumen.textContent = ''; }
+  else if (Math.abs(diferencia) < 1) { resumen.textContent = '✓ Suman el 100% del valor total'; resumen.style.color = 'var(--green)'; }
+  else { resumen.textContent = (diferencia > 0 ? 'Falta asignar ' : 'Excede por ') + fmtCOP(Math.abs(diferencia)); resumen.style.color = diferencia > 0 ? '#b45309' : 'var(--red)'; }
 }
 
 function renderSociedadesDivision() {
@@ -6464,21 +6489,7 @@ function renderSociedadesDivision() {
     </div>`).join('');
 
   // Resumen de validación (porcentajes/valores asignados vs total)
-  const resumen = document.getElementById('corte-sociedades-resumen');
-  if (resumen) {
-    const c = window._corteActual;
-    const valorTotal = c ? (function(){
-      let vt = 0;
-      Object.keys(c.grupos||{}).forEach(k => c.grupos[k].forEach(r => { vt += _valorMaterialFilaCorte(c, r) + _valorTransporteFilaCorte(c, r); }));
-      return vt;
-    })() : 0;
-    const divs = calcularDivisionSociedades(valorTotal);
-    const sumaAsignada = divs.reduce((s,d) => s + d.valor, 0);
-    const diferencia = valorTotal - sumaAsignada;
-    if (divs.length === 0) { resumen.textContent = ''; }
-    else if (Math.abs(diferencia) < 1) { resumen.textContent = '✓ Suman el 100% del valor total'; resumen.style.color = 'var(--green)'; }
-    else { resumen.textContent = (diferencia > 0 ? 'Falta asignar ' : 'Excede por ') + fmtCOP(Math.abs(diferencia)); resumen.style.color = diferencia > 0 ? '#b45309' : 'var(--red)'; }
-  }
+  actualizarResumenSociedades();
 }
 
 // Muestra/oculta las opciones de relleno de peso y regenera
