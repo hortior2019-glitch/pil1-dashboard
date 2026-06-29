@@ -1931,6 +1931,22 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
           <div style="font-size:11px;color:var(--ink-l);max-width:280px">Se multiplica por los kilos de cada registro y se suma al valor del material. En el corte aparecerán "Valor material", "Valor transporte" y el total combinado.</div>
         </div>
       </div>
+
+      <!-- Dividir el cobro entre 2 o más sociedades: queda reflejado en el archivo descargado -->
+      <div style="margin-top:16px;border-top:1px dashed var(--rule);padding-top:16px">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px">
+          <input type="checkbox" id="corte-dividir-sociedades" onchange="toggleDividirSociedades()" style="width:18px;height:18px;accent-color:var(--gold)">
+          <span style="font-size:14px;color:var(--ink);font-weight:700">Dividir el cobro entre 2 o más sociedades</span>
+        </label>
+        <div id="corte-sociedades-wrap" style="display:none;padding-left:4px">
+          <div style="font-size:11px;color:var(--ink-l);margin-bottom:12px">Por cada sociedad, indica un nombre y su parte (por porcentaje del total o un valor fijo en COP). Esta división queda impresa en el Excel/CSV al descargar.</div>
+          <div id="corte-sociedades-lista" style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px"></div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <button type="button" onclick="agregarSociedadDivision()" style="padding:8px 16px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:'Source Sans 3',sans-serif">+ Agregar sociedad</button>
+            <span id="corte-sociedades-resumen" style="font-size:12px;font-weight:700;color:var(--ink-l)"></span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Nombre de este corte (se guarda junto con el informe al darle "Guardar informe" más abajo) -->
@@ -6373,6 +6389,99 @@ function toggleCobrarTransporte() {
   generarCorte();
 }
 
+// ── DIVISIÓN DEL COBRO ENTRE 2 O MÁS SOCIEDADES (queda reflejada en el archivo descargado) ──
+// Cada división: { nombre, modo: 'porcentaje'|'valor', valor } — "valor" es el % o el COP fijo según el modo.
+let _corteDivisionSociedades = [];
+
+function toggleDividirSociedades() {
+  const chk = document.getElementById('corte-dividir-sociedades');
+  const wrap = document.getElementById('corte-sociedades-wrap');
+  const activo = !!(chk && chk.checked);
+  if (wrap) wrap.style.display = activo ? '' : 'none';
+  if (activo && _corteDivisionSociedades.length === 0) {
+    _corteDivisionSociedades = [
+      { nombre:'', modo:'porcentaje', valor:'' },
+      { nombre:'', modo:'porcentaje', valor:'' }
+    ];
+  }
+  renderSociedadesDivision();
+  generarCorte();
+}
+
+function agregarSociedadDivision() {
+  _corteDivisionSociedades.push({ nombre:'', modo:'porcentaje', valor:'' });
+  renderSociedadesDivision();
+  generarCorte();
+}
+
+function quitarSociedadDivision(idx) {
+  _corteDivisionSociedades.splice(idx, 1);
+  renderSociedadesDivision();
+  generarCorte();
+}
+
+function onSociedadCampo(idx, campo, valor) {
+  if (!_corteDivisionSociedades[idx]) return;
+  _corteDivisionSociedades[idx][campo] = valor;
+  renderSociedadesDivision();
+  generarCorte();
+}
+
+// Calcula el valor en COP de cada sociedad a partir del valor total del corte
+function _calcDivisionDesde(lista, valorTotalCorte) {
+  return (lista || [])
+    .filter(s => (s.nombre||'').trim())
+    .map(s => {
+      const num = parseFloat(s.valor) || 0;
+      const valorCop = s.modo === 'porcentaje' ? (valorTotalCorte * num / 100) : num;
+      return { nombre: s.nombre.trim(), modo: s.modo, entrada: num, valor: valorCop };
+    });
+}
+function calcularDivisionSociedades(valorTotalCorte) {
+  return _calcDivisionDesde(_corteDivisionSociedades, valorTotalCorte);
+}
+
+function renderSociedadesDivision() {
+  const cont = document.getElementById('corte-sociedades-lista');
+  if (!cont) return;
+  cont.innerHTML = _corteDivisionSociedades.map((s, idx) => `
+    <div style="position:relative;display:grid;grid-template-columns:1fr 130px 130px 28px;gap:10px;align-items:end;padding:10px;background:var(--s2);border-radius:8px">
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">Sociedad ${idx+1}</label>
+        <input type="text" value="${(s.nombre||'').replace(/"/g,'&quot;')}" oninput="onSociedadCampo(${idx},'nombre',this.value)" placeholder="Ej: Familia SAS" style="border:1px solid var(--rule);background:var(--white);padding:8px 10px;font-size:13px;border-radius:4px;color:var(--ink);font-family:'Source Sans 3',sans-serif">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">Modo</label>
+        <select onchange="onSociedadCampo(${idx},'modo',this.value)" style="border:1px solid var(--rule);background:var(--white);padding:8px 6px;font-size:12px;border-radius:4px;color:var(--ink);font-family:'Source Sans 3',sans-serif">
+          <option value="porcentaje" ${s.modo==='porcentaje'?'selected':''}>% del total</option>
+          <option value="valor" ${s.modo==='valor'?'selected':''}>Valor fijo</option>
+        </select>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">${s.modo==='valor'?'COP':'%'}</label>
+        <input type="number" min="0" step="any" value="${s.valor!==''&&s.valor!=null?s.valor:''}" oninput="onSociedadCampo(${idx},'valor',this.value)" placeholder="${s.modo==='valor'?'Ej: 5000000':'Ej: 50'}" style="border:1px solid var(--rule);background:var(--white);padding:8px 10px;font-size:13px;border-radius:4px;color:var(--ink);font-family:'Source Sans 3',sans-serif">
+      </div>
+      <button type="button" onclick="quitarSociedadDivision(${idx})" title="Quitar" style="width:28px;height:34px;border:1px solid var(--rule);background:var(--white);color:var(--ink-l);border-radius:6px;cursor:pointer;font-size:13px">✕</button>
+    </div>`).join('');
+
+  // Resumen de validación (porcentajes/valores asignados vs total)
+  const resumen = document.getElementById('corte-sociedades-resumen');
+  if (resumen) {
+    const c = window._corteActual;
+    const valorTotal = c ? (function(){
+      let vt = 0;
+      Object.keys(c.grupos||{}).forEach(k => c.grupos[k].forEach(r => { vt += _valorMaterialFilaCorte(c, r) + _valorTransporteFilaCorte(c, r); }));
+      return vt;
+    })() : 0;
+    const divs = calcularDivisionSociedades(valorTotal);
+    const sumaAsignada = divs.reduce((s,d) => s + d.valor, 0);
+    const diferencia = valorTotal - sumaAsignada;
+    if (divs.length === 0) { resumen.textContent = ''; }
+    else if (Math.abs(diferencia) < 1) { resumen.textContent = '✓ Suman el 100% del valor total'; resumen.style.color = 'var(--green)'; }
+    else { resumen.textContent = (diferencia > 0 ? 'Falta asignar ' : 'Excede por ') + fmtCOP(Math.abs(diferencia)); resumen.style.color = diferencia > 0 ? '#b45309' : 'var(--red)'; }
+  }
+}
+
 // Muestra/oculta las opciones de relleno de peso y regenera
 function toggleRellenarPeso() {
   const chk = document.getElementById('corte-rellenar-peso');
@@ -6544,6 +6653,14 @@ function generarCorte() {
               <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.7);margin-top:2px">Valor total</div>
             `}
           ` : ''}
+          ${(() => {
+            const divsPreview = _calcDivisionDesde(_corteDivisionSociedades, valorTotalCorte);
+            if (divsPreview.length === 0) return '';
+            return `<div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.25);text-align:right">
+              <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.65);margin-bottom:3px">Dividido entre sociedades</div>
+              ${divsPreview.map(d => `<div style="font-size:11px;color:rgba(255,255,255,.85)">${d.nombre}: <strong style="color:#fff">${fmtCOP(d.valor)}</strong></div>`).join('')}
+            </div>`;
+          })()}
         </div>
       </div>
     </div>
@@ -6556,7 +6673,7 @@ function generarCorte() {
     </div>`;
 
   // Guardar para exportación (incluye datos de tarifa)
-  window._corteActual = { prov, ini, cie, colsDef, grupos, tarifaTipo, tarifaValor, tieneTarifa, tieneTarifaMaterial, tieneTransporte, cobrarTransporte, transporteValor, soloTotal, mostrarColValor, precioPorMaterialOn, preciosMaterial: {..._cortePreciosMaterial}, resaltarFestivos, consecutivoMap: _consecutivoMap };
+  window._corteActual = { prov, ini, cie, colsDef, grupos, tarifaTipo, tarifaValor, tieneTarifa, tieneTarifaMaterial, tieneTransporte, cobrarTransporte, transporteValor, soloTotal, mostrarColValor, precioPorMaterialOn, preciosMaterial: {..._cortePreciosMaterial}, resaltarFestivos, consecutivoMap: _consecutivoMap, divisionSociedades: [..._corteDivisionSociedades] };
 
   // Color de la empresa para el interlineado (versión muy clara)
   const filaColor = hexToRgba(color, 0.07);
@@ -7293,6 +7410,10 @@ function limpiarSeleccionPaso2() {
   const rpOpts = document.getElementById('corte-rellenar-peso-opts'); if (rpOpts) rpOpts.style.display = 'none';
   const rpModo = document.querySelector('input[name="corte-rellenar-modo"][value="corte"]'); if (rpModo) rpModo.checked = true;
   _rellenoPesoActivo = false;
+  // División entre sociedades
+  const ds = document.getElementById('corte-dividir-sociedades'); if (ds) ds.checked = false;
+  const dsWrap = document.getElementById('corte-sociedades-wrap'); if (dsWrap) dsWrap.style.display = 'none';
+  _corteDivisionSociedades = [];
 }
 
 // Cancela la selección/edición actual SIN guardar y vuelve al menú default (lista de cortes)
@@ -8052,6 +8173,21 @@ function exportarCorteCSV() {
         (mostrarDosCSV ? ',"'+fmtCOP2(vMat)+'","'+fmtCOP2(vTra)+'","'+fmtCOP2(vTot)+'"' : (c.mostrarColValor ? ',"'+fmtCOP2(vTot)+'"' : '')) + '\n';
     });
   });
+
+  // División del cobro entre sociedades (si está activa)
+  let _vtTotalCSV = 0;
+  Object.keys(c.grupos).forEach(k => c.grupos[k].forEach(r => { _vtTotalCSV += _valorMaterialFilaCorte(c, r) + _valorTransporteFilaCorte(c, r); }));
+  const divisionesCSV = _calcDivisionDesde(c.divisionSociedades, _vtTotalCSV);
+  if (divisionesCSV.length > 0) {
+    csv += '\n"DIVISIÓN DEL COBRO ENTRE SOCIEDADES"\n';
+    csv += '"Sociedad","% / Valor","Valor a cobrar (COP)"\n';
+    divisionesCSV.forEach(d => {
+      const entradaTxt = d.modo === 'porcentaje' ? (d.entrada + '%') : ('$' + Math.round(d.entrada).toLocaleString('es-CO'));
+      csv += '"'+d.nombre.replace(/"/g,'""')+'","'+entradaTxt+'","'+Math.round(d.valor)+'"\n';
+    });
+    const sumaDivCSV = divisionesCSV.reduce((s,d)=>s+d.valor,0);
+    csv += '"TOTAL DIVIDIDO","","'+Math.round(sumaDivCSV)+'"\n';
+  }
   const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -8093,6 +8229,22 @@ function exportarCorteExcel() {
       rowsXml += `<Row><Cell ss:StyleID="subtitulo"><Data ss:Type="String">Valor material: $${esc(Math.round(_vtMat).toLocaleString('es-CO'))}  ·  Valor transporte: $${esc(Math.round(_vtTra).toLocaleString('es-CO'))}</Data></Cell></Row>`;
     }
     rowsXml += `<Row><Cell ss:StyleID="titulo"><Data ss:Type="String">VALOR TOTAL: $${esc(Math.round(_vtMat+_vtTra).toLocaleString('es-CO'))}</Data></Cell></Row>`;
+
+    // División del cobro entre sociedades (si está activa)
+    const divisionesExcel = _calcDivisionDesde(c.divisionSociedades, _vtMat + _vtTra);
+    if (divisionesExcel.length > 0) {
+      rowsXml += `<Row></Row>`;
+      rowsXml += `<Row><Cell ss:StyleID="grupo"><Data ss:Type="String">DIVISIÓN DEL COBRO ENTRE SOCIEDADES</Data></Cell></Row>`;
+      rowsXml += `<Row><Cell ss:StyleID="header"><Data ss:Type="String">Sociedad</Data></Cell><Cell ss:StyleID="header"><Data ss:Type="String">${divisionesExcel.some(d=>d.modo==='porcentaje')?'% / Valor':'Valor'}</Data></Cell><Cell ss:StyleID="header"><Data ss:Type="String">Valor a cobrar (COP)</Data></Cell></Row>`;
+      divisionesExcel.forEach((d, idx) => {
+        const styleZebra = idx % 2 === 1 ? ' ss:StyleID="zebra"' : '';
+        const styleZebraNum = idx % 2 === 1 ? 'numZebra' : 'num';
+        const entradaTxt = d.modo === 'porcentaje' ? (d.entrada + '%') : ('$' + Math.round(d.entrada).toLocaleString('es-CO'));
+        rowsXml += `<Row><Cell${styleZebra}><Data ss:Type="String">${esc(d.nombre)}</Data></Cell><Cell${styleZebra}><Data ss:Type="String">${esc(entradaTxt)}</Data></Cell><Cell ss:StyleID="${styleZebraNum}"><Data ss:Type="Number">${Math.round(d.valor)}</Data></Cell></Row>`;
+      });
+      const sumaDiv = divisionesExcel.reduce((s,d)=>s+d.valor,0);
+      rowsXml += `<Row><Cell ss:StyleID="totalLbl"><Data ss:Type="String">TOTAL DIVIDIDO</Data></Cell><Cell ss:StyleID="total"></Cell><Cell ss:StyleID="total"><Data ss:Type="Number">${Math.round(sumaDiv)}</Data></Cell></Row>`;
+    }
   }
   rowsXml += `<Row></Row>`;
 
@@ -8371,6 +8523,10 @@ function _aplicarFav(f, ini, cie) {
   const ctChk = document.getElementById('corte-cobrar-transporte'); if (ctChk) ctChk.checked = !!f.cobrarTransporte;
   const ctVal = document.getElementById('corte-transporte-valor'); if (ctVal) ctVal.value = f.transporteValor || '';
   const ctWrap = document.getElementById('corte-transporte-wrap'); if (ctWrap) ctWrap.style.display = f.cobrarTransporte ? 'flex' : 'none';
+  // La división entre sociedades no se guarda en el favorito; se reinicia al cambiar de corte
+  const dsChk = document.getElementById('corte-dividir-sociedades'); if (dsChk) dsChk.checked = false;
+  const dsWrap = document.getElementById('corte-sociedades-wrap'); if (dsWrap) dsWrap.style.display = 'none';
+  _corteDivisionSociedades = [];
   // Restaurar precios por material
   try { _cortePreciosMaterial = f.preciosMaterialJson ? JSON.parse(f.preciosMaterialJson) : (f.preciosMaterial || {}); }
   catch(e) { _cortePreciosMaterial = {}; }
