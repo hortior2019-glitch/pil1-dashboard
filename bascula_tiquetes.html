@@ -118,14 +118,13 @@
     align-items:center;justify-content:center;font-size:9px;color:#999;text-align:center;line-height:1.2;
   }
   .v-company{width:100%;text-align:center;padding-top:1px}
-  .v-company .cname{font-size:15pt;font-weight:600;letter-spacing:.2px}
-  .v-company .crow{font-size:9.5pt;font-weight:600;line-height:1.4}
-  .v-company .cbold{font-weight:600;font-size:10pt;margin-top:1px}
+  .v-company .cname{font-size:15pt;font-weight:600;letter-spacing:.2px;margin-bottom:3px}
+  .v-company .crow{font-size:9.5pt;font-weight:600;line-height:1.75}
+  .v-company .cbold{font-weight:600;font-size:10pt;line-height:1.75;margin-top:2px}
 
   .v-ticketno{display:flex;align-items:baseline;margin-top:4px}
   .v-ticketno .tlabel{font-size:12pt;font-weight:700;white-space:nowrap;margin-right:auto}
-  .v-ticketno .tnum{font-family:"Arial Narrow","Arial Narrow Bold",Arial,sans-serif;font-stretch:condensed;
-                    font-size:20pt;font-weight:700;white-space:nowrap;letter-spacing:.5px}
+  .v-ticketno .tnum{font-stretch:condensed;white-space:nowrap}
 
   .rule{border:none;border-top:1.5px solid #000;margin:6px 0}
 
@@ -276,7 +275,23 @@ const CONFIG = {
   valorServicioDefault: "",   // p.ej. "$12,000"
   descuentoDefault: "0",
   noCargueDefault: "0",
-  unidadPeso: "Kg"
+  unidadPeso: "Kg",
+
+  // --- Apariencia del número de tiquete (ajústalo a tu gusto) ---
+  tiquete: {
+    font:   '"Arial Narrow","Liberation Sans Narrow",Arial,sans-serif',
+    weight: 600,        // 400 = más delgado · 600 = semi · 700 = negrilla
+    size:   "18pt",     // tamaño del número
+    spacing:"-0.3px"    // negativo = más angosto
+  },
+
+  // --- Consecutivo (número de tiquete) ---
+  consecutivo: {
+    modo: "porHora",    // "porHora" = generado según la hora · "excel" = usar la columna TIQUETE
+    inicio: null,       // número inicial; null = usar el TIQUETE más temprano del Excel
+    minPorHora: 3,      // sube como mínimo este tanto por hora transcurrida
+    maxPorHora: 6       // y como máximo este tanto
+  }
 };
 document.getElementById('logoPath').textContent = CONFIG.logoSrc;
 
@@ -373,6 +388,17 @@ function parseFecha(fechaRaw){
   return "";
 }
 
+// Devuelve un Date (solo fecha, 00:00) a partir del valor del Excel, o null
+function parseDateObj(fechaRaw){
+  if(fechaRaw instanceof Date) return new Date(fechaRaw.getFullYear(), fechaRaw.getMonth(), fechaRaw.getDate());
+  if(typeof fechaRaw === "number"){ const d = excelDateToJS(fechaRaw); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+  if(fechaRaw){
+    const m = fechaRaw.toString().trim().match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+    if(m){ let y=+m[3]; if(y<100) y+=2000; return new Date(y, (+m[2])-1, +m[1]); } // dd/mm/yyyy
+  }
+  return null;
+}
+
 // Lee la hora del Excel (en hora militar / 24h): Date, fracción de día o "HH:MM[:SS]"
 function parseHM(horaRaw){
   if(horaRaw instanceof Date){
@@ -399,16 +425,20 @@ function fmt12(totalSec){
 }
 
 // Construye entrada y salida; salida = entrada + desfase aleatorio de 50 a 90 segundos.
+// Devuelve además ts = momento de entrada (segundos epoch) para ordenar por tiempo.
 function buildFechas(fechaRaw, horaRaw){
   const fecha = parseFecha(fechaRaw);
   const hm = parseHM(horaRaw);
-  if(!hm) return {entrada:fecha, salida:fecha};
+  if(!hm) return {entrada:fecha, salida:fecha, ts:null};
   // si el Excel no trae segundos, se generan al azar para que se vea natural
   const base = hm.h*3600 + hm.m*60 + (hm.hasS ? hm.s : Math.floor(Math.random()*60));
   const offset = 50 + Math.floor(Math.random()*41);   // 50..90 s
+  const dObj = parseDateObj(fechaRaw);
+  const ts = dObj ? Math.round(dObj.getTime()/1000) + base : null;
   return {
     entrada: `${fecha} ${fmt12(base)}`.trim(),
-    salida:  `${fecha} ${fmt12(base + offset)}`.trim()
+    salida:  `${fecha} ${fmt12(base + offset)}`.trim(),
+    ts
   };
 }
 
@@ -454,6 +484,8 @@ function mapWorkbook(wb){
     const fechas = buildFechas(get(row,"fecha"), get(row,"hora"));
     out.push({
       tiquete:   fmtTiquete(get(row,"tiquete")),
+      _tiqueteExcel: fmtTiquete(get(row,"tiquete")),
+      _ts:       fechas.ts,
       fechaEntrada: fechas.entrada,
       fechaSalida:  fechas.salida,
       placa:     (get(row,"placa")||"").toString().trim(),
@@ -466,7 +498,37 @@ function mapWorkbook(wb){
       origen:    (get(row,"origen")||"").toString().trim()
     });
   }
+  asignarConsecutivos(out);
   return {data:out, warns};
+}
+
+/* Genera el consecutivo según la hora: ordena por tiempo y, por cada hora
+   transcurrida, el folio sube un azar de 3 a 6 (configurable). Arranca en
+   CONFIG.consecutivo.inicio o, si es null, en el TIQUETE más temprano del Excel. */
+function asignarConsecutivos(out){
+  const C = CONFIG.consecutivo || {};
+  if(C.modo !== "porHora") return;            // "excel" -> deja la columna tal cual
+
+  const conTs = out.filter(r => r._ts !== null && r._ts !== undefined)
+                   .sort((a,b) => a._ts - b._ts);
+  if(!conTs.length) return;
+
+  const min = C.minPorHora ?? 3, max = C.maxPorHora ?? 6;
+  let base = parseInt(C.inicio, 10);
+  if(isNaN(base)) base = parseInt((conTs[0]._tiqueteExcel||"").replace(/[^\d]/g,""), 10);
+  if(isNaN(base)) base = 1;
+
+  let prevTs = conTs[0]._ts;
+  let consec = base;
+  conTs[0].tiquete = String(consec);
+  for(let i=1; i<conTs.length; i++){
+    const horas = (conTs[i]._ts - prevTs) / 3600;
+    const tasa  = min + Math.random()*(max - min);   // 3..6 por hora
+    const inc   = Math.max(1, Math.round(horas * tasa));
+    consec += inc;
+    conTs[i].tiquete = String(consec);
+    prevTs = conTs[i]._ts;
+  }
 }
 
 /* =========================================================================
@@ -495,7 +557,7 @@ function voucherHTML(d){
 
     <div class="v-ticketno">
       <span class="tlabel">Tiquete de Bascula No.</span>
-      <span class="tnum">${d.tiquete ? `<span class="d1">${d.tiquete[0]}</span>${d.tiquete.slice(1)}` : ""}</span>
+      <span class="tnum" style='font-family:${CONFIG.tiquete.font};font-weight:${CONFIG.tiquete.weight};font-size:${CONFIG.tiquete.size};letter-spacing:${CONFIG.tiquete.spacing}'>${d.tiquete ? `<span class="d1">${d.tiquete[0]}</span>${d.tiquete.slice(1)}` : ""}</span>
     </div>
 
     <hr class="rule">
