@@ -134,7 +134,7 @@
   .frow .k.r{min-width:1.15in}
   .frow .sep{margin:0 5px}
   .frow .v{overflow:hidden;text-overflow:ellipsis}            /* valor normal por defecto */
-  .frow .v.b{font-weight:700}                                  /* negrilla solo donde se pide (Placa) */
+  .frow .v.b{font-weight:700;font-size:12.5pt}            /* negrilla y más grande (Placa) */
   .frow .v .u{font-weight:700}                                 /* la unidad "Kg" en negrilla, el número no */
   .frow.peso .v{display:inline-block;text-align:right}         /* pesos alineados a la derecha */
   .frow.peso .num{display:inline-block;min-width:.66in;text-align:right}  /* números en columna -> Kg alineados */
@@ -277,10 +277,15 @@ const CONFIG = {
   noCargueDefault: "0",
   unidadPeso: "Kg",
 
+  // --- Fecha ---
+  // Si pones una fecha aquí, TODOS los tiquetes salen con esa fecha (formato año-mes-día).
+  // Pon null para usar la fecha que venga en el Excel.
+  fechaForzada: "2026-06-18",
+
   // --- Apariencia del número de tiquete (ajústalo a tu gusto) ---
   tiquete: {
     font:   '"Arial Narrow","Liberation Sans Narrow",Arial,sans-serif',
-    weight: 600,        // 400 = más delgado · 600 = semi · 700 = negrilla
+    weight: 400,        // 400 = más delgado · 600 = semi · 700 = negrilla
     size:   "18pt",     // tamaño del número
     spacing:"-0.3px"    // negativo = más angosto
   },
@@ -393,8 +398,11 @@ function parseDateObj(fechaRaw){
   if(fechaRaw instanceof Date) return new Date(fechaRaw.getFullYear(), fechaRaw.getMonth(), fechaRaw.getDate());
   if(typeof fechaRaw === "number"){ const d = excelDateToJS(fechaRaw); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
   if(fechaRaw){
-    const m = fechaRaw.toString().trim().match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
-    if(m){ let y=+m[3]; if(y<100) y+=2000; return new Date(y, (+m[2])-1, +m[1]); } // dd/mm/yyyy
+    const s = fechaRaw.toString().trim();
+    let m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);   // yyyy-mm-dd
+    if(m) return new Date(+m[1], (+m[2])-1, +m[3]);
+    m = s.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);      // dd/mm/yyyy
+    if(m){ let y=+m[3]; if(y<100) y+=2000; return new Date(y, (+m[2])-1, +m[1]); }
   }
   return null;
 }
@@ -427,13 +435,14 @@ function fmt12(totalSec){
 // Construye entrada y salida; salida = entrada + desfase aleatorio de 50 a 90 segundos.
 // Devuelve además ts = momento de entrada (segundos epoch) para ordenar por tiempo.
 function buildFechas(fechaRaw, horaRaw){
-  const fecha = parseFecha(fechaRaw);
+  const forzada = CONFIG.fechaForzada || null;
+  const fecha = forzada ? forzada : parseFecha(fechaRaw);
   const hm = parseHM(horaRaw);
   if(!hm) return {entrada:fecha, salida:fecha, ts:null};
   // si el Excel no trae segundos, se generan al azar para que se vea natural
   const base = hm.h*3600 + hm.m*60 + (hm.hasS ? hm.s : Math.floor(Math.random()*60));
   const offset = 50 + Math.floor(Math.random()*41);   // 50..90 s
-  const dObj = parseDateObj(fechaRaw);
+  const dObj = parseDateObj(forzada ? forzada : fechaRaw);
   const ts = dObj ? Math.round(dObj.getTime()/1000) + base : null;
   return {
     entrada: `${fecha} ${fmt12(base)}`.trim(),
