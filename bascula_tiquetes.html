@@ -124,7 +124,8 @@
 
   .v-ticketno{display:flex;justify-content:flex-end;align-items:baseline;gap:.7in;margin-top:4px}
   .v-ticketno .tlabel{font-size:12pt;font-weight:700}
-  .v-ticketno .tnum{font-size:19pt;font-weight:700;letter-spacing:0;min-width:1in;text-align:right}
+  .v-ticketno .tnum{font-size:19pt;font-weight:700;letter-spacing:-1px;min-width:1in;text-align:right;
+                    display:inline-block;transform:scaleX(.82);transform-origin:right center}
 
   .rule{border:none;border-top:1.5px solid #000;margin:6px 0}
 
@@ -136,6 +137,8 @@
   .frow .v{overflow:hidden;text-overflow:ellipsis}            /* valor normal por defecto */
   .frow .v.b{font-weight:700}                                  /* negrilla solo donde se pide (Placa) */
   .frow .v .u{font-weight:700}                                 /* la unidad "Kg" en negrilla, el número no */
+  .frow.peso .v{display:inline-block;text-align:right}         /* pesos alineados a la derecha */
+  .frow.peso .num{display:inline-block;min-width:.66in;text-align:right}  /* números en columna -> Kg alineados */
 
   .v-mid{display:grid;grid-template-columns:1.05fr .95fr;column-gap:.35in;margin-top:2px}
   .v-mid .col-left{padding-left:.35in}
@@ -143,7 +146,7 @@
 
   .v-foot{display:flex;justify-content:space-between;align-items:flex-end;margin-top:auto;padding-top:.30in}
   .v-sign{width:2.6in;text-align:center}
-  .v-sign .who{font-weight:700;font-size:10.5pt;margin-bottom:.34in}
+  .v-sign .who{font-weight:700;font-size:10.5pt;margin-bottom:.12in}
   .v-sign .ln{border-top:1px solid #000;padding-top:3px;font-size:9.5pt}
   .v-foot-inner{display:flex;flex-direction:column;justify-content:flex-end;height:100%}
 
@@ -358,32 +361,55 @@ function excelDateToJS(serial){
   return new Date(utc);
 }
 
-function fmtFechaHora(fechaRaw, horaRaw){
-  let fecha = "", hora = "";
-
-  // FECHA
+function parseFecha(fechaRaw){
   if(fechaRaw instanceof Date){
-    fecha = `${pad2(fechaRaw.getDate())}/${pad2(fechaRaw.getMonth()+1)}/${fechaRaw.getFullYear()}`;
+    return `${pad2(fechaRaw.getDate())}/${pad2(fechaRaw.getMonth()+1)}/${fechaRaw.getFullYear()}`;
   } else if(typeof fechaRaw === "number"){
     const d = excelDateToJS(fechaRaw);
-    fecha = `${pad2(d.getDate())}/${pad2(d.getMonth()+1)}/${d.getFullYear()}`;
+    return `${pad2(d.getDate())}/${pad2(d.getMonth()+1)}/${d.getFullYear()}`;
   } else if(fechaRaw){
-    fecha = fechaRaw.toString().trim();
+    return fechaRaw.toString().trim();
   }
+  return "";
+}
 
-  // HORA
+// Lee la hora del Excel (en hora militar / 24h): Date, fracción de día o "HH:MM[:SS]"
+function parseHM(horaRaw){
   if(horaRaw instanceof Date){
-    hora = `${pad2(horaRaw.getHours())}:${pad2(horaRaw.getMinutes())}`;
-  } else if(typeof horaRaw === "number"){
-    // fracción de día
-    const frac = horaRaw % 1;
-    const totalMin = Math.round(frac * 24 * 60);
-    hora = `${pad2(Math.floor(totalMin/60))}:${pad2(totalMin%60)}`;
-  } else if(horaRaw){
-    hora = horaRaw.toString().trim();
+    return {h:horaRaw.getHours(), m:horaRaw.getMinutes(), s:horaRaw.getSeconds(), hasS:true};
   }
+  if(typeof horaRaw === "number"){
+    const t = Math.round((horaRaw % 1) * 86400);
+    return {h:Math.floor(t/3600), m:Math.floor((t%3600)/60), s:t%60, hasS:(t%60)!==0};
+  }
+  if(horaRaw){
+    const mt = horaRaw.toString().trim().match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if(mt) return {h:+mt[1], m:+mt[2], s:mt[3]?+mt[3]:0, hasS:!!mt[3]};
+  }
+  return null;
+}
 
-  return [fecha, hora].filter(Boolean).join(" ");
+// Segundos del día -> "h:mm:ss AM/PM" (hora sin cero a la izquierda)
+function fmt12(totalSec){
+  totalSec = ((Math.round(totalSec) % 86400) + 86400) % 86400;
+  const h = Math.floor(totalSec/3600), m = Math.floor((totalSec%3600)/60), s = totalSec%60;
+  const ampm = h < 12 ? "AM" : "PM";
+  let h12 = h % 12; if(h12 === 0) h12 = 12;
+  return `${h12}:${pad2(m)}:${pad2(s)} ${ampm}`;
+}
+
+// Construye entrada y salida; salida = entrada + desfase aleatorio de 50 a 90 segundos.
+function buildFechas(fechaRaw, horaRaw){
+  const fecha = parseFecha(fechaRaw);
+  const hm = parseHM(horaRaw);
+  if(!hm) return {entrada:fecha, salida:fecha};
+  // si el Excel no trae segundos, se generan al azar para que se vea natural
+  const base = hm.h*3600 + hm.m*60 + (hm.hasS ? hm.s : Math.floor(Math.random()*60));
+  const offset = 50 + Math.floor(Math.random()*41);   // 50..90 s
+  return {
+    entrada: `${fecha} ${fmt12(base)}`.trim(),
+    salida:  `${fecha} ${fmt12(base + offset)}`.trim()
+  };
 }
 
 /* =========================================================================
@@ -425,9 +451,11 @@ function mapWorkbook(wb){
       if(!isNaN(a)&&!isNaN(b)) pesoNeto = a-b;
     }
 
+    const fechas = buildFechas(get(row,"fecha"), get(row,"hora"));
     out.push({
       tiquete:   fmtTiquete(get(row,"tiquete")),
-      fechaHora: fmtFechaHora(get(row,"fecha"), get(row,"hora")),
+      fechaEntrada: fechas.entrada,
+      fechaSalida:  fechas.salida,
       placa:     (get(row,"placa")||"").toString().trim(),
       pesoEntrada: fmtPeso(pesoCargado),
       pesoSalida:  fmtPeso(pesoVacio),
@@ -474,16 +502,16 @@ function voucherHTML(d){
 
     <div class="v-grid">
       <div>
-        <div class="frow"><span class="k">Fecha de Entrada</span><span class="sep">:</span><span class="v">${d.fechaHora||""}</span></div>
-        <div class="frow"><span class="k">Fecha de Salida</span><span class="sep">:</span><span class="v">${d.fechaHora||""}</span></div>
+        <div class="frow"><span class="k">Fecha de Entrada</span><span class="sep">:</span><span class="v">${d.fechaEntrada||""}</span></div>
+        <div class="frow"><span class="k">Fecha de Salida</span><span class="sep">:</span><span class="v">${d.fechaSalida||""}</span></div>
         <div class="frow"><span class="k">Placa Vehículo</span><span class="sep">:</span><span class="v b">${d.placa||""}</span></div>
         <div class="frow"><span class="k">Valor Servicio</span><span class="sep">:</span><span class="v">${fmtValorServicio(valorServicio)}</span></div>
       </div>
       <div>
-        <div class="frow"><span class="k r">Peso Entrada</span><span class="sep">:</span><span class="v">${d.pesoEntrada||""} ${d.pesoEntrada?`<span class="u">${u}</span>`:""}</span></div>
-        <div class="frow"><span class="k r">Peso Salida</span><span class="sep">:</span><span class="v">${d.pesoSalida||""} ${d.pesoSalida?`<span class="u">${u}</span>`:""}</span></div>
-        <div class="frow"><span class="k r">Descuento</span><span class="sep">:</span><span class="v">${CONFIG.descuentoDefault||"0"} <span class="u">${u}</span></span></div>
-        <div class="frow"><span class="k r">Peso Neto</span><span class="sep">:</span><span class="v">${d.pesoNeto||""} ${d.pesoNeto?`<span class="u">${u}</span>`:""}</span></div>
+        <div class="frow peso"><span class="k r">Peso Entrada</span><span class="sep">:</span><span class="v"><span class="num">${d.pesoEntrada||""}</span> <span class="u">${u}</span></span></div>
+        <div class="frow peso"><span class="k r">Peso Salida</span><span class="sep">:</span><span class="v"><span class="num">${d.pesoSalida||""}</span> <span class="u">${u}</span></span></div>
+        <div class="frow peso"><span class="k r">Descuento</span><span class="sep">:</span><span class="v"><span class="num">${CONFIG.descuentoDefault||"0"}</span> <span class="u">${u}</span></span></div>
+        <div class="frow peso"><span class="k r">Peso Neto</span><span class="sep">:</span><span class="v"><span class="num">${d.pesoNeto||""}</span> <span class="u">${u}</span></span></div>
       </div>
     </div>
 
