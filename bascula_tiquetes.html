@@ -122,10 +122,10 @@
   .v-company .crow{font-size:9.5pt;font-weight:600;line-height:1.4}
   .v-company .cbold{font-weight:600;font-size:10pt;margin-top:1px}
 
-  .v-ticketno{display:flex;justify-content:flex-end;align-items:baseline;gap:.7in;margin-top:4px}
-  .v-ticketno .tlabel{font-size:12pt;font-weight:700}
-  .v-ticketno .tnum{font-size:19pt;font-weight:700;letter-spacing:-1px;min-width:1in;text-align:right;
-                    display:inline-block;transform:scaleX(.82);transform-origin:right center}
+  .v-ticketno{display:flex;align-items:baseline;margin-top:4px}
+  .v-ticketno .tlabel{font-size:12pt;font-weight:700;white-space:nowrap;margin-right:auto}
+  .v-ticketno .tnum{font-family:"Arial Narrow","Arial Narrow Bold",Arial,sans-serif;font-stretch:condensed;
+                    font-size:20pt;font-weight:700;white-space:nowrap;letter-spacing:.5px}
 
   .rule{border:none;border-top:1.5px solid #000;margin:6px 0}
 
@@ -489,13 +489,13 @@ function voucherHTML(d){
         <div class="cname">${e.nombre}</div>
         <div class="crow">${e.nit}</div>
         <div class="crow">${e.direccion}</div>
-        <div class="cbold">${e.leyenda}</div>
+        <div class="cbold">${e.leyenda.replace("Sistema","Sistem<span class=\"anchorA\">a</span>")}</div>
       </div>
     </div>
 
     <div class="v-ticketno">
       <span class="tlabel">Tiquete de Bascula No.</span>
-      <span class="tnum">${d.tiquete||""}</span>
+      <span class="tnum">${d.tiquete ? `<span class="d1">${d.tiquete[0]}</span>${d.tiquete.slice(1)}` : ""}</span>
     </div>
 
     <hr class="rule">
@@ -559,6 +559,7 @@ function applyPageSize(){
   if(!st){ st = document.createElement('style'); st.id='pageRule'; document.head.appendChild(st); }
   st.textContent = `@media print{ @page{ size:${a4?'A4':'Letter'} portrait; margin:0; } }`;
   scaleToFit();
+  requestAnimationFrame(()=> document.querySelectorAll('.voucher').forEach(v=>{ if(window.alignVoucher) window.alignVoucher(v); }));
 }
 
 function scaleToFit(){
@@ -578,6 +579,46 @@ function scaleToFit(){
   });
 }
 
+/* Alinea (midiendo el layout real) la etiqueta "Tiquete..." bajo la 'a' de
+   Sistematizada, y la columna de Kg bajo el primer dígito del número. */
+function leftWithin(el, ancestor){
+  let x = 0;
+  while(el && el !== ancestor){
+    x += el.offsetLeft;
+    el = el.offsetParent;
+    if(!el) break;
+  }
+  return x;
+}
+function alignVoucher(v){
+  const row = v.querySelector('.v-ticketno');
+  const tlabel = v.querySelector('.tlabel');
+  const anchorA = v.querySelector('.anchorA');
+  const d1 = v.querySelector('.tnum .d1');
+
+  // 1) "Tiquete de Bascula No." empieza bajo la primera 'a' de Sistematizada
+  if(tlabel) tlabel.style.marginLeft = "0px";
+  if(row && tlabel && anchorA){
+    const target = leftWithin(anchorA, v);
+    const rowLeft = leftWithin(row, v);
+    const ml = target - rowLeft;
+    if(ml > 0) tlabel.style.marginLeft = ml + "px";
+  }
+
+  // 2) Kg bajo el primer dígito del número del tiquete
+  const valores = v.querySelectorAll('.frow.peso .v');
+  valores.forEach(val => val.style.transform = "");
+  if(d1 && valores.length){
+    const target = leftWithin(d1, v);
+    const u = valores[0].querySelector('.u');
+    if(u){
+      const kgLeft = leftWithin(u, v);
+      const delta = target - kgLeft;
+      valores.forEach(val => val.style.transform = `translateX(${delta}px)`);
+    }
+  }
+}
+
 function render(){
   const sheets = document.getElementById('sheets');
   sheets.innerHTML = registros.map(d =>
@@ -587,6 +628,7 @@ function render(){
   document.getElementById('btnPdf').disabled = !registros.length;
   document.getElementById('btnReload').disabled = !registros.length;
   applyPageSize();
+  requestAnimationFrame(()=> document.querySelectorAll('.voucher').forEach(alignVoucher));
 }
 
 /* =========================================================================
