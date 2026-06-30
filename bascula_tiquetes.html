@@ -110,30 +110,32 @@
     content:"";position:absolute;left:0;right:0;bottom:0;border-bottom:1px dashed #c4c4c4;
   }
 
-  .v-head{display:flex;align-items:flex-start;gap:14px}
-  .v-logo{width:1.15in;flex:0 0 1.15in;display:flex;align-items:flex-start;justify-content:center}
+  .v-head{position:relative;min-height:1in}
+  .v-logo{position:absolute;left:0;top:-4px;width:1.15in;display:flex;align-items:flex-start;justify-content:center}
   .v-logo img{max-width:100%;max-height:1in;object-fit:contain}
   .v-logo .ph{
     width:100%;height:.95in;border:1px dashed #bbb;border-radius:4px;display:flex;
     align-items:center;justify-content:center;font-size:9px;color:#999;text-align:center;line-height:1.2;
   }
-  .v-company{flex:1;text-align:center;padding-top:2px}
-  .v-company .cname{font-size:16pt;font-weight:700;letter-spacing:.3px}
-  .v-company .crow{font-size:9.5pt;line-height:1.45}
-  .v-company .cbold{font-weight:700;font-size:10pt;margin-top:1px}
+  .v-company{width:100%;text-align:center;padding-top:1px}
+  .v-company .cname{font-size:15pt;font-weight:600;letter-spacing:.2px}
+  .v-company .crow{font-size:9.5pt;font-weight:600;line-height:1.4}
+  .v-company .cbold{font-weight:600;font-size:10pt;margin-top:1px}
 
-  .v-ticketno{display:flex;justify-content:flex-end;align-items:baseline;gap:14px;margin-top:6px}
+  .v-ticketno{display:flex;justify-content:flex-end;align-items:baseline;gap:.7in;margin-top:4px}
   .v-ticketno .tlabel{font-size:12pt;font-weight:700}
-  .v-ticketno .tnum{font-size:21pt;font-weight:700;letter-spacing:1px}
+  .v-ticketno .tnum{font-size:19pt;font-weight:700;letter-spacing:0;min-width:1in;text-align:right}
 
   .rule{border:none;border-top:1.5px solid #000;margin:6px 0}
 
   .v-grid{display:grid;grid-template-columns:1.05fr .95fr;column-gap:.35in}
   .frow{display:flex;font-size:10pt;line-height:1.95;white-space:nowrap}
-  .frow .k{flex:0 0 auto;min-width:1.55in}
-  .frow .k.r{min-width:1.1in}
+  .frow .k{flex:0 0 auto;min-width:1.55in;text-align:right}   /* etiquetas alineadas a la derecha -> dos puntos en línea */
+  .frow .k.r{min-width:1.15in}
   .frow .sep{margin:0 5px}
-  .frow .v{font-weight:700;overflow:hidden;text-overflow:ellipsis}
+  .frow .v{overflow:hidden;text-overflow:ellipsis}            /* valor normal por defecto */
+  .frow .v.b{font-weight:700}                                  /* negrilla solo donde se pide (Placa) */
+  .frow .v .u{font-weight:700}                                 /* la unidad "Kg" en negrilla, el número no */
 
   .v-mid{display:grid;grid-template-columns:1.05fr .95fr;column-gap:.35in;margin-top:2px}
   .v-mid .col-left{padding-left:.35in}
@@ -214,14 +216,23 @@
       <h2>Columnas esperadas</h2>
       <p class="hint">
         TIQUETE · Fecha recibido · hora bascula · placa · Peso cargado · Peso Vacio ·
-        Peso Neto · cliente · CONDUCTOR · DOCUMENTO.<br><br>
+        Peso Neto · cliente · CONDUCTOR · DOCUMENTO · ORIGEN (columna K).<br><br>
         El orden no importa: se identifican por el nombre del encabezado. Lo que no venga en el
         Excel (Valor servicio, Origen, Destino, etc.) queda en blanco.
       </p>
     </div>
 
     <div class="group">
-      <h2>3 · Exportar</h2>
+      <h2>3 · Valor del servicio</h2>
+      <label class="field">Valor para todos los tiquetes
+        <input type="text" id="valorServicio" placeholder="12000" inputmode="numeric" style="width:100%">
+      </label>
+      <p class="hint" style="margin-top:6px">Escribe solo el número y se llena en cada tiquete con el símbolo <b>$</b>
+        (ej.: <code>12000</code> → <code>$12.000</code>). Si escribes tu propio formato con <b>$</b>, se respeta tal cual.</p>
+    </div>
+
+    <div class="group">
+      <h2>4 · Exportar</h2>
       <p class="hint">«Exportar PDF» abre el diálogo de impresión. Elige <b>destino: Guardar como PDF</b>,
         márgenes <b>Ninguno</b> y activa <b>gráficos de fondo</b>. Salen exactamente 2 tiquetes por hoja.</p>
     </div>
@@ -271,6 +282,17 @@ document.getElementById('logoPath').textContent = CONFIG.logoSrc;
    ========================================================================= */
 let logoDataUrl = null;     // override manual del logo (preview)
 let registros = [];         // filas mapeadas
+let valorServicio = CONFIG.valorServicioDefault || "";   // valor general del servicio
+
+// Formatea el valor del servicio: agrega "$" y separador de miles si es solo número.
+function fmtValorServicio(raw){
+  const s = (raw||"").toString().trim();
+  if(!s) return "";
+  if(s.includes("$")) return s;                 // ya trae formato propio -> respetar
+  const digits = s.replace(/[^\d]/g,"");
+  if(!digits) return s;
+  return "$" + parseInt(digits,10).toLocaleString("es-CO");
+}
 
 /* =========================================================================
    UTILIDADES
@@ -290,7 +312,8 @@ const COLMAP = [
   ["pesoNeto",     ["peso neto","neto"]],
   ["cliente",      ["cliente"]],
   ["conductor",    ["conductor"]],
-  ["documento",    ["documento","cedula","cc","cedula conductor","doc"]]
+  ["documento",    ["documento","cedula","cc","cedula conductor","doc"]],
+  ["origen",       ["origen","procedencia"]]
 ];
 
 function buildHeaderIndex(headerRow){
@@ -411,7 +434,8 @@ function mapWorkbook(wb){
       pesoNeto:    fmtPeso(pesoNeto),
       cliente:   (get(row,"cliente")||"").toString().trim(),
       conductor: (get(row,"conductor")||"").toString().trim(),
-      documento: (get(row,"documento")||"").toString().trim()
+      documento: (get(row,"documento")||"").toString().trim(),
+      origen:    (get(row,"origen")||"").toString().trim()
     });
   }
   return {data:out, warns};
@@ -452,14 +476,14 @@ function voucherHTML(d){
       <div>
         <div class="frow"><span class="k">Fecha de Entrada</span><span class="sep">:</span><span class="v">${d.fechaHora||""}</span></div>
         <div class="frow"><span class="k">Fecha de Salida</span><span class="sep">:</span><span class="v">${d.fechaHora||""}</span></div>
-        <div class="frow"><span class="k">Placa Vehículo</span><span class="sep">:</span><span class="v">${d.placa||""}</span></div>
-        <div class="frow"><span class="k">Valor Servicio</span><span class="sep">:</span><span class="v">${CONFIG.valorServicioDefault||""}</span></div>
+        <div class="frow"><span class="k">Placa Vehículo</span><span class="sep">:</span><span class="v b">${d.placa||""}</span></div>
+        <div class="frow"><span class="k">Valor Servicio</span><span class="sep">:</span><span class="v">${fmtValorServicio(valorServicio)}</span></div>
       </div>
       <div>
-        <div class="frow"><span class="k r">Peso Entrada</span><span class="sep">:</span><span class="v">${d.pesoEntrada||""} ${d.pesoEntrada?u:""}</span></div>
-        <div class="frow"><span class="k r">Peso Salida</span><span class="sep">:</span><span class="v">${d.pesoSalida||""} ${d.pesoSalida?u:""}</span></div>
-        <div class="frow"><span class="k r">Descuento</span><span class="sep">:</span><span class="v">${CONFIG.descuentoDefault||"0"} ${u}</span></div>
-        <div class="frow"><span class="k r">Peso Neto</span><span class="sep">:</span><span class="v">${d.pesoNeto||""} ${d.pesoNeto?u:""}</span></div>
+        <div class="frow"><span class="k r">Peso Entrada</span><span class="sep">:</span><span class="v">${d.pesoEntrada||""} ${d.pesoEntrada?`<span class="u">${u}</span>`:""}</span></div>
+        <div class="frow"><span class="k r">Peso Salida</span><span class="sep">:</span><span class="v">${d.pesoSalida||""} ${d.pesoSalida?`<span class="u">${u}</span>`:""}</span></div>
+        <div class="frow"><span class="k r">Descuento</span><span class="sep">:</span><span class="v">${CONFIG.descuentoDefault||"0"} <span class="u">${u}</span></span></div>
+        <div class="frow"><span class="k r">Peso Neto</span><span class="sep">:</span><span class="v">${d.pesoNeto||""} ${d.pesoNeto?`<span class="u">${u}</span>`:""}</span></div>
       </div>
     </div>
 
@@ -469,7 +493,7 @@ function voucherHTML(d){
       <div class="col-left">
         <div class="frow"><span class="k">Cliente</span><span class="sep">:</span><span class="v">${d.cliente||""}</span></div>
         <div class="frow"><span class="k">Conductor</span><span class="sep">:</span><span class="v">${d.conductor||""}</span></div>
-        <div class="frow"><span class="k">Origen</span><span class="sep">:</span><span class="v"></span></div>
+        <div class="frow"><span class="k">Origen</span><span class="sep">:</span><span class="v">${d.origen||""}</span></div>
         <div class="frow"><span class="k">Destino</span><span class="sep">:</span><span class="v"></span></div>
         <div class="frow"><span class="k">Producto</span><span class="sep">:</span><span class="v"></span></div>
       </div>
@@ -595,6 +619,10 @@ wireDrop(document.getElementById('xlsxDrop'), document.getElementById('xlsxInput
 wireDrop(document.getElementById('logoDrop'), document.getElementById('logoInput'), handleLogo);
 
 document.getElementById('pageSize').addEventListener('change', applyPageSize);
+document.getElementById('valorServicio').addEventListener('input', e=>{
+  valorServicio = e.target.value;
+  if(registros.length) render();
+});
 document.getElementById('btnReload').addEventListener('click', ()=> document.getElementById('xlsxInput').click());
 document.getElementById('btnPdf').addEventListener('click', ()=> window.print());
 window.addEventListener('resize', scaleToFit);
