@@ -140,6 +140,8 @@
   .frow .v.big{font-size:12.5pt;font-weight:400}                /* mismo tamaño que Placa, sin negrilla */
   .frow .k.big{font-size:12pt}                                  /* título "Valor Servicio" +2pt */
   .frow.tight{margin-top:-5px}                                  /* acerca esta fila a la anterior */
+  .frow.up{margin-top:-3px}                                     /* sube esta fila 3px */
+  .frow.peso .v{font-size:11pt}                                 /* números y Kg un poco más grandes */
   .frow.peso .v{display:inline-block;text-align:right}         /* pesos alineados a la derecha */
   .frow.peso .num{display:inline-block;min-width:.66in;text-align:right}  /* números en columna -> Kg alineados */
 
@@ -318,7 +320,7 @@ function fmtValorServicio(raw){
   if(s.includes("$")) return s;                 // ya trae formato propio -> respetar
   const digits = s.replace(/[^\d]/g,"");
   if(!digits) return s;
-  return "$" + parseInt(digits,10).toLocaleString("es-CO");
+  return "$" + parseInt(digits,10).toLocaleString("en-US");
 }
 
 /* =========================================================================
@@ -443,8 +445,9 @@ function buildFechas(fechaRaw, horaRaw){
   const fecha = forzada ? forzada : parseFecha(fechaRaw);
   const hm = parseHM(horaRaw);
   if(!hm) return {entrada:fecha, salida:fecha, ts:null};
-  // si el Excel no trae segundos, se generan al azar para que se vea natural
-  const base = hm.h*3600 + hm.m*60 + (hm.hasS ? hm.s : Math.floor(Math.random()*60));
+  // Los segundos de entrada siempre se generan al azar (0 a 45) para que se vea
+  // natural, sin importar si el Excel trae segundos o no (minutos y hora sí se respetan).
+  const base = hm.h*3600 + hm.m*60 + Math.floor(Math.random()*46);   // 0..45 s
   const offset = 50 + Math.floor(Math.random()*41);   // 50..90 s
   const dObj = parseDateObj(forzada ? forzada : fechaRaw);
   const ts = dObj ? Math.round(dObj.getTime()/1000) + base : null;
@@ -579,7 +582,7 @@ function voucherHTML(d){
       <div>
         <div class="frow"><span class="k">Fecha de Entrada</span><span class="sep">:</span><span class="v">${d.fechaEntrada||""}</span></div>
         <div class="frow"><span class="k">Fecha de Salida</span><span class="sep">:</span><span class="v">${d.fechaSalida||""}</span></div>
-        <div class="frow"><span class="k">Placa Vehículo</span><span class="sep">:</span><span class="v b">${d.placa||""}</span></div>
+        <div class="frow up"><span class="k">Placa Vehículo</span><span class="sep">:</span><span class="v b">${d.placa||""}</span></div>
         <div class="frow tight"><span class="k big">Valor Servicio</span><span class="sep">:</span><span class="v big">${fmtValorServicio(valorServicio)}</span></div>
       </div>
       <div>
@@ -601,7 +604,7 @@ function voucherHTML(d){
         <div class="frow"><span class="k">Producto</span><span class="sep">:</span><span class="v"></span></div>
       </div>
       <div>
-        <div class="frow"><span class="k r"></span><span class="sep"> </span><span class="v"></span></div>
+        <div class="frow"><span class="k r">&nbsp;</span><span class="sep">&nbsp;</span><span class="v">&nbsp;</span></div>
         <div class="frow"><span class="k r">Cédula</span><span class="sep">:</span><span class="v">${d.documento||""}</span></div>
         <div class="frow"><span class="k r">Remision</span><span class="sep">:</span><span class="v"></span></div>
         <div class="frow"><span class="k r">No. Cargue</span><span class="sep">:</span><span class="v">${CONFIG.noCargueDefault||"0"}</span></div>
@@ -665,6 +668,15 @@ function leftWithin(el, ancestor){
     if(!el) break;
   }
   return x;
+}
+function topWithin(el, ancestor){
+  let y = 0;
+  while(el && el !== ancestor){
+    y += el.offsetTop;
+    el = el.offsetParent;
+    if(!el) break;
+  }
+  return y;
 }
 function alignVoucher(v){
   const row = v.querySelector('.v-ticketno');
