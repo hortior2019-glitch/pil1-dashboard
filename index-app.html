@@ -3928,6 +3928,53 @@ function drawHBars(containerId, data, colors, unit) {
 
 /*
   ═══════════════════════════════════════════════════════════
+  drawCmpDiffBars — comparativo Periodo A vs B en barras horizontales, UN par de
+  barras por cada día del periodo (no solo el total). La barra de A queda sólida
+  encima de la de B (semi-transparente), y la zona de DIFERENCIA entre ambas se
+  resalta con un patrón rayado para que se note a simple vista quién fue mayor.
+  labels/valsA/valsB deben venir alineados (mismo índice = mismo día).
+  ═══════════════════════════════════════════════════════════
+*/
+function drawCmpDiffBars(containerId, labels, valsA, valsB, colorA, colorB, unit, lblA, lblB) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (!labels || labels.length === 0) { el.innerHTML = '<div class="empty">Sin datos</div>'; return; }
+  const maxVal = Math.max(...valsA, ...valsB, 1);
+  const fmtVal = v => unit === 'kg' ? fmt(Math.round(v)) + ' kg' : fmt(Math.round(v));
+
+  const leyenda = (lblA || lblB) ? `<div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;flex-wrap:wrap">
+    <div style="display:flex;align-items:center;gap:6px"><div style="width:14px;height:14px;border-radius:3px;background:${colorA}"></div><span style="font-size:11px;font-weight:700;color:${colorA}">${lblA||'Período A'}</span></div>
+    <div style="display:flex;align-items:center;gap:6px"><div style="width:14px;height:14px;border-radius:3px;background:${colorB};opacity:.5"></div><span style="font-size:11px;font-weight:700;color:${colorB}">${lblB||'Período B'}</span></div>
+  </div>` : '';
+
+  el.innerHTML = leyenda + labels.map((lbl, i) => {
+    const a = valsA[i] || 0, b = valsB[i] || 0;
+    const pctA = Math.round(a / maxVal * 100);
+    const pctB = Math.round(b / maxVal * 100);
+    const minPct = Math.min(pctA, pctB);
+    const maxPct = Math.max(pctA, pctB);
+    const diffColor = a >= b ? colorA : colorB;
+    const diff = b > 0 ? ((a - b) / b * 100) : null;
+    const diffTxt = diff === null ? '' : (diff >= 0 ? '↑ +' : '↓ ') + Math.abs(diff).toFixed(1) + '%';
+    const diffTxtColor = diff === null ? 'var(--ink-l)' : (diff >= 0 ? 'var(--green)' : 'var(--red)');
+    return `<div style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;font-weight:700;color:var(--ink-m);margin-bottom:5px;flex-wrap:wrap;gap:6px">
+        <span>${lbl}</span>
+        <span style="font-family:'Libre Baskerville',serif;font-variant-numeric:lining-nums tabular-nums">
+          <span style="color:${colorA}">${fmtVal(a)}</span> vs <span style="color:${colorB}">${fmtVal(b)}</span>${diffTxt ? ` &nbsp;<span style="color:${diffTxtColor};font-weight:800">${diffTxt}</span>` : ''}
+        </span>
+      </div>
+      <div style="position:relative;height:20px;background:var(--rule-l);border-radius:4px;overflow:hidden">
+        <div style="position:absolute;left:0;top:0;height:100%;width:${pctB}%;background:${colorB};opacity:.4"></div>
+        <div style="position:absolute;left:0;top:0;height:100%;width:${pctA}%;background:${colorA};border-radius:4px"></div>
+        ${maxPct > minPct ? `<div style="position:absolute;left:${minPct}%;top:0;height:100%;width:${maxPct-minPct}%;background:repeating-linear-gradient(45deg, ${diffColor}, ${diffColor} 4px, transparent 4px, transparent 8px);opacity:.6"></div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/*
+  ═══════════════════════════════════════════════════════════
   FUNCIONES DE GRÁFICOS (Canvas)
   - drawPie(canvasId, legendId, data, colors, labelFormat)
       Pastel completo con leyenda. labelFormat: 'pct+count', 'pct+kg', o null
@@ -5183,8 +5230,8 @@ function renderCmpChart(data) {
 
   // Mismo comparativo (Periodo A vs B) pero en barras horizontales — mismos filtros
   // de semana/mes que las gráficas de arriba, mas legible en pantallas chicas.
-  drawHBars('cmp-hbar-viajes', [[lblA, totVA], [lblB, totVB]], ['#1a5c35', '#8b6914'], 'count');
-  drawHBars('cmp-hbar-kg',     [[lblA, totKgA], [lblB, totKgB]], ['#2d8a4e', '#c8a84b'], 'kg');
+  drawCmpDiffBars('cmp-hbar-viajes', labels, viajesA, viajesB, '#1a5c35', '#8b6914', 'count', lblA, lblB);
+  drawCmpDiffBars('cmp-hbar-kg',     labels, kgA,     kgB,     '#2d8a4e', '#c8a84b', 'kg',    lblA, lblB);
 }
 
 // ── INICIO ────────────────────────────────────────
