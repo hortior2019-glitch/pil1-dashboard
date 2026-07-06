@@ -7784,6 +7784,10 @@ function ejecutarTraerPeriodoActual() {
 // existe y si no el valor calculado por el sistema. Solo muestra el mes/año
 // seleccionado en el navegador de "Cortes y facturación" (o todos si esa vista
 // está activa).
+// Tarjetas al estilo del panel "Proveedores" (renderOps): rank + logo + barra + valor,
+// pero en vez de viajes usan el valor facturado del mes, y el color de cada tarjeta
+// indica si ese proveedor ya quedo FACTURADO (verde) o sigue PENDIENTE (rojo) —
+// se marca pendiente si al menos uno de sus cortes del mes no tiene valor real cargado.
 function renderInformeGerencialCortes(items) {
   const card = document.getElementById('corte-gerencial-card');
   const cont = document.getElementById('corte-gerencial-bars');
@@ -7798,21 +7802,62 @@ function renderInformeGerencialCortes(items) {
       if (!ma || ma.mes !== _resumenMes || ma.anio !== _resumenAnio) return;
     }
     const valorReal = parseFloat(inf.valorRealFacturado);
-    const valor = (!isNaN(valorReal) && valorReal > 0) ? valorReal : (parseFloat(inf.valorSistema) || 0);
+    const tieneReal = !isNaN(valorReal) && valorReal > 0;
+    const valorSistema = parseFloat(inf.valorSistema) || 0;
+    const valor = tieneReal ? valorReal : valorSistema;
     if (valor <= 0) return;
     const prov = inf.operacion || 'Otro';
-    porProveedor[prov] = (porProveedor[prov] || 0) + valor;
+    if (!porProveedor[prov]) porProveedor[prov] = { valor: 0, facturado: true };
+    porProveedor[prov].valor += valor;
+    if (!tieneReal) porProveedor[prov].facturado = false;
   });
 
-  const entradas = Object.entries(porProveedor).sort((a, b) => b[1] - a[1]);
+  const entradas = Object.entries(porProveedor).sort((a, b) => b[1].valor - a[1].valor);
   if (entradas.length === 0) { card.style.display = 'none'; return; }
   card.style.display = '';
 
-  const total = entradas.reduce((s, [, v]) => s + v, 0);
+  const total = entradas.reduce((s, [, d]) => s + d.valor, 0);
   if (totalEl) totalEl.textContent = '$ ' + fmt(Math.round(total));
+  const maxValor = entradas[0][1].valor || 1;
 
-  const colores = entradas.map(([prov]) => getClientColor(prov));
-  drawHBars('corte-gerencial-bars', entradas.map(([k, v]) => [k, Math.round(v)]), colores, 'cop');
+  cont.innerHTML = entradas.map(([prov, d], i) => {
+    const rank = i + 1;
+    const pct = Math.round((d.valor / maxValor) * 100);
+    const pctTotal = total > 0 ? (d.valor / total * 100).toFixed(1) : 0;
+    const color = d.facturado ? '#1a7f37' : '#b91c1c';
+    const badgeBg = d.facturado ? '#e6f4ea' : '#fde8e8';
+    const badgeTxt = d.facturado ? 'FACTURADO' : 'PENDIENTE';
+    const logo = getClientLogo(prov);
+    return `<div style="margin-bottom:14px;border:1px solid ${color};background:var(--white);overflow:hidden;transition:box-shadow .3s,transform .2s;border-left:6px solid ${color}" onmouseover="this.style.boxShadow='0 8px 32px rgba(0,0,0,.12)';this.style.transform='translateY(-2px)'" onmouseout="this.style.boxShadow='none';this.style.transform='none'">
+      <div style="display:flex;align-items:stretch;min-height:80px">
+        <!-- Rank -->
+        <div style="display:flex;align-items:center;justify-content:center;padding:0 18px;background:${color}18;border-right:1px solid ${color}30;min-width:60px;flex-shrink:0">
+          <div style="font-family:'Libre Baskerville',serif;font-size:30px;font-weight:700;color:${color};opacity:.85;font-variant-numeric:lining-nums tabular-nums;line-height:1">${rank}</div>
+        </div>
+        <!-- Logo -->
+        <div style="display:flex;align-items:center;justify-content:center;padding:10px 14px;border-right:1px solid var(--rule-l);min-width:100px;flex-shrink:0;background:white">
+          ${logo ? `<img src="${logo}" alt="${prov}" style="width:76px;height:76px;object-fit:contain" onerror="this.parentNode.innerHTML='<div style=\'width:76px;height:76px;border-radius:4px;background:${color}18;display:flex;align-items:center;justify-content:center;font-family:Playfair Display,serif;font-size:20px;font-weight:700;color:${color}\'>${prov.charAt(0)}</div>'">`
+          : `<div style="width:76px;height:76px;border-radius:4px;background:${color}18;display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:${color}">${prov.charAt(0)}</div>`}
+        </div>
+        <!-- Nombre + estado + barra -->
+        <div style="flex:1;min-width:0;padding:14px 18px;display:flex;flex-direction:column;justify-content:center">
+          <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+            <span style="font-family:'Playfair Display',serif;font-size:18px;font-weight:700;color:var(--ink);letter-spacing:-.3px">${prov}</span>
+            <span style="font-size:9px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:${color};background:${badgeBg};padding:2px 8px;border-radius:3px">${badgeTxt}</span>
+          </div>
+          <div style="height:6px;background:var(--rule-l);overflow:hidden;border-radius:3px">
+            <div style="height:100%;width:${pct}%;background:${color};border-radius:3px;transition:width .8s ease"></div>
+          </div>
+          <div style="font-size:10px;color:var(--ink-l);margin-top:5px;font-weight:600">${pctTotal}% del total facturado</div>
+        </div>
+        <!-- Valor -->
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 22px;border-left:1px solid var(--rule-l);min-width:130px;flex-shrink:0;background:${color}06">
+          <div style="font-family:'Libre Baskerville',serif;font-size:22px;font-weight:700;color:${color};line-height:1;font-variant-numeric:lining-nums tabular-nums">$ ${fmt(Math.round(d.valor))}</div>
+          <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);margin-top:4px">valor</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function renderInformesGuardados() {
