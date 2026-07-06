@@ -7403,6 +7403,15 @@ function _calcularValoresFavorito(f) {
   // Determinar el rango usando el helper de periodo (respeta corte de un solo mes vs dos meses)
   const per = _periodoActualFavorito(f);
   let ini = per.ini, cie = per.cie;
+
+  // Cache: evita recalcular (filtrar TODO dataIngreso + sumar) en cada re-render si
+  // nada relevante cambió desde la última vez. Esta era la operación mas pesada del
+  // panel de Cortes / Informe Cortes, sobre todo con muchos favoritos guardados.
+  const _sig = (window.dataIngreso ? window.dataIngreso.length : 0) + '|' + ini + '|' + cie + '|' +
+    (f.tarifaTipo||'') + '|' + (f.tarifaValor||'') + '|' + (f.precioPorMaterial?1:0) + '|' +
+    (f.preciosMaterialJson||'') + '|' + (f.cobrarTransporte?1:0) + '|' + (f.transporteValor||'');
+  if (f.__calcCache && f.__calcCache.sig === _sig) return f.__calcCache.val;
+
   const registros = filtrarRegistrosCorte(f.prov, ini, cie);
   const viajes = registros.length;
   // En la previsualización de la lista no se aplica relleno (usa pesos reales)
@@ -7427,7 +7436,9 @@ function _calcularValoresFavorito(f) {
   const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
   const fmtF = s => { const d = new Date(s+'T00:00:00'); return d.getDate()+' '+MESES[d.getMonth()]+' '+d.getFullYear(); };
 
-  return { viajes, kgNeto: Math.round(kg), valorSistema: Math.round(valorSistema), periodo: fmtF(ini)+' — '+fmtF(cie) };
+  const _resultado = { viajes, kgNeto: Math.round(kg), valorSistema: Math.round(valorSistema), periodo: fmtF(ini)+' — '+fmtF(cie) };
+  f.__calcCache = { sig: _sig, val: _resultado };
+  return _resultado;
 }
 
 // Corte actualmente enfocado (en edición). Cuando hay uno, los demás se colapsan.
@@ -7907,7 +7918,20 @@ function renderInformeGerencialCortes(items) {
   }).join('');
 }
 
+// Coalescer: si renderInformesGuardados() se llama varias veces seguidas (ej: al
+// abrir "Informe Cortes" se disparan en paralelo cargarCortesFavoritosRemoto() y
+// cargarInformesGuardados(), y cada una llama esta funcion al terminar), solo se
+// ejecuta una vez por frame en lugar de recalcular todo dos veces seguidas.
+let _renderInformesGuardadosPendiente = false;
 function renderInformesGuardados() {
+  if (_renderInformesGuardadosPendiente) return;
+  _renderInformesGuardadosPendiente = true;
+  requestAnimationFrame(() => {
+    _renderInformesGuardadosPendiente = false;
+    _renderInformesGuardadosImpl();
+  });
+}
+function _renderInformesGuardadosImpl() {
   const card = document.getElementById('corte-resumen-card');
   const lista = document.getElementById('corte-resumen-lista');
   if (!lista) return;
