@@ -562,6 +562,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   <button class="nav-wrap-btn" id="navWrapBtn" onclick="toggleNavWrap()" title="Ocultar / mostrar barra superior">⊞</button>
   <div class="nav-tab active" data-panel="clientes" onclick="showPanel('clientes',this)"><span class="nav-lbl">Ingreso por Cliente</span></div>
   <div class="nav-tab" data-panel="ingreso" onclick="showPanel('ingreso',this)"><span class="nav-lbl">Ingreso de Material</span></div>
+  <div class="nav-tab" data-panel="informecortes" data-users-only="gerencia,auditoria,juan" onclick="showPanel('informecortes',this)" style="display:none"><span class="nav-lbl">Informe Cortes</span></div>
   <div class="nav-tab" data-panel="operaciones" onclick="showPanel('operaciones',this)"><span class="nav-lbl">Proveedores</span></div>
   <div class="nav-tab" data-panel="viajes" onclick="showPanel('viajes',this)"><span class="nav-lbl">Viajes Internos</span></div>
   <div class="nav-tab" data-panel="ProduccionHumus" onclick="showPanel('ProduccionHumus',this)"><span class="nav-lbl">Producción Humus</span></div>
@@ -1779,21 +1780,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   <!-- Contenido protegido (oculto hasta validar PIN) -->
   <div id="corte-contenido-protegido" style="display:none">
 
-  <!-- INFORME GERENCIAL — barras horizontales con la facturacion del mes por proveedor -->
-  <div class="card" id="corte-gerencial-card" style="margin-bottom:20px;padding:20px 24px;display:none">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px;border-bottom:2px solid var(--rule-l);padding-bottom:14px">
-      <div>
-        <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy);margin-bottom:4px">Informe gerencial</div>
-        <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink)">Facturación del mes por proveedor</div>
-      </div>
-      <div style="text-align:right">
-        <div id="corte-gerencial-total" style="font-family:'Libre Baskerville',serif;font-size:34px;font-weight:800;color:var(--gold);line-height:1;font-variant-numeric:lining-nums tabular-nums">—</div>
-        <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);margin-top:4px">total facturado / en sistema</div>
-      </div>
-    </div>
-    <div id="corte-gerencial-bars" style="padding:8px 0"></div>
-  </div>
-
   <!--
     ═══════════════════════════════════════════════════════════
     CALENDARIO GUÍA DE CORTES BASE (info de Natalia)
@@ -2003,6 +1989,34 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   <div id="corte-resultado"></div>
 
   </div><!-- fin corte-contenido-protegido -->
+</div>
+
+<!--
+  ═══════════════════════════════════════════════════════════
+  PANEL: INFORME CORTES — acceso restringido a gerencia, auditoria y juan
+  Muestra la facturacion del mes por proveedor (verde = facturado, rojo = pendiente)
+  ═══════════════════════════════════════════════════════════
+-->
+<div class="panel" id="panel-informecortes">
+  <div class="sec-hdr">
+    <div class="sec-title">Informe Cortes</div>
+    <div class="sec-sub">Facturación del mes por proveedor — acceso restringido</div>
+  </div>
+
+  <div class="card" id="corte-gerencial-card" style="padding:20px 24px;display:none">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px;border-bottom:2px solid var(--rule-l);padding-bottom:14px">
+      <div>
+        <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy);margin-bottom:4px">Informe gerencial</div>
+        <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink)">Facturación del mes por proveedor</div>
+      </div>
+      <div style="text-align:right">
+        <div id="corte-gerencial-total" style="font-family:'Libre Baskerville',serif;font-size:34px;font-weight:800;color:var(--gold);line-height:1;font-variant-numeric:lining-nums tabular-nums">—</div>
+        <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);margin-top:4px">total facturado / en sistema</div>
+      </div>
+    </div>
+    <div id="corte-gerencial-bars" style="padding:8px 0"></div>
+  </div>
+  <div id="corte-gerencial-vacio" style="display:none;text-align:center;padding:40px;color:var(--ink-l);font-size:13px">No hay cortes registrados en el período seleccionado.</div>
 </div>
 
 <div class="panel" id="panel-preopvolquetas">
@@ -2219,6 +2233,20 @@ const PESTANAS_CONTROLABLES = [
 // Config de permisos cargada: { usuario: [listaDePestañasPermitidas] }
 let _permisosConfig = {};
 
+// Pestañas con lista blanca explícita de usuarios (atributo data-users-only="a,b,c").
+// Tienen prioridad absoluta: se ocultan a TODOS salvo a los usuarios exactos de la
+// lista, sin importar si son admin o si tienen permisos generales — ej: "Informe Cortes"
+// (solo gerencia, auditoria y juan).
+function _aplicarRestriccionUsuariosTab() {
+  const u = _usuarioActual;
+  const usuarioId = (u && u.usuario ? u.usuario.toString().trim().toLowerCase() : '');
+  document.querySelectorAll('.nav-tab[data-users-only]').forEach(t => {
+    const permitidos = (t.getAttribute('data-users-only') || '')
+      .split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+    t.style.display = permitidos.includes(usuarioId) ? '' : 'none';
+  });
+}
+
 // Aplica los permisos al nav del usuario logueado: oculta las pestañas no permitidas
 function aplicarPermisosNav() {
   const u = _usuarioActual;
@@ -2226,22 +2254,25 @@ function aplicarPermisosNav() {
   document.querySelectorAll('[data-admin-only="1"]').forEach(el => {
     el.style.display = (u && u.admin) ? '' : 'none';
   });
-  // Admins ven todo
+  // Admins ven todo (salvo las pestañas de lista blanca, que se resuelven aparte)
   if (!u || u.admin) {
     document.querySelectorAll('.nav-tab[data-panel]').forEach(t => {
-      if (t.getAttribute('data-admin-only') !== '1') t.style.display = '';
+      if (t.getAttribute('data-admin-only') !== '1' && !t.hasAttribute('data-users-only')) t.style.display = '';
     });
+    _aplicarRestriccionUsuariosTab();
     return;
   }
   // Usuario normal: aplicar config (si no hay config para él, ve todo por defecto)
   const permitidas = _permisosConfig[u.usuario];
   document.querySelectorAll('.nav-tab[data-panel]').forEach(t => {
+    if (t.hasAttribute('data-users-only')) return; // se resuelve aparte, con prioridad
     const panel = t.getAttribute('data-panel');
     if (panel === 'permisos') { t.style.display = 'none'; return; }
     // Si no hay config definida para el usuario → mostrar todo
     if (!permitidas) { t.style.display = ''; return; }
     t.style.display = permitidas.includes(panel) ? '' : 'none';
   });
+  _aplicarRestriccionUsuariosTab();
   // Si la pestaña activa quedó oculta, activar la primera pestaña visible
   const activa = document.querySelector('.nav-tab.active');
   if (activa && activa.style.display === 'none') {
@@ -3245,6 +3276,8 @@ function showPanel(id, el) {
       } else if (id === 'cortes') {
         // Si ya pasó el PIN en esta sesión, refresca; si no, muestra el gate
         try { mostrarEstadoPinCorte(); if (_cortePinOk) initCortesProveedores(); } catch(e){}
+      } else if (id === 'informecortes') {
+        try { cargarCortesFavoritosRemoto(); cargarInformesGuardados(); } catch(e){ console.error('initInformeCortes error:', e); }
       } else if (id === 'permisos') {
         try { renderPermisosTabla(); } catch(e){}
       }
@@ -7793,7 +7826,8 @@ function renderInformeGerencialCortes(items) {
   const cont = document.getElementById('corte-gerencial-bars');
   const totalEl = document.getElementById('corte-gerencial-total');
   if (!card || !cont) return;
-  if (_corteEnfocado) { card.style.display = 'none'; return; }
+  const vacio = document.getElementById('corte-gerencial-vacio');
+  if (_corteEnfocado) { card.style.display = 'none'; if (vacio) vacio.style.display = 'none'; return; }
 
   const porProveedor = {};
   (items || []).forEach(inf => {
@@ -7813,8 +7847,9 @@ function renderInformeGerencialCortes(items) {
   });
 
   const entradas = Object.entries(porProveedor).sort((a, b) => b[1].valor - a[1].valor);
-  if (entradas.length === 0) { card.style.display = 'none'; return; }
+  if (entradas.length === 0) { card.style.display = 'none'; if (vacio) vacio.style.display = ''; return; }
   card.style.display = '';
+  if (vacio) vacio.style.display = 'none';
 
   const total = entradas.reduce((s, [, d]) => s + d.valor, 0);
   if (totalEl) totalEl.textContent = '$ ' + fmt(Math.round(total));
