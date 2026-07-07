@@ -3029,11 +3029,13 @@ function parseDate(str) {
 }
 
 function getMarcaTemporal(r) {
-  const mt = (r['Marca temporal'] || '').trim();
-  if (mt) return mt;
+  // Prioridad: FECHA DISPOSICION PLANTA (columna C) + HORA DISPOSICION PLANTA (columna D).
+  // Solo si esas columnas vienen vacías se usa Marca temporal (columna A) como respaldo.
   const fecha = (r['FECHA DISPOSICION PLANTA'] || r['FECHA DISPOSICION'] || '').trim();
   const hora  = (r['HORA DISPOSICION PLANTA']  || r['HORA DISPOSICION']  || '').trim();
   if (fecha) return fecha + (hora ? ' ' + hora : ' 00:00:00');
+  const mt = (r['Marca temporal'] || '').trim();
+  if (mt) return mt;
   return '';
 }
 
@@ -4948,8 +4950,8 @@ function renderKPI(data) {
 
     // Tabla de registros del operario
     const tablaFilas = filas.slice().sort((a,b)=>{
-      const da = parseDateTime(a['Marca temporal']||'');
-      const db = parseDateTime(b['Marca temporal']||'');
+      const da = parseDateTime(getMarcaTemporal(a));
+      const db = parseDateTime(getMarcaTemporal(b));
       return (db||0)-(da||0);
     }).slice(0,20).map(r => {
       const ts  = getMarcaTemporal(r);
