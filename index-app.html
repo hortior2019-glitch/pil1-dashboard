@@ -1088,6 +1088,12 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
             <span style="font-family:'Playfair Display',serif;font-size:20px;font-weight:400;color:var(--ink-l)">vs.</span>
             <span id="cmp-pill-b" style="display:inline-block;padding:4px 14px;background:var(--gold-l);color:var(--gold);border:2px solid var(--gold);font-family:'Playfair Display',serif;font-size:15px;font-weight:700;letter-spacing:-.2px">Período B</span>
           </div>
+          <div style="margin-top:12px;display:flex;align-items:center;gap:8px">
+            <label for="cmp-sel-proveedor" style="font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">Proveedor</label>
+            <select id="cmp-sel-proveedor" onchange="renderCmpChart(window.dataIngreso)" style="padding:6px 12px;font-size:13px;font-weight:700;border:1px solid var(--rule);background:var(--white);color:var(--ink);border-radius:4px;font-family:'Source Sans 3',sans-serif;max-width:220px">
+              <option value="">Todos los proveedores</option>
+            </select>
+          </div>
         </div>
         <!-- Selector de modo: semanas del mes (cada una comparada automaticamente contra
              la misma semana del mes anterior) + Mes al final -->
@@ -3497,7 +3503,7 @@ async function loadAllData() {
       return false; // cualquier otro formato → corrupto
     });
     try { renderIngreso(dataIngreso, currentFilter); } catch(e2) { console.error('renderIngreso error:', e2); }
-    try { window.dataIngreso = dataIngreso; renderCmpChart(dataIngreso); } catch(e2) { console.error('renderCmpChart error:', e2); }
+    try { window.dataIngreso = dataIngreso; initCmpProveedorSelector(); renderCmpChart(dataIngreso); } catch(e2) { console.error('renderCmpChart error:', e2); }
     try { renderCliCmpChart(dataIngreso); } catch(e3) { console.error('renderCliCmpChart error:', e3); }
     try { renderClientes(dataIngreso, currentFilter); } catch(e2) { console.error('renderClientes error:', e2); }
     try { renderKPI(dataIngreso); } catch(e2) { console.error('renderKPI error:', e2); }
@@ -5234,6 +5240,20 @@ function setCmpMode(m) {
   if (window.dataIngreso) renderCmpChart(window.dataIngreso);
 }
 
+// Poblar el selector de proveedor del comparativo de "Ingreso de Material"
+// (a diferencia del selector de Cortes, este no requiere PIN — es de la pestaña abierta).
+function initCmpProveedorSelector() {
+  const sel = document.getElementById('cmp-sel-proveedor');
+  if (!sel || !window.dataIngreso) return;
+  const proveedores = [...new Set(window.dataIngreso
+    .map(r => normEmpresa(r['OPERACION']||r['Operacion']||r['operacion']||r['OPERACIÓN']||''))
+    .filter(Boolean))].sort();
+  const valorActual = sel.value;
+  sel.innerHTML = '<option value="">Todos los proveedores</option>' +
+    proveedores.map(p => `<option value="${p}">${nombreProveedorInforme(p)}</option>`).join('');
+  if (valorActual && proveedores.includes(valorActual)) sel.value = valorActual;
+}
+
 function getSemanaRange(semana, mes, anio) {
   const offset = (semana-1)*7;
   const inicio = new Date(anio, mes, 1+offset);
@@ -5397,6 +5417,13 @@ function renderCliCmpChart(data) {
 
 function renderCmpChart(data) {
   if (!data) return;
+  // Filtro opcional por proveedor: si hay uno seleccionado, todo el comparativo
+  // (KPIs, líneas y barras horizontales) se recalcula solo con sus registros.
+  const _cmpProvSel = document.getElementById('cmp-sel-proveedor');
+  const _cmpProv = _cmpProvSel ? _cmpProvSel.value : '';
+  if (_cmpProv) {
+    data = data.filter(r => normEmpresa(r['OPERACION']||r['Operacion']||r['operacion']||r['OPERACIÓN']||'') === _cmpProv);
+  }
   const now = new Date();
   const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   const MESES_C = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
