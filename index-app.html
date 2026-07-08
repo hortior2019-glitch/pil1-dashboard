@@ -1088,12 +1088,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
             <span style="font-family:'Playfair Display',serif;font-size:20px;font-weight:400;color:var(--ink-l)">vs.</span>
             <span id="cmp-pill-b" style="display:inline-block;padding:4px 14px;background:var(--gold-l);color:var(--gold);border:2px solid var(--gold);font-family:'Playfair Display',serif;font-size:15px;font-weight:700;letter-spacing:-.2px">Período B</span>
           </div>
-          <div style="margin-top:12px;display:flex;align-items:center;gap:8px">
-            <label for="cmp-sel-proveedor" style="font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">Proveedor</label>
-            <select id="cmp-sel-proveedor" onchange="renderCmpChart(window.dataIngreso)" style="padding:6px 12px;font-size:13px;font-weight:700;border:1px solid var(--rule);background:var(--white);color:var(--ink);border-radius:4px;font-family:'Source Sans 3',sans-serif;max-width:220px">
-              <option value="">Todos los proveedores</option>
-            </select>
-          </div>
         </div>
         <!-- Selector de modo: semanas del mes (cada una comparada automaticamente contra
              la misma semana del mes anterior) + Mes al final -->
@@ -1208,49 +1202,18 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
     </div>
   </div>
 
-
-  <div class="g2">
-    <div class="card">
-      <div class="card-hdr">Control de calidad de registros</div>
-      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-        <div class="gauge-wrap">
-          <svg class="gauge-svg" viewBox="0 0 150 86">
-            <path class="g-track" d="M15,78 A55,55 0 0,1 135,78"/>
-            <path class="g-fill" id="gt1" d="M15,78 A55,55 0 0,1 135,78" stroke="var(--green)"/>
-            <text x="75" y="68" class="g-val" fill="var(--green)" id="gv1">—</text>
-            <text x="75" y="80" class="g-lbl">Tiquetes completos</text>
-          </svg>
-          <div class="gauge-sub">Digitos completos del tiquete</div>
-        </div>
-        <div class="gauge-wrap">
-          <svg class="gauge-svg" viewBox="0 0 150 86">
-            <path class="g-track" d="M15,78 A55,55 0 0,1 135,78"/>
-            <path class="g-fill" id="gt2" d="M15,78 A55,55 0 0,1 135,78" stroke="var(--navy)"/>
-            <text x="75" y="68" class="g-val" fill="var(--navy)" id="gv2">—</text>
-            <text x="75" y="80" class="g-lbl">Conductores ID.</text>
-          </svg>
-          <div class="gauge-sub">Conductor y ultimos 4 de cedula</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-hdr">Balance de pesos acumulado</div>
-      <div class="prog-item"><div class="prog-hdr"><span class="prog-lbl">Total peso de entrada</span><span class="prog-val" id="pp-e">— kg</span></div><div class="prog-track"><div class="prog-fill" id="pb-e" style="width:0%;background:var(--navy)"></div></div></div>
-      <div class="prog-item"><div class="prog-hdr"><span class="prog-lbl">Total peso de salida</span><span class="prog-val" id="pp-s">— kg</span></div><div class="prog-track"><div class="prog-fill" id="pb-s" style="width:0%;background:var(--blue)"></div></div></div>
-      <div class="prog-item"><div class="prog-hdr"><span class="prog-lbl">Peso neto de material</span><span class="prog-val" id="pp-n">— kg</span></div><div class="prog-track"><div class="prog-fill" id="pb-n" style="width:0%;background:var(--gold)"></div></div></div>
-    </div>
+  <!-- ── COMPARATIVO POR PROVEEDOR ──
+       Mismo periodo (Semana N vs. semana N del mes anterior, o Mes vs Mes) que el
+       resumen general de arriba, pero desglosado por proveedor: uno debajo del otro,
+       de mayor a menor kg en el periodo actual. Cada proveedor usa SU color propio
+       para la linea del periodo actual; la linea/raya del mes anterior sigue siempre
+       en dorado, igual que en el resumen general. Se muestran todos por defecto,
+       sin necesidad de seleccionar nada. -->
+  <div style="margin-bottom:20px">
+    <div style="font-size:13px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--ink-m);margin:0 0 14px 2px">Comparativo por proveedor</div>
+    <div id="cmp-por-proveedor"></div>
   </div>
 
-  <div class="card">
-    <div class="card-hdr">Registros de ingreso — Datos en tiempo real desde Google Sheets</div>
-    <div style="overflow-x:auto">
-      <table class="tbl" id="tbl-ingreso">
-        <thead><tr><th>Fecha</th><th>Hora</th><th>Tiquete</th><th>Placa</th><th>Conductor</th><th>Operacion</th><th>Residuo</th><th class="num">Peso Entrada</th><th class="num">Peso Salida</th><th>Estado</th></tr></thead>
-        <tbody id="tbody-ingreso"><tr><td colspan="10" class="empty">Cargando datos...</td></tr></tbody>
-      </table>
-    </div>
-  </div>
 </div>
 
 <!--
@@ -3100,8 +3063,8 @@ function setStatus(msg, type='info') {
 
 function animGauge(pathId, valId, pct, color) {
   const fill = Math.min((pct/100)*172, 172);
-  document.getElementById(pathId).style.strokeDasharray = fill + ' ' + (172-fill);
-  document.getElementById(valId).textContent = isNaN(pct) ? '—' : Math.round(pct)+'%';
+  const pathEl = document.getElementById(pathId); if (pathEl) pathEl.style.strokeDasharray = fill + ' ' + (172-fill);
+  const valEl  = document.getElementById(valId);  if (valEl)  valEl.textContent = isNaN(pct) ? '—' : Math.round(pct)+'%';
 }
 
 // ── FETCH CSV ─────────────────────────────────────
@@ -3166,23 +3129,26 @@ function renderIngreso(data, filter) {
   document.getElementById('ingreso-period').textContent = lbl;
   const _fi1 = document.getElementById('footer-ingreso'); if (_fi1) _fi1.textContent = 'Ingreso: '+fmt(total)+' registros';
 
-  // Pesos bar
+  // Pesos bar (las cajas de "Balance de pesos acumulado" y "Control de calidad de
+  // registros" ya no se muestran en el panel, pero se guardan estos valores por si
+  // vuelven a usarse en otro lado; se protege con null-check para no romper nada).
   const maxPeso = Math.max(pesoE, 1);
-  document.getElementById('pp-e').textContent = fmt(Math.round(pesoE))+' kg';
-  document.getElementById('pp-s').textContent = fmt(Math.round(pesoS))+' kg';
-  document.getElementById('pp-n').textContent = fmt(Math.round(pesoNeto))+' kg';
-  document.getElementById('pb-e').style.width = '100%';
-  document.getElementById('pb-s').style.width = (pesoS/maxPeso*100)+'%';
-  document.getElementById('pb-n').style.width = (Math.max(pesoNeto,0)/maxPeso*100)+'%';
+  const _ppE=document.getElementById('pp-e'); if(_ppE) _ppE.textContent = fmt(Math.round(pesoE))+' kg';
+  const _ppS=document.getElementById('pp-s'); if(_ppS) _ppS.textContent = fmt(Math.round(pesoS))+' kg';
+  const _ppN=document.getElementById('pp-n'); if(_ppN) _ppN.textContent = fmt(Math.round(pesoNeto))+' kg';
+  const _pbE=document.getElementById('pb-e'); if(_pbE) _pbE.style.width = '100%';
+  const _pbS=document.getElementById('pb-s'); if(_pbS) _pbS.style.width = (pesoS/maxPeso*100)+'%';
+  const _pbN=document.getElementById('pb-n'); if(_pbN) _pbN.style.width = (Math.max(pesoNeto,0)/maxPeso*100)+'%';
 
-  // Gauges
+  // Gauges (ya no se muestran; animGauge tiene su propio null-check)
   setTimeout(() => {
     animGauge('gt1','gv1', pctTiq, 'var(--green)');
     animGauge('gt2','gv2', pctCond, 'var(--navy)');
   }, 200);
 
-  // Tabla
+  // Tabla (ya no se muestra en el panel; se deja protegido por si el elemento no existe)
   const tbody = document.getElementById('tbody-ingreso');
+  if (!tbody) return;
   if (filtered.length === 0) {
     tbody.innerHTML = '<tr><td colspan="10" class="empty">Sin registros para el periodo seleccionado</td></tr>';
     return;
@@ -3503,7 +3469,7 @@ async function loadAllData() {
       return false; // cualquier otro formato → corrupto
     });
     try { renderIngreso(dataIngreso, currentFilter); } catch(e2) { console.error('renderIngreso error:', e2); }
-    try { window.dataIngreso = dataIngreso; initCmpProveedorSelector(); renderCmpChart(dataIngreso); } catch(e2) { console.error('renderCmpChart error:', e2); }
+    try { window.dataIngreso = dataIngreso; renderCmpChart(dataIngreso); } catch(e2) { console.error('renderCmpChart error:', e2); }
     try { renderCliCmpChart(dataIngreso); } catch(e3) { console.error('renderCliCmpChart error:', e3); }
     try { renderClientes(dataIngreso, currentFilter); } catch(e2) { console.error('renderClientes error:', e2); }
     try { renderKPI(dataIngreso); } catch(e2) { console.error('renderKPI error:', e2); }
@@ -5240,20 +5206,6 @@ function setCmpMode(m) {
   if (window.dataIngreso) renderCmpChart(window.dataIngreso);
 }
 
-// Poblar el selector de proveedor del comparativo de "Ingreso de Material"
-// (a diferencia del selector de Cortes, este no requiere PIN — es de la pestaña abierta).
-function initCmpProveedorSelector() {
-  const sel = document.getElementById('cmp-sel-proveedor');
-  if (!sel || !window.dataIngreso) return;
-  const proveedores = [...new Set(window.dataIngreso
-    .map(r => normEmpresa(r['OPERACION']||r['Operacion']||r['operacion']||r['OPERACIÓN']||''))
-    .filter(Boolean))].sort();
-  const valorActual = sel.value;
-  sel.innerHTML = '<option value="">Todos los proveedores</option>' +
-    proveedores.map(p => `<option value="${p}">${nombreProveedorInforme(p)}</option>`).join('');
-  if (valorActual && proveedores.includes(valorActual)) sel.value = valorActual;
-}
-
 function getSemanaRange(semana, mes, anio) {
   const offset = (semana-1)*7;
   const inicio = new Date(anio, mes, 1+offset);
@@ -5417,13 +5369,6 @@ function renderCliCmpChart(data) {
 
 function renderCmpChart(data) {
   if (!data) return;
-  // Filtro opcional por proveedor: si hay uno seleccionado, todo el comparativo
-  // (KPIs, líneas y barras horizontales) se recalcula solo con sus registros.
-  const _cmpProvSel = document.getElementById('cmp-sel-proveedor');
-  const _cmpProv = _cmpProvSel ? _cmpProvSel.value : '';
-  if (_cmpProv) {
-    data = data.filter(r => normEmpresa(r['OPERACION']||r['Operacion']||r['operacion']||r['OPERACIÓN']||'') === _cmpProv);
-  }
   const now = new Date();
   const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   const MESES_C = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
@@ -5544,6 +5489,101 @@ function renderCmpChart(data) {
   // de semana/mes que las gráficas de arriba, mas legible en pantallas chicas.
   drawCmpDiffBars('cmp-hbar-viajes', labels, viajesA, viajesB, '#1a5c35', '#8b6914', 'count', lblA, lblB);
   drawCmpDiffBars('cmp-hbar-kg',     labels, kgA,     kgB,     '#2d8a4e', '#c8a84b', 'kg',    lblA, lblB);
+
+  // Comparativo por proveedor: usa exactamente el mismo periodo (rangeA/rangeB/labels/
+  // granularidad) que se acaba de calcular arriba para el resumen general.
+  renderCmpPorProveedor(data, rangeA, rangeB, labels, granularidad);
+}
+
+// ── COMPARATIVO POR PROVEEDOR (debajo del resumen general) ──
+// Un bloque por proveedor, de mayor a menor kg en el periodo actual (A), mostrados
+// todos por defecto (sin selector). Cada proveedor usa su propio color corporativo
+// para la linea del periodo actual; la linea del mes anterior sigue siempre en
+// dorado, igual que en el resumen general de arriba.
+function renderCmpPorProveedor(data, rangeA, rangeB, labels, granularidad) {
+  const cont = document.getElementById('cmp-por-proveedor');
+  if (!cont) return;
+
+  const dataA = filterByRange(data, rangeA.inicio, rangeA.fin);
+  const dataB = filterByRange(data, rangeB.inicio, rangeB.fin);
+
+  const nombreOp = r => normEmpresa(r['OPERACION']||r['Operacion']||r['operacion']||r['OPERACIÓN']||'');
+  const agrupar = lista => {
+    const m = {};
+    lista.forEach(r => {
+      const prov = nombreOp(r);
+      if (!prov) return;
+      if (!m[prov]) m[prov] = { viajes:0, kg:0 };
+      m[prov].viajes++;
+      m[prov].kg += getPesoNeto(r) || 0;
+    });
+    return m;
+  };
+  const mapA = agrupar(dataA), mapB = agrupar(dataB);
+  const proveedores = [...new Set([...Object.keys(mapA), ...Object.keys(mapB)])]
+    .sort((a,b) => (mapA[b]?.kg||0) - (mapA[a]?.kg||0));
+
+  if (proveedores.length === 0) { cont.innerHTML = '<div style="text-align:center;padding:24px;color:var(--ink-l);font-size:13px">Sin registros en este periodo.</div>'; return; }
+
+  const fmtKgL = n => Math.round(n).toLocaleString('es-CO') + ' kg';
+
+  cont.innerHTML = proveedores.map((prov, idx) => {
+    const a = mapA[prov] || { viajes:0, kg:0 };
+    const b = mapB[prov] || { viajes:0, kg:0 };
+    const color = getClientColor(prov) || '#1a5c35';
+    const logo  = getClientLogo(prov);
+    const diffV  = b.viajes>0 ? ((a.viajes-b.viajes)/b.viajes*100) : null;
+    const diffKg = b.kg>0     ? ((a.kg-b.kg)/b.kg*100)             : null;
+    const chipV  = diffV!==null  ? `<div style="font-size:12px;font-weight:800;color:${diffV>=0?'var(--green)':'var(--red)'}">${diffV>=0?'↑ +':'↓ '}${Math.abs(diffV).toFixed(1)}%</div>`  : '';
+    const chipKg = diffKg!==null ? `<div style="font-size:12px;font-weight:800;color:${diffKg>=0?'var(--green)':'var(--red)'}">${diffKg>=0?'↑ +':'↓ '}${Math.abs(diffKg).toFixed(1)}%</div>` : '';
+    return `<div class="card" style="margin-bottom:16px;padding:0;overflow:hidden;border-left:6px solid ${color}">
+      <div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--rule-l)">
+        ${logo ? `<img src="${logo}" alt="${nombreProveedorInforme(prov)}" style="width:34px;height:34px;object-fit:contain" onerror="this.style.display='none'">`
+               : `<div style="width:34px;height:34px;border-radius:50%;background:${color}1e;display:flex;align-items:center;justify-content:center;color:${color};font-family:'Playfair Display',serif;font-weight:700;font-size:14px;flex-shrink:0">${prov.charAt(0)}</div>`}
+        <div style="font-family:'Playfair Display',serif;font-size:17px;font-weight:700;color:var(--ink)">${nombreProveedorInforme(prov)}</div>
+      </div>
+      <div class="cmp-two-col" style="display:grid;grid-template-columns:1fr 1fr">
+        <div style="padding:16px 20px;border-right:1px solid var(--rule-l)">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+            <div style="font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-m)">Viajes</div>
+            <div style="text-align:right">
+              <span style="font-family:'Libre Baskerville',serif;font-size:22px;font-weight:700;color:${color};font-variant-numeric:lining-nums tabular-nums">${fmt(a.viajes)}</span>
+              <span style="font-size:13px;color:var(--ink-m)"> vs <b style="color:#8b6914">${fmt(b.viajes)}</b></span>
+              ${chipV}
+            </div>
+          </div>
+          <canvas id="cmp-prov-v-${idx}" style="width:100%;display:block;height:90px"></canvas>
+        </div>
+        <div style="padding:16px 20px">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+            <div style="font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-m)">Peso (kg)</div>
+            <div style="text-align:right">
+              <span style="font-family:'Libre Baskerville',serif;font-size:22px;font-weight:700;color:${color};font-variant-numeric:lining-nums tabular-nums">${fmtKgL(a.kg)}</span>
+              <span style="font-size:13px;color:var(--ink-m)"> vs <b style="color:#8b6914">${fmtKgL(b.kg)}</b></span>
+              ${chipKg}
+            </div>
+          </div>
+          <canvas id="cmp-prov-k-${idx}" style="width:100%;display:block;height:90px"></canvas>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const showEvery = labels.length>14 ? Math.ceil(labels.length/12) : 1;
+  proveedores.forEach((prov, idx) => {
+    const dA = dataA.filter(r => nombreOp(r) === prov);
+    const dB = dataB.filter(r => nombreOp(r) === prov);
+    const bkA = buildBuckets(dA, rangeA.inicio, rangeA.fin, granularidad);
+    const bkB = buildBuckets(dB, rangeB.inicio, rangeB.fin, granularidad);
+    const keys = Object.keys(bkA).sort();
+    const viajesA = keys.map(k=>bkA[k].viajes);
+    const viajesB = keys.map(k=>bkB[k]?.viajes||0);
+    const kgA     = keys.map(k=>Math.round(bkA[k].kg));
+    const kgB     = keys.map(k=>Math.round(bkB[k]?.kg||0));
+    const color = getClientColor(prov) || '#1a5c35';
+    drawCmpChart('cmp-prov-v-'+idx, viajesA, viajesB, color, '#8b6914', labels, showEvery);
+    drawCmpChart('cmp-prov-k-'+idx, kgA,     kgB,     color, '#8b6914', labels, showEvery);
+  });
 }
 
 // ── INICIO ────────────────────────────────────────
