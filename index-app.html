@@ -4217,12 +4217,11 @@ function drawCmpDiffBars(containerId, labels, valsA, valsB, colorA, colorB, unit
     const pctA = Math.round(a / maxVal * 100);
     const pctB = Math.round(b / maxVal * 100);
     // "common" = hasta donde llegan AMBOS periodos (la parte solida, sin ambigüedad).
-    // Del "common" en adelante hasta el mayor de los dos se pinta rayado: ese tramo
-    // rayado es visualmente "por cuánto" superó (o le faltó) respecto al otro periodo.
+    // La DIFERENCIA (|A-B|) se pinta rayada PRIMERO (a la izquierda), alternando el
+    // color dorado (mes anterior) con el color propio de la empresa; luego sigue la
+    // parte solida (lo que ambos periodos alcanzan por igual) a la derecha.
     const common = Math.min(pctA, pctB);
-    const excessEnd = Math.max(pctA, pctB);
-    const creciendo = a >= b;
-    const excessColor = creciendo ? colorA : colorB;
+    const excessWidth = Math.max(pctA, pctB) - common;
     const diff = b > 0 ? ((a - b) / b * 100) : null;
     const diffTxt = diff === null ? '' : (diff >= 0 ? '↑ +' : '↓ ') + Math.abs(diff).toFixed(1) + '%';
     const diffTxtColor = diff === null ? 'var(--ink-l)' : (diff >= 0 ? 'var(--green)' : 'var(--red)');
@@ -4234,12 +4233,10 @@ function drawCmpDiffBars(containerId, labels, valsA, valsB, colorA, colorB, unit
         </span>
       </div>
       <div style="position:relative;height:20px;background:var(--rule-l);border-radius:4px;overflow:hidden">
-        <!-- Banda de referencia del periodo B (todo su ancho, semi-transparente) -->
-        <div style="position:absolute;left:0;top:0;height:100%;width:${pctB}%;background:${colorB};opacity:.35"></div>
-        <!-- Parte solida: lo que ambos periodos alcanzan por igual -->
-        <div style="position:absolute;left:0;top:0;height:100%;width:${common}%;background:${colorA};border-radius:4px"></div>
-        <!-- Tramo rayado: la DIFERENCIA — cuanto superó (o cuanto le faltó) frente al otro periodo -->
-        ${excessEnd > common ? `<div style="position:absolute;left:${common}%;top:0;height:100%;width:${excessEnd-common}%;background:repeating-linear-gradient(45deg, ${excessColor}, ${excessColor} 4px, transparent 4px, transparent 8px);opacity:.85"></div>` : ''}
+        <!-- Tramo rayado (primero, a la izquierda): la DIFERENCIA — por cuanto superó o le faltó -->
+        ${excessWidth > 0 ? `<div style="position:absolute;left:0;top:0;height:100%;width:${excessWidth}%;background:repeating-linear-gradient(45deg, ${colorB} 0px, ${colorB} 5px, ${colorA} 5px, ${colorA} 10px)"></div>` : ''}
+        <!-- Parte solida (despues, a la derecha): lo que ambos periodos alcanzan por igual -->
+        <div style="position:absolute;left:${excessWidth}%;top:0;height:100%;width:${common}%;background:${colorA}"></div>
       </div>
     </div>`;
   }).join('');
@@ -5388,13 +5385,16 @@ function renderCmpChart(data) {
   const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   const MESES_C = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
-  let rangeA, rangeB, lblA='A', lblB='B', labels=[], granularidad='dia';
+  let rangeA, rangeB, lblA='A', lblB='B', labels=[], labelsBarras=[], granularidad='dia';
 
   // Abreviatura del dia de la semana del primer dia de cada periodo — importante
   // porque al comparar la misma "semana N" de dos meses distintos, el dia 1 de esa
   // semana no siempre cae en el mismo dia de la semana (ej: 01 jun / LUN vs 01 jul / MIE).
   const DOW3 = ['DOM','LUN','MAR','MIE','JUE','VIE','SAB'];
   const fmtDiaSem = d => String(d.getDate()).padStart(2,'0')+' '+MESES_L[d.getMonth()]+' / '+DOW3[d.getDay()];
+  // Etiqueta de fecha + dia de la semana para CADA barra individual (barras horizontales),
+  // a diferencia de "labels" (mas corta, solo para el eje X de las graficas de linea).
+  const fmtBarraDia = d => d.getDate()+'/'+MESES_C[d.getMonth()]+' · '+DOW3[d.getDay()];
 
   if (cmpMode === 'semana') {
     const semA = parseInt(document.getElementById('cmp-sel-sem-a')?.value||'1');
@@ -5408,7 +5408,7 @@ function renderCmpChart(data) {
     granularidad = 'dia';
     for (let i=0;i<7;i++) {
       const d=new Date(rangeA.inicio); d.setDate(rangeA.inicio.getDate()+i);
-      if (d<rangeA.fin) labels.push(d.getDate()+'/'+MESES_C[d.getMonth()]);
+      if (d<rangeA.fin) { labels.push(d.getDate()+'/'+MESES_C[d.getMonth()]); labelsBarras.push(fmtBarraDia(d)); }
     }
   } else if (cmpMode === 'mes') {
     const mA = parseInt(document.getElementById('cmp-sel-mes-a')?.value??now.getMonth());
@@ -5421,7 +5421,11 @@ function renderCmpChart(data) {
     lblB = MESES_L[mB]+' '+yB+' · '+fmtDiaSem(rangeB.inicio);
     granularidad = 'dia';
     const diasMax = Math.max(new Date(yA,mA+1,0).getDate(), new Date(yB,mB+1,0).getDate());
-    for (let i=1;i<=diasMax;i++) labels.push(String(i));
+    for (let i=1;i<=diasMax;i++) {
+      labels.push(String(i));
+      const dLbl = new Date(yA, mA, i);
+      labelsBarras.push(dLbl.getMonth()===mA ? fmtBarraDia(dLbl) : String(i));
+    }
   } else {
     const a1s=document.getElementById('cmp-libre-a1')?.value;
     const a2s=document.getElementById('cmp-libre-a2')?.value;
@@ -5435,10 +5439,10 @@ function renderCmpChart(data) {
     lblA = a1s+' → '+a2s;
     lblB = b1s+' → '+b2s;
     if (granularidad==='hora') {
-      for (let h=0;h<24;h++) labels.push(String(h).padStart(2,'0')+'h');
+      for (let h=0;h<24;h++) { labels.push(String(h).padStart(2,'0')+'h'); labelsBarras.push(String(h).padStart(2,'0')+'h'); }
     } else {
       const diasMax=Math.max(diffDias,Math.ceil((rangeB.fin-rangeB.inicio)/86400000));
-      for (let i=0;i<diasMax;i++) { const d=new Date(rangeA.inicio); d.setDate(d.getDate()+i); labels.push(d.getDate()+'/'+String(d.getMonth()+1).padStart(2,'0')); }
+      for (let i=0;i<diasMax;i++) { const d=new Date(rangeA.inicio); d.setDate(d.getDate()+i); labels.push(d.getDate()+'/'+String(d.getMonth()+1).padStart(2,'0')); labelsBarras.push(fmtBarraDia(d)); }
     }
   }
 
@@ -5508,12 +5512,12 @@ function renderCmpChart(data) {
 
   // Mismo comparativo (Periodo A vs B) pero en barras horizontales — mismos filtros
   // de semana/mes que las gráficas de arriba, mas legible en pantallas chicas.
-  drawCmpDiffBars('cmp-hbar-viajes', labels, viajesA, viajesB, '#1a5c35', '#8b6914', 'count', lblA, lblB);
-  drawCmpDiffBars('cmp-hbar-kg',     labels, kgA,     kgB,     '#2d8a4e', '#c8a84b', 'kg',    lblA, lblB);
+  drawCmpDiffBars('cmp-hbar-viajes', labelsBarras, viajesA, viajesB, '#1a5c35', '#8b6914', 'count', lblA, lblB);
+  drawCmpDiffBars('cmp-hbar-kg',     labelsBarras, kgA,     kgB,     '#2d8a4e', '#c8a84b', 'kg',    lblA, lblB);
 
   // Comparativo por proveedor: usa exactamente el mismo periodo (rangeA/rangeB/labels/
   // granularidad) que se acaba de calcular arriba para el resumen general.
-  renderCmpPorProveedor(data, rangeA, rangeB, labels, granularidad, lblA, lblB);
+  renderCmpPorProveedor(data, rangeA, rangeB, labels, labelsBarras, granularidad, lblA, lblB);
 }
 
 // ── COMPARATIVO POR PROVEEDOR (debajo del resumen general) ──
@@ -5523,7 +5527,7 @@ function renderCmpChart(data) {
 // graficas de linea Y barras horizontales). Cada proveedor usa su propio color
 // corporativo para la linea/barra del periodo actual; el periodo anterior sigue
 // siempre en dorado, igual que en el resumen general.
-function renderCmpPorProveedor(data, rangeA, rangeB, labels, granularidad, lblPeriodoA, lblPeriodoB) {
+function renderCmpPorProveedor(data, rangeA, rangeB, labels, labelsBarras, granularidad, lblPeriodoA, lblPeriodoB) {
   const cont = document.getElementById('cmp-por-proveedor');
   if (!cont) return;
 
@@ -5660,8 +5664,8 @@ function renderCmpPorProveedor(data, rangeA, rangeB, labels, granularidad, lblPe
     const lblBProv = lblPeriodoB;
     drawCmpChart('cmp-prov-v-'+idx, viajesA, viajesB, color, '#8b6914', labels, showEvery);
     drawCmpChart('cmp-prov-k-'+idx, kgA,     kgB,     color, '#8b6914', labels, showEvery);
-    drawCmpDiffBars('cmp-prov-hbar-v-'+idx, labels, viajesA, viajesB, color, '#8b6914', 'count', lblAProv, lblBProv);
-    drawCmpDiffBars('cmp-prov-hbar-k-'+idx, labels, kgA,     kgB,     color, '#8b6914', 'kg',    lblAProv, lblBProv);
+    drawCmpDiffBars('cmp-prov-hbar-v-'+idx, labelsBarras, viajesA, viajesB, color, '#8b6914', 'count', lblAProv, lblBProv);
+    drawCmpDiffBars('cmp-prov-hbar-k-'+idx, labelsBarras, kgA,     kgB,     color, '#8b6914', 'kg',    lblAProv, lblBProv);
   });
 
   // Aplicar el filtro activo del selector (si el usuario ya habia elegido un proveedor)
