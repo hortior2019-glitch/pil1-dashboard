@@ -3785,7 +3785,19 @@ const CLIENT_LOGOS = {
   'RATONERA':    LOGO_BASE + 'la ratonera.png',
   'SAMSA':       LOGO_BASE + 'samsa.png',
   'PELDAR':      LOGO_BASE + 'peldar.png',
+  'FUNREDCOL':   LOGO_BASE + '1-Alqueria.png', // Funredcol usa el mismo logo que Alqueria
 };
+
+// Nombres de proveedor que en los INFORMES (Cortes a Proveedor / Informe Cortes)
+// se muestran distinto al valor interno usado para filtrar los registros reales
+// (ese valor interno NO cambia, solo el texto que se ve en pantalla).
+const PROVEEDOR_NOMBRE_INFORME = {
+  'Alqueria': 'Alqueria CV',
+};
+function nombreProveedorInforme(prov) {
+  if (!prov) return prov;
+  return PROVEEDOR_NOMBRE_INFORME[prov.trim()] || prov;
+}
 
 function getClientLogo(operacion) {
   if (!operacion) return null;
@@ -6734,7 +6746,7 @@ function initCortesProveedores() {
     .filter(Boolean))].sort();
   const valorActual = sel.value;
   sel.innerHTML = '<option value="">— Seleccione proveedor —</option>' +
-    proveedores.map(p => `<option value="${p}">${p}</option>`).join('');
+    proveedores.map(p => `<option value="${p}">${nombreProveedorInforme(p)}</option>`).join('');
   if (valorActual) sel.value = valorActual;
   // Construir la lista de checkboxes de columnas (una sola vez)
   const cont = document.getElementById('corte-columnas');
@@ -7116,10 +7128,10 @@ function generarCorte() {
     <div style="background:linear-gradient(135deg,${color} 0%,${hexToRgba(color,.75)} 100%);padding:28px;color:#fff;position:relative;overflow:hidden">
       <div style="position:absolute;right:-50px;top:-50px;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,.08);pointer-events:none"></div>
       <div style="position:relative;z-index:1;display:flex;align-items:center;gap:24px;flex-wrap:wrap">
-        ${logoUrl ? `<div style="background:#fff;border-radius:14px;padding:16px;width:150px;height:150px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><img src="${logoUrl}" alt="${prov}" style="max-width:100%;max-height:100%;object-fit:contain" onerror="this.parentElement.style.display='none'"></div>` : ''}
+        ${logoUrl ? `<div style="background:#fff;border-radius:14px;padding:16px;width:150px;height:150px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><img src="${logoUrl}" alt="${nombreProveedorInforme(prov)}" style="max-width:100%;max-height:100%;object-fit:contain" onerror="this.parentElement.style.display='none'"></div>` : ''}
         <div style="flex:1;min-width:200px">
           <div style="font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,.7);margin-bottom:6px">Corte de Materia Recibida</div>
-          <div style="font-family:'Playfair Display',serif;font-size:32px;font-weight:700;line-height:1.1">${prov}</div>
+          <div style="font-family:'Playfair Display',serif;font-size:32px;font-weight:700;line-height:1.1">${nombreProveedorInforme(prov)}</div>
           <div style="margin-top:16px;background:rgba(255,255,255,.16);padding:14px 20px;border-radius:12px;display:inline-block">
             <div style="font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:rgba(255,255,255,.65);margin-bottom:6px">Periodo del corte</div>
             <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
@@ -8262,7 +8274,9 @@ function renderInformeGerencialCortes(items) {
     const tieneReal = !isNaN(valorReal) && valorReal > 0;
     const valorSistema = parseFloat(inf.valorSistema) || 0;
     const valor = tieneReal ? valorReal : valorSistema;
-    if (valor <= 0) return;
+    // No se descartan los cortes en $0: deben verse en el informe gerencial igual
+    // que aparecen en "Cortes a Proveedor" (mismo conteo en ambas vistas), marcados
+    // como PENDIENTE en rojo hasta que se les cargue un valor.
     const prov = inf.operacion || 'Otro';
     if (!porProveedor[prov]) porProveedor[prov] = { valor: 0, facturado: true };
     porProveedor[prov].valor += valor;
@@ -8294,13 +8308,13 @@ function renderInformeGerencialCortes(items) {
         </div>
         <!-- Logo -->
         <div class="ic-logo" style="display:flex;align-items:center;justify-content:center;padding:10px 14px;border-right:1px solid var(--rule-l);min-width:100px;flex-shrink:0;background:white">
-          ${logo ? `<img src="${logo}" alt="${prov}" style="width:76px;height:76px;object-fit:contain" onerror="this.parentNode.innerHTML='<div style=\'width:76px;height:76px;border-radius:4px;background:${color}18;display:flex;align-items:center;justify-content:center;font-family:Playfair Display,serif;font-size:20px;font-weight:700;color:${color}\'>${prov.charAt(0)}</div>'">`
+          ${logo ? `<img src="${logo}" alt="${nombreProveedorInforme(prov)}" style="width:76px;height:76px;object-fit:contain" onerror="this.parentNode.innerHTML='<div style=\'width:76px;height:76px;border-radius:4px;background:${color}18;display:flex;align-items:center;justify-content:center;font-family:Playfair Display,serif;font-size:20px;font-weight:700;color:${color}\'>${nombreProveedorInforme(prov).charAt(0)}</div>'">`
           : `<div style="width:76px;height:76px;border-radius:4px;background:${color}18;display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:${color}">${prov.charAt(0)}</div>`}
         </div>
         <!-- Nombre + estado + barra -->
         <div class="ic-name" style="flex:1;min-width:0;padding:14px 18px;display:flex;flex-direction:column;justify-content:center">
           <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px;flex-wrap:wrap">
-            <span style="font-family:'Playfair Display',serif;font-size:18px;font-weight:700;color:var(--ink);letter-spacing:-.3px">${prov}</span>
+            <span style="font-family:'Playfair Display',serif;font-size:18px;font-weight:700;color:var(--ink);letter-spacing:-.3px">${nombreProveedorInforme(prov)}</span>
             <span style="font-size:9px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:${color};background:${badgeBg};padding:2px 8px;border-radius:3px">${badgeTxt}</span>
           </div>
           <div style="height:6px;background:var(--rule-l);overflow:hidden;border-radius:3px">
@@ -8442,7 +8456,7 @@ function _renderInformesGuardadosImpl() {
       itemsAMostrar = []; // no mostrar tarjeta resumen; el informe detallado abajo es el que se edita
       barraColapso = `
         <div onclick="mostrarTodosLosCortes()" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:14px 18px;background:${hexToRgba(getClientColor(enfocado.operacion)||'#1a5c35',.08)};border:1px solid ${hexToRgba(getClientColor(enfocado.operacion)||'#1a5c35',.25)};border-radius:12px;cursor:pointer" title="Volver a la lista completa de cortes">
-          <span style="font-size:12px;font-weight:700;color:var(--ink-m)">Editando: <strong style="color:${getClientColor(enfocado.operacion)||'var(--navy)'}">${enfocado.nombreCorte||enfocado.operacion}</strong> — el detalle está abajo ↓</span>
+          <span style="font-size:12px;font-weight:700;color:var(--ink-m)">Editando: <strong style="color:${getClientColor(enfocado.operacion)||'var(--navy)'}">${enfocado.nombreCorte||nombreProveedorInforme(enfocado.operacion)}</strong> — el detalle está abajo ↓</span>
           <span style="font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-l);white-space:nowrap">▾ Ver todos (${items.length})</span>
         </div>`;
     } else {
@@ -8493,8 +8507,8 @@ function _renderInformesGuardadosImpl() {
         <div style="position:absolute;right:-40px;top:-40px;width:160px;height:160px;border-radius:50%;background:rgba(255,255,255,.07);pointer-events:none"></div>
         ${logo ? `<div style="background:#fff;border-radius:14px;padding:11px;width:86px;height:86px;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.12);position:relative;z-index:1"><img src="${logo}" style="max-width:100%;max-height:100%;object-fit:contain" onerror="this.parentElement.style.display='none'"></div>` : ''}
         <div style="flex:1;min-width:0;color:#fff;position:relative;z-index:1">
-          <div style="font-family:'Playfair Display',serif;font-size:19px;font-weight:700;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${inf.nombreCorte || inf.operacion}</div>
-          <div style="font-size:12px;color:rgba(255,255,255,.82);margin-top:2px;font-weight:500">${inf.operacion}${inf.material && inf.material!=='Todos' ? ' · '+inf.material : ''}</div>
+          <div style="font-family:'Playfair Display',serif;font-size:19px;font-weight:700;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${inf.nombreCorte || nombreProveedorInforme(inf.operacion)}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,.82);margin-top:2px;font-weight:500">${nombreProveedorInforme(inf.operacion)}${inf.material && inf.material!=='Todos' ? ' · '+inf.material : ''}</div>
         </div>
         <div style="background:${estadoBg};color:${estadoColor};font-size:10px;font-weight:800;letter-spacing:.8px;padding:6px 13px;border-radius:20px;flex-shrink:0;position:relative;z-index:1">${estadoTexto}</div>
       </div>
