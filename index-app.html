@@ -1210,7 +1210,15 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
        en dorado, igual que en el resumen general. Se muestran todos por defecto,
        sin necesidad de seleccionar nada. -->
   <div style="margin-bottom:20px">
-    <div style="font-size:13px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--ink-m);margin:0 0 14px 2px">Comparativo por proveedor</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin:0 0 14px 2px">
+      <div style="font-size:13px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--ink-m)">Comparativo por proveedor</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <label for="cmp-prov-filtro" style="font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">Ver proveedor</label>
+        <select id="cmp-prov-filtro" onchange="filtrarCmpPorProveedor(this.value)" style="padding:6px 12px;font-size:13px;font-weight:700;border:1px solid var(--rule);background:var(--white);color:var(--ink);border-radius:4px;font-family:'Source Sans 3',sans-serif;max-width:220px">
+          <option value="">Todos los proveedores</option>
+        </select>
+      </div>
+    </div>
     <div id="cmp-por-proveedor"></div>
   </div>
 
@@ -4208,9 +4216,13 @@ function drawCmpDiffBars(containerId, labels, valsA, valsB, colorA, colorB, unit
     const a = valsA[i] || 0, b = valsB[i] || 0;
     const pctA = Math.round(a / maxVal * 100);
     const pctB = Math.round(b / maxVal * 100);
-    const minPct = Math.min(pctA, pctB);
-    const maxPct = Math.max(pctA, pctB);
-    const diffColor = a >= b ? colorA : colorB;
+    // "common" = hasta donde llegan AMBOS periodos (la parte solida, sin ambigüedad).
+    // Del "common" en adelante hasta el mayor de los dos se pinta rayado: ese tramo
+    // rayado es visualmente "por cuánto" superó (o le faltó) respecto al otro periodo.
+    const common = Math.min(pctA, pctB);
+    const excessEnd = Math.max(pctA, pctB);
+    const creciendo = a >= b;
+    const excessColor = creciendo ? colorA : colorB;
     const diff = b > 0 ? ((a - b) / b * 100) : null;
     const diffTxt = diff === null ? '' : (diff >= 0 ? '↑ +' : '↓ ') + Math.abs(diff).toFixed(1) + '%';
     const diffTxtColor = diff === null ? 'var(--ink-l)' : (diff >= 0 ? 'var(--green)' : 'var(--red)');
@@ -4222,9 +4234,12 @@ function drawCmpDiffBars(containerId, labels, valsA, valsB, colorA, colorB, unit
         </span>
       </div>
       <div style="position:relative;height:20px;background:var(--rule-l);border-radius:4px;overflow:hidden">
-        <div style="position:absolute;left:0;top:0;height:100%;width:${pctB}%;background:${colorB};opacity:.4"></div>
-        <div style="position:absolute;left:0;top:0;height:100%;width:${pctA}%;background:${colorA};border-radius:4px"></div>
-        ${maxPct > minPct ? `<div style="position:absolute;left:${minPct}%;top:0;height:100%;width:${maxPct-minPct}%;background:repeating-linear-gradient(45deg, ${diffColor}, ${diffColor} 4px, transparent 4px, transparent 8px);opacity:.6"></div>` : ''}
+        <!-- Banda de referencia del periodo B (todo su ancho, semi-transparente) -->
+        <div style="position:absolute;left:0;top:0;height:100%;width:${pctB}%;background:${colorB};opacity:.35"></div>
+        <!-- Parte solida: lo que ambos periodos alcanzan por igual -->
+        <div style="position:absolute;left:0;top:0;height:100%;width:${common}%;background:${colorA};border-radius:4px"></div>
+        <!-- Tramo rayado: la DIFERENCIA — cuanto superó (o cuanto le faltó) frente al otro periodo -->
+        ${excessEnd > common ? `<div style="position:absolute;left:${common}%;top:0;height:100%;width:${excessEnd-common}%;background:repeating-linear-gradient(45deg, ${excessColor}, ${excessColor} 4px, transparent 4px, transparent 8px);opacity:.85"></div>` : ''}
       </div>
     </div>`;
   }).join('');
@@ -5375,6 +5390,12 @@ function renderCmpChart(data) {
 
   let rangeA, rangeB, lblA='A', lblB='B', labels=[], granularidad='dia';
 
+  // Abreviatura del dia de la semana del primer dia de cada periodo — importante
+  // porque al comparar la misma "semana N" de dos meses distintos, el dia 1 de esa
+  // semana no siempre cae en el mismo dia de la semana (ej: 01 jun / LUN vs 01 jul / MIE).
+  const DOW3 = ['DOM','LUN','MAR','MIE','JUE','VIE','SAB'];
+  const fmtDiaSem = d => String(d.getDate()).padStart(2,'0')+' '+MESES_L[d.getMonth()]+' / '+DOW3[d.getDay()];
+
   if (cmpMode === 'semana') {
     const semA = parseInt(document.getElementById('cmp-sel-sem-a')?.value||'1');
     const semB = parseInt(document.getElementById('cmp-sel-sem-b')?.value||'1');
@@ -5382,8 +5403,8 @@ function renderCmpChart(data) {
     const mAnt = mAct===0?11:mAct-1, yAnt = mAct===0?yAct-1:yAct;
     rangeA = getSemanaRange(semA, mAct, yAct);
     rangeB = getSemanaRange(semB, mAnt, yAnt);
-    lblA = 'Sem '+semA+' · '+MESES_L[mAct]+' '+yAct;
-    lblB = 'Sem '+semB+' · '+MESES_L[mAnt]+' '+yAnt;
+    lblA = 'Sem '+semA+' · '+fmtDiaSem(rangeA.inicio);
+    lblB = 'Sem '+semB+' · '+fmtDiaSem(rangeB.inicio);
     granularidad = 'dia';
     for (let i=0;i<7;i++) {
       const d=new Date(rangeA.inicio); d.setDate(rangeA.inicio.getDate()+i);
@@ -5396,8 +5417,8 @@ function renderCmpChart(data) {
     const yB = mB > now.getMonth() ? now.getFullYear()-1 : now.getFullYear();
     rangeA = { inicio:new Date(yA,mA,1), fin:new Date(yA,mA+1,1) };
     rangeB = { inicio:new Date(yB,mB,1), fin:new Date(yB,mB+1,1) };
-    lblA = MESES_L[mA]+' '+yA;
-    lblB = MESES_L[mB]+' '+yB;
+    lblA = MESES_L[mA]+' '+yA+' · '+fmtDiaSem(rangeA.inicio);
+    lblB = MESES_L[mB]+' '+yB+' · '+fmtDiaSem(rangeB.inicio);
     granularidad = 'dia';
     const diasMax = Math.max(new Date(yA,mA+1,0).getDate(), new Date(yB,mB+1,0).getDate());
     for (let i=1;i<=diasMax;i++) labels.push(String(i));
@@ -5492,7 +5513,7 @@ function renderCmpChart(data) {
 
   // Comparativo por proveedor: usa exactamente el mismo periodo (rangeA/rangeB/labels/
   // granularidad) que se acaba de calcular arriba para el resumen general.
-  renderCmpPorProveedor(data, rangeA, rangeB, labels, granularidad);
+  renderCmpPorProveedor(data, rangeA, rangeB, labels, granularidad, lblA, lblB);
 }
 
 // ── COMPARATIVO POR PROVEEDOR (debajo del resumen general) ──
@@ -5502,7 +5523,7 @@ function renderCmpChart(data) {
 // graficas de linea Y barras horizontales). Cada proveedor usa su propio color
 // corporativo para la linea/barra del periodo actual; el periodo anterior sigue
 // siempre en dorado, igual que en el resumen general.
-function renderCmpPorProveedor(data, rangeA, rangeB, labels, granularidad) {
+function renderCmpPorProveedor(data, rangeA, rangeB, labels, granularidad, lblPeriodoA, lblPeriodoB) {
   const cont = document.getElementById('cmp-por-proveedor');
   if (!cont) return;
 
@@ -5530,6 +5551,15 @@ function renderCmpPorProveedor(data, rangeA, rangeB, labels, granularidad) {
   const proveedores = [...new Set([...Object.keys(mapA), ...Object.keys(mapB)])]
     .sort((a,b) => (mapA[b]?.kg||0) - (mapA[a]?.kg||0));
 
+  // Poblar el selector "Ver proveedor" (conserva la seleccion si el proveedor sigue existiendo)
+  const selFiltro = document.getElementById('cmp-prov-filtro');
+  if (selFiltro) {
+    const seleccionActual = selFiltro.value;
+    selFiltro.innerHTML = '<option value="">Todos los proveedores</option>' +
+      proveedores.map(p => `<option value="${p}">${nombreProveedorInforme(p)}</option>`).join('');
+    if (seleccionActual && proveedores.includes(seleccionActual)) selFiltro.value = seleccionActual;
+  }
+
   if (proveedores.length === 0) { cont.innerHTML = '<div style="text-align:center;padding:24px;color:var(--ink-l);font-size:13px">Sin registros en este periodo.</div>'; return; }
 
   const fmtKgL = n => Math.round(n).toLocaleString('es-CO') + ' kg';
@@ -5546,7 +5576,7 @@ function renderCmpPorProveedor(data, rangeA, rangeB, labels, granularidad) {
     const logo  = getClientLogo(prov);
     const diffV  = b.viajes>0 ? ((a.viajes-b.viajes)/b.viajes*100) : null;
     const diffKg = b.kg>0     ? ((a.kg-b.kg)/b.kg*100)             : null;
-    return `<div style="margin-bottom:24px;border:1px solid var(--rule);background:var(--white)">
+    return `<div data-prov="${prov.replace(/"/g,'&quot;')}" style="margin-bottom:24px;border:1px solid var(--rule);background:var(--white)">
       <!-- Encabezado del proveedor (mismo estilo de logo que la pestaña "Proveedores") -->
       <div style="border-bottom:2px solid var(--rule-l);display:flex;align-items:stretch;min-height:90px">
         <div style="display:flex;align-items:center;justify-content:center;padding:12px 16px;border-right:1px solid var(--rule-l);min-width:140px;flex-shrink:0;background:white">
@@ -5566,8 +5596,8 @@ function renderCmpPorProveedor(data, rangeA, rangeB, labels, granularidad) {
             <div>
               <div style="font-size:15px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-m);margin-bottom:4px">Número de viajes</div>
               <div style="display:flex;align-items:center;gap:10px">
-                <div style="display:flex;align-items:center;gap:6px"><div style="width:24px;height:4px;background:${color};border-radius:2px"></div><span style="font-size:15px;font-weight:800;color:${color}">A</span></div>
-                <div style="display:flex;align-items:center;gap:6px"><div style="width:24px;height:2px;background:#8b6914;border-radius:2px;border-top:2px dashed #8b6914"></div><span style="font-size:15px;font-weight:800;color:#8b6914">B</span></div>
+                <div style="display:flex;align-items:center;gap:6px"><div style="width:24px;height:4px;background:${color};border-radius:2px"></div><span style="font-size:13px;font-weight:800;color:${color}">${lblPeriodoA}</span></div>
+                <div style="display:flex;align-items:center;gap:6px"><div style="width:24px;height:2px;background:#8b6914;border-radius:2px;border-top:2px dashed #8b6914"></div><span style="font-size:13px;font-weight:800;color:#8b6914">${lblPeriodoB}</span></div>
               </div>
             </div>
             <div class="cmp-metric-hdr" style="text-align:right">
@@ -5584,8 +5614,8 @@ function renderCmpPorProveedor(data, rangeA, rangeB, labels, granularidad) {
             <div>
               <div style="font-size:15px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-m);margin-bottom:4px">Peso de material (kg)</div>
               <div style="display:flex;align-items:center;gap:10px">
-                <div style="display:flex;align-items:center;gap:6px"><div style="width:24px;height:4px;background:${color};border-radius:2px"></div><span style="font-size:15px;font-weight:800;color:${color}">A</span></div>
-                <div style="display:flex;align-items:center;gap:6px"><div style="width:24px;height:2px;background:#8b6914;border-radius:2px;border-top:2px dashed #8b6914"></div><span style="font-size:15px;font-weight:800;color:#8b6914">B</span></div>
+                <div style="display:flex;align-items:center;gap:6px"><div style="width:24px;height:4px;background:${color};border-radius:2px"></div><span style="font-size:13px;font-weight:800;color:${color}">${lblPeriodoA}</span></div>
+                <div style="display:flex;align-items:center;gap:6px"><div style="width:24px;height:2px;background:#8b6914;border-radius:2px;border-top:2px dashed #8b6914"></div><span style="font-size:13px;font-weight:800;color:#8b6914">${lblPeriodoB}</span></div>
               </div>
             </div>
             <div class="cmp-metric-hdr" style="text-align:right">
@@ -5626,12 +5656,26 @@ function renderCmpPorProveedor(data, rangeA, rangeB, labels, granularidad) {
     const color = getClientColor(prov) || '#1a5c35';
     const a = mapA[prov] || { viajes:0, kg:0 };
     const b = mapB[prov] || { viajes:0, kg:0 };
-    const lblAProv = 'A · '+fmt(a.viajes)+' viajes';
-    const lblBProv = 'B · '+fmt(b.viajes)+' viajes';
+    const lblAProv = lblPeriodoA;
+    const lblBProv = lblPeriodoB;
     drawCmpChart('cmp-prov-v-'+idx, viajesA, viajesB, color, '#8b6914', labels, showEvery);
     drawCmpChart('cmp-prov-k-'+idx, kgA,     kgB,     color, '#8b6914', labels, showEvery);
     drawCmpDiffBars('cmp-prov-hbar-v-'+idx, labels, viajesA, viajesB, color, '#8b6914', 'count', lblAProv, lblBProv);
     drawCmpDiffBars('cmp-prov-hbar-k-'+idx, labels, kgA,     kgB,     color, '#8b6914', 'kg',    lblAProv, lblBProv);
+  });
+
+  // Aplicar el filtro activo del selector (si el usuario ya habia elegido un proveedor)
+  if (selFiltro) filtrarCmpPorProveedor(selFiltro.value);
+}
+
+// Muestra solo la tarjeta del proveedor elegido en "Comparativo por proveedor"
+// (o todas si se elige "Todos los proveedores"). No vuelve a calcular nada — solo
+// oculta/muestra las tarjetas ya renderizadas.
+function filtrarCmpPorProveedor(prov) {
+  const cont = document.getElementById('cmp-por-proveedor');
+  if (!cont) return;
+  cont.querySelectorAll(':scope > div[data-prov]').forEach(card => {
+    card.style.display = (!prov || card.dataset.prov === prov) ? '' : 'none';
   });
 }
 
