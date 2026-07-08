@@ -4241,10 +4241,16 @@ function drawCmpDiffBars(containerId, labels, valsA, valsB, colorA, colorB, unit
         </span>
       </div>
       <div style="position:relative;height:20px;background:var(--rule-l);border-radius:4px;overflow:hidden">
-        <!-- Tramo rayado (primero, a la izquierda): la DIFERENCIA — por cuanto superó o le faltó -->
-        ${excessWidth > 0 ? `<div style="position:absolute;left:0;top:0;height:100%;width:${excessWidth}%;background:${hatchBg};opacity:${creciendo?1:.85}"></div>` : ''}
-        <!-- Parte solida (despues, a la derecha): lo que ambos periodos alcanzan por igual -->
+        ${creciendo ? `
+        <!-- Cuando crecemos: rayado primero (izquierda) = cuanto superamos; solido despues (derecha) -->
+        ${excessWidth > 0 ? `<div style="position:absolute;left:0;top:0;height:100%;width:${excessWidth}%;background:${hatchBg}"></div>` : ''}
         <div style="position:absolute;left:${excessWidth}%;top:0;height:100%;width:${common}%;background:${colorA}"></div>
+        ` : `
+        <!-- Cuando el mes anterior nos supera: solido primero (izquierda) = lo real de este periodo;
+             rayado dorado despues (derecha) = cuanto nos faltó para llegar al mes anterior -->
+        <div style="position:absolute;left:0;top:0;height:100%;width:${common}%;background:${colorA}"></div>
+        ${excessWidth > 0 ? `<div style="position:absolute;left:${common}%;top:0;height:100%;width:${excessWidth}%;background:${hatchBg};opacity:.85"></div>` : ''}
+        `}
       </div>
     </div>`;
   }).join('');
@@ -5416,7 +5422,8 @@ function renderCmpChart(data) {
     granularidad = 'dia';
     for (let i=0;i<7;i++) {
       const d=new Date(rangeA.inicio); d.setDate(rangeA.inicio.getDate()+i);
-      if (d<rangeA.fin) { labels.push(d.getDate()+'/'+MESES_C[d.getMonth()]); labelsBarras.push(fmtBarraDia(d)); }
+      const dB=new Date(rangeB.inicio); dB.setDate(rangeB.inicio.getDate()+i);
+      if (d<rangeA.fin) { labels.push(d.getDate()+'/'+MESES_C[d.getMonth()]); labelsBarras.push(fmtBarraDia(d)+' vs '+fmtBarraDia(dB)); }
     }
   } else if (cmpMode === 'mes') {
     const mA = parseInt(document.getElementById('cmp-sel-mes-a')?.value??now.getMonth());
@@ -5431,8 +5438,11 @@ function renderCmpChart(data) {
     const diasMax = Math.max(new Date(yA,mA+1,0).getDate(), new Date(yB,mB+1,0).getDate());
     for (let i=1;i<=diasMax;i++) {
       labels.push(String(i));
-      const dLbl = new Date(yA, mA, i);
-      labelsBarras.push(dLbl.getMonth()===mA ? fmtBarraDia(dLbl) : String(i));
+      const dLbl  = new Date(yA, mA, i);
+      const dLblB = new Date(yB, mB, i);
+      const partA = dLbl.getMonth()===mA  ? fmtBarraDia(dLbl)  : null;
+      const partB = dLblB.getMonth()===mB ? fmtBarraDia(dLblB) : null;
+      labelsBarras.push(partA && partB ? partA+' vs '+partB : (partA || partB || String(i)));
     }
   } else {
     const a1s=document.getElementById('cmp-libre-a1')?.value;
@@ -5450,7 +5460,12 @@ function renderCmpChart(data) {
       for (let h=0;h<24;h++) { labels.push(String(h).padStart(2,'0')+'h'); labelsBarras.push(String(h).padStart(2,'0')+'h'); }
     } else {
       const diasMax=Math.max(diffDias,Math.ceil((rangeB.fin-rangeB.inicio)/86400000));
-      for (let i=0;i<diasMax;i++) { const d=new Date(rangeA.inicio); d.setDate(d.getDate()+i); labels.push(d.getDate()+'/'+String(d.getMonth()+1).padStart(2,'0')); labelsBarras.push(fmtBarraDia(d)); }
+      for (let i=0;i<diasMax;i++) {
+        const d=new Date(rangeA.inicio); d.setDate(d.getDate()+i);
+        const dB=new Date(rangeB.inicio); dB.setDate(dB.getDate()+i);
+        labels.push(d.getDate()+'/'+String(d.getMonth()+1).padStart(2,'0'));
+        labelsBarras.push(d<rangeA.fin && dB<rangeB.fin ? fmtBarraDia(d)+' vs '+fmtBarraDia(dB) : fmtBarraDia(d));
+      }
     }
   }
 
