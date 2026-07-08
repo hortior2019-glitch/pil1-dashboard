@@ -5497,9 +5497,11 @@ function renderCmpChart(data) {
 
 // ── COMPARATIVO POR PROVEEDOR (debajo del resumen general) ──
 // Un bloque por proveedor, de mayor a menor kg en el periodo actual (A), mostrados
-// todos por defecto (sin selector). Cada proveedor usa su propio color corporativo
-// para la linea del periodo actual; la linea del mes anterior sigue siempre en
-// dorado, igual que en el resumen general de arriba.
+// todos por defecto (sin selector). Mismo formato y mismo tamaño que el resumen
+// general de arriba (mismas clases cmp-two-col/cmp-metric-row/cmp-big, mismas
+// graficas de linea Y barras horizontales). Cada proveedor usa su propio color
+// corporativo para la linea/barra del periodo actual; el periodo anterior sigue
+// siempre en dorado, igual que en el resumen general.
 function renderCmpPorProveedor(data, rangeA, rangeB, labels, granularidad) {
   const cont = document.getElementById('cmp-por-proveedor');
   if (!cont) return;
@@ -5526,6 +5528,11 @@ function renderCmpPorProveedor(data, rangeA, rangeB, labels, granularidad) {
   if (proveedores.length === 0) { cont.innerHTML = '<div style="text-align:center;padding:24px;color:var(--ink-l);font-size:13px">Sin registros en este periodo.</div>'; return; }
 
   const fmtKgL = n => Math.round(n).toLocaleString('es-CO') + ' kg';
+  const diffChip = (diff) => {
+    if (diff === null) return '';
+    const pos = diff >= 0;
+    return `<div class="cmp-diff" style="font-size:15px;font-weight:800;margin-top:2px;color:${pos?'var(--green)':'var(--red)'}">${pos?'↑ +':'↓ '}${Math.abs(diff).toFixed(1)}%</div>`;
+  };
 
   cont.innerHTML = proveedores.map((prov, idx) => {
     const a = mapA[prov] || { viajes:0, kg:0 };
@@ -5534,36 +5541,63 @@ function renderCmpPorProveedor(data, rangeA, rangeB, labels, granularidad) {
     const logo  = getClientLogo(prov);
     const diffV  = b.viajes>0 ? ((a.viajes-b.viajes)/b.viajes*100) : null;
     const diffKg = b.kg>0     ? ((a.kg-b.kg)/b.kg*100)             : null;
-    const chipV  = diffV!==null  ? `<div style="font-size:12px;font-weight:800;color:${diffV>=0?'var(--green)':'var(--red)'}">${diffV>=0?'↑ +':'↓ '}${Math.abs(diffV).toFixed(1)}%</div>`  : '';
-    const chipKg = diffKg!==null ? `<div style="font-size:12px;font-weight:800;color:${diffKg>=0?'var(--green)':'var(--red)'}">${diffKg>=0?'↑ +':'↓ '}${Math.abs(diffKg).toFixed(1)}%</div>` : '';
-    return `<div class="card" style="margin-bottom:16px;padding:0;overflow:hidden;border-left:6px solid ${color}">
-      <div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--rule-l)">
-        ${logo ? `<img src="${logo}" alt="${nombreProveedorInforme(prov)}" style="width:34px;height:34px;object-fit:contain" onerror="this.style.display='none'">`
-               : `<div style="width:34px;height:34px;border-radius:50%;background:${color}1e;display:flex;align-items:center;justify-content:center;color:${color};font-family:'Playfair Display',serif;font-weight:700;font-size:14px;flex-shrink:0">${prov.charAt(0)}</div>`}
-        <div style="font-family:'Playfair Display',serif;font-size:17px;font-weight:700;color:var(--ink)">${nombreProveedorInforme(prov)}</div>
+    return `<div style="margin-bottom:24px;border:1px solid var(--rule);background:var(--white)">
+      <!-- Encabezado del proveedor -->
+      <div style="padding:18px 24px;border-bottom:2px solid var(--rule-l);display:flex;align-items:center;gap:14px">
+        ${logo ? `<img src="${logo}" alt="${nombreProveedorInforme(prov)}" style="width:40px;height:40px;object-fit:contain;flex-shrink:0" onerror="this.style.display='none'">`
+               : `<div style="width:40px;height:40px;border-radius:50%;background:${color}1e;display:flex;align-items:center;justify-content:center;color:${color};font-family:'Playfair Display',serif;font-weight:700;font-size:16px;flex-shrink:0">${prov.charAt(0)}</div>`}
+        <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink)">${nombreProveedorInforme(prov)}</div>
       </div>
-      <div class="cmp-two-col" style="display:grid;grid-template-columns:1fr 1fr">
-        <div style="padding:16px 20px;border-right:1px solid var(--rule-l)">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px;flex-wrap:wrap">
-            <div style="font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-m)">Viajes</div>
-            <div style="text-align:right">
-              <span style="font-family:'Libre Baskerville',serif;font-size:22px;font-weight:700;color:${color};font-variant-numeric:lining-nums tabular-nums">${fmt(a.viajes)}</span>
-              <span style="font-size:13px;color:var(--ink-m)"> vs <b style="color:#8b6914">${fmt(b.viajes)}</b></span>
-              ${chipV}
+
+      <!-- DOS GRÁFICAS (mismo formato/tamaño que el resumen general) -->
+      <div class="cmp-two-col" style="display:grid;grid-template-columns:1fr 1fr;gap:0;border-bottom:1px solid var(--rule-l)">
+        <!-- VIAJES -->
+        <div style="padding:20px 24px;border-right:1px solid var(--rule-l)">
+          <div class="cmp-metric-row" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <div>
+              <div style="font-size:15px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-m);margin-bottom:4px">Número de viajes</div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <div style="display:flex;align-items:center;gap:6px"><div style="width:24px;height:4px;background:${color};border-radius:2px"></div><span style="font-size:15px;font-weight:800;color:${color}">A</span></div>
+                <div style="display:flex;align-items:center;gap:6px"><div style="width:24px;height:2px;background:#8b6914;border-radius:2px;border-top:2px dashed #8b6914"></div><span style="font-size:15px;font-weight:800;color:#8b6914">B</span></div>
+              </div>
+            </div>
+            <div class="cmp-metric-hdr" style="text-align:right">
+              <div class="cmp-big" style="font-family:'Libre Baskerville',serif;font-size:52px;font-weight:700;color:${color};line-height:1;font-variant-numeric:lining-nums tabular-nums">${fmt(a.viajes)}</div>
+              <div class="cmp-vs" style="font-size:15px;color:var(--ink-m)">vs <span class="cmp-vs-val" style="font-weight:700;color:#8b6914">${fmt(b.viajes)}</span></div>
+              ${diffChip(diffV)}
             </div>
           </div>
-          <canvas id="cmp-prov-v-${idx}" style="width:100%;display:block;height:90px"></canvas>
+          <canvas id="cmp-prov-v-${idx}" style="width:100%;display:block"></canvas>
         </div>
-        <div style="padding:16px 20px">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px;flex-wrap:wrap">
-            <div style="font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-m)">Peso (kg)</div>
-            <div style="text-align:right">
-              <span style="font-family:'Libre Baskerville',serif;font-size:22px;font-weight:700;color:${color};font-variant-numeric:lining-nums tabular-nums">${fmtKgL(a.kg)}</span>
-              <span style="font-size:13px;color:var(--ink-m)"> vs <b style="color:#8b6914">${fmtKgL(b.kg)}</b></span>
-              ${chipKg}
+        <!-- KG -->
+        <div style="padding:20px 24px">
+          <div class="cmp-metric-row" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <div>
+              <div style="font-size:15px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-m);margin-bottom:4px">Peso de material (kg)</div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <div style="display:flex;align-items:center;gap:6px"><div style="width:24px;height:4px;background:${color};border-radius:2px"></div><span style="font-size:15px;font-weight:800;color:${color}">A</span></div>
+                <div style="display:flex;align-items:center;gap:6px"><div style="width:24px;height:2px;background:#8b6914;border-radius:2px;border-top:2px dashed #8b6914"></div><span style="font-size:15px;font-weight:800;color:#8b6914">B</span></div>
+              </div>
+            </div>
+            <div class="cmp-metric-hdr" style="text-align:right">
+              <div class="cmp-big" style="font-family:'Libre Baskerville',serif;font-size:52px;font-weight:700;color:${color};line-height:1;font-variant-numeric:lining-nums tabular-nums">${fmtKgL(a.kg)}</div>
+              <div class="cmp-vs" style="font-size:15px;color:var(--ink-m)">vs <span class="cmp-vs-val" style="font-weight:700;color:#8b6914">${fmtKgL(b.kg)}</span></div>
+              ${diffChip(diffKg)}
             </div>
           </div>
-          <canvas id="cmp-prov-k-${idx}" style="width:100%;display:block;height:90px"></canvas>
+          <canvas id="cmp-prov-k-${idx}" style="width:100%;display:block"></canvas>
+        </div>
+      </div>
+
+      <!-- MISMO COMPARATIVO EN BARRAS HORIZONTALES -->
+      <div class="cmp-two-col" style="display:grid;grid-template-columns:1fr 1fr;gap:0">
+        <div style="padding:20px 24px;border-right:1px solid var(--rule-l)">
+          <div style="font-size:15px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-m);margin-bottom:14px">Número de viajes · barras</div>
+          <div id="cmp-prov-hbar-v-${idx}"></div>
+        </div>
+        <div style="padding:20px 24px">
+          <div style="font-size:15px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-m);margin-bottom:14px">Peso de material (kg) · barras</div>
+          <div id="cmp-prov-hbar-k-${idx}"></div>
         </div>
       </div>
     </div>`;
@@ -5581,8 +5615,14 @@ function renderCmpPorProveedor(data, rangeA, rangeB, labels, granularidad) {
     const kgA     = keys.map(k=>Math.round(bkA[k].kg));
     const kgB     = keys.map(k=>Math.round(bkB[k]?.kg||0));
     const color = getClientColor(prov) || '#1a5c35';
+    const a = mapA[prov] || { viajes:0, kg:0 };
+    const b = mapB[prov] || { viajes:0, kg:0 };
+    const lblAProv = 'A · '+fmt(a.viajes)+' viajes';
+    const lblBProv = 'B · '+fmt(b.viajes)+' viajes';
     drawCmpChart('cmp-prov-v-'+idx, viajesA, viajesB, color, '#8b6914', labels, showEvery);
     drawCmpChart('cmp-prov-k-'+idx, kgA,     kgB,     color, '#8b6914', labels, showEvery);
+    drawCmpDiffBars('cmp-prov-hbar-v-'+idx, labels, viajesA, viajesB, color, '#8b6914', 'count', lblAProv, lblBProv);
+    drawCmpDiffBars('cmp-prov-hbar-k-'+idx, labels, kgA,     kgB,     color, '#8b6914', 'kg',    lblAProv, lblBProv);
   });
 }
 
