@@ -767,11 +767,16 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 <!-- ══ PANTALLA LOGIN ══ -->
 <div id="dash-login" style="position:fixed;top:0;left:0;right:0;bottom:0;background:var(--navy);display:flex;align-items:center;justify-content:center;z-index:2000;flex-direction:column;padding:24px">
   <div style="background:var(--white);width:100%;max-width:400px;padding:40px 36px;border-radius:40px 40px 40px 40px">
-    <div style="text-align:center;margin-bottom:20px;display:flex;justify-content:center">
-      <img class="login-logo" src="https://raw.githubusercontent.com/hortior2019-glitch/pil1-dashboard/main/logoverde.png" alt="Logo" style="width:100%;max-width:320px;object-fit:contain;mix-blend-mode:multiply">
+    <div style="position:relative;text-align:center;margin-bottom:14px">
+      <img class="login-logo" src="https://raw.githubusercontent.com/hortior2019-glitch/pil1-dashboard/main/logoverde.png" alt="Logo" style="width:100%;max-width:320px;object-fit:contain;mix-blend-mode:multiply;margin-top:26px;display:inline-block">
+      <!-- "Horti Organic" y el subtitulo van superpuestos sobre la punta inferior del logo
+           (antes iban como texto aparte debajo, dejando el logo con demasiado espacio en blanco
+           propio de la imagen empujado hacia arriba) -->
+      <div style="position:absolute;left:0;right:0;bottom:6%;text-align:center;pointer-events:none">
+        <div style="font-family:'Playfair Display',serif;font-size:32px;font-weight:900;color:var(--navy);letter-spacing:1.5px;line-height:1.1;text-shadow:0 0 10px rgba(255,255,255,.95),0 0 20px rgba(255,255,255,.85)">Horti Organic</div>
+        <div style="font-size:10.5px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink-m);margin-top:2px;text-shadow:0 0 10px rgba(255,255,255,.95),0 0 20px rgba(255,255,255,.85)">Sistema de Analítica & Business Intelligence</div>
+      </div>
     </div>
-    <div style="font-family:'Playfair Display',serif;font-size:42px;font-weight:900;color:var(--navy);margin-bottom:2px;text-align:center;letter-spacing:2px;line-height:1.1">Horti Organic</div>
-    <div style="font-size:13px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:var(--ink-l);margin-bottom:24px;text-align:center">Sistema de Analítica & Business Intelligence</div>
     <div style="margin-bottom:16px">
       <label style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-m);display:block;margin-bottom:6px">Usuario</label>
       <input type="text" id="dash-usuario" placeholder="Su usuario" autocomplete="username"
@@ -9791,6 +9796,20 @@ function renderProduccionHumus(rows) {
   const tbody = document.getElementById('tbody-ProduccionHumus');
   if (!tbody) return;
 
+  // Parseo de fecha "en local", NO en UTC: new Date("2026-07-08") interpreta esa cadena
+  // como medianoche UTC, que en Colombia (UTC-5) cae en 2026-07-07 19:00 hora local —
+  // por eso el registro de HOY no se reconocía como de hoy (parecia de ayer). Con este
+  // parser, year/month/day se arman directamente en hora local, sin ese corrimiento.
+  const parseFechaHumus = v => {
+    if (!v) return new Date(NaN);
+    const s = v.toString().trim();
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) return new Date(parseInt(m[1],10), parseInt(m[2],10)-1, parseInt(m[3],10));
+    m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (m) return new Date(parseInt(m[3],10), parseInt(m[2],10)-1, parseInt(m[1],10));
+    return new Date(s);
+  };
+
   if (!rows || !rows.length) {
     tbody.innerHTML = '<tr><td colspan="8" class="empty">Sin registros</td></tr>';
     ['stock-kpi-actual','stock-kpi-producido','stock-kpi-despachado'].forEach(id=>{
@@ -9838,7 +9857,7 @@ function renderProduccionHumus(rows) {
   };
 
   const sorted = rows.slice().filter(r => (r[colFecha]||'').toString().trim());
-  sorted.sort((a,b) => new Date(b[colFecha]) - new Date(a[colFecha]));
+  sorted.sort((a,b) => parseFechaHumus(b[colFecha]) - parseFechaHumus(a[colFecha]));
 
   // ── Usar fecha REAL del sistema para determinar mes actual ──
   const ahora = new Date();
@@ -9848,7 +9867,7 @@ function renderProduccionHumus(rows) {
 
   // Filtrar solo registros del mes actual para KPIs de periodo
   const esMesActual = (r) => {
-    const d = new Date(r[colFecha]);
+    const d = parseFechaHumus(r[colFecha]);
     if (isNaN(d.getTime())) return false;
     const k = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
     return k === keyMesReal;
@@ -9866,7 +9885,7 @@ function renderProduccionHumus(rows) {
   // ── Producción del Día: busca el registro de HOY (fecha real); si no existe, usa el último disponible ──
   const hoyYMD = ahora.getFullYear() + '-' + String(ahora.getMonth()+1).padStart(2,'0') + '-' + String(ahora.getDate()).padStart(2,'0');
   const filaHoy = sorted.find(r => {
-    const d = new Date(r[colFecha]);
+    const d = parseFechaHumus(r[colFecha]);
     if (isNaN(d.getTime())) return false;
     const k = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
     return k === hoyYMD;
@@ -9893,7 +9912,7 @@ function renderProduccionHumus(rows) {
   // ── Agrupar producción por mes (YYYY-MM) ──
   const porMes = {}; // {'2026-06': totalProducido}
   sorted.forEach(r => {
-    const d = new Date(r[colFecha]);
+    const d = parseFechaHumus(r[colFecha]);
     if (isNaN(d.getTime())) return;
     const key = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
     porMes[key] = (porMes[key] || 0) + parseNum(r[colProd]);
