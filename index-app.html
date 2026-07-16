@@ -5016,13 +5016,23 @@ function renderKPI(data) {
     const numDiasHora = diasDistintosSet.size || 1;
     const horaProm = horaCounts.map(c => c / numDiasHora);
     const maxHoraProm = Math.max(...horaProm, 0.0001);
+    // Eje Y con escala "redonda" (0, 25%, 50%, 75%, 100% de un maximo agradable)
+    const horaNiceMax = (() => {
+      const mag = Math.pow(10, Math.floor(Math.log10(maxHoraProm||1)));
+      const norm = (maxHoraProm||1) / mag;
+      const niceNorm = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+      return niceNorm * mag;
+    })();
+    const fmtTick = v => v === 0 ? '0' : (numDiasHora > 1 ? v.toFixed(1) : Math.round(v).toString());
+    const horaTicksHtml = [1, 0.75, 0.5, 0.25, 0].map(f => `<div>${fmtTick(horaNiceMax*f)}</div>`).join('');
+    const horaGridHtml = [0,1,2,3,4].map(() => `<div style="border-top:1px dashed var(--rule)"></div>`).join('');
     // Solo se muestran las horas que si tuvieron registros en el periodo filtrado
     // (hoy/ayer/semana): asi el grafico no queda lleno de huecos vacios cuando
     // el rango es corto y el operario solo tuvo viajes en unas pocas horas.
     const horasConDatosIdx = horaCounts.map((t,h)=>h).filter(h => horaCounts[h] > 0);
     const horaBarsHtml = horasConDatosIdx.map(h => {
       const prom = horaProm[h];
-      const pctH = maxHoraProm > 0 ? (prom/maxHoraProm*100) : 0;
+      const pctH = horaNiceMax > 0 ? Math.min(prom/horaNiceMax*100, 100) : 0;
       const promLbl = numDiasHora > 1 ? prom.toFixed(1)+' viajes/dia (prom.)' : horaCounts[h]+' viaje'+(horaCounts[h]!==1?'s':'');
       return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%" title="${String(h).padStart(2,'0')}:00h — ${promLbl}">
         <div style="width:100%;max-width:38px;height:${Math.max(pctH,5)}%;background:${op.color};border-radius:4px 4px 0 0"></div>
@@ -5110,8 +5120,15 @@ function renderKPI(data) {
           <div style="font-size:11px;color:var(--ink-m);font-weight:600">${horaPicoOp ? 'Pico: '+String(horaPicoOp[0]).padStart(2,'0')+':00h ('+horaPicoOp[1]+(horaPicoOp[2]>1?' en '+horaPicoOp[2]+' dias':' viajes')+')' : 'Sin datos'}</div>
         </div>
         ${horasConDatosIdx.length > 0 ? `
-        <div style="display:flex;align-items:flex-end;gap:5px;height:190px">${horaBarsHtml}</div>
-        <div style="display:flex;gap:5px;margin-top:5px;border-top:1px solid var(--rule-l);padding-top:4px">${horaLabelsHtml}</div>
+        <div style="display:flex;gap:8px">
+          <div style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:8px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:flex;align-items:center;justify-content:center;padding:2px 0;flex-shrink:0">${numDiasHora>1?'Viajes/dia':'Viajes'}</div>
+          <div style="display:flex;flex-direction:column;justify-content:space-between;height:190px;text-align:right;font-size:9px;font-weight:600;color:var(--ink-l);min-width:22px;flex-shrink:0">${horaTicksHtml}</div>
+          <div style="position:relative;flex:1;min-width:0">
+            <div style="position:absolute;inset:0;display:flex;flex-direction:column;justify-content:space-between;pointer-events:none">${horaGridHtml}</div>
+            <div style="position:relative;display:flex;align-items:flex-end;gap:5px;height:190px">${horaBarsHtml}</div>
+            <div style="display:flex;gap:5px;margin-top:5px;padding-top:4px">${horaLabelsHtml}</div>
+          </div>
+        </div>
         ` : `<div style="padding:20px 0;text-align:center;color:var(--ink-l);font-size:11px;font-style:italic">Sin viajes registrados en el periodo seleccionado</div>`}
       </div>
 
