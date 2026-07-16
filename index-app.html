@@ -520,6 +520,8 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 @media(max-width:768px){
   #panel-kpi .card{padding:16px 14px}
   #panel-kpi div[title]{max-width:20px !important}
+  #panel-kpi .card > div[style*="justify-content:space-between"][style*="align-items:flex-start"]{flex-wrap:wrap}
+  #panel-kpi select{width:100%}
 }
 
 /* ══ IFRAME PANELS ══ */
@@ -2915,7 +2917,8 @@ const SHEETS = {
   preopVol:   "https://docs.google.com/spreadsheets/d/e/2PACX-1vT7jlTWFp85CfMimM71gXUysc5zVcMU9PW-5RLtikP3aBDKXAFF4lgg5olu3_F0kARUxiEdDz0TDD5c/pub?gid=0&single=true&output=csv",
   preopCar:   "https://docs.google.com/spreadsheets/d/e/2PACX-1vT7jlTWFp85CfMimM71gXUysc5zVcMU9PW-5RLtikP3aBDKXAFF4lgg5olu3_F0kARUxiEdDz0TDD5c/pub?gid=910474309&single=true&output=csv",
   viajes:     "https://docs.google.com/spreadsheets/d/e/2PACX-1vQfJ3w0m6ulvnQuosQllRg9mozlPZjPq4a_xlOD6t2kB21ShbW_qnFsMZ9r_I2METGWv2hZIEKL-RRN/pub?gid=1700187693&single=true&output=csv",
-  ProduccionHumus: "https://docs.google.com/spreadsheets/d/1RIL3EvKasEdh9PgqZs24sO13ucS2sit0ncnQt14rV0o/export?format=csv&gid=85759097"
+  ProduccionHumus: "https://docs.google.com/spreadsheets/d/1RIL3EvKasEdh9PgqZs24sO13ucS2sit0ncnQt14rV0o/export?format=csv&gid=85759097",
+  coaching: "https://docs.google.com/spreadsheets/d/1-erGdKH9NLSuMNtJdBcvNk6K084hgGj0fG-FDjuOv90/export?format=csv&gid=848770587"
 };
 const AUTO_REFRESH_MS = 5 * 60 * 1000; // Refresco automático cada 5 minutos
 let currentFilter = 'hoy'; // Filtro de periodo activo ('hoy','semana','mes','total','custom')
@@ -2926,7 +2929,7 @@ let currentFilter = 'hoy'; // Filtro de periodo activo ('hoy','semana','mes','to
   - Cada array contiene objetos donde las keys son los encabezados del Sheet
   - Ejemplo: dataIngreso[0]['PLACA'] → valor de la columna PLACA de la fila 1
 */
-let dataIngreso = [], dataSolicitudes = [], dataHE = [], dataPreopVol = [], dataPreopCar = [], dataViajes = [], dataProduccionHumus = [];
+let dataIngreso = [], dataSolicitudes = [], dataHE = [], dataPreopVol = [], dataPreopCar = [], dataViajes = [], dataProduccionHumus = [], dataCoaching = [];
 
 /*
   UTILIDADES DE DATOS
@@ -3497,6 +3500,11 @@ async function loadAllData() {
   setStatus('Conectando con Google Sheets...');
 
   let ok = 0, errors = [];
+
+  try {
+    dataCoaching = await fetchCSV(SHEETS.coaching);
+    ok++;
+  } catch(e) { errors.push('Coaching'); console.error('Coaching fetch error:', e); }
 
   try {
     const rawIngreso = await fetchCSV(SHEETS.ingreso);
@@ -4923,11 +4931,54 @@ function reordenarHorasCircular(horasArr) {
 }
 
 const OPERARIOS_DEF = [
-  { key: 'alexander', label: 'Alexander Velásquez',  color: '#1fa855' },
-  { key: 'deivi',     label: 'Deivi José Oliveros',  color: '#1976d2' },
-  { key: 'saul',      label: 'Saúl García Sandoval', color: '#e0a800' },
-  { key: 'german',    label: 'German Rodriguez',     color: '#e8590c' },
+  { key: 'alexander', label: 'Alexander Velásquez',  color: '#1fa855', foto: 'https://raw.githubusercontent.com/hortior2019-glitch/pil1-dashboard/main/ALEXANDER.png' },
+  { key: 'deivi',     label: 'Deivi José Oliveros',  color: '#1976d2', foto: 'https://raw.githubusercontent.com/hortior2019-glitch/pil1-dashboard/main/DEIVI.png' },
+  { key: 'saul',      label: 'Saúl García Sandoval', color: '#e0a800', foto: 'https://raw.githubusercontent.com/hortior2019-glitch/pil1-dashboard/main/SAUL.png' },
+  { key: 'german',    label: 'German Rodriguez',     color: '#e8590c', foto: 'https://raw.githubusercontent.com/hortior2019-glitch/pil1-dashboard/main/GERMAN.png' },
 ];
+
+// ── COACHING: normalizacion de encabezados y criterios evaluables ──
+// Los encabezados del formulario son oraciones largas; en vez de depender del
+// texto exacto (que puede variar en tildes/espacios), se busca por una palabra
+// clave distintiva dentro de cada encabezado ya normalizado.
+function normalizarHeaderCoaching(s) {
+  return (s||'').toString().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]+/g,' ').trim();
+}
+function getCampoCoaching(row, keyword) {
+  const kw = normalizarHeaderCoaching(keyword);
+  for (const k in row) {
+    if (normalizarHeaderCoaching(k).includes(kw)) return (row[k]||'').toString().trim();
+  }
+  return '';
+}
+const COACHING_CRITERIOS = [
+  { key:'manifiesto', label:'Consulta si el proveedor envía manifiesto/ticket/baucher', kw:'consulta si el proveedor envia', tipo:'sino' },
+  { key:'diligencia',  label:'Diligencia el sistema oportunamente', kw:'diligencia el sistema oportunamente', tipo:'sino' },
+  { key:'material',   label:'Identifica el material que relaciona la operación', kw:'identifica el material que relaciona', tipo:'sino' },
+  { key:'placa',      label:'Digita o selecciona correctamente la placa', kw:'digita o selecciona correctamente la placa', tipo:'sino' },
+  { key:'conductor',  label:'Identifica el conductor y verifica su información', kw:'identifica el conductor del vehiculo', tipo:'parcial' },
+  { key:'pesovacio',  label:'Ingresa correctamente el peso VACIO', kw:'ingresa correctamente el peso vacio', tipo:'sino' },
+  { key:'pesolleno',  label:'Ingresa correctamente el peso LLENO', kw:'ingresa correctamente el peso lleno', tipo:'sino' },
+  { key:'zona',       label:'Indica la zona en que realizó el descargue', kw:'indica la zona en que realizo', tipo:'sino' },
+  { key:'fototicket', label:'Captura la foto del ticket/baucher/manifiesto', kw:'captura la foto del', tipo:'sino' },
+  { key:'fotoplaca',  label:'Captura la evidencia fotográfica de la PLACA', kw:'evidencia fotografica de la placa', tipo:'sino' },
+  { key:'fotoTara',   label:'Captura la evidencia fotográfica de la TARA', kw:'evidencia fotografica de la tara', tipo:'sino' },
+];
+function coachingBarInfo(valorRaw, tipo) {
+  const v = normalizarHeaderCoaching(valorRaw).toUpperCase();
+  if (tipo === 'parcial') {
+    if (v === 'SI') return { pct:100, color:'#1a9c4a', label:'SI' };
+    if (v === 'PARCIAL 2') return { pct:75, color:'#e0a800', label:'PARCIAL 2' };
+    if (v === 'PARCIAL 1') return { pct:25, color:'#e0a800', label:'PARCIAL 1' };
+    if (v === 'NO') return { pct:100, color:'#b91c1c', label:'NO' };
+  } else {
+    if (v === 'SI') return { pct:100, color:'#1a9c4a', label:'SI' };
+    if (v === 'NO') return { pct:100, color:'#b91c1c', label:'NO' };
+  }
+  return { pct:0, color:'var(--rule)', label: valorRaw ? valorRaw.toString().trim() : 'Sin dato' };
+}
 
 function renderKPI(data) {
   const total = data.length;
@@ -5060,6 +5111,21 @@ function renderKPI(data) {
     const horaPicoIdx = horaCounts.indexOf(Math.max(...horaCounts));
     const horaPicoOp = horaCounts[horaPicoIdx] > 0 ? [horaPicoIdx, horaCounts[horaPicoIdx], numDiasHora] : null;
 
+    // Coaching: evaluaciones de este operario en el periodo activo, mas recientes primero
+    const coachingFilas = (dataCoaching||[]).filter(r => {
+      const nombre = normalizarHeaderCoaching(getCampoCoaching(r,'nombre completo del colaborador'));
+      if (!nombre.includes(op.key)) return false;
+      const mt = getCampoCoaching(r,'marca temporal');
+      return inPeriod(mt||'', currentFilter);
+    }).sort((a,b) => {
+      const da = parseDateTime(getCampoCoaching(a,'marca temporal'));
+      const db = parseDateTime(getCampoCoaching(b,'marca temporal'));
+      return (db||0)-(da||0);
+    });
+    window._coachingCache = window._coachingCache || {};
+    window._coachingCache[op.key] = { filas: coachingFilas, color: op.color };
+    const coachingOptsHtml = COACHING_CRITERIOS.map(c => `<option value="${c.key}">${c.label}</option>`).join('');
+
     // Tabla de registros del operario
     const tablaFilas = filas.slice().sort((a,b)=>{
       const da = parseDateTime(getMarcaTemporal(a));
@@ -5085,9 +5151,12 @@ function renderKPI(data) {
     }).join('');
 
     return `<div class="card" style="border-left:4px solid ${op.color}">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--rule-l)">
-        <div style="font-family:'Playfair Display',serif;font-size:18px;font-weight:600;color:var(--ink)">${op.label}</div>
-        <div style="text-align:right">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--rule-l);gap:14px">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-family:'Playfair Display',serif;font-size:18px;font-weight:600;color:var(--ink)">${op.label}</div>
+          <img src="${op.foto}" alt="${op.label}" onerror="this.style.display='none'" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid ${op.color};background:var(--s2)">
+        </div>
+        <div style="text-align:right;flex-shrink:0">
           <div style="font-family:'Playfair Display',serif;font-size:32px;font-weight:700;color:${op.color};line-height:1">${fmt(filas.length)}</div>
           <div style="font-size:10px;color:var(--ink-l)">registros</div>
         </div>
@@ -5150,6 +5219,16 @@ function renderKPI(data) {
         ` : `<div style="padding:20px 0;text-align:center;color:var(--ink-l);font-size:11px;font-style:italic">Sin viajes registrados en el periodo seleccionado</div>`}
       </div>
 
+      <div style="background:var(--white);padding:14px 16px;border:1px solid var(--rule-l);margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+          <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">Coaching · criterio de evaluación</div>
+          <select onchange="renderCoachingBars('${op.key}', this.value)" style="font-size:11px;padding:5px 8px;border:1px solid var(--rule);border-radius:4px;background:var(--white);color:var(--ink);max-width:100%">
+            ${coachingOptsHtml}
+          </select>
+        </div>
+        <div id="coaching-bars-${op.key}"></div>
+      </div>
+
       ${alertas > 0 ? `<div style="margin-bottom:12px;padding:6px 12px;background:var(--red-l);border-left:3px solid var(--red)">
         <span style="font-size:10px;font-weight:700;color:var(--red)">ALERTAS: ${alertas} registro${alertas>1?'s':''} con novedad</span>
       </div>` : ''}
@@ -5172,6 +5251,42 @@ function renderKPI(data) {
       </div>
     </div>`;
   }).join('');
+
+  // Pintar las barras de coaching (criterio por defecto: el primero) para cada operario
+  OPERARIOS_DEF.forEach(op => renderCoachingBars(op.key, COACHING_CRITERIOS[0].key));
+}
+
+// ── COACHING: pinta las barras del criterio seleccionado para un operario ──
+function renderCoachingBars(opKey, criterioKey) {
+  const cont = document.getElementById('coaching-bars-'+opKey);
+  if (!cont) return;
+  const cache = (window._coachingCache||{})[opKey];
+  const criterio = COACHING_CRITERIOS.find(c => c.key === criterioKey) || COACHING_CRITERIOS[0];
+  if (!cache || cache.filas.length === 0) {
+    cont.innerHTML = '<div style="padding:10px 0;text-align:center;color:var(--ink-l);font-size:11px;font-style:italic">Sin evaluaciones de coaching en el periodo seleccionado</div>';
+    return;
+  }
+  let siCount = 0, evalCount = 0;
+  const barsHtml = cache.filas.map(r => {
+    const valor = getCampoCoaching(r, criterio.kw);
+    const info = coachingBarInfo(valor, criterio.tipo);
+    if (info.label === 'SI') siCount++;
+    if (info.label !== 'Sin dato') evalCount++;
+    const mt = getCampoCoaching(r,'marca temporal');
+    const fechaLbl = (mt||'').split(' ')[0] || '—';
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+      <div style="font-size:9px;color:var(--ink-l);min-width:62px;flex-shrink:0">${fechaLbl}</div>
+      <div style="flex:1;background:var(--rule-l);border-radius:3px;height:14px;position:relative;overflow:hidden">
+        <div style="height:100%;width:${info.pct}%;background:${info.color};border-radius:3px"></div>
+      </div>
+      <div style="font-size:9px;font-weight:700;color:${info.color};min-width:64px;flex-shrink:0;text-align:right">${info.label}</div>
+    </div>`;
+  }).join('');
+  const pctCumpl = evalCount > 0 ? Math.round(siCount/evalCount*100) : null;
+  cont.innerHTML = `
+    <div style="font-size:10px;color:var(--ink-m);margin-bottom:8px">${cache.filas.length} evaluacion${cache.filas.length!==1?'es':''}${pctCumpl!==null?' · '+pctCumpl+'% con SI':''}</div>
+    ${barsHtml}
+  `;
 }
 
 // ── SWITCH PIE TAB ───────────────────────────────
