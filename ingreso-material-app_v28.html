@@ -2280,55 +2280,23 @@ function abrirRecorteFoto(img, targetId) {
   });
 }
 
-var rotandoFotoEnProceso = false;
-
-// Gira la foto en pasos exactos de 90 grados usando un canvas nativo
-// SOBRE LA IMAGEN YA GIRADA (no sobre el zoom/ajuste visual de
-// Cropper), para que sea un giro sin perdida ni cambio de resolucion:
-// cada giro de 90 intercambia ancho/alto exactamente (sin escalar ni
-// re-muestrear), asi que al completar 180 o 360 grados la foto queda
-// exactamente en la misma resolucion con la que empezo, sea que el
-// formato original fuera vertical u horizontal. Luego se recrea
-// Cropper sobre la imagen ya girada.
+// Gira la imagen dentro del recorte (izquierda -90, derecha +90).
+// Cropper.js reacomoda automaticamente el recuadro de recorte tras girar.
 function rotarRecorteFoto(grados) {
-  if (!cropperFotoInstance || rotandoFotoEnProceso) return;
-  rotandoFotoEnProceso = true;
-  document.querySelectorAll('.btn-rotar').forEach(function (b) { b.disabled = true; });
-
-  var imgEl = document.getElementById('img-recortar');
-  var srcActual = imgEl.src;
-
-  var imgTmp = new Image();
-  imgTmp.onload = function () {
-    var w = imgTmp.naturalWidth, h = imgTmp.naturalHeight;
-    var esGiroDeEje = Math.abs(grados % 180) === 90; // 90 o 270/-90: intercambia ancho y alto
-    var canvas = document.createElement('canvas');
-    canvas.width  = esGiroDeEje ? h : w;
-    canvas.height = esGiroDeEje ? w : h;
-    var ctx = canvas.getContext('2d');
-    ctx.translate(canvas.width / 2, canvas.height / 2);
-    ctx.rotate(grados * Math.PI / 180);
-    ctx.drawImage(imgTmp, -w / 2, -h / 2);
-
-    var nuevoSrc = canvas.toDataURL('image/png'); // sin perdida entre giros sucesivos
-
-    if (cropperFotoInstance) { cropperFotoInstance.destroy(); cropperFotoInstance = null; }
-    imgEl.src = nuevoSrc;
-
-    requestAnimationFrame(function () {
-      if (window.Cropper) {
-        cropperFotoInstance = new Cropper(imgEl, { viewMode: 1, autoCropArea: 1, dragMode: 'move', background: false, responsive: true, guides: true });
-      }
-      rotandoFotoEnProceso = false;
-      document.querySelectorAll('.btn-rotar').forEach(function (b) { b.disabled = false; });
-    });
-  };
-  imgTmp.onerror = function () {
-    console.error('[foto] rotarRecorteFoto: no se pudo decodificar la imagen para rotarla.');
-    rotandoFotoEnProceso = false;
-    document.querySelectorAll('.btn-rotar').forEach(function (b) { b.disabled = false; });
-  };
-  imgTmp.src = srcActual;
+  if (!cropperFotoInstance) return;
+  cropperFotoInstance.rotate(grados);
+  // Al girar, Cropper reajusta la imagen para que quepa en el
+  // contenedor, pero el recuadro de recorte NO se reajusta solo y se
+  // queda con el tamaño/posicion de antes de girar (por eso solo se
+  // veia/exportaba la mitad de la foto). Se vuelve a poner el
+  // recuadro cubriendo toda la imagen ya girada.
+  var canvasData = cropperFotoInstance.getCanvasData();
+  cropperFotoInstance.setCropBoxData({
+    left: canvasData.left,
+    top: canvasData.top,
+    width: canvasData.width,
+    height: canvasData.height
+  });
 }
 
 function cancelarRecorteFoto() {
@@ -2338,7 +2306,6 @@ function cancelarRecorteFoto() {
   var imgEl = document.getElementById('img-recortar');
   if (imgEl) imgEl.src = '';
   cropModalTargetId = null;
-  rotandoFotoEnProceso = false;
 }
 
 // Los modales de recorte e inspeccion son overlays flotantes que
