@@ -517,6 +517,10 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   #panel-ingreso .ic-name > div[style*="font-size:11px"]{white-space:normal !important}
 }
 
+@media(max-width:768px){
+  #panel-kpi .card{padding:16px 14px}
+  #panel-kpi div[title]{max-width:20px !important}
+}
 
 /* ══ IFRAME PANELS ══ */
 /* ════════ INFORME / CERTIFICADO DE CORTE ════════ */
@@ -959,7 +963,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   PANEL: KPIs OPERARIOS
   - Vista resumen general con conteos de registros, peso, vehículos, conductores
   - Incluye tabla de resumen por operación y análisis de campos de oportunidad
-  - Se llena con: renderKPI(data) y renderOportunidades(data)
+  - Se llena con: renderKPI(data)
   ═══════════════════════════════════════════════════════════
 -->
 <!--
@@ -1030,7 +1034,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   ═══════════════════════════════════════════════════════════
   PANEL: KPIs OPERARIOS
   - Incluye tabla de resumen por operación y análisis de campos de oportunidad
-  - Se llena con: renderKPI(data) y renderOportunidades(data)
+  - Se llena con: renderKPI(data)
   ═══════════════════════════════════════════════════════════
 -->
 <div class="panel" id="panel-kpi">
@@ -1039,7 +1043,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
     <div class="sec-sub" id="kpi-op-period">Total acumulado</div>
   </div>
 
-  <div id="kpi-operarios-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:20px;margin-bottom:24px"></div>
+  <div id="kpi-operarios-grid" style="display:grid;grid-template-columns:1fr;gap:20px;margin-bottom:24px"></div>
 
   <div class="sec-hdr" style="margin-top:8px">
     <div class="sec-title">Resumen General</div>
@@ -1054,12 +1058,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
     <div class="kpi" style="--ac:var(--gold)"><div class="kpi-lbl">AHT Promedio</div><div class="kpi-val" id="kpi-gen-aht">—</div><div class="kpi-desc">tiempo por registro</div></div>
   </div>
 
-  <!-- CAMPOS DE OPORTUNIDAD -->
-  <div class="sec-hdr" style="margin-top:8px">
-    <div class="sec-title">Campos de Oportunidad</div>
-    <div class="sec-sub">Comportamientos identificados en produccion</div>
-  </div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;margin-bottom:24px" id="oportunidad-grid"></div>
 </div>
 
 <!--
@@ -3515,7 +3513,6 @@ async function loadAllData() {
     try { renderCliCmpChart(dataIngreso); } catch(e3) { console.error('renderCliCmpChart error:', e3); }
     try { renderClientes(dataIngreso, currentFilter); } catch(e2) { console.error('renderClientes error:', e2); }
     try { renderKPI(dataIngreso); } catch(e2) { console.error('renderKPI error:', e2); }
-    try { renderOportunidades(dataIngreso); } catch(e2) { console.error('renderOportunidades error:', e2); }
     try { renderOps(_opsFiltered || OPS); } catch(e2) { console.error('renderOps error:', e2); }
     try { initCortesProveedores(); } catch(e2) { console.error('initCortes error:', e2); }
     const _fi2 = document.getElementById('footer-ingreso'); if (_fi2) _fi2.textContent = 'Ingreso: '+fmt(dataIngreso.length)+' registros';
@@ -3676,7 +3673,6 @@ function setFilter(f, el) {
   renderClientes(dataIngreso, f);
   renderHE(dataHE, f);
   renderKPI(dataIngreso.filter(r => inPeriod(getMarcaTemporal(r)||'', f)), f);
-  renderOportunidades(dataIngreso.filter(r => inPeriod(getMarcaTemporal(r)||'', f)), f);
   renderAccesos();
   renderViajes(dataViajes, f);
   renderPreop('vol', dataPreopVol, f);
@@ -4909,11 +4905,17 @@ function filtrarTablaEmp(q) {
 */
 // ── RENDER KPI OPERARIOS ──────────────────────────
 const OPERARIOS_DEF = [
-  { key: 'alexander', label: 'Alexander Velásquez',  color: 'var(--navy)' },
-  { key: 'idaldo',    label: 'Idaldo',               color: 'var(--blue)' },
-  { key: 'deivi',     label: 'Deivi José Oliveros',  color: 'var(--green)' },
-  { key: 'saul',      label: 'Saúl García Sandoval', color: 'var(--gold)' },
-  { key: 'german',    label: 'German Rodriguez',     color: 'var(--orange)' },
+  { key: 'alexander', label: 'Alexander Velásquez',  color: '#1fa855' },
+  { key: 'deivi',     label: 'Deivi José Oliveros',  color: '#1976d2' },
+  { key: 'saul',      label: 'Saúl García Sandoval', color: '#e0a800' },
+  { key: 'german',    label: 'German Rodriguez',     color: '#e8590c' },
+];
+const DIAS_SEMANA_DEF = [
+  { dow: 1, label: 'LUN', color: '#1a5c35' },
+  { dow: 2, label: 'MAR', color: '#8b6914' },
+  { dow: 3, label: 'MIE', color: '#23395d' },
+  { dow: 4, label: 'JUE', color: '#8b1a1a' },
+  { dow: 5, label: 'VIE', color: '#7a3d00' },
 ];
 
 function renderKPI(data) {
@@ -5004,19 +5006,35 @@ function renderKPI(data) {
 
     const tiqColor = pctTiq===100?'var(--green)':pctTiq>=80?'var(--gold)':'var(--red)';
 
-    // Histograma de viajes por hora (hora militar 0-23)
-    const horaCounts = new Array(24).fill(0);
-    fechas.forEach(d => { if (d && !isNaN(d)) horaCounts[d.getHours()]++; });
-    const maxHora = Math.max(...horaCounts, 1);
-    const horaBarsHtml = horaCounts.map((c,h) => {
-      const pctH = maxHora > 0 ? (c/maxHora*100) : 0;
-      const esPico = c === maxHora && c > 0;
-      return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%" title="${String(h).padStart(2,'0')}:00h — ${c} viaje${c!==1?'s':''}">
-        <div style="width:100%;max-width:16px;height:${c>0?Math.max(pctH,6):0}%;background:${op.color};opacity:${c>0?1:0.12};border-radius:2px 2px 0 0;${esPico?'box-shadow:0 0 0 2px var(--gold) inset;':''}"></div>
+    // Histograma de viajes por hora (hora militar 0-23), agrupado por dia de semana Lun-Vie
+    const horaSemana = Array.from({length:24}, () => ({1:0,2:0,3:0,4:0,5:0}));
+    fechas.forEach(d => {
+      if (!d || isNaN(d)) return;
+      const dow = d.getDay();
+      if (dow >= 1 && dow <= 5) horaSemana[d.getHours()][dow]++;
+    });
+    let maxHoraCelda = 1;
+    horaSemana.forEach(celda => DIAS_SEMANA_DEF.forEach(dd => { if (celda[dd.dow] > maxHoraCelda) maxHoraCelda = celda[dd.dow]; }));
+    const totalPorHora = horaSemana.map(celda => DIAS_SEMANA_DEF.reduce((s,dd)=>s+celda[dd.dow],0));
+    // Solo se muestran las horas que si tuvieron registros en el periodo filtrado
+    // (hoy/ayer/semana): asi el grafico no queda lleno de huecos vacios cuando
+    // el rango es corto y el operario solo tuvo viajes en unas pocas horas.
+    const horasConDatosIdx = totalPorHora.map((t,h)=>h).filter(h => totalPorHora[h] > 0);
+    const horaBarsHtml = horasConDatosIdx.map(h => {
+      const celda = horaSemana[h];
+      const barritas = DIAS_SEMANA_DEF.map(dd => {
+        const c = celda[dd.dow];
+        const pctH = maxHoraCelda > 0 ? (c/maxHoraCelda*100) : 0;
+        return `<div style="flex:1;height:${c>0?Math.max(pctH,4):0}%;background:${dd.color};opacity:${c>0?1:0};border-radius:1px 1px 0 0" title="${dd.label} ${String(h).padStart(2,'0')}:00h — ${c} viaje${c!==1?'s':''}"></div>`;
+      }).join('');
+      return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%">
+        <div style="width:100%;max-width:26px;height:100%;display:flex;align-items:flex-end;gap:1px">${barritas}</div>
       </div>`;
     }).join('');
-    const horaLabelsHtml = horaCounts.map((c,h) => `<div style="flex:1;text-align:center;font-size:7px;font-weight:600;color:var(--ink-l)">${h%3===0?String(h).padStart(2,'0'):''}</div>`).join('');
-    const horaPicoOp = Object.entries(horaCounts).sort((a,b)=>b[1]-a[1])[0];
+    const horaLabelsHtml = horasConDatosIdx.map(h => `<div style="flex:1;text-align:center;font-size:8px;font-weight:600;color:var(--ink-l)">${String(h).padStart(2,'0')}</div>`).join('');
+    const horaPicoIdx = totalPorHora.indexOf(Math.max(...totalPorHora));
+    const horaPicoOp = totalPorHora[horaPicoIdx] > 0 ? [horaPicoIdx, totalPorHora[horaPicoIdx]] : null;
+    const leyendaDiasHtml = DIAS_SEMANA_DEF.map(dd => `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px"><span style="width:9px;height:9px;background:${dd.color};display:inline-block;border-radius:2px"></span><span style="font-size:9px;font-weight:700;color:var(--ink-m)">${dd.label}</span></span>`).join('');
 
     // Tabla de registros del operario
     const tablaFilas = filas.slice().sort((a,b)=>{
@@ -5090,13 +5108,16 @@ function renderKPI(data) {
         <div style="font-size:11px;color:var(--ink-m)">${topOps||'—'}</div>
       </div>
 
-      <div style="background:var(--white);padding:12px 12px 8px;border:1px solid var(--rule-l);margin-bottom:12px">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
-          <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">Horario de viajes · hora militar</div>
-          <div style="font-size:10px;color:var(--ink-m)">${horaPicoOp && horaPicoOp[1]>0 ? 'Pico: '+String(horaPicoOp[0]).padStart(2,'0')+':00h ('+horaPicoOp[1]+')' : 'Sin datos'}</div>
+      <div style="background:var(--white);padding:16px 16px 10px;border:1px solid var(--rule-l);margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;flex-wrap:wrap;gap:6px">
+          <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">Horario de viajes por dia · hora militar</div>
+          <div style="font-size:11px;color:var(--ink-m);font-weight:600">${horaPicoOp ? 'Pico: '+String(horaPicoOp[0]).padStart(2,'0')+':00h ('+horaPicoOp[1]+' viajes)' : 'Sin datos'}</div>
         </div>
-        <div style="display:flex;align-items:flex-end;gap:2px;height:80px">${horaBarsHtml}</div>
-        <div style="display:flex;gap:2px;margin-top:4px;border-top:1px solid var(--rule-l);padding-top:3px">${horaLabelsHtml}</div>
+        ${horasConDatosIdx.length > 0 ? `
+        <div style="margin-bottom:10px">${leyendaDiasHtml}</div>
+        <div style="display:flex;align-items:flex-end;gap:3px;height:190px">${horaBarsHtml}</div>
+        <div style="display:flex;gap:3px;margin-top:5px;border-top:1px solid var(--rule-l);padding-top:4px">${horaLabelsHtml}</div>
+        ` : `<div style="padding:20px 0;text-align:center;color:var(--ink-l);font-size:11px;font-style:italic">Sin viajes registrados en el periodo seleccionado</div>`}
       </div>
 
       ${alertas > 0 ? `<div style="margin-bottom:12px;padding:6px 12px;background:var(--red-l);border-left:3px solid var(--red)">
@@ -5121,125 +5142,6 @@ function renderKPI(data) {
       </div>
     </div>`;
   }).join('');
-}
-
-// ── RENDER CAMPOS DE OPORTUNIDAD ─────────────────
-function renderOportunidades(data) {
-  const total = data.length;
-  if (total === 0) { document.getElementById('oportunidad-grid').innerHTML = ''; return; }
-
-  // 1. Tiquetes incompletos (<=4 digitos)
-  const tiqIncompletos = data.filter(r => (r['NUMERO TIQUETE']||'').replace(/\s/g,'').length <= 4);
-  const pctTiqInc = total > 0 ? ((tiqIncompletos.length/total)*100).toFixed(1) : 0;
-
-  // 2. Registros sin conductor identificado
-  const sinConductor = data.filter(r => !(r['CONDUCTOR -  PRIME NOMBRE Y PRIMER APELLIDO']||'').trim());
-  const pctSinCond = total > 0 ? ((sinConductor.length/total)*100).toFixed(1) : 0;
-
-  // 3. Registros sin cedula
-  const sinCedula = data.filter(r => !(r['CEDULA']||'').trim());
-  const pctSinCed = total > 0 ? ((sinCedula.length/total)*100).toFixed(1) : 0;
-
-  // 4. Registros sin operacion
-  const sinOp = data.filter(r => !(r['OPERACION']||'').trim());
-
-  // 5. Registros sin peso de salida (=0 o vacio)
-  const sinPesoSalida = data.filter(r => {
-    const s = 0;
-    return s === 0;
-  });
-  const pctSinPS = total > 0 ? ((sinPesoSalida.length/total)*100).toFixed(1) : 0;
-
-  // 6. Conductores acompanados
-  const acompanados = data.filter(r => (r['ALERTAS ']||r['ALERTAS']||'').includes('ACOMPA'));
-
-  // 7. Registros con alerta general
-  const conAlerta = data.filter(r => {
-    const al = r['ALERTAS ']||r['ALERTAS']||'';
-    return al.trim().length > 0;
-  });
-
-  // 8. Hora pico — hora con mas registros
-  const porHora = {};
-  data.forEach(r => {
-    const ts = getMarcaTemporal(r);
-    const h = ts.split(' ')[1]?.slice(0,2);
-    if (h) porHora[h] = (porHora[h]||0)+1;
-  });
-  const horaPico = Object.entries(porHora).sort((a,b)=>b[1]-a[1])[0];
-
-  // 9. Operacion con mas registros
-  const porOp = {};
-  data.forEach(r => { const o=normEmpresa(r['OPERACION']); if(o) porOp[o]=(porOp[o]||0)+1; });
-  const topOp = Object.entries(porOp).sort((a,b)=>b[1]-a[1])[0];
-
-  // 10. Flota interna vs tercera
-  const flotaInterna = ['OGN522','SMO346','TDS941','TAY245','XGD873','WOB048'];
-  const interna = data.filter(r => flotaInterna.includes((r['PLACA']||'').toUpperCase())).length;
-  const tercera = total - interna;
-
-  function card(titulo, valor, desc, color, detalle) {
-    const colorMap = {
-      red:   { bg:'#f5e8e8', border:'#8b1a1a', text:'#8b1a1a' },
-      gold:  { bg:'#f5eed8', border:'#8b6914', text:'#8b6914' },
-      green: { bg:'#e8f5ee', border:'#1a5c35', text:'#1a5c35' },
-      navy:  { bg:'#e8f5ee', border:'#1a5c35', text:'#1a5c35' },
-    };
-    const c = colorMap[color]||colorMap.navy;
-    return `<div style="background:var(--white);border:1px solid var(--rule);border-left:4px solid ${c.border};padding:16px 18px">
-      <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:${c.text};margin-bottom:6px">${titulo}</div>
-      <div style="font-family:'Libre Baskerville',serif;font-size:28px;font-weight:700;color:${c.border};line-height:1;margin-bottom:4px;font-variant-numeric:lining-nums tabular-nums">${valor}</div>
-      <div style="font-size:11px;color:var(--ink-l);margin-bottom:${detalle?'6px':'0'}">${desc}</div>
-      ${detalle?`<div style="font-size:10px;color:var(--ink-m);padding:5px 8px;background:${c.bg};border-left:2px solid ${c.border}">${detalle}</div>`:''}
-    </div>`;
-  }
-
-  document.getElementById('oportunidad-grid').innerHTML = [
-    card('Tiquetes incompletos', tiqIncompletos.length,
-      pctTiqInc+'% de los registros tienen 4 digitos o menos',
-      tiqIncompletos.length > 0 ? 'red' : 'green',
-      tiqIncompletos.length > 0 ? 'Operarios deben ingresar el codigo completo del ticket fisico' : 'Sin tiquetes incompletos en este periodo'),
-
-    card('Sin conductor identificado', sinConductor.length,
-      pctSinCond+'% de registros sin nombre del conductor',
-      sinConductor.length > 0 ? 'gold' : 'green',
-      sinConductor.length > 0 ? 'El campo conductor es obligatorio para trazabilidad de incidentes' : null),
-
-    card('Sin cedula registrada', sinCedula.length,
-      pctSinCed+'% de registros sin cedula del conductor',
-      sinCedula.length > 0 ? 'gold' : 'green',
-      sinCedula.length > 0 ? 'La cedula permite identificar conductores en caso de incidentes' : null),
-
-    card('Vehiculos sin peso de salida', sinPesoSalida.length,
-      pctSinPS+'% de registros con peso vacio en 0',
-      'navy',
-      'Normal en operaciones sin bascula. Pendiente definicion con operaciones'),
-
-    card('Conductores con acompanante', acompanados.length,
-      acompanados.length === 0 ? 'Sin alertas en el periodo' : 'Alerta activa registrada en el sistema',
-      acompanados.length > 0 ? 'gold' : 'green',
-      acompanados.length > 0 ? 'Revisar protocolo de conductor unico en operaciones que lo requieren' : null),
-
-    card('Alertas totales del sistema', conAlerta.length,
-      ((conAlerta.length/total)*100).toFixed(1)+'% de registros con novedad',
-      conAlerta.length > 5 ? 'red' : conAlerta.length > 0 ? 'gold' : 'green',
-      conAlerta.length > 0 ? 'Incluye conductores acompanados, viajes duplicados y otras novedades' : null),
-
-    card('Hora pico de operacion', horaPico ? horaPico[0]+':00h' : '—',
-      horaPico ? horaPico[1]+' registros en esa hora' : 'Sin datos suficientes',
-      'navy',
-      'Hora con mayor concentracion de ingresos — planear refuerzos en ese horario'),
-
-    card('Operacion mas frecuente', topOp ? topOp[0] : '—',
-      topOp ? topOp[1]+' registros ('+((topOp[1]/total)*100).toFixed(0)+'% del total)' : '',
-      'navy',
-      'Cliente con mayor volumen de ingresos en el periodo seleccionado'),
-
-    card('Flota interna Horti Organic', interna,
-      tercera+' registros de flota tercera en el periodo',
-      'navy',
-      'Flota interna: OGN522, SMO346, TDS941, TAY245, XGD873, WOB048'),
-  ].join('');
 }
 
 // ── SWITCH PIE TAB ───────────────────────────────
