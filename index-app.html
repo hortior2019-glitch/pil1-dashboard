@@ -4904,6 +4904,24 @@ function filtrarTablaEmp(q) {
   - También llena la tabla de detalle del panel ingreso
 */
 // ── RENDER KPI OPERARIOS ──────────────────────────
+// Reordena un conjunto de horas (0-23) de forma circular para que un turno que
+// cruza la medianoche (ej. entra 10pm sale 5am) se muestre como un solo bloque
+// continuo en vez de partido entre el final y el inicio del eje. Se ubica el
+// punto de partida justo despues del hueco (sin registros) mas grande del dia.
+function reordenarHorasCircular(horasArr) {
+  if (horasArr.length <= 1) return horasArr;
+  const sorted = [...horasArr].sort((a,b)=>a-b);
+  let maxGap = -1, maxGapIdx = 0;
+  for (let i = 0; i < sorted.length; i++) {
+    const cur = sorted[i];
+    const next = sorted[(i+1) % sorted.length];
+    const gap = (next - cur + 24) % 24;
+    if (gap > maxGap) { maxGap = gap; maxGapIdx = i; }
+  }
+  const startIdx = (maxGapIdx + 1) % sorted.length;
+  return sorted.slice(startIdx).concat(sorted.slice(0, startIdx));
+}
+
 const OPERARIOS_DEF = [
   { key: 'alexander', label: 'Alexander Velásquez',  color: '#1fa855' },
   { key: 'deivi',     label: 'Deivi José Oliveros',  color: '#1976d2' },
@@ -5029,7 +5047,7 @@ function renderKPI(data) {
     // Solo se muestran las horas que si tuvieron registros en el periodo filtrado
     // (hoy/ayer/semana): asi el grafico no queda lleno de huecos vacios cuando
     // el rango es corto y el operario solo tuvo viajes en unas pocas horas.
-    const horasConDatosIdx = horaCounts.map((t,h)=>h).filter(h => horaCounts[h] > 0);
+    const horasConDatosIdx = reordenarHorasCircular(horaCounts.map((t,h)=>h).filter(h => horaCounts[h] > 0));
     const horaBarsHtml = horasConDatosIdx.map(h => {
       const prom = horaProm[h];
       const pctH = horaNiceMax > 0 ? Math.min(prom/horaNiceMax*100, 100) : 0;
