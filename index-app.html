@@ -5123,7 +5123,6 @@ function renderKPI(data) {
     // Coaching: evaluaciones de este operario en el periodo activo, mas recientes primero
     window._coachingCache = window._coachingCache || {};
     window._coachingCache[op.key] = { filas: getCoachingFilasParaOperario(op), color: op.color };
-    const coachingOptsHtml = COACHING_CRITERIOS.map(c => `<option value="${c.key}">${c.label}</option>`).join('');
 
     // Tabla de registros del operario
     const tablaFilas = filas.slice().sort((a,b)=>{
@@ -5180,12 +5179,7 @@ function renderKPI(data) {
       </div>
 
       <div style="background:var(--white);padding:14px 16px;border:1px solid var(--rule-l);margin-bottom:12px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-          <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">Coaching · criterio de evaluación</div>
-          <select onchange="renderCoachingBars('${op.key}', this.value)" style="font-size:11px;padding:5px 8px;border:1px solid var(--rule);border-radius:4px;background:var(--white);color:var(--ink);max-width:100%">
-            ${coachingOptsHtml}
-          </select>
-        </div>
+        <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:10px">Coaching · última evaluación</div>
         <div id="coaching-bars-${op.key}"></div>
       </div>
 
@@ -5199,7 +5193,7 @@ function renderKPI(data) {
   } }).join('');
 
   // Pintar las barras de coaching (criterio por defecto: el primero) para cada operario
-  OPERARIOS_DEF.forEach(op => { try { renderCoachingBars(op.key, COACHING_CRITERIOS[0].key); } catch(e) { console.error('Error pintando coaching de', op.key, e); } });
+  OPERARIOS_DEF.forEach(op => { try { renderCoachingBars(op.key); } catch(e) { console.error('Error pintando coaching de', op.key, e); } });
 }
 
 // ── COACHING: pinta las barras del criterio seleccionado para un operario ──
@@ -5227,41 +5221,36 @@ function refrescarCoachingAsync() {
   OPERARIOS_DEF.forEach(op => {
     try {
       window._coachingCache[op.key] = { filas: getCoachingFilasParaOperario(op), color: op.color };
-      const cont = document.getElementById('coaching-bars-'+op.key);
-      const sel = cont && cont.parentElement ? cont.parentElement.querySelector('select') : null;
-      renderCoachingBars(op.key, sel ? sel.value : COACHING_CRITERIOS[0].key);
+      renderCoachingBars(op.key);
     } catch(e) { console.error('Error refrescando coaching de', op.key, e); }
   });
 }
 
-function renderCoachingBars(opKey, criterioKey) {
+function renderCoachingBars(opKey) {
   const cont = document.getElementById('coaching-bars-'+opKey);
   if (!cont) return;
   const cache = (window._coachingCache||{})[opKey];
-  const criterio = COACHING_CRITERIOS.find(c => c.key === criterioKey) || COACHING_CRITERIOS[0];
   if (!cache || cache.filas.length === 0) {
     cont.innerHTML = '<div style="padding:10px 0;text-align:center;color:var(--ink-l);font-size:11px;font-style:italic">Sin evaluaciones de coaching en el periodo seleccionado</div>';
     return;
   }
-  let siCount = 0, evalCount = 0;
-  const barsHtml = cache.filas.map(r => {
-    const valor = getCampoCoaching(r, criterio.kw);
-    const info = coachingBarInfo(valor, criterio.tipo);
-    if (info.label === 'SI') siCount++;
-    if (info.label !== 'Sin dato') evalCount++;
-    const mt = getCampoCoaching(r,'marca temporal');
-    const fechaLbl = (mt||'').split(' ')[0] || '—';
-    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
-      <div style="font-size:9px;color:var(--ink-l);min-width:62px;flex-shrink:0">${fechaLbl}</div>
+  // cache.filas ya viene ordenado descendente por fecha: la primera es la mas reciente.
+  const ultima = cache.filas[0];
+  const mt = getCampoCoaching(ultima, 'marca temporal');
+  const fechaLbl = (mt||'').trim() || '—';
+  const barsHtml = COACHING_CRITERIOS.map(c => {
+    const valor = getCampoCoaching(ultima, c.kw);
+    const info = coachingBarInfo(valor, c.tipo);
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <div style="font-size:10px;color:var(--ink-m);flex:0 0 44%;max-width:44%;line-height:1.3">${c.label}</div>
       <div style="flex:1;background:var(--rule-l);border-radius:3px;height:14px;position:relative;overflow:hidden">
         <div style="height:100%;width:${info.pct}%;background:${info.color};border-radius:3px"></div>
       </div>
       <div style="font-size:9px;font-weight:700;color:${info.color};min-width:64px;flex-shrink:0;text-align:right">${info.label}</div>
     </div>`;
   }).join('');
-  const pctCumpl = evalCount > 0 ? Math.round(siCount/evalCount*100) : null;
   cont.innerHTML = `
-    <div style="font-size:10px;color:var(--ink-m);margin-bottom:8px">${cache.filas.length} evaluacion${cache.filas.length!==1?'es':''}${pctCumpl!==null?' · '+pctCumpl+'% con SI':''}</div>
+    <div style="font-size:10px;color:var(--ink-m);margin-bottom:8px">Evaluado: ${fechaLbl} · ${cache.filas.length} evaluacion${cache.filas.length!==1?'es':''} en el periodo</div>
     ${barsHtml}
   `;
 }
