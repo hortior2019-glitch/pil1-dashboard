@@ -453,7 +453,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
       </div>
     </div>
 
-    <button class="btn-accion" onclick="abrirPanelPiscina()" style="margin-top:14px;background:var(--orange);border-color:var(--orange);color:white">🏊 Reportar Entrega de la Piscina</button>
+    <button class="btn-accion" onclick="abrirPanelPiscina()" style="margin-top:14px;background:var(--orange);border-color:var(--orange);color:white">Reportar Entrega de la Piscina</button>
 
   </div>
 </div>
@@ -2273,15 +2273,39 @@ function abrirRecorteFoto(img, targetId) {
 // Gira la imagen dentro del recorte (izquierda -90, derecha +90).
 // Cropper.js reacomoda automaticamente el recuadro de recorte tras girar.
 function rotarRecorteFoto(grados) {
-  if (cropperFotoInstance) cropperFotoInstance.rotate(grados);
+  if (!cropperFotoInstance) return;
+  cropperFotoInstance.rotate(grados);
+  // Al girar, Cropper reajusta la imagen para que quepa en el
+  // contenedor, pero el recuadro de recorte NO se reajusta solo y se
+  // queda con el tamaño/posicion de antes de girar (por eso solo se
+  // veia/exportaba la mitad de la foto). Se vuelve a poner el
+  // recuadro cubriendo toda la imagen ya girada.
+  var canvasData = cropperFotoInstance.getCanvasData();
+  cropperFotoInstance.setCropBoxData({
+    left: canvasData.left,
+    top: canvasData.top,
+    width: canvasData.width,
+    height: canvasData.height
+  });
 }
 
 function cancelarRecorteFoto() {
   var modal = document.getElementById('modal-recortar-foto');
-  modal.classList.remove('open');
+  if (modal) modal.classList.remove('open');
   if (cropperFotoInstance) { cropperFotoInstance.destroy(); cropperFotoInstance = null; }
-  document.getElementById('img-recortar').src = '';
+  var imgEl = document.getElementById('img-recortar');
+  if (imgEl) imgEl.src = '';
   cropModalTargetId = null;
+}
+
+// Los modales de recorte e inspeccion son overlays flotantes que
+// viven FUERA de las pantallas (login/menu/formulario/admin/piscina).
+// Si alguno queda abierto y se navega a otra pantalla sin cancelar o
+// confirmar, se queda visible encima mostrando la foto anterior. Se
+// fuerza su cierre en cada cambio de pantalla para evitar esto.
+function cerrarModalesFotoResiduales() {
+  cancelarRecorteFoto();
+  cerrarInspeccionFoto();
 }
 
 function confirmarRecorteFoto() {
@@ -2991,6 +3015,7 @@ var adminFotosSubidas = []; // { id, dataUrl, url, estado:'subiendo'|'ok'|'error
 
 function abrirPanelAdminFotos() {
   if (!sesionUsuario || !sesionUsuario.esAdmin) return;
+  cerrarModalesFotoResiduales();
   document.getElementById('pantalla-bienvenida').style.display = 'none';
   document.getElementById('pantalla-admin-fotos').style.display = 'block';
   window.scrollTo(0, 0);
@@ -2998,6 +3023,7 @@ function abrirPanelAdminFotos() {
 }
 
 function cerrarPanelAdminFotos() {
+  cerrarModalesFotoResiduales();
   document.getElementById('pantalla-admin-fotos').style.display = 'none';
   document.getElementById('pantalla-bienvenida').style.display = 'block';
   window.scrollTo(0, 0);
@@ -3012,6 +3038,7 @@ function guardarFotoPiscina(dataUrl) {
 }
 
 function abrirPanelPiscina() {
+  cerrarModalesFotoResiduales();
   document.getElementById('pantalla-bienvenida').style.display = 'none';
   document.getElementById('pantalla-piscina').style.display = 'block';
   window.scrollTo(0, 0);
@@ -3020,6 +3047,7 @@ function abrirPanelPiscina() {
 }
 
 function cerrarPanelPiscina() {
+  cerrarModalesFotoResiduales();
   document.getElementById('pantalla-piscina').style.display = 'none';
   document.getElementById('pantalla-bienvenida').style.display = 'block';
   window.scrollTo(0, 0);
@@ -3964,6 +3992,7 @@ function intentarLogin() {
 }
 
 function mostrarBienvenida() {
+  cerrarModalesFotoResiduales();
   document.getElementById('pantalla-login').style.display = 'none';
   document.getElementById('pantalla-bienvenida').style.display = 'block';
   window.scrollTo(0,0);
@@ -3976,6 +4005,7 @@ function mostrarBienvenida() {
 }
 
 function volverAlMenu() {
+  cerrarModalesFotoResiduales();
   detenerAHT();
   document.getElementById('pantalla-app').style.display = 'none';
   document.getElementById('pantalla-bienvenida').style.display = 'block';
@@ -4025,6 +4055,7 @@ async function compartirBaucherRegistro(btn, tiquete, placa, operacion, baucher1
 }
 
 function abrirFormulario() {
+  cerrarModalesFotoResiduales();
   document.getElementById('pantalla-bienvenida').style.display = 'none';
   document.getElementById('pantalla-app').style.display = 'block';
   document.getElementById('aht-bar').style.display = 'none';
@@ -4040,6 +4071,7 @@ function abrirFormulario() {
 }
 
 function abrirConsulta() {
+  cerrarModalesFotoResiduales();
   document.getElementById('pantalla-bienvenida').style.display = 'none';
   document.getElementById('pantalla-app').style.display = 'block';
   document.getElementById('aht-bar').style.display = 'none';
@@ -4054,6 +4086,7 @@ function abrirConsulta() {
 }
 
 function cerrarSesion() {
+  cerrarModalesFotoResiduales();
   sesionUsuario = null;
   localStorage.removeItem('pil1_sesion');
   detenerAHT();
