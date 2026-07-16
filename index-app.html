@@ -5004,6 +5004,20 @@ function renderKPI(data) {
 
     const tiqColor = pctTiq===100?'var(--green)':pctTiq>=80?'var(--gold)':'var(--red)';
 
+    // Histograma de viajes por hora (hora militar 0-23)
+    const horaCounts = new Array(24).fill(0);
+    fechas.forEach(d => { if (d && !isNaN(d)) horaCounts[d.getHours()]++; });
+    const maxHora = Math.max(...horaCounts, 1);
+    const horaBarsHtml = horaCounts.map((c,h) => {
+      const pctH = maxHora > 0 ? (c/maxHora*100) : 0;
+      const esPico = c === maxHora && c > 0;
+      return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%" title="${String(h).padStart(2,'0')}:00h — ${c} viaje${c!==1?'s':''}">
+        <div style="width:100%;max-width:16px;height:${c>0?Math.max(pctH,6):0}%;background:${op.color};opacity:${c>0?1:0.12};border-radius:2px 2px 0 0;${esPico?'box-shadow:0 0 0 2px var(--gold) inset;':''}"></div>
+      </div>`;
+    }).join('');
+    const horaLabelsHtml = horaCounts.map((c,h) => `<div style="flex:1;text-align:center;font-size:7px;font-weight:600;color:var(--ink-l)">${h%3===0?String(h).padStart(2,'0'):''}</div>`).join('');
+    const horaPicoOp = Object.entries(horaCounts).sort((a,b)=>b[1]-a[1])[0];
+
     // Tabla de registros del operario
     const tablaFilas = filas.slice().sort((a,b)=>{
       const da = parseDateTime(getMarcaTemporal(a));
@@ -5074,6 +5088,15 @@ function renderKPI(data) {
       <div style="background:var(--white);padding:8px 12px;border:1px solid var(--rule-l);margin-bottom:12px">
         <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">Principales operaciones</div>
         <div style="font-size:11px;color:var(--ink-m)">${topOps||'—'}</div>
+      </div>
+
+      <div style="background:var(--white);padding:12px 12px 8px;border:1px solid var(--rule-l);margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+          <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">Horario de viajes · hora militar</div>
+          <div style="font-size:10px;color:var(--ink-m)">${horaPicoOp && horaPicoOp[1]>0 ? 'Pico: '+String(horaPicoOp[0]).padStart(2,'0')+':00h ('+horaPicoOp[1]+')' : 'Sin datos'}</div>
+        </div>
+        <div style="display:flex;align-items:flex-end;gap:2px;height:80px">${horaBarsHtml}</div>
+        <div style="display:flex;gap:2px;margin-top:4px;border-top:1px solid var(--rule-l);padding-top:3px">${horaLabelsHtml}</div>
       </div>
 
       ${alertas > 0 ? `<div style="margin-bottom:12px;padding:6px 12px;background:var(--red-l);border-left:3px solid var(--red)">
