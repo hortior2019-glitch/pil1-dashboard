@@ -1058,41 +1058,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
     </div>
   </div>
 
-  <!-- CAMARA NATIVA DEL DISPOSITIVO -->
-  <!-- Al usar "capture=environment" en un input file, el navegador abre
-       la app de camara real del telefono (pantalla completa, mejor
-       resolucion, flash propio del sistema) en vez de una camara
-       embebida por getUserMedia (que solia perder resolucion). -->
-  <input type="file" id="input-camara-nativa" accept="image/*" capture="environment" style="display:none" onchange="onCapturaNativa(this)">
-
-  <!-- MODAL RECORTAR FOTO (opcional, se muestra despues de capturar o subir) -->
-  <div class="modal-overlay" id="modal-recortar-foto">
-    <div class="modal-box">
-      <div id="recortar-wrap">
-        <img id="img-recortar" src="" alt="Foto a recortar">
-        <div class="rotar-btns-overlay">
-          <button type="button" class="btn-rotar" onclick="rotarRecorteFoto(-90)" title="Girar a la izquierda">⟲</button>
-          <button type="button" class="btn-rotar" onclick="rotarRecorteFoto(90)" title="Girar a la derecha">⟳</button>
-        </div>
-      </div>
-      <div class="camara-status-overlay" style="position:static;background:rgba(0,0,0,.65)">Ajuste el recorte y gire la foto si lo necesita (opcional) y confirme.</div>
-      <div class="camara-btns-overlay">
-        <button class="modal-btn cancel" onclick="cancelarRecorteFoto()">Cancelar</button>
-        <button class="modal-btn confirm" onclick="confirmarRecorteFoto()">Usar foto</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL INSPECCIONAR FOTO (ver en grande cualquier miniatura capturada) -->
-  <div class="modal-overlay" id="modal-inspeccionar-foto">
-    <div class="modal-box">
-      <img id="img-inspeccionar" src="" alt="Foto ampliada">
-      <div class="camara-btns-overlay">
-        <button class="modal-btn cancel" onclick="cerrarInspeccionFoto()">Cerrar</button>
-      </div>
-    </div>
-  </div>
-
   <button class="btn-submit" id="btn-submit" type="button">Guardar Formulario</button>
   <div class="status" id="status">
     <div class="status-title" id="status-title"></div>
@@ -2339,6 +2304,47 @@ function cerrarModalesFotoResiduales() {
   cerrarInspeccionFoto();
 }
 
+// ── CONFIRMACION AL PRESIONAR "ATRAS" (boton fisico o gesto del celular) ──
+// Si el usuario esta llenando un formulario (ingreso o piscina) y presiona
+// el boton/gesto de "atras" del telefono, se le pregunta si esta seguro de
+// salir en vez de sacarlo y perder el registro sin avisar.
+var confirmacionSalidaActiva = false;
+var historyGuardEmpujado = false;
+
+function activarConfirmacionSalida() {
+  confirmacionSalidaActiva = true;
+  if (!historyGuardEmpujado) {
+    history.pushState({ pil1Guard: true }, '');
+    historyGuardEmpujado = true;
+  }
+}
+
+function desactivarConfirmacionSalida() {
+  confirmacionSalidaActiva = false;
+}
+
+window.addEventListener('popstate', function () {
+  if (!confirmacionSalidaActiva) return;
+  var salir = confirm('¿Está seguro que quiere salir? Se perderá el registro que está llenando.');
+  if (salir) {
+    confirmacionSalidaActiva = false;
+    salirPantallaProtegidaPorBack();
+  } else {
+    // Se cancela la salida: se vuelve a armar la trampa para el proximo "atras"
+    history.pushState({ pil1Guard: true }, '');
+  }
+});
+
+function salirPantallaProtegidaPorBack() {
+  var pantallaApp = document.getElementById('pantalla-app');
+  var pantallaPiscina = document.getElementById('pantalla-piscina');
+  if (pantallaApp && pantallaApp.style.display === 'block') {
+    volverAlMenu();
+  } else if (pantallaPiscina && pantallaPiscina.style.display === 'block') {
+    cerrarPanelPiscina();
+  }
+}
+
 function confirmarRecorteFoto() {
   var targetId = cropModalTargetId;
   console.log('[foto] confirmarRecorteFoto, targetId:', targetId);
@@ -3079,6 +3085,7 @@ function guardarFotoPiscina(dataUrl) {
 
 function abrirPanelPiscina() {
   cerrarModalesFotoResiduales();
+  activarConfirmacionSalida();
   document.getElementById('pantalla-bienvenida').style.display = 'none';
   document.getElementById('pantalla-piscina').style.display = 'block';
   window.scrollTo(0, 0);
@@ -3088,6 +3095,7 @@ function abrirPanelPiscina() {
 
 function cerrarPanelPiscina() {
   cerrarModalesFotoResiduales();
+  desactivarConfirmacionSalida();
   document.getElementById('pantalla-piscina').style.display = 'none';
   document.getElementById('pantalla-bienvenida').style.display = 'block';
   window.scrollTo(0, 0);
@@ -4047,6 +4055,7 @@ function mostrarBienvenida() {
 function volverAlMenu() {
   cerrarModalesFotoResiduales();
   detenerAHT();
+  desactivarConfirmacionSalida();
   document.getElementById('pantalla-app').style.display = 'none';
   document.getElementById('pantalla-bienvenida').style.display = 'block';
   window.scrollTo(0,0);
@@ -4096,6 +4105,7 @@ async function compartirBaucherRegistro(btn, tiquete, placa, operacion, baucher1
 
 function abrirFormulario() {
   cerrarModalesFotoResiduales();
+  activarConfirmacionSalida();
   document.getElementById('pantalla-bienvenida').style.display = 'none';
   document.getElementById('pantalla-app').style.display = 'block';
   document.getElementById('aht-bar').style.display = 'none';
@@ -4128,6 +4138,7 @@ function abrirConsulta() {
 function cerrarSesion() {
   cerrarModalesFotoResiduales();
   sesionUsuario = null;
+  desactivarConfirmacionSalida();
   localStorage.removeItem('pil1_sesion');
   detenerAHT();
   document.getElementById('pantalla-bienvenida').style.display = 'none';
@@ -4163,5 +4174,42 @@ function getAHTSegundos() {
 }
 </script>
 </div><!-- /pantalla-app -->
+
+<!-- ═══ MODALES COMPARTIDOS DE CAMARA (fuera de cualquier pantalla, para que funcionen sin importar cual pantalla este activa: ingreso, piscina, admin fotos, etc.) ═══ -->
+  <!-- CAMARA NATIVA DEL DISPOSITIVO -->
+  <!-- Al usar "capture=environment" en un input file, el navegador abre
+       la app de camara real del telefono (pantalla completa, mejor
+       resolucion, flash propio del sistema) en vez de una camara
+       embebida por getUserMedia (que solia perder resolucion). -->
+  <input type="file" id="input-camara-nativa" accept="image/*" capture="environment" style="display:none" onchange="onCapturaNativa(this)">
+
+  <!-- MODAL RECORTAR FOTO (opcional, se muestra despues de capturar o subir) -->
+  <div class="modal-overlay" id="modal-recortar-foto">
+    <div class="modal-box">
+      <div id="recortar-wrap">
+        <img id="img-recortar" src="" alt="Foto a recortar">
+        <div class="rotar-btns-overlay">
+          <button type="button" class="btn-rotar" onclick="rotarRecorteFoto(-90)" title="Girar a la izquierda">⟲</button>
+          <button type="button" class="btn-rotar" onclick="rotarRecorteFoto(90)" title="Girar a la derecha">⟳</button>
+        </div>
+      </div>
+      <div class="camara-status-overlay" style="position:static;background:rgba(0,0,0,.65)">Ajuste el recorte y gire la foto si lo necesita (opcional) y confirme.</div>
+      <div class="camara-btns-overlay">
+        <button class="modal-btn cancel" onclick="cancelarRecorteFoto()">Cancelar</button>
+        <button class="modal-btn confirm" onclick="confirmarRecorteFoto()">Usar foto</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL INSPECCIONAR FOTO (ver en grande cualquier miniatura capturada) -->
+  <div class="modal-overlay" id="modal-inspeccionar-foto">
+    <div class="modal-box">
+      <img id="img-inspeccionar" src="" alt="Foto ampliada">
+      <div class="camara-btns-overlay">
+        <button class="modal-btn cancel" onclick="cerrarInspeccionFoto()">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>
