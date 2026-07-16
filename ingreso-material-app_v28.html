@@ -2194,6 +2194,14 @@ function abrirCamara(targetId) {
   geoActual = null;
   geoIntentado = false;
 
+  // Respaldo: si el navegador recarga o suspende la pestaña mientras
+  // la app de camara nativa esta abierta (pasa en algunos telefonos
+  // con poca memoria), la variable camaraTargetActual se pierde. La
+  // guardamos tambien en sessionStorage para poder recuperarla.
+  try { sessionStorage.setItem('pil1_camara_target_pendiente', targetId); } catch (e) {}
+
+  console.log('[foto] abrirCamara ->', targetId);
+
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(function (pos) {
       geoActual = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy };
@@ -2213,13 +2221,36 @@ function abrirCamara(targetId) {
 
 function onCapturaNativa(input) {
   var file = input.files && input.files[0];
+  console.log('[foto] onCapturaNativa, archivo:', file ? (file.name + ' (' + file.size + ' bytes)') : 'NINGUNO');
   if (!file) return;
+
+  // Si camaraTargetActual se perdio (recarga/suspension de pestaña),
+  // se recupera desde sessionStorage como respaldo.
   var targetId = camaraTargetActual;
+  if (!targetId) {
+    try { targetId = sessionStorage.getItem('pil1_camara_target_pendiente'); } catch (e) {}
+    console.log('[foto] camaraTargetActual estaba vacio, recuperado de sessionStorage:', targetId);
+  }
+  if (!targetId) {
+    console.error('[foto] No se pudo determinar a que campo pertenece esta foto. Se cancela.');
+    input.value = '';
+    return;
+  }
+
   var reader = new FileReader();
   reader.onload = function (ev) {
     var img = new Image();
-    img.onload = function () { abrirRecorteFoto(img, targetId); };
+    img.onload = function () {
+      console.log('[foto] imagen cargada, abriendo recorte para target:', targetId);
+      abrirRecorteFoto(img, targetId);
+    };
+    img.onerror = function () {
+      console.error('[foto] la imagen capturada no se pudo decodificar (Image.onerror).');
+    };
     img.src = ev.target.result;
+  };
+  reader.onerror = function () {
+    console.error('[foto] FileReader fallo al leer el archivo capturado.');
   };
   reader.readAsDataURL(file);
   input.value = '';
@@ -2310,7 +2341,8 @@ function cerrarModalesFotoResiduales() {
 
 function confirmarRecorteFoto() {
   var targetId = cropModalTargetId;
-  if (!targetId) { cancelarRecorteFoto(); return; }
+  console.log('[foto] confirmarRecorteFoto, targetId:', targetId);
+  if (!targetId) { console.error('[foto] confirmarRecorteFoto sin targetId, se cancela.'); cancelarRecorteFoto(); return; }
 
   var canvasRecortado;
   if (cropperFotoInstance) {
@@ -2318,6 +2350,7 @@ function confirmarRecorteFoto() {
   }
   if (!canvasRecortado) {
     // Respaldo si Cropper no cargo: usar la imagen tal cual, sin recortar
+    console.warn('[foto] getCroppedCanvas() no devolvio nada, usando respaldo sin recorte.');
     var imgEl = document.getElementById('img-recortar');
     var c = document.createElement('canvas');
     c.width = imgEl.naturalWidth || imgEl.width;
@@ -2325,8 +2358,10 @@ function confirmarRecorteFoto() {
     c.getContext('2d').drawImage(imgEl, 0, 0, c.width, c.height);
     canvasRecortado = c;
   }
+  console.log('[foto] canvas listo:', canvasRecortado.width + 'x' + canvasRecortado.height);
 
   cancelarRecorteFoto();
+  try { sessionStorage.removeItem('pil1_camara_target_pendiente'); } catch (e) {}
   finalizarFotoProcesada(canvasRecortado, targetId);
 }
 
@@ -2407,6 +2442,8 @@ function finalizarFotoProcesada(canvasOrigen, targetId) {
   var dataUrl = canvas.toDataURL('image/jpeg', FOTO_CALIDAD);
   dataUrl = insertarExifSiHay(dataUrl, ahora);
 
+  console.log('[foto] finalizarFotoProcesada, targetId:', targetId, 'tamano final:', canvas.width + 'x' + canvas.height, 'largo dataUrl:', dataUrl.length);
+
   if (targetId === 'admin-nuevo') {
     agregarFotoAdmin(dataUrl);
   } else if (targetId === 'piscina') {
@@ -2448,13 +2485,14 @@ function subirDesdeGaleria(input, targetId) {
 
 function actualizarPreview(targetId, dataUrl) {
   var bloque = document.getElementById('bloque-foto-' + targetId);
-  if (!bloque) return;
+  if (!bloque) { console.error('[foto] actualizarPreview: no existe #bloque-foto-' + targetId); return; }
   var botones = bloque.querySelector('.botones-captura');
   var wrap     = bloque.querySelector('.foto-preview-wrap');
   var img      = bloque.querySelector('.foto-preview');
   if (img) img.src = dataUrl;
   if (wrap) wrap.style.display = 'flex';
   if (botones) botones.style.display = 'none';
+  console.log('[foto] actualizarPreview OK para', targetId);
 }
 
 function limpiarPreview(targetId) {
@@ -3033,8 +3071,10 @@ function cerrarPanelAdminFotos() {
 var fotoPiscinaCapturada = ''; // dataUrl unico (no es un dict como fotosCapturadas)
 
 function guardarFotoPiscina(dataUrl) {
+  console.log('[foto] guardarFotoPiscina, largo dataUrl:', dataUrl ? dataUrl.length : 0);
   fotoPiscinaCapturada = dataUrl;
   actualizarPreview('piscina', dataUrl);
+  console.log('[foto] fotoPiscinaCapturada quedo con', fotoPiscinaCapturada ? (fotoPiscinaCapturada.length + ' caracteres') : 'VACIO');
 }
 
 function abrirPanelPiscina() {
