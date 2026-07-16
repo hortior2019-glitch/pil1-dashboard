@@ -4910,13 +4910,6 @@ const OPERARIOS_DEF = [
   { key: 'saul',      label: 'Saúl García Sandoval', color: '#e0a800' },
   { key: 'german',    label: 'German Rodriguez',     color: '#e8590c' },
 ];
-const DIAS_SEMANA_DEF = [
-  { dow: 1, label: 'LUN', color: '#1a5c35' },
-  { dow: 2, label: 'MAR', color: '#8b6914' },
-  { dow: 3, label: 'MIE', color: '#23395d' },
-  { dow: 4, label: 'JUE', color: '#8b1a1a' },
-  { dow: 5, label: 'VIE', color: '#7a3d00' },
-];
 
 function renderKPI(data) {
   const total = data.length;
@@ -5006,35 +4999,38 @@ function renderKPI(data) {
 
     const tiqColor = pctTiq===100?'var(--green)':pctTiq>=80?'var(--gold)':'var(--red)';
 
-    // Histograma de viajes por hora (hora militar 0-23), agrupado por dia de semana Lun-Vie
-    const horaSemana = Array.from({length:24}, () => ({1:0,2:0,3:0,4:0,5:0}));
+    // Histograma de viajes por hora (hora militar 0-23). Una sola barra por hora,
+    // en el color del operario. Si el periodo cubre varios dias (ej. resumen de
+    // semana), se muestra el PROMEDIO diario de esa hora en vez de la suma total,
+    // para que "semana" no infle las barras frente a "hoy"/"ayer".
+    const horaCounts = new Array(24).fill(0);
+    const diasDistintosSet = new Set();
     fechas.forEach(d => {
       if (!d || isNaN(d)) return;
       const dow = d.getDay();
-      if (dow >= 1 && dow <= 5) horaSemana[d.getHours()][dow]++;
+      if (dow >= 1 && dow <= 5) {
+        horaCounts[d.getHours()]++;
+        diasDistintosSet.add(d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate());
+      }
     });
-    let maxHoraCelda = 1;
-    horaSemana.forEach(celda => DIAS_SEMANA_DEF.forEach(dd => { if (celda[dd.dow] > maxHoraCelda) maxHoraCelda = celda[dd.dow]; }));
-    const totalPorHora = horaSemana.map(celda => DIAS_SEMANA_DEF.reduce((s,dd)=>s+celda[dd.dow],0));
+    const numDiasHora = diasDistintosSet.size || 1;
+    const horaProm = horaCounts.map(c => c / numDiasHora);
+    const maxHoraProm = Math.max(...horaProm, 0.0001);
     // Solo se muestran las horas que si tuvieron registros en el periodo filtrado
     // (hoy/ayer/semana): asi el grafico no queda lleno de huecos vacios cuando
     // el rango es corto y el operario solo tuvo viajes en unas pocas horas.
-    const horasConDatosIdx = totalPorHora.map((t,h)=>h).filter(h => totalPorHora[h] > 0);
+    const horasConDatosIdx = horaCounts.map((t,h)=>h).filter(h => horaCounts[h] > 0);
     const horaBarsHtml = horasConDatosIdx.map(h => {
-      const celda = horaSemana[h];
-      const barritas = DIAS_SEMANA_DEF.map(dd => {
-        const c = celda[dd.dow];
-        const pctH = maxHoraCelda > 0 ? (c/maxHoraCelda*100) : 0;
-        return `<div style="flex:1;height:${c>0?Math.max(pctH,4):0}%;background:${dd.color};opacity:${c>0?1:0};border-radius:1px 1px 0 0" title="${dd.label} ${String(h).padStart(2,'0')}:00h — ${c} viaje${c!==1?'s':''}"></div>`;
-      }).join('');
-      return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%">
-        <div style="width:100%;max-width:26px;height:100%;display:flex;align-items:flex-end;gap:1px">${barritas}</div>
+      const prom = horaProm[h];
+      const pctH = maxHoraProm > 0 ? (prom/maxHoraProm*100) : 0;
+      const promLbl = numDiasHora > 1 ? prom.toFixed(1)+' viajes/dia (prom.)' : horaCounts[h]+' viaje'+(horaCounts[h]!==1?'s':'');
+      return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%" title="${String(h).padStart(2,'0')}:00h — ${promLbl}">
+        <div style="width:100%;max-width:38px;height:${Math.max(pctH,5)}%;background:${op.color};border-radius:4px 4px 0 0"></div>
       </div>`;
     }).join('');
-    const horaLabelsHtml = horasConDatosIdx.map(h => `<div style="flex:1;text-align:center;font-size:8px;font-weight:600;color:var(--ink-l)">${String(h).padStart(2,'0')}</div>`).join('');
-    const horaPicoIdx = totalPorHora.indexOf(Math.max(...totalPorHora));
-    const horaPicoOp = totalPorHora[horaPicoIdx] > 0 ? [horaPicoIdx, totalPorHora[horaPicoIdx]] : null;
-    const leyendaDiasHtml = DIAS_SEMANA_DEF.map(dd => `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px"><span style="width:9px;height:9px;background:${dd.color};display:inline-block;border-radius:2px"></span><span style="font-size:9px;font-weight:700;color:var(--ink-m)">${dd.label}</span></span>`).join('');
+    const horaLabelsHtml = horasConDatosIdx.map(h => `<div style="flex:1;text-align:center;font-size:9px;font-weight:600;color:var(--ink-l)">${String(h).padStart(2,'0')}</div>`).join('');
+    const horaPicoIdx = horaCounts.indexOf(Math.max(...horaCounts));
+    const horaPicoOp = horaCounts[horaPicoIdx] > 0 ? [horaPicoIdx, horaCounts[horaPicoIdx], numDiasHora] : null;
 
     // Tabla de registros del operario
     const tablaFilas = filas.slice().sort((a,b)=>{
@@ -5110,13 +5106,12 @@ function renderKPI(data) {
 
       <div style="background:var(--white);padding:16px 16px 10px;border:1px solid var(--rule-l);margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;flex-wrap:wrap;gap:6px">
-          <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">Horario de viajes por dia · hora militar</div>
-          <div style="font-size:11px;color:var(--ink-m);font-weight:600">${horaPicoOp ? 'Pico: '+String(horaPicoOp[0]).padStart(2,'0')+':00h ('+horaPicoOp[1]+' viajes)' : 'Sin datos'}</div>
+          <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">Horario de viajes · hora militar${numDiasHora>1?' (promedio diario)':''}</div>
+          <div style="font-size:11px;color:var(--ink-m);font-weight:600">${horaPicoOp ? 'Pico: '+String(horaPicoOp[0]).padStart(2,'0')+':00h ('+horaPicoOp[1]+(horaPicoOp[2]>1?' en '+horaPicoOp[2]+' dias':' viajes')+')' : 'Sin datos'}</div>
         </div>
         ${horasConDatosIdx.length > 0 ? `
-        <div style="margin-bottom:10px">${leyendaDiasHtml}</div>
-        <div style="display:flex;align-items:flex-end;gap:3px;height:190px">${horaBarsHtml}</div>
-        <div style="display:flex;gap:3px;margin-top:5px;border-top:1px solid var(--rule-l);padding-top:4px">${horaLabelsHtml}</div>
+        <div style="display:flex;align-items:flex-end;gap:5px;height:190px">${horaBarsHtml}</div>
+        <div style="display:flex;gap:5px;margin-top:5px;border-top:1px solid var(--rule-l);padding-top:4px">${horaLabelsHtml}</div>
         ` : `<div style="padding:20px 0;text-align:center;color:var(--ink-l);font-size:11px;font-style:italic">Sin viajes registrados en el periodo seleccionado</div>`}
       </div>
 
