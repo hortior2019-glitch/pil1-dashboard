@@ -274,7 +274,12 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 
 /* MODAL RECORTAR FOTO: pantalla completa (reemplaza la antigua camara embebida) */
 #modal-recortar-foto .modal-box{max-width:100vw;width:100vw;height:100vh;height:100dvh;padding:0;background:#000;border-top:none;display:flex;flex-direction:column;overflow:hidden}
-#recortar-wrap{position:relative;flex:1;min-height:0;background:#000;overflow:hidden}
+#recortar-wrap{position:relative;flex:1;min-height:0;background:#000;overflow:hidden;padding:26px;box-sizing:border-box}
+/* Esquinas del recuadro de recorte mas grandes, para agarrarlas y mover/redimensionar la seleccion facilmente desde el celular */
+#modal-recortar-foto .cropper-point.point-nw{width:26px;height:26px;top:-13px;left:-13px;opacity:1;background-color:var(--gold);border:2px solid #fff;border-radius:50%;box-shadow:0 0 4px rgba(0,0,0,.6)}
+#modal-recortar-foto .cropper-point.point-ne{width:26px;height:26px;top:-13px;right:-13px;opacity:1;background-color:var(--gold);border:2px solid #fff;border-radius:50%;box-shadow:0 0 4px rgba(0,0,0,.6)}
+#modal-recortar-foto .cropper-point.point-sw{width:26px;height:26px;bottom:-13px;left:-13px;opacity:1;background-color:var(--gold);border:2px solid #fff;border-radius:50%;box-shadow:0 0 4px rgba(0,0,0,.6)}
+#modal-recortar-foto .cropper-point.point-se{width:26px;height:26px;bottom:-13px;right:-13px;opacity:1;background-color:var(--gold);border:2px solid #fff;border-radius:50%;box-shadow:0 0 4px rgba(0,0,0,.6)}
 #img-recortar{display:block;max-width:100%;max-height:100%}
 .rotar-btns-overlay{position:absolute;top:10px;right:10px;z-index:3;display:flex;gap:8px}
 .btn-rotar{width:42px;height:42px;padding:0;font-size:20px;line-height:1;border:2px solid rgba(255,255,255,.6);background:rgba(0,0,0,.5);color:#fff;cursor:pointer;border-radius:6px;font-family:'Source Sans 3',sans-serif}
@@ -2364,51 +2369,13 @@ function salirPantallaProtegidaPorBack() {
   }
 }
 
-// Reconstruye el canvas final "a mano" a partir de la imagen ORIGINAL
-// (la que esta en #img-recortar, con su resolucion natural intacta),
-// usando cropperFotoInstance.getData() que da la posicion/tamaño del
-// recorte en PIXELES NATURALES ya considerando la rotacion aplicada.
-// Esto evita depender del zoom/ajuste al contenedor que hace Cropper
-// internamente (ahi es donde se colaba el leve "crecimiento" al girar
-// de vertical a horizontal). Se calcula UNA sola vez al confirmar, no
-// en cada click de girar, asi que no agrega ninguna lentitud.
-function construirCanvasRecortadoPreciso() {
-  try {
-    var imgEl = document.getElementById('img-recortar');
-    if (!imgEl || !imgEl.naturalWidth) return null;
-
-    var data = cropperFotoInstance.getData(true); // {x,y,width,height,rotate,scaleX,scaleY} en pixeles naturales
-    var w = imgEl.naturalWidth, h = imgEl.naturalHeight;
-    var rotBruto = ((data.rotate % 360) + 360) % 360;
-    var rot = Math.round(rotBruto / 90) * 90; // aferrado a multiplos exactos de 90
-    var giroDeEje = (rot === 90 || rot === 270);
-
-    // 1) Rotar la imagen ORIGINAL completa, ancho/alto exactos (sin escalar)
-    var canvasRotado = document.createElement('canvas');
-    canvasRotado.width  = giroDeEje ? h : w;
-    canvasRotado.height = giroDeEje ? w : h;
-    var ctxR = canvasRotado.getContext('2d');
-    ctxR.translate(canvasRotado.width / 2, canvasRotado.height / 2);
-    ctxR.rotate(rot * Math.PI / 180);
-    ctxR.scale(data.scaleX || 1, data.scaleY || 1);
-    ctxR.drawImage(imgEl, -w / 2, -h / 2);
-
-    // 2) Recortar la region seleccionada (coordenadas ya en el sistema
-    // de la imagen rotada)
-    var salida = document.createElement('canvas');
-    salida.width  = Math.max(1, Math.round(data.width));
-    salida.height = Math.max(1, Math.round(data.height));
-    var ctxS = salida.getContext('2d');
-    ctxS.imageSmoothingQuality = 'high';
-    ctxS.drawImage(canvasRotado, data.x, data.y, data.width, data.height, 0, 0, salida.width, salida.height);
-
-    return salida;
-  } catch (err) {
-    console.error('[foto] construirCanvasRecortadoPreciso fallo, se usara el metodo de respaldo:', err);
-    return null;
-  }
-}
-
+// IMPORTANTE: se probo un metodo "manual" (reconstruir el recorte a
+// mano con getData()) para evitar un leve crecimiento de resolucion
+// al rotar, pero eso rompio algo mas grave: cuando el usuario movia o
+// achicaba el recuadro de recorte, la foto final salia agrandada y
+// descentrada (no coincidia con lo que se veia en pantalla). Se volvio
+// al metodo nativo de Cropper.js (getCroppedCanvas), que SI respeta
+// exactamente el recuadro que el usuario ve y ajusta en pantalla.
 function confirmarRecorteFoto() {
   var targetId = cropModalTargetId;
   console.log('[foto] confirmarRecorteFoto, targetId:', targetId);
@@ -2416,15 +2383,11 @@ function confirmarRecorteFoto() {
 
   var canvasRecortado;
   if (cropperFotoInstance) {
-    canvasRecortado = construirCanvasRecortadoPreciso();
-  }
-  if (!canvasRecortado && cropperFotoInstance) {
-    // Respaldo: metodo por defecto de Cropper.js
     canvasRecortado = cropperFotoInstance.getCroppedCanvas({ imageSmoothingQuality: 'high' });
   }
   if (!canvasRecortado) {
-    // Ultimo respaldo si Cropper no cargo: usar la imagen tal cual, sin recortar
-    console.warn('[foto] no se pudo generar el recorte, usando respaldo sin recorte.');
+    // Respaldo si Cropper no cargo: usar la imagen tal cual, sin recortar
+    console.warn('[foto] getCroppedCanvas() no devolvio nada, usando respaldo sin recorte.');
     var imgEl = document.getElementById('img-recortar');
     var c = document.createElement('canvas');
     c.width = imgEl.naturalWidth || imgEl.width;
@@ -3644,6 +3607,39 @@ async function obtenerFotoBase64Cliente(driveUrl) {
   }
 }
 
+// ── NOMBRE DE ARCHIVO PARA LOS PDF EXPORTADOS ──────────────────────
+// En vez de solo la fecha de HOY (que era igual sin importar que
+// datos se exportaran), el nombre ahora incluye el rango de fechas
+// real de los registros exportados y la operacion filtrada, para que
+// cada exportacion quede identificada y no se sobreescriban entre si.
+function slugificarNombreArchivo(str) {
+  return (str || '')
+    .toString()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quitar tildes
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase() || 'sin_dato';
+}
+
+function rangoFechasArchivo(registros) {
+  var tiempos = (registros || [])
+    .map(function (r) { return parseDateTime(getMarcaTemporalR(r)); })
+    .filter(function (d) { return d && !isNaN(d); })
+    .map(function (d) { return d.getTime(); });
+  if (tiempos.length === 0) return new Date().toISOString().slice(0, 10);
+  var f1 = new Date(Math.min.apply(null, tiempos)).toISOString().slice(0, 10);
+  var f2 = new Date(Math.max.apply(null, tiempos)).toISOString().slice(0, 10);
+  return f1 === f2 ? f1 : (f1 + '_a_' + f2);
+}
+
+function construirNombreArchivoPDF(prefijo, registros) {
+  var filtroOperacionVal = (document.getElementById('filtro-operacion')   ? document.getElementById('filtro-operacion').value   : '') ||
+                           (document.getElementById('filtro-operacion-2') ? document.getElementById('filtro-operacion-2').value : '');
+  var segmentoFecha     = rangoFechasArchivo(registros);
+  var segmentoOperacion = filtroOperacionVal ? slugificarNombreArchivo(filtroOperacionVal) : 'todas_las_operaciones';
+  return prefijo + '_' + segmentoFecha + '_' + segmentoOperacion + '.pdf';
+}
+
 async function exportarLotePDF() {
   var registros = registrosFiltradosActual || [];
   if (registros.length === 0) {
@@ -3716,7 +3712,7 @@ async function exportarLotePDF() {
       return;
     }
 
-    var nombreArchivo = 'lote_' + new Date().toISOString().slice(0,10) + '.pdf';
+    var nombreArchivo = construirNombreArchivoPDF('lote', registros);
     doc.save(nombreArchivo);
   } catch (err) {
     console.error('Error generando PDF de lote:', err);
@@ -3809,7 +3805,7 @@ async function exportarEvidenciaFotograficaPDF() {
       return;
     }
 
-    var nombreArchivoEvidencia = 'evidencia_fotografica_' + new Date().toISOString().slice(0,10) + '.pdf';
+    var nombreArchivoEvidencia = construirNombreArchivoPDF('evidencia_fotografica', registros);
     doc.save(nombreArchivoEvidencia);
   } catch (err) {
     console.error('Error generando PDF de evidencia fotografica:', err);
@@ -3911,7 +3907,7 @@ function exportarPlanillaPDF() {
       });
     }
 
-    var nombreArchivo = 'planilla_' + new Date().toISOString().slice(0,10) + '.pdf';
+    var nombreArchivo = construirNombreArchivoPDF('planilla', registros);
     doc.save(nombreArchivo);
   } catch (err) {
     console.error('Error generando planilla PDF:', err);
