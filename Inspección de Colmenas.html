@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inspección de Colmenas</title>
+<style>
+  :root{
+    --miel:#f4b400; --miel-osc:#c98f00; --panal:#3d2b00; --fondo:#1c1710;
+    --card:#2a2115; --borde:#5a4318; --texto:#f5e9d0;
+    --ok:#4caf50; --medio:#ffb300; --mal:#e53935;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI',system-ui,sans-serif;}
+  body{background:radial-gradient(circle at 50% 0%, #2b2113 0%, var(--fondo) 70%); color:var(--texto); min-height:100vh; padding-bottom:110px;}
+
+  header{ text-align:center; padding:18px 12px 8px; }
+  header h1{ font-size:1.5rem; color:var(--miel); letter-spacing:1px; text-shadow:0 2px 8px rgba(244,180,0,.35);}
+  header .sub{ font-size:.8rem; opacity:.75; margin-top:2px;}
+  .meta{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin:14px auto 4px; max-width:640px;}
+  .meta .chip{ background:var(--card); border:1px solid var(--borde); border-radius:20px; padding:6px 14px; font-size:.85rem;}
+  .meta input{ background:transparent; border:none; border-bottom:1px dashed var(--miel); color:var(--texto); font-size:.85rem; width:140px; outline:none; text-align:center;}
+
+  /* ---- PANAL DE HEXÁGONOS ---- */
+  #panal{ display:flex; flex-wrap:wrap; justify-content:center; gap:6px; max-width:720px; margin:18px auto; padding:0 10px;}
+  .hex{ position:relative; width:118px; height:132px; clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);
+    background:linear-gradient(160deg,#544012,#31250c); border:none; cursor:pointer; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:4px; transition:transform .15s, filter .15s; color:var(--texto);}
+  .hex:hover{ transform:scale(1.06); filter:brightness(1.2);}
+  .hex .cod{ font-weight:700; font-size:1.05rem; color:var(--miel);}
+  .hex .pct{ font-size:.95rem; font-weight:700;}
+  .hex .pct.na{ opacity:.45; font-weight:400; font-size:.75rem;}
+  .hex .cam{ font-size:.8rem; }
+  .hex .quitar{ position:absolute; top:16px; right:26px; background:none; border:none; color:#c77; font-size:.8rem; cursor:pointer;}
+  .hex.done{ background:linear-gradient(160deg,#6b5411,#453309); box-shadow:inset 0 0 22px rgba(244,180,0,.25);}
+  .hex-add{ background:repeating-linear-gradient(45deg,#2a2115,#2a2115 6px,#332a19 6px,#332a19 12px); color:var(--miel); font-size:1.9rem;}
+
+  /* ---- MODAL ---- */
+  #overlay{ position:fixed; inset:0; background:rgba(0,0,0,.72); display:none; z-index:50; overflow-y:auto; padding:18px 10px;}
+  #overlay.abierto{ display:flex; align-items:flex-start; justify-content:center;}
+  .modal{ background:var(--card); border:1px solid var(--borde); border-radius:16px; width:100%; max-width:520px; padding:18px; position:relative;}
+  .modal h2{ color:var(--miel); text-align:center; font-size:1.3rem;}
+  .cerrar{ position:absolute; top:10px; right:14px; background:none; border:none; color:var(--texto); font-size:1.4rem; cursor:pointer;}
+
+  .tabs{ display:flex; gap:6px; margin:14px 0 12px;}
+  .tabs button{ flex:1; padding:8px; border-radius:8px; border:1px solid var(--borde); background:transparent; color:var(--texto); cursor:pointer; font-weight:600;}
+  .tabs button.activa{ background:var(--miel); color:var(--panal);}
+
+  /* gauge */
+  .gaugebox{ display:flex; justify-content:center; margin:6px 0 14px;}
+  .gauge{ position:relative; width:130px; height:130px;}
+  .gauge svg{ transform:rotate(-90deg);}
+  .gauge .valor{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;}
+  .gauge .valor b{ font-size:1.6rem;}
+  .gauge .valor span{ font-size:.65rem; opacity:.7;}
+
+  .param{ margin-bottom:10px;}
+  .param label{ display:flex; justify-content:space-between; font-size:.82rem; margin-bottom:3px; gap:8px;}
+  .param label b{ color:var(--miel); min-width:24px; text-align:right;}
+  .param input[type=range]{ width:100%; accent-color:var(--miel);}
+
+  textarea{ width:100%; background:#20180d; border:1px solid var(--borde); border-radius:8px; color:var(--texto); padding:8px; font-size:.85rem; resize:vertical; min-height:60px;}
+
+  /* foto */
+  .fotozona{ margin:14px 0; border:1px dashed var(--borde); border-radius:12px; padding:12px; text-align:center;}
+  .fotozona h3{ font-size:.85rem; color:var(--miel); margin-bottom:8px;}
+  .btnfoto{ display:inline-block; background:var(--miel); color:var(--panal); font-weight:700; padding:9px 16px; border-radius:24px; cursor:pointer; font-size:.85rem;}
+  .btnfoto input{ display:none;}
+  .previews{ display:flex; gap:12px; justify-content:center; margin-top:10px; flex-wrap:wrap;}
+  .previews figure{ width:120px;}
+  .previews img{ width:120px; height:90px; object-fit:cover; border-radius:8px; border:2px solid var(--borde);}
+  .previews figcaption{ font-size:.65rem; opacity:.75; margin-top:3px;}
+  .previews .nueva img{ border-color:var(--ok);}
+
+  /* historial */
+  .linea-tiempo{ display:flex; flex-direction:column; gap:10px; max-height:380px; overflow-y:auto;}
+  .evento{ display:flex; gap:10px; align-items:center; background:#20180d; border:1px solid var(--borde); border-radius:10px; padding:8px 10px;}
+  .evento img{ width:64px; height:48px; object-fit:cover; border-radius:6px;}
+  .evento .sinfoto{ width:64px; height:48px; border-radius:6px; background:#332a19; display:flex; align-items:center; justify-content:center; font-size:1.1rem; opacity:.5;}
+  .evento .info{ flex:1;}
+  .evento .info .f{ font-size:.8rem; font-weight:600;}
+  .evento .info .o{ font-size:.7rem; opacity:.7;}
+  .badge{ font-weight:800; font-size:.95rem; padding:4px 10px; border-radius:14px; color:#1c1710;}
+  .vacio{ text-align:center; opacity:.6; font-size:.85rem; padding:20px 0;}
+
+  .btn-principal{ display:block; width:100%; margin-top:14px; padding:12px; border:none; border-radius:12px; background:var(--miel); color:var(--panal); font-weight:800; font-size:1rem; cursor:pointer;}
+  .btn-principal:active{ transform:scale(.98);}
+
+  /* barra inferior */
+  #barra{ position:fixed; bottom:0; left:0; right:0; background:linear-gradient(0deg,#171208 60%,transparent); padding:14px 16px 18px; display:flex; justify-content:center; z-index:40;}
+  #btnGuardar{ width:100%; max-width:480px; padding:15px; border:none; border-radius:14px; font-size:1.05rem; font-weight:800; cursor:pointer;
+    background:linear-gradient(135deg,var(--miel),var(--miel-osc)); color:var(--panal); box-shadow:0 4px 18px rgba(244,180,0,.4);}
+  #btnGuardar:disabled{ opacity:.55; cursor:wait;}
+
+  /* toasts */
+  #toasts{ position:fixed; top:14px; left:50%; transform:translateX(-50%); z-index:100; display:flex; flex-direction:column; gap:8px; width:min(92vw,420px);}
+  .toast{ padding:12px 16px; border-radius:10px; font-size:.9rem; font-weight:600; box-shadow:0 4px 14px rgba(0,0,0,.5); animation:entra .25s ease;}
+  .toast.exito{ background:var(--ok); color:#fff;}
+  .toast.error{ background:var(--mal); color:#fff;}
+  .toast.aviso{ background:var(--medio); color:#3d2b00;}
+  @keyframes entra{ from{opacity:0; transform:translateY(-10px);} to{opacity:1;} }
+
+  @media (max-width:480px){ .hex{ width:100px; height:112px;} .hex .quitar{ top:12px; right:20px;} }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Inspección de Colmenas</h1>
+  <div class="sub">Sistema de Control Operativo</div>
+</header>
+
+<div class="meta">
+  <div class="chip"><span id="mFecha"></span></div>
+  <div class="chip"><input id="mInspector" type="text" placeholder="Nombre del inspector"></div>
+</div>
+
+<div id="panal"></div>
+
+<div id="barra">
+  <button id="btnGuardar" onclick="guardarInspeccion()">GUARDAR INSPECCIÓN</button>
+</div>
+
+<!-- MODAL COLMENA -->
+<div id="overlay">
+  <div class="modal">
+    <button class="cerrar" onclick="cerrarModal()">✕</button>
+    <h2 id="modalTitulo">C.1</h2>
+    <div class="tabs">
+      <button id="tabEval" class="activa" onclick="verTab('eval')">Evaluación</button>
+      <button id="tabHist" onclick="verTab('hist')">Historial</button>
+    </div>
+
+    <div id="panelEval">
+      <div class="gaugebox">
+        <div class="gauge">
+          <svg width="130" height="130">
+            <circle cx="65" cy="65" r="56" fill="none" stroke="#20180d" stroke-width="12"/>
+            <circle id="gaugeArco" cx="65" cy="65" r="56" fill="none" stroke="#4caf50" stroke-width="12"
+                    stroke-linecap="round" stroke-dasharray="351.86" stroke-dashoffset="351.86"/>
+          </svg>
+          <div class="valor"><b id="gaugeNum">—</b><span>SALUD</span></div>
+        </div>
+      </div>
+
+      <div id="listaParams"></div>
+
+      <div class="fotozona">
+        <h3>Documentación fotográfica (1 foto)</h3>
+        <label class="btnfoto">Tomar o subir foto de la colmena
+          <input id="inputFoto" type="file" accept="image/*" capture="environment" onchange="fotoSeleccionada(event)">
+        </label>
+        <div class="previews" id="previews"></div>
+      </div>
+
+      <label style="font-size:.82rem; display:block; margin-bottom:4px;">Observaciones</label>
+      <textarea id="txtObs" placeholder="Notas de esta inspección..."></textarea>
+
+      <button class="btn-principal" onclick="cerrarModal()">Listo</button>
+    </div>
+
+    <div id="panelHist" style="display:none">
+      <div class="linea-tiempo" id="listaHist"><div class="vacio">Cargando historial…</div></div>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<script>
+/* ================= CONFIG ================= */
+const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzDhn5pxx79_ImF_JPUTePYVxtPpURMSrnXI9KGirs_7KAOqKffkUwNdRDRUriWNr6l/exec';
+const PARAMETROS = [
+  { id:'estado_panal',      nombre:'Estado de construcción del panal' },
+  { id:'postura',           nombre:'Presencia y calidad de la postura' },
+  { id:'distribucion_cria', nombre:'Distribución del área de cría' },
+  { id:'alimento',          nombre:'Presencia de alimento (miel, polen)' },
+  { id:'actividad',         nombre:'Actividad de abejas (población)' },
+  { id:'comportamiento',    nombre:'Comportamiento (docilidad)' },
+  { id:'sanitario',         nombre:'Estado sanitario (varroa, loque...)' },
+  { id:'limpieza',          nombre:'Limpieza interna de la colmena' },
+  { id:'reina',             nombre:'Estado de la reina / Celdas reales' },
+  { id:'material',          nombre:'Condiciones del material' }
+];
+// ¿Servido desde la propia Web App? → usar google.script.run (sin CORS)
+const USA_GSRUN = (typeof google !== 'undefined' && google.script && google.script.run);
+
+/* ================= ESTADO ================= */
+let colmenas = [];          // {codigo, parametros:{}, observaciones, fotoBase64, urlFotoGuardada, evaluada}
+let idxActual = -1;
+const cacheHistorial = {};  // codigo -> historial[]
+
+/* ================= UTILIDADES ================= */
+const $ = id => document.getElementById(id);
+const colorSalud = p => p >= 70 ? 'var(--ok)' : p >= 40 ? 'var(--medio)' : 'var(--mal)';
+const colorSaludHex = p => p >= 70 ? '#4caf50' : p >= 40 ? '#ffb300' : '#e53935';
+
+function toast(msg, tipo){
+  const t = document.createElement('div');
+  t.className = 'toast ' + (tipo || 'exito');
+  t.textContent = msg;
+  $('toasts').appendChild(t);
+  setTimeout(() => { t.style.opacity = 0; setTimeout(() => t.remove(), 300); }, 4200);
+}
+
+function sonido(exito){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const notas = exito ? [523.25, 659.25, 783.99] : [220, 174.6];
+    notas.forEach((f, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      o.connect(g); g.connect(ctx.destination);
+      const t0 = ctx.currentTime + i * 0.12;
+      g.gain.setValueAtTime(0.15, t0);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.25);
+      o.start(t0); o.stop(t0 + 0.3);
+    });
+  }catch(e){}
+}
+
+function promedioDe(c){
+  const vals = PARAMETROS.map(p => Number(c.parametros[p.id])).filter(v => !isNaN(v));
+  if (!vals.length) return null;
+  return Math.round(vals.reduce((a,b) => a+b, 0) / vals.length * 10);
+}
+
+// Convierte URL de Drive a miniatura embebible
+function miniaturaDrive(url, ancho){
+  const m = String(url || '').match(/[?&]id=([\w-]+)|\/d\/([\w-]+)/);
+  const id = m ? (m[1] || m[2]) : null;
+  return id ? ('https://drive.google.com/thumbnail?id=' + id + '&sz=w' + (ancho || 400)) : url;
+}
+
+/* ================= FECHA / HORA ================= */
+function tickReloj(){
+  $('mFecha').textContent = new Date().toISOString().slice(0,10);
+}
+tickReloj(); setInterval(tickReloj, 60000);
+
+/* ================= PANAL ================= */
+function nuevaColmena(){
+  let n = 1;
+  const usados = colmenas.map(c => c.codigo);
+  while (usados.includes('C.' + n)) n++;
+  colmenas.push({ codigo:'C.' + n, parametros:{}, observaciones:'', fotoBase64:'', urlFotoGuardada:'', evaluada:false });
+  renderPanal();
+}
+
+function quitarColmena(ev, i){
+  ev.stopPropagation();
+  if (!confirm('¿Quitar ' + colmenas[i].codigo + ' de esta inspección?')) return;
+  colmenas.splice(i, 1);
+  renderPanal();
+}
+
+function renderPanal(){
+  const cont = $('panal');
+  cont.innerHTML = '';
+  colmenas.forEach((c, i) => {
+    const p = promedioDe(c);
+    const hex = document.createElement('button');
+    hex.className = 'hex' + (c.evaluada ? ' done' : '');
+    hex.onclick = () => abrirModal(i);
+    hex.innerHTML =
+      '<span class="quitar" onclick="quitarColmena(event,' + i + ')">×</span>' +
+      '<span class="cod">' + c.codigo + '</span>' +
+      (p !== null
+        ? '<span class="pct" style="color:' + colorSaludHex(p) + '">' + p + '%</span>'
+        : '<span class="pct na">sin evaluar</span>') +
+      '<span class="cam">' + (c.fotoBase64 ? 'foto ✓' : '') + '</span>';
+    cont.appendChild(hex);
+  });
+  const add = document.createElement('button');
+  add.className = 'hex hex-add';
+  add.textContent = '+';
+  add.title = 'Agregar colmena';
+  add.onclick = nuevaColmena;
+  cont.appendChild(add);
+}
+
+/* ================= MODAL ================= */
+function abrirModal(i){
+  idxActual = i;
+  const c = colmenas[i];
+  $('modalTitulo').textContent = c.codigo;
+  $('txtObs').value = c.observaciones;
+  $('inputFoto').value = '';
+
+  const lista = $('listaParams');
+  lista.innerHTML = '';
+  PARAMETROS.forEach(p => {
+    const v = c.parametros[p.id] || 5;
+    const div = document.createElement('div');
+    div.className = 'param';
+    div.innerHTML =
+      '<label><span>' + p.nombre + '</span><b id="val_' + p.id + '">' + v + '</b></label>' +
+      '<input type="range" min="1" max="10" step="1" value="' + v + '" ' +
+      'oninput="cambiarParam(\'' + p.id + '\', this.value)">';
+    lista.appendChild(div);
+    c.parametros[p.id] = Number(v);
+  });
+
+  actualizarGauge();
+  renderPreviews();
+  verTab('eval');
+  $('overlay').classList.add('abierto');
+
+  // referencia: última foto registrada (del historial)
+  cargarHistorial(c.codigo, true);
+}
+
+function cerrarModal(){
+  if (idxActual >= 0){
+    const c = colmenas[idxActual];
+    c.observaciones = $('txtObs').value;
+    c.evaluada = true;
+  }
+  $('overlay').classList.remove('abierto');
+  idxActual = -1;
+  renderPanal();
+}
+
+function cambiarParam(id, valor){
+  colmenas[idxActual].parametros[id] = Number(valor);
+  $('val_' + id).textContent = valor;
+  actualizarGauge();
+}
+
+function actualizarGauge(){
+  const p = promedioDe(colmenas[idxActual]) || 0;
+  const circ = 351.86;
+  $('gaugeArco').style.strokeDashoffset = circ - (circ * p / 100);
+  $('gaugeArco').setAttribute('stroke', colorSaludHex(p));
+  $('gaugeNum').textContent = p + '%';
+  $('gaugeNum').style.color = colorSaludHex(p);
+}
+
+function verTab(cual){
+  const esEval = cual === 'eval';
+  $('panelEval').style.display = esEval ? 'block' : 'none';
+  $('panelHist').style.display = esEval ? 'none' : 'block';
+  $('tabEval').classList.toggle('activa', esEval);
+  $('tabHist').classList.toggle('activa', !esEval);
+  if (!esEval) cargarHistorial(colmenas[idxActual].codigo, false);
+}
+
+/* ================= FOTO ================= */
+function fotoSeleccionada(ev){
+  const archivo = ev.target.files[0];
+  if (!archivo) return;
+  const img = new Image();
+  const lector = new FileReader();
+  lector.onload = e => {
+    img.onload = () => {
+      // comprimir: máx 1024px, JPEG 72% → payload liviano para Apps Script
+      const esc = Math.min(1, 1024 / Math.max(img.width, img.height));
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(img.width * esc);
+      cv.height = Math.round(img.height * esc);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      colmenas[idxActual].fotoBase64 = cv.toDataURL('image/jpeg', 0.72);
+      renderPreviews();
+      toast('Foto lista para ' + colmenas[idxActual].codigo, 'exito');
+    };
+    img.src = e.target.result;
+  };
+  lector.readAsDataURL(archivo);
+}
+
+function renderPreviews(){
+  const c = colmenas[idxActual];
+  const cont = $('previews');
+  cont.innerHTML = '';
+  if (c.urlFotoGuardada){
+    cont.innerHTML +=
+      '<figure><img src="' + miniaturaDrive(c.urlFotoGuardada, 400) + '" alt="Última foto">' +
+      '<figcaption>Última foto registrada</figcaption></figure>';
+  }
+  if (c.fotoBase64){
+    cont.innerHTML +=
+      '<figure class="nueva"><img src="' + c.fotoBase64 + '" alt="Nueva foto">' +
+      '<figcaption>Foto de hoy (sin guardar)</figcaption></figure>';
+  }
+}
+
+/* ================= HISTORIAL ================= */
+function pedirHistorial(codigo){
+  return new Promise((res, rej) => {
+    if (USA_GSRUN){
+      google.script.run
+        .withSuccessHandler(res)
+        .withFailureHandler(rej)
+        .apiHistorial(codigo);
+    } else {
+      fetch(WEB_APP_URL + '?codigo=' + encodeURIComponent(codigo))
+        .then(r => r.json()).then(res).catch(rej);
+    }
+  });
+}
+
+function cargarHistorial(codigo, soloFoto){
+  const usar = datos => {
+    cacheHistorial[codigo] = datos.historial || [];
+    // última foto como referencia en la ficha
+    const conFoto = cacheHistorial[codigo].find(h => h.url_foto);
+    if (conFoto && idxActual >= 0 && colmenas[idxActual].codigo === codigo){
+      colmenas[idxActual].urlFotoGuardada = colmenas[idxActual].urlFotoGuardada || conFoto.url_foto;
+      renderPreviews();
+    }
+    if (!soloFoto) renderHistorial(codigo);
+  };
+
+  if (cacheHistorial[codigo]){ usar({ historial: cacheHistorial[codigo] }); return; }
+  if (!soloFoto) $('listaHist').innerHTML = '<div class="vacio">Cargando historial…</div>';
+
+  pedirHistorial(codigo)
+    .then(d => { if (d && d.ok !== false) usar(d); else throw new Error(d && d.error); })
+    .catch(() => { if (!soloFoto) $('listaHist').innerHTML = '<div class="vacio">No se pudo cargar el historial.</div>'; });
+}
+
+function renderHistorial(codigo){
+  const hist = cacheHistorial[codigo] || [];
+  const cont = $('listaHist');
+  if (!hist.length){
+    cont.innerHTML = '<div class="vacio">Sin inspecciones previas para ' + codigo + '.</div>';
+    return;
+  }
+  cont.innerHTML = hist.map(h =>
+    '<div class="evento">' +
+      (h.url_foto
+        ? '<a href="' + h.url_foto + '" target="_blank"><img src="' + miniaturaDrive(h.url_foto, 200) + '" alt="foto"></a>'
+        : '<div class="sinfoto">—</div>') +
+      '<div class="info"><div class="f">' + h.fecha + '</div>' +
+      '<div class="o">' + (h.inspector || '') + (h.observaciones ? ' — ' + h.observaciones : '') + '</div></div>' +
+      '<span class="badge" style="background:' + colorSaludHex(h.promedio) + '">' + h.promedio + '%</span>' +
+    '</div>'
+  ).join('');
+}
+
+/* ================= GUARDADO ================= */
+function construirPayload(){
+  const d = new Date();
+  return {
+    fecha: d.toISOString().slice(0,10),
+    hora: d.toTimeString().slice(0,5),
+    inspector: $('mInspector').value.trim() || 'Sin nombre',
+    colmenas: colmenas.filter(c => c.evaluada).map(c => ({
+      codigo: c.codigo,
+      parametros: c.parametros,
+      promedio: promedioDe(c) || 0,
+      observaciones: c.observaciones,
+      foto_base64: c.fotoBase64 || ''
+    }))
+  };
+}
+
+function enviarBackend(payload){
+  const json = JSON.stringify(payload);
+  return new Promise((res, rej) => {
+    if (USA_GSRUN){
+      google.script.run
+        .withSuccessHandler(res)
+        .withFailureHandler(rej)
+        .apiGuardarInspeccion(json);
+    } else {
+      // text/plain evita el preflight CORS que Apps Script no soporta
+      fetch(WEB_APP_URL, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' }, body: json })
+        .then(r => r.json()).then(res).catch(rej);
+    }
+  });
+}
+
+function guardarInspeccion(){
+  const payload = construirPayload();
+  if (!payload.colmenas.length){
+    toast('No hay colmenas evaluadas. Abre cada hexágono y evalúa.', 'aviso');
+    return;
+  }
+  if (!$('mInspector').value.trim()){
+    toast('Escribe el nombre del inspector.', 'aviso');
+    $('mInspector').focus();
+    return;
+  }
+
+  const btn = $('btnGuardar');
+  btn.disabled = true;
+  btn.textContent = 'Guardando en Sheets y Drive…';
+
+  enviarBackend(payload)
+    .then(r => {
+      if (!r || (r.ok === false && !r.resultados)) throw new Error((r && r.error) || 'Respuesta inválida del servidor');
+      const resultados = r.resultados || [];
+      const guardadas = resultados.filter(x => x.ok);
+      const fallidas  = resultados.filter(x => !x.ok);
+      const fotosMal  = resultados.filter(x => x.ok && x.foto_error);
+
+      guardadas.forEach(x => {
+        const c = colmenas.find(k => k.codigo === x.codigo);
+        if (c){
+          if (x.url_foto) c.urlFotoGuardada = x.url_foto;
+          c.fotoBase64 = '';
+        }
+        delete cacheHistorial[x.codigo]; // forzar recarga del historial
+      });
+
+      if (guardadas.length){
+        sonido(true);
+        toast('¡Inspección guardada! ' + guardadas.length + ' colmena(s) registradas.', 'exito');
+      }
+      fotosMal.forEach(x =>
+        toast('' + x.codigo + ': datos guardados, pero la foto NO se subió. Reintenta la foto.', 'aviso'));
+      fallidas.forEach(x =>
+        toast('' + x.codigo + ' no se guardó: ' + (x.error || 'error desconocido'), 'error'));
+      if (fallidas.length && !guardadas.length) sonido(false);
+
+      renderPanal();
+    })
+    .catch(err => {
+      sonido(false);
+      toast('Error al guardar: ' + (err.message || err) + '. Los datos siguen en pantalla, reintenta.', 'error');
+    })
+    .finally(() => {
+      btn.disabled = false;
+      btn.textContent = 'GUARDAR INSPECCIÓN';
+    });
+}
+
+/* ================= INICIO ================= */
+nuevaColmena(); nuevaColmena(); nuevaColmena(); // C.1 – C.3 de arranque
+</script>
+</body>
+</html>
