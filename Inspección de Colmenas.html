@@ -72,6 +72,14 @@
   .previews .nueva img{ border-color:var(--ok);}
 
   /* historial */
+  .filtros{ display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-bottom:12px; justify-content:center;}
+  .filtros label{ font-size:.7rem; opacity:.8; display:flex; flex-direction:column; gap:3px;}
+  .filtros input[type=date]{ background:#20180d; border:1px solid var(--borde); border-radius:8px; color:var(--texto); padding:6px 8px; font-size:.8rem; color-scheme:dark;}
+  .filtros button{ background:var(--miel); color:var(--panal); border:none; border-radius:8px; padding:8px 14px; font-weight:700; cursor:pointer; font-size:.8rem;}
+  .filtros button.sec{ background:transparent; color:var(--texto); border:1px solid var(--borde);}
+  .chart3d{ width:100%; height:230px; margin-bottom:6px;}
+  .chart3d.oculto{ display:none;}
+  .tit-chart{ text-align:center; font-size:.8rem; color:var(--miel); font-weight:700; margin:6px 0 0;}
   .linea-tiempo{ display:flex; flex-direction:column; gap:10px; max-height:380px; overflow-y:auto;}
   .evento{ display:flex; gap:10px; align-items:center; background:#20180d; border:1px solid var(--borde); border-radius:10px; padding:8px 10px;}
   .evento img{ width:64px; height:48px; object-fit:cover; border-radius:6px;}
@@ -159,6 +167,16 @@
     </div>
 
     <div id="panelHist" style="display:none">
+      <div class="filtros">
+        <label>Desde<input type="date" id="fDesde"></label>
+        <label>Hasta<input type="date" id="fHasta"></label>
+        <button onclick="aplicarFiltro()">Filtrar</button>
+        <button class="sec" onclick="limpiarFiltro()">Todo</button>
+      </div>
+      <div class="tit-chart" id="titSalud" style="display:none">Distribución de salud del período</div>
+      <div id="chartSalud" class="chart3d oculto"></div>
+      <div class="tit-chart" id="titParams" style="display:none">Promedio por parámetro del período</div>
+      <div id="chartParams" class="chart3d oculto"></div>
       <div class="linea-tiempo" id="listaHist"><div class="vacio">Cargando historial…</div></div>
     </div>
   </div>
@@ -166,6 +184,7 @@
 
 <div id="toasts"></div>
 
+<script src="https://www.gstatic.com/charts/loader.js"></script>
 <script>
 /* ================= CONFIG ================= */
 const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzDhn5pxx79_ImF_JPUTePYVxtPpURMSrnXI9KGirs_7KAOqKffkUwNdRDRUriWNr6l/exec';
@@ -418,11 +437,74 @@ function cargarHistorial(codigo, soloFoto){
     .catch(() => { if (!soloFoto) $('listaHist').innerHTML = '<div class="vacio">No se pudo cargar el historial.</div>'; });
 }
 
+/* ---- Google Charts (pastel 3D) ---- */
+let chartsListos = false;
+try{
+  google.charts.load('current', { packages: ['corechart'] });
+  google.charts.setOnLoadCallback(function(){ chartsListos = true; });
+}catch(e){}
+
+function aplicarFiltro(){
+  if (idxActual >= 0) renderHistorial(colmenas[idxActual].codigo);
+}
+function limpiarFiltro(){
+  $('fDesde').value = ''; $('fHasta').value = '';
+  aplicarFiltro();
+}
+
+function filtrarPeriodo(hist){
+  const d = $('fDesde').value, h = $('fHasta').value; // yyyy-MM-dd: comparación de strings válida
+  return hist.filter(x => (!d || x.fecha >= d) && (!h || x.fecha <= h));
+}
+
+function dibujarCharts(hist){
+  const mostrar = chartsListos && hist.length > 0;
+  ['chartSalud','chartParams'].forEach(id => $(id).classList.toggle('oculto', !mostrar));
+  $('titSalud').style.display = mostrar ? 'block' : 'none';
+  $('titParams').style.display = mostrar ? 'block' : 'none';
+  if (!mostrar) return;
+
+  const opciones = {
+    is3D: true,
+    backgroundColor: 'transparent',
+    legend: { textStyle: { color: '#f5e9d0', fontSize: 11 } },
+    pieSliceText: 'percentage',
+    chartArea: { width: '95%', height: '85%' }
+  };
+
+  // Pastel 1: distribución semáforo de las inspecciones del período
+  const verdes = hist.filter(x => x.promedio >= 70).length;
+  const ambar  = hist.filter(x => x.promedio >= 40 && x.promedio < 70).length;
+  const rojas  = hist.filter(x => x.promedio < 40).length;
+  const dSalud = google.visualization.arrayToDataTable([
+    ['Estado', 'Inspecciones'],
+    ['Buena (≥70%)', verdes],
+    ['Media (40-69%)', ambar],
+    ['Crítica (<40%)', rojas]
+  ]);
+  new google.visualization.PieChart($('chartSalud')).draw(dSalud,
+    Object.assign({}, opciones, { colors: ['#4caf50', '#ffb300', '#e53935'] }));
+
+  // Pastel 2: promedio de cada parámetro en el período
+  const filas = [['Parámetro', 'Promedio']];
+  PARAMETROS.forEach(p => {
+    const vals = hist.map(x => Number(x.parametros && x.parametros[p.id])).filter(v => !isNaN(v));
+    const prom = vals.length ? vals.reduce((a,b) => a+b, 0) / vals.length : 0;
+    filas.push([p.nombre, Math.round(prom * 100) / 100]);
+  });
+  new google.visualization.PieChart($('chartParams')).draw(
+    google.visualization.arrayToDataTable(filas), opciones);
+}
+
 function renderHistorial(codigo){
-  const hist = cacheHistorial[codigo] || [];
+  const todo = cacheHistorial[codigo] || [];
+  const hist = filtrarPeriodo(todo);
   const cont = $('listaHist');
+  dibujarCharts(hist);
   if (!hist.length){
-    cont.innerHTML = '<div class="vacio">Sin inspecciones previas para ' + codigo + '.</div>';
+    cont.innerHTML = '<div class="vacio">' + (todo.length
+      ? 'Sin inspecciones en el período seleccionado.'
+      : 'Sin inspecciones previas para ' + codigo + '.') + '</div>';
     return;
   }
   cont.innerHTML = hist.map(h =>
