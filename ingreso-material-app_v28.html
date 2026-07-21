@@ -2326,6 +2326,8 @@ function cancelarRecorteFoto() {
 function cerrarModalesFotoResiduales() {
   cancelarRecorteFoto();
   cerrarInspeccionFoto();
+  var modalSalida = document.getElementById('modal-confirmar-salida');
+  if (modalSalida) modalSalida.classList.remove('open');
 }
 
 // ── CONFIRMACION AL PRESIONAR "ATRAS" (boton fisico o gesto del celular) ──
@@ -2347,17 +2349,36 @@ function desactivarConfirmacionSalida() {
   confirmacionSalidaActiva = false;
 }
 
+// NOTA: antes se usaba window.confirm() aqui. Los navegadores (Chrome
+// en particular) SUPRIMEN automaticamente los dialogos nativos
+// (confirm/alert) si una pagina los dispara varias veces seguidas en
+// poco tiempo (por ejemplo, al "spamear" el boton atras) -- deja de
+// mostrarlos sin avisar, como si el usuario hubiera cancelado. Por eso
+// se cambio a un modal propio (HTML/CSS), que no tiene ese limite y se
+// muestra todas las veces que haga falta.
 window.addEventListener('popstate', function () {
   if (!confirmacionSalidaActiva) return;
-  var salir = confirm('¿Está seguro que quiere salir? Se perderá el registro que está llenando.');
-  if (salir) {
-    confirmacionSalidaActiva = false;
-    salirPantallaProtegidaPorBack();
-  } else {
-    // Se cancela la salida: se vuelve a armar la trampa para el proximo "atras"
-    history.pushState({ pil1Guard: true }, '');
-  }
+  abrirModalConfirmarSalida();
 });
+
+function abrirModalConfirmarSalida() {
+  var modal = document.getElementById('modal-confirmar-salida');
+  if (modal) modal.classList.add('open');
+}
+
+function cancelarSalidaPorBack() {
+  var modal = document.getElementById('modal-confirmar-salida');
+  if (modal) modal.classList.remove('open');
+  // Se cancela la salida: se vuelve a armar la trampa para el proximo "atras"
+  history.pushState({ pil1Guard: true }, '');
+}
+
+function confirmarSalidaPorBack() {
+  var modal = document.getElementById('modal-confirmar-salida');
+  if (modal) modal.classList.remove('open');
+  confirmacionSalidaActiva = false;
+  salirPantallaProtegidaPorBack();
+}
 
 function salirPantallaProtegidaPorBack() {
   var pantallaApp = document.getElementById('pantalla-app');
@@ -4301,6 +4322,18 @@ function getAHTSegundos() {
       <img id="img-inspeccionar" src="" alt="Foto ampliada">
       <div class="camara-btns-overlay">
         <button class="modal-btn cancel" onclick="cerrarInspeccionFoto()">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL CONFIRMAR SALIDA (al presionar "atras" del celular, en vez de un confirm() nativo que el navegador puede suprimir si se "spamea") -->
+  <div class="modal-overlay" id="modal-confirmar-salida">
+    <div class="modal-box">
+      <div class="modal-title">¿Salir del formulario?</div>
+      <div class="modal-text">Está a punto de salir. Si no ha guardado, se perderá el registro que está llenando.</div>
+      <div class="modal-btns">
+        <button class="modal-btn cancel" onclick="cancelarSalidaPorBack()">Cancelar</button>
+        <button class="modal-btn confirm" onclick="confirmarSalidaPorBack()">Salir</button>
       </div>
     </div>
   </div>
