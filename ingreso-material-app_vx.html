@@ -2428,13 +2428,11 @@ function confirmarRecorteFoto() {
 
 
 // ================================================================
-// DETECCION AUTOMATICA DE HOJA (OpenCV.js)
+// DETECCION AUTOMATICA DE HOJA (OpenCV.js) — v2
 // Al capturar o subir la foto de un tiquete/manifiesto, se intenta
-// detectar la hoja de papel, recortarla y corregir la perspectiva
-// para que el documento quede plano y legible por el sistema lector.
-// El operario ve el resultado y confirma, o ajusta a mano con el
-// recortador de siempre. Si OpenCV no carga o no se detecta la hoja,
-// se cae al recorte manual actual sin bloquear al operario.
+// detectar la hoja de papel, recortarla y corregir la perspectiva.
+// El operario confirma o ajusta a mano. Si OpenCV no esta listo o no
+// se detecta la hoja, cae al recorte manual avisando el motivo.
 // ================================================================
 var OPENCV_URL = 'https://docs.opencv.org/4.10.0/opencv.js';
 var opencvEstado = 'no'; // no | cargando | listo | error
@@ -2444,6 +2442,7 @@ function cargarOpenCV() {
   if (opencvEstado === 'listo' || opencvEstado === 'cargando') return;
   opencvEstado = 'cargando';
   var marcarListo = function () {
+    if (opencvEstado === 'listo') return;
     opencvEstado = 'listo';
     console.log('[hoja] OpenCV listo');
     opencvCallbacksPend.forEach(function (cb) { try { cb(); } catch (e) {} });
@@ -2460,13 +2459,19 @@ function cargarOpenCV() {
   sc.async = true;
   sc.onload = function () {
     try {
-      if (window.cv && typeof window.cv.then === 'function') {
-        // Builds recientes exponen cv como Promise
-        window.cv.then(function (m) { window.cv = m; marcarListo(); });
+      // Segun la version, opencv.js expone cv como: objeto ya listo,
+      // objeto que avisa por onRuntimeInitialized, Promise, o funcion
+      // factory que devuelve una Promise. Se cubren los 4 casos.
+      if (typeof window.cv === 'function') {
+        window.cv().then(function (m) { window.cv = m; marcarListo(); }, function () { marcarError('factory rechazada'); });
+      } else if (window.cv && typeof window.cv.then === 'function') {
+        window.cv.then(function (m) { window.cv = m; marcarListo(); }, function () { marcarError('promise rechazada'); });
       } else if (window.cv && window.cv.Mat) {
         marcarListo();
       } else if (window.cv) {
         window.cv['onRuntimeInitialized'] = marcarListo;
+        // Respaldo por si onRuntimeInitialized ya habia corrido
+        setTimeout(function () { if (window.cv && window.cv.Mat) marcarListo(); }, 2000);
       } else {
         marcarError('sin objeto cv');
       }
@@ -2492,6 +2497,21 @@ function esperarOpenCV(timeoutMs) {
   });
 }
 
+// Aviso flotante temporal (explica por que se cayo al recorte manual)
+function avisoHojaTemporal(txt) {
+  var el = document.getElementById('aviso-hoja-tmp');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'aviso-hoja-tmp';
+    el.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:900;background:rgba(0,0,0,.85);color:#fff;padding:10px 16px;font-size:12px;font-weight:700;font-family:sans-serif;border-radius:6px;max-width:90%;text-align:center';
+    document.body.appendChild(el);
+  }
+  el.textContent = txt;
+  el.style.display = 'block';
+  clearTimeout(el._t);
+  el._t = setTimeout(function () { el.style.display = 'none'; }, 4000);
+}
+
 // Ordena 4 esquinas como tl (arriba-izq), tr, br, bl
 function ordenarEsquinasHoja(pts) {
   var porSuma = pts.slice().sort(function (a, b) { return (a.x + a.y) - (b.x + b.y); });
@@ -2499,12 +2519,13 @@ function ordenarEsquinasHoja(pts) {
   return { tl: porSuma[0], br: porSuma[3], tr: porDif[0], bl: porDif[3] };
 }
 
-// Busca el contorno cuadrilatero mas grande que parezca una hoja.
-// Devuelve las 4 esquinas en coordenadas de la imagen ORIGINAL, o null.
+// Busca la hoja con 3 estrategias (Canny, umbral adaptativo, Otsu) y,
+// si ninguna da un cuadrilatero limpio, usa el rectangulo minimo del
+// contorno grande mas prometedor. Devuelve 4 esquinas en coordenadas
+// de la imagen original, o null.
 function detectarEsquinasHoja(imgEl) {
   var W = imgEl.naturalWidth || imgEl.width, H = imgEl.naturalHeight || imgEl.height;
   if (!W || !H) return null;
-  // Se trabaja sobre una version reducida por velocidad (max 1100 px)
   var esc = Math.min(1, 1100 / Math.max(W, H));
   var cw = Math.max(1, Math.round(W * esc)), ch = Math.max(1, Math.round(H * esc));
   var cnv = document.createElement('canvas');
@@ -2514,17 +2535,59 @@ function detectarEsquinasHoja(imgEl) {
   var src = cv.imread(cnv);
   var gray = new cv.Mat(), blur = new cv.Mat();
   var mejor = null, mejorArea = 0;
+  var rectPts = null, rectArea = 0; // respaldo: minAreaRect del contorno mas grande
   try {
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
     cv.GaussianBlur(gray, blur, new cv.Size(5, 5), 0);
 
-    var areaMin = cw * ch * 0.12; // la hoja debe ocupar al menos ~12% de la foto
-    var areaMax = cw * ch * 0.985; // descarta el borde de la foto completa
+    var areaMin = cw * ch * 0.10;
+    var areaMax = cw * ch * 0.99;
 
-    // Dos estrategias: bordes (Canny) y umbral adaptativo (hojas claras
-    // sobre fondo oscuro con poco borde definido). Gana el cuadrilatero
-    // convexo mas grande encontrado.
-    for (var intento = 0; intento < 2; intento++) {
+    var procesarContornos = function (bin) {
+      var contornos = new cv.MatVector(), jer = new cv.Mat();
+      cv.findContours(bin, contornos, jer, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+      for (var c = 0; c < contornos.size(); c++) {
+        var cont = contornos.get(c);
+        var area = cv.contourArea(cont);
+        if (area < areaMin || area > areaMax) { cont.delete(); continue; }
+
+        // Respaldo: rectangulo minimo rotado del contorno mas grande visto
+        if (area > rectArea) {
+          try {
+            var rect = cv.minAreaRect(cont);
+            var vs = cv.RotatedRect.points(rect);
+            rectPts = [{x:vs[0].x,y:vs[0].y},{x:vs[1].x,y:vs[1].y},{x:vs[2].x,y:vs[2].y},{x:vs[3].x,y:vs[3].y}];
+            rectArea = area;
+          } catch (e) {}
+        }
+
+        if (area > mejorArea) {
+          // Se trabaja sobre el casco convexo: tolera esquinas tapadas
+          // (una mano sosteniendo la hoja) o bordes irregulares.
+          var hull = new cv.Mat();
+          cv.convexHull(cont, hull, false, true);
+          var per = cv.arcLength(hull, true);
+          var epsilons = [0.02, 0.04];
+          for (var e2 = 0; e2 < epsilons.length; e2++) {
+            var aprox = new cv.Mat();
+            cv.approxPolyDP(hull, aprox, epsilons[e2] * per, true);
+            if (aprox.rows === 4) {
+              var pts = [];
+              for (var q = 0; q < 4; q++) pts.push({ x: aprox.data32S[q * 2], y: aprox.data32S[q * 2 + 1] });
+              mejor = pts; mejorArea = area;
+              aprox.delete();
+              break;
+            }
+            aprox.delete();
+          }
+          hull.delete();
+        }
+        cont.delete();
+      }
+      contornos.delete(); jer.delete();
+    };
+
+    for (var intento = 0; intento < 3; intento++) {
       var bin = new cv.Mat();
       try {
         if (intento === 0) {
@@ -2532,28 +2595,25 @@ function detectarEsquinasHoja(imgEl) {
           var k = cv.Mat.ones(3, 3, cv.CV_8U);
           cv.dilate(bin, bin, k);
           k.delete();
-        } else {
+        } else if (intento === 1) {
           cv.adaptiveThreshold(blur, bin, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 21, 8);
+        } else {
+          cv.threshold(blur, bin, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+          var k2 = cv.Mat.ones(5, 5, cv.CV_8U);
+          cv.morphologyEx(bin, bin, cv.MORPH_CLOSE, k2);
+          k2.delete();
         }
-        var contornos = new cv.MatVector(), jer = new cv.Mat();
-        cv.findContours(bin, contornos, jer, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
-        for (var c = 0; c < contornos.size(); c++) {
-          var cont = contornos.get(c);
-          var area = cv.contourArea(cont);
-          if (area < areaMin || area > areaMax || area <= mejorArea) { cont.delete(); continue; }
-          var per = cv.arcLength(cont, true);
-          var aprox = new cv.Mat();
-          cv.approxPolyDP(cont, aprox, 0.02 * per, true);
-          if (aprox.rows === 4 && cv.isContourConvex(aprox)) {
-            var pts = [];
-            for (var q = 0; q < 4; q++) pts.push({ x: aprox.data32S[q * 2], y: aprox.data32S[q * 2 + 1] });
-            mejor = pts; mejorArea = area;
-          }
-          aprox.delete(); cont.delete();
-        }
-        contornos.delete(); jer.delete();
+        procesarContornos(bin);
       } finally { bin.delete(); }
-      if (mejor && mejorArea > cw * ch * 0.35) break; // hoja clara y grande: suficiente
+      if (mejor && mejorArea > cw * ch * 0.35) break;
+    }
+
+    // Sin cuadrilatero limpio pero con una region grande clara: usar
+    // su rectangulo minimo rotado (mejor que nada para enderezar).
+    if (!mejor && rectPts && rectArea > cw * ch * 0.18) {
+      console.log('[hoja] usando respaldo minAreaRect, area rel:', (rectArea / (cw * ch)).toFixed(2));
+      mejor = rectPts;
+      mejorArea = rectArea;
     }
   } catch (e) {
     console.warn('[hoja] error en deteccion:', e);
@@ -2567,7 +2627,6 @@ function detectarEsquinasHoja(imgEl) {
 }
 
 // Recorta y endereza (correccion de perspectiva) la hoja detectada.
-// Devuelve un canvas con el documento plano, o null si algo falla.
 function enderezarHoja(imgEl, esquinas) {
   try {
     var o = ordenarEsquinasHoja(esquinas);
@@ -2576,7 +2635,6 @@ function enderezarHoja(imgEl, esquinas) {
     var hOut = Math.round(Math.max(dist(o.tl, o.bl), dist(o.tr, o.br)));
     if (wOut < 60 || hOut < 60) return null;
 
-    // Limites de tamano para no agotar memoria en telefonos de gama baja
     var escOut = Math.min(1, 2200 / Math.max(wOut, hOut));
     wOut = Math.round(wOut * escOut); hOut = Math.round(hOut * escOut);
 
@@ -2608,16 +2666,13 @@ function enderezarHoja(imgEl, esquinas) {
   }
 }
 
-// Punto de entrada tras capturar/subir una foto. Solo las fotos de
-// documentos (tiquetes/manifiestos, targets "baucher-*") pasan por la
-// deteccion; vehiculo, piscina y admin van directo al recorte manual.
+// Punto de entrada tras capturar/subir una foto de documento.
 function procesarFotoCapturada(img, targetId) {
   var esDocumento = targetId && targetId.indexOf('baucher') === 0;
   if (!esDocumento) { abrirRecorteFoto(img, targetId); return; }
 
   mostrarEsperaHoja(true);
-  esperarOpenCV(8000).then(function (listo) {
-    // Pequena pausa para que el overlay "Detectando..." alcance a pintarse
+  esperarOpenCV(12000).then(function (listo) {
     setTimeout(function () {
       var canvas = null;
       if (listo) {
@@ -2630,7 +2685,13 @@ function procesarFotoCapturada(img, targetId) {
       if (canvas) {
         abrirModalHojaDetectada(canvas, img, targetId);
       } else {
-        console.log('[hoja] sin deteccion valida, se abre recorte manual');
+        if (!listo) {
+          console.log('[hoja] OpenCV no listo (estado: ' + opencvEstado + '), recorte manual');
+          avisoHojaTemporal('El detector de hojas aun se esta descargando. Esta vez recorte manualmente.');
+        } else {
+          console.log('[hoja] sin deteccion valida, recorte manual');
+          avisoHojaTemporal('No se detecto la hoja del documento. Ajuste el recorte manualmente.');
+        }
         abrirRecorteFoto(img, targetId);
       }
     }, 60);
@@ -2694,10 +2755,9 @@ function mostrarEsperaHoja(mostrar) {
   if (el) el.classList[mostrar ? 'add' : 'remove']('open');
 }
 
-// OpenCV pesa ~10 MB: se descarga en segundo plano poco despues de
-// abrir la app (y el service worker lo deja cacheado para offline),
-// asi ya esta listo cuando el operario tome la primera foto.
-window.addEventListener('load', function () { setTimeout(cargarOpenCV, 3500); });
+// OpenCV pesa ~10 MB: se empieza a descargar en segundo plano apenas
+// carga la app (el service worker lo deja cacheado para offline).
+window.addEventListener('load', function () { setTimeout(cargarOpenCV, 1200); });
 
 function pad2(n) { return (n < 10 ? '0' : '') + n; }
 
