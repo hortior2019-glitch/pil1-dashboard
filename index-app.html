@@ -2306,7 +2306,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
         <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy)">Cortes y facturación</div>
         <div style="font-size:11px;color:var(--ink-l);margin-top:2px">Tus cortes guardados y su estado — verde: facturado · rojo: pendiente</div>
       </div>
-      <button onclick="cargarInformesGuardados()" style="padding:7px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Actualizar</button>
+      <button onclick="cargarInformesGuardados(true)" style="padding:7px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Actualizar</button>
     </div>
     <!-- Navegador de meses (filtra las tarjetas por el periodo) -->
     <div id="corte-resumen-nav"></div>
@@ -8161,35 +8161,41 @@ function guardarInformeCorte() {
       if (estado) { estado.style.color = 'var(--green)'; estado.textContent = (data && data.ok) ? 'Informe guardado correctamente' : 'Informe guardado'; }
       setTimeout(() => { if (estado) estado.textContent = ''; }, 3000);
       // Refrescar el resumen de facturación arriba (favoritos + informes, ya que ambos se guardaron juntos)
-      setTimeout(() => { cargarCortesFavoritosRemoto(); cargarInformesGuardados(); }, 800);
+      setTimeout(() => { cargarCortesFavoritosRemoto(true); cargarInformesGuardados(true); }, 800);
     })
     .catch(e => {
       clearTimeout(timeout);
       console.warn('Respuesta no legible al guardar informe:', e);
       if (estado) { estado.style.color = 'var(--green)'; estado.textContent = 'Informe guardado'; }
       setTimeout(() => { if (estado) estado.textContent = ''; }, 3000);
-      setTimeout(() => { cargarCortesFavoritosRemoto(); cargarInformesGuardados(); }, 800);
+      setTimeout(() => { cargarCortesFavoritosRemoto(true); cargarInformesGuardados(true); }, 800);
     });
 }
 
 // ── RESUMEN DE FACTURACIÓN (informes guardados, vista gerencia) ──
 let _informesGuardados = [];
 
-function cargarInformesGuardados() {
+let _informesUltimaCarga = 0;
+function cargarInformesGuardados(forzar) {
   if (typeof CORTES_FAV_API === 'undefined' || CORTES_FAV_API.includes('PEGAR')) return;
   const card = document.getElementById('corte-resumen-card');
   const lista = document.getElementById('corte-resumen-lista');
-  if (lista) lista.innerHTML = '<div style="color:var(--ink-l);font-size:13px;padding:8px">Cargando informes...</div>';
   if (card) card.style.display = '';
+  const tieneCache = _informesGuardados && _informesGuardados.length > 0;
+  // Con cache: pintar ya mismo y refrescar en segundo plano (sin borrar la lista).
+  if (tieneCache) renderInformesGuardados();
+  else if (lista) lista.innerHTML = '<div style="color:var(--ink-l);font-size:13px;padding:8px">Cargando informes...</div>';
+  if (!forzar && tieneCache && (Date.now() - _informesUltimaCarga) < 60000) return;
   fetch(CORTES_FAV_API + '?accion=listarInformes', { redirect:'follow' })
     .then(r => r.json())
     .then(data => {
       _informesGuardados = (data && data.ok && Array.isArray(data.informes)) ? data.informes : [];
+      _informesUltimaCarga = Date.now();
       renderInformesGuardados();
     })
     .catch(e => {
       console.error('Error cargando informes:', e);
-      if (lista) lista.innerHTML = '<div style="color:var(--red);font-size:13px;padding:8px">No se pudieron cargar los informes.</div>';
+      if (lista && !tieneCache) lista.innerHTML = '<div style="color:var(--red);font-size:13px;padding:8px">No se pudieron cargar los informes.</div>';
     });
 }
 
@@ -8601,7 +8607,7 @@ function ejecutarTraerPeriodoActual() {
   function procesarSiguiente() {
     if (pos >= indices.length) {
       if (estado) estado.textContent = `Listo: ${creados} creado(s)${omitidos?', '+omitidos+' ya existían':''}.`;
-      setTimeout(() => { cargarInformesGuardados(); const p = document.getElementById('corte-traer-panel'); if (p) { p.innerHTML=''; p.dataset.abierto='0'; } }, 1200);
+      setTimeout(() => { cargarInformesGuardados(true); const p = document.getElementById('corte-traer-panel'); if (p) { p.innerHTML=''; p.dataset.abierto='0'; } }, 1200);
       return;
     }
     const f = _cortesFavoritosCache[indices[pos]];
@@ -9394,14 +9400,24 @@ ${rowsXml}
 // Cache local de favoritos cargados (se refresca al entrar al panel)
 let _cortesFavoritosCache = [];
 
-async function cargarCortesFavoritosRemoto() {
+let _favUltimaCarga = 0;
+async function cargarCortesFavoritosRemoto(forzar) {
+  // Si ya hay datos en memoria, pintar DE INMEDIATO (sin esperar la red) y
+  // refrescar en segundo plano. Ademas, si la ultima carga fue hace menos de
+  // 60s y no se pide forzar, no se vuelve a consultar el Apps Script (que es
+  // lo que hacia sentir lento el panel cada vez que se entraba).
+  const tieneCache = _cortesFavoritosCache && _cortesFavoritosCache.length > 0;
+  if (tieneCache) { renderCortesFavoritos(); renderInformesGuardados(); }
+  if (!forzar && tieneCache && (Date.now() - _favUltimaCarga) < 60000) return;
+
   const loadingEl = document.getElementById('corte-fav-loading');
-  if (loadingEl) loadingEl.textContent = 'Cargando favoritos...';
+  if (loadingEl && !tieneCache) loadingEl.textContent = 'Cargando favoritos...';
   try {
     const res = await fetch(CORTES_FAV_API + '?accion=listar', { redirect: 'follow' });
     const data = await res.json();
     if (data.ok) {
       _cortesFavoritosCache = data.favoritos || [];
+      _favUltimaCarga = Date.now();
     }
   } catch(e) {
     console.error('Error cargando favoritos de cortes:', e);
@@ -9580,7 +9596,7 @@ function eliminarCorteFavorito(id) {
   if (!confirm('¿Eliminar este favorito?')) return;
   fetch(CORTES_FAV_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ accion:'eliminar', id }) })
     .then(r => r.json())
-    .then(() => { cargarCortesFavoritosRemoto(); setTimeout(cargarInformesGuardados, 400); })
+    .then(() => { cargarCortesFavoritosRemoto(true); setTimeout(() => cargarInformesGuardados(true), 400); })
     .catch(e => console.error('Error eliminando favorito:', e));
 }
 
