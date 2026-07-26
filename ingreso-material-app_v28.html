@@ -1200,6 +1200,19 @@ function formatPlaca(input) {
 }
 
 const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbz1CznJcepKoBIJXwnQ6yc82n7fFX7q20kCxes5Na4OgPQUoe3xe5AllPhXUAe2JNg/exec';
+
+// ── ID DE ENVIO (evita registros duplicados por mala conexion) ──────
+// Cada intento de guardar el MISMO registro (reintentos automaticos o
+// que el operario le vuelva a dar click a "Enviar" tras un error de
+// conexion) manda el mismo id_envio. El Apps Script revisa si ya
+// existe una fila con ese id antes de insertar, asi que aunque se
+// reintente varias veces nunca queda duplicado. Se genera uno nuevo
+// cada vez que se abre el formulario o se guarda con exito (registro
+// nuevo = id nuevo).
+var idEnvioActual = null;
+function generarIdEnvio() {
+  return 'env_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+}
 const CSV_URL    = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSWdFqaD1Ism7B9QLkcVpFtQa--82W9fNA7AG_ave-7ZgIrZ-_IMaxeIPdtYuNkV23pkkJUlyMT4HF/pub?gid=1262525313&single=true&output=csv';
 
 // ── HOJA DE IMPLEMENTACION (Autorizado / Induccion / Documentos) ──
@@ -2870,7 +2883,8 @@ async function enviarFormulario() {
     seccion_depositaria:   document.getElementById('seccion_depositaria') ? document.getElementById('seccion_depositaria').value.trim() : '',
     datos_operacion:       datosOp.join(' | '),
     alertas:               alertas.join(' | '),
-    aht_segundos:          getAHTSegundos()
+    aht_segundos:          getAHTSegundos(),
+    id_envio:              idEnvioActual
   };
 
   var fotosEnvio = obtenerFotosParaEnvio();
@@ -2896,36 +2910,63 @@ async function enviarFormulario() {
   document.getElementById('btn-submit').disabled = true;
   mostrarStatus('loading','Guardando registro...','Enviando datos al sistema. Por favor espere.');
 
-  try {
-    var res = await fetch(WEBAPP_URL, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(datos)});
-    var json = await res.json();
-    if (json.success) {
-      mostrarStatus('success','Registro guardado','Ingreso de <strong>'+placa+'</strong> — '+operacion+' registrado por '+operario+'.');
-      bavConfirmado=false; bavEsDiferente=false;
-      detenerAHT();
-      enviarAImplementacion(operacion, conductor, document.getElementById('ultimos_cuatro_cedula').value, datos.observacion, conductorCelular);
-      setTimeout(function(){ resetFormulario(); volverAlMenu(); }, 2500);
-    } else {
-      mostrarStatus('error','Error al guardar',json.error||'Error desconocido.');
-      document.getElementById('btn-submit').disabled=false;
+  var resultadoEnvio = await enviarRegistroConReintentos(datos);
+
+  if (resultadoEnvio.ok) {
+    mostrarStatus('success','Registro guardado','Ingreso de <strong>'+placa+'</strong> — '+operacion+' registrado por '+operario+'.');
+    bavConfirmado=false; bavEsDiferente=false;
+    detenerAHT();
+    enviarAImplementacion(operacion, conductor, document.getElementById('ultimos_cuatro_cedula').value, datos.observacion, conductorCelular);
+    setTimeout(function(){ resetFormulario(); volverAlMenu(); }, 2500);
+  } else if (resultadoEnvio.errorServidor) {
+    mostrarStatus('error','Error al guardar', resultadoEnvio.mensaje || 'Error desconocido.');
+    document.getElementById('btn-submit').disabled=false;
+  } else {
+    mostrarStatus('error','Error de conexion','No se pudo confirmar el envio tras varios intentos. Puede volver a darle a Enviar: si el registro ya alcanzo a guardarse, no se duplicara.');
+    document.getElementById('btn-submit').disabled=false;
+  }
+}
+
+// Intenta guardar el registro varias veces con espera creciente entre
+// intento e intento, en vez de rendirse al primer error de red. El
+// boton de Enviar queda bloqueado durante TODOS los intentos, asi el
+// operario no puede mandar el mismo registro por duplicado dandole
+// click varias veces mientras esto corre. El id_envio (mismo en todos
+// los intentos) es lo que le permite al Apps Script detectar si ya se
+// guardo, incluso si el operario le da click a Enviar de nuevo despues
+// de ver el error final.
+async function enviarRegistroConReintentos(datos) {
+  var intentosMax = 3;
+  for (var intento = 1; intento <= intentosMax; intento++) {
+    if (intento > 1) {
+      mostrarStatus('loading','Reintentando conexion...','Intento '+intento+' de '+intentosMax+'. La conexion esta lenta, espere un momento.');
+      await new Promise(function (resolve) { setTimeout(resolve, 2000 * (intento - 1)); });
     }
-  } catch(e) {
     try {
-      await fetch(WEBAPP_URL, {method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(datos)});
-      mostrarStatus('success','Registro enviado','Ingreso de <strong>'+placa+'</strong> enviado al sistema.');
-      bavConfirmado=false; bavEsDiferente=false;
-      detenerAHT();
-      enviarAImplementacion(operacion, conductor, document.getElementById('ultimos_cuatro_cedula').value, datos.observacion, conductorCelular);
-      setTimeout(function(){ resetFormulario(); volverAlMenu(); }, 2500);
-    } catch(e2) {
-      mostrarStatus('error','Error de conexion','Verifique su conexion a internet.');
-      document.getElementById('btn-submit').disabled=false;
+      var res = await fetch(WEBAPP_URL, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(datos)});
+      var json = await res.json();
+      if (json.success) return { ok: true };
+      return { ok: false, errorServidor: true, mensaje: json.error }; // error real del servidor, no es de conexion: no reintentar
+    } catch (err) {
+      console.error('[envio] intento '+intento+' de '+intentosMax+' fallo:', err);
+      if (intento === intentosMax) {
+        // Ultimo respaldo: no-cors (no permite leer la respuesta, se asume enviado si no lanza error de red)
+        try {
+          await fetch(WEBAPP_URL, {method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(datos)});
+          return { ok: true };
+        } catch (err2) {
+          return { ok: false };
+        }
+      }
+      // si no es el ultimo intento, el for sigue con el siguiente intento
     }
   }
+  return { ok: false };
 }
 
 // ── RESET ─────────────────────────────────────────
 function resetFormulario() {
+  idEnvioActual = generarIdEnvio(); // proximo registro = id nuevo
   document.getElementById('conductor-select').value = '';
   ['numero_tiquete','placa','conductor','conductor_celular','ultimos_cuatro_cedula','peso_entrada','observacion','seccion_depositaria'].forEach(function(id){
     var el=document.getElementById(id); if(el) el.value='';
@@ -4232,6 +4273,7 @@ async function compartirBaucherRegistro(btn, tiquete, placa, operacion, baucher1
 function abrirFormulario() {
   cerrarModalesFotoResiduales();
   activarConfirmacionSalida();
+  idEnvioActual = generarIdEnvio();
   document.getElementById('pantalla-bienvenida').style.display = 'none';
   document.getElementById('pantalla-app').style.display = 'block';
   document.getElementById('aht-bar').style.display = 'none';
