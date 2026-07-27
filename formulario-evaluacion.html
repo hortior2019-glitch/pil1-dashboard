@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Planta Empathy — Evaluación Operativa</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3/dist/jspdf.plugin.autotable.min.js"></script>
 <style>
   :root{
     --verde-oscuro:#1f4d3d;
@@ -497,15 +497,21 @@ document.getElementById('formEvaluacion').addEventListener('submit', async (e) =
 
     const data = await resp.json();
     if (data && data.status === 'ok') {
-      const resumen = calcularResumen(respuestas);
-      dibujarPastel(resumen);
+      // El registro y las fotos YA quedaron guardados en Sheets/Drive en este punto.
+      // Cualquier problema al generar el PDF de aquí en adelante no debe reportarse
+      // como una falla del envío.
+      try {
+        const resumen = calcularResumen(respuestas);
+        dibujarPastel(resumen);
+        await new Promise(res => setTimeout(res, 150));
+        generarInformePDF(fecha, responsable, respuestas, resumen);
 
-      // Pequeña espera para asegurar que el canvas terminó de pintarse antes de capturarlo
-      await new Promise(res => setTimeout(res, 150));
-      generarInformePDF(fecha, responsable, respuestas, resumen);
-
-      estado.className = 'ok';
-      estado.textContent = 'Evaluación enviada correctamente. Las fotos se están guardando en Drive y el informe en PDF se descargó automáticamente.';
+        estado.className = 'ok';
+        estado.textContent = 'Evaluación enviada correctamente. Las fotos se están guardando en Drive y el informe en PDF se descargó automáticamente.';
+      } catch (pdfErr) {
+        estado.className = 'ok';
+        estado.textContent = 'Evaluación enviada y guardada correctamente. No se pudo generar el informe PDF automático (' + pdfErr.message + '), pero tus datos ya quedaron registrados.';
+      }
       estado.style.display = 'block';
       document.getElementById('formEvaluacion').reset();
       document.querySelectorAll('.foto-preview').forEach(p => p.style.display = 'none');
