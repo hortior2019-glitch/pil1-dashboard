@@ -2165,6 +2165,29 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
     <div id="corte-rango-info" style="font-size:11px;color:var(--ink-l);margin-top:10px"></div>
   </div>
 
+  <!-- ALERTAS POR PLACA -->
+  <div class="card" id="corte-alertas-placa-card" style="margin-bottom:20px;padding:18px 24px">
+    <div onclick="toggleAlertasPlacaCard()" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">
+      <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#8b1a1a">Alertas por placa <span id="alerta-placa-badge" style="display:none;background:#8b1a1a;color:white;border-radius:10px;padding:1px 8px;font-size:10px;margin-left:6px"></span></div>
+      <span id="corte-alertas-placa-chevron" style="font-size:13px;color:var(--ink-l)">&#9656;</span>
+    </div>
+    <div id="corte-alertas-placa-body" style="display:none;margin-top:14px">
+      <div style="font-size:11px;color:var(--ink-l);margin-bottom:12px">Deja una nota sobre una placa especifica; cuando cualquier corte incluya viajes de esa placa, la alerta aparecera arriba del informe generado.</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px">
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <label style="font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-l)">Placa</label>
+          <input id="alerta-placa-input" maxlength="8" placeholder="ABC123" style="border:1px solid var(--rule);background:var(--white);padding:9px 12px;font-size:14px;border-radius:4px;color:var(--ink);text-transform:uppercase;width:110px;font-family:'Source Sans 3',sans-serif">
+        </div>
+        <div style="flex:1;min-width:220px;display:flex;flex-direction:column;gap:5px">
+          <label style="font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-l)">Nota de la alerta</label>
+          <input id="alerta-placa-nota" placeholder="Ej: verificar peso vacio, tiquete pendiente, no facturar..." style="border:1px solid var(--rule);background:var(--white);padding:9px 12px;font-size:14px;border-radius:4px;color:var(--ink);font-family:'Source Sans 3',sans-serif">
+        </div>
+        <button onclick="agregarAlertaPlaca()" style="padding:10px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:#8b1a1a;color:white;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Agregar alerta</button>
+      </div>
+      <div id="alerta-placa-lista" style="display:flex;flex-direction:column;gap:6px"></div>
+    </div>
+  </div>
+
   <!-- PASO 2: Columnas y opciones (oculto hasta tener paso 1) -->
   <div class="card" id="corte-paso2" style="margin-bottom:20px;padding:24px;display:none">
     <div onclick="togglePaso2()" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;margin-bottom:6px">
@@ -6746,6 +6769,85 @@ function liberarMarcaViaje(clave) {
 
 // Marca automaticamente en el sheet (columna AF) todos los viajes del corte recien
 // guardado como "incluidos en corte". Se llama al guardar el informe/favorito.
+// ═══ ALERTAS POR PLACA ═══
+// Se guardan en la pestaña ALERTAS_PLACAS del mismo sheet de Ingreso (via
+// INGRESO_API), compartidas entre todos los usuarios del dashboard.
+let _alertasPlacas = [];
+let _alertasPlacasCargadas = false;
+
+function toggleAlertasPlacaCard() {
+  const body = document.getElementById('corte-alertas-placa-body');
+  const chev = document.getElementById('corte-alertas-placa-chevron');
+  if (!body) return;
+  const abierto = body.style.display !== 'none';
+  body.style.display = abierto ? 'none' : '';
+  if (chev) chev.innerHTML = abierto ? '&#9656;' : '&#9662;';
+  if (!abierto && !_alertasPlacasCargadas) cargarAlertasPlacas();
+}
+
+function cargarAlertasPlacas(forzar) {
+  if (typeof INGRESO_API !== 'string' || INGRESO_API.indexOf('PEGAR') !== -1) return;
+  if (_alertasPlacasCargadas && !forzar) { renderAlertasPlacas(); return; }
+  fetch(INGRESO_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({ accion:'listarAlertasPlaca' }) })
+    .then(r => r.json())
+    .then(d => {
+      if (d && d.success) { _alertasPlacas = d.alertas || []; _alertasPlacasCargadas = true; renderAlertasPlacas(); }
+    })
+    .catch(e => console.warn('No se pudieron cargar las alertas de placa:', e));
+}
+
+function renderAlertasPlacas() {
+  const cont = document.getElementById('alerta-placa-lista');
+  const badge = document.getElementById('alerta-placa-badge');
+  if (badge) {
+    if (_alertasPlacas.length) { badge.style.display = ''; badge.textContent = _alertasPlacas.length; }
+    else badge.style.display = 'none';
+  }
+  if (!cont) return;
+  if (!_alertasPlacas.length) {
+    cont.innerHTML = '<div style="font-size:11px;color:var(--ink-l);font-style:italic">Sin alertas de placa activas</div>';
+    return;
+  }
+  cont.innerHTML = _alertasPlacas.map((a, i) => `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#fdf0f0;border-left:3px solid #8b1a1a;border-radius:3px;flex-wrap:wrap">
+    <strong style="font-size:12px;color:#8b1a1a">${a.placa}</strong>
+    <span style="font-size:12px;color:var(--ink-m);flex:1;min-width:150px">${a.nota||''}</span>
+    <span style="font-size:10px;color:var(--ink-l)">${a.fecha||''}${a.autor?' · '+a.autor:''}</span>
+    <button onclick="borrarAlertaPlaca(${i})" style="padding:4px 10px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--white);color:#8b1a1a;border:1px solid #8b1a1a;border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Quitar</button>
+  </div>`).join('');
+}
+
+function agregarAlertaPlaca() {
+  const pIn = document.getElementById('alerta-placa-input');
+  const nIn = document.getElementById('alerta-placa-nota');
+  const placa = (pIn && pIn.value || '').trim().toUpperCase();
+  const nota = (nIn && nIn.value || '').trim();
+  if (!placa) { alert('Escribe la placa.'); return; }
+  if (!nota) { alert('Escribe la nota de la alerta.'); return; }
+  const autor = (window._usuarioActual && _usuarioActual.nombre) || '';
+  _alertasPlacas.push({ placa, nota, autor, fecha: new Date().toLocaleDateString('es-CO') });
+  renderAlertasPlacas();
+  if (pIn) pIn.value = ''; if (nIn) nIn.value = '';
+  if (typeof INGRESO_API === 'string' && INGRESO_API.indexOf('PEGAR') === -1) {
+    fetch(INGRESO_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ accion:'guardarAlertaPlaca', placa, nota, autor }) })
+      .catch(e => console.warn('No se pudo guardar la alerta de placa en el sheet:', e));
+  }
+}
+
+function borrarAlertaPlaca(idx) {
+  const a = _alertasPlacas[idx];
+  if (!a) return;
+  if (!confirm('¿Quitar la alerta de la placa ' + a.placa + '?')) return;
+  _alertasPlacas.splice(idx, 1);
+  renderAlertasPlacas();
+  if (typeof INGRESO_API === 'string' && INGRESO_API.indexOf('PEGAR') === -1) {
+    fetch(INGRESO_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ accion:'borrarAlertaPlaca', placa: a.placa, nota: a.nota }) })
+      .catch(e => console.warn('No se pudo borrar la alerta de placa en el sheet:', e));
+  }
+}
+
 // ── BACKFILL: marcar retroactivamente los viajes de cortes guardados ANTES de
 // este cambio. Recorre los informes guardados (periodo exacto) y los favoritos
 // (fechas originales), recalcula que viajes pertenecen a cada corte y los marca
@@ -7342,6 +7444,7 @@ function initCortesProveedores() {
   }
   cargarCortesFavoritosRemoto();
   cargarInformesGuardados();
+  try { cargarAlertasPlacas(); } catch(e) { console.warn('cargarAlertasPlacas:', e); }
   if (!_calendarioCargado) cargarCalendarioRemoto();
   else renderCalendarioCortes();
 
@@ -7668,6 +7771,24 @@ function generarCorte() {
     </div>`;
   }
 
+  // ── ALERTAS POR PLACA presentes en este corte ──
+  let alertasPlacaHtml = '';
+  if (_alertasPlacas && _alertasPlacas.length) {
+    const alertasEnCorte = [];
+    _alertasPlacas.forEach(a => {
+      const pl = (a.placa||'').toString().toUpperCase().trim();
+      if (!pl) return;
+      const cnt = registros.filter(r => ((r['PLACA']||'').toString().toUpperCase().trim()) === pl).length;
+      if (cnt > 0) alertasEnCorte.push({ placa: pl, nota: a.nota||'', autor: a.autor||'', viajes: cnt });
+    });
+    if (alertasEnCorte.length) {
+      alertasPlacaHtml = `<div class="card" style="border-left:4px solid #8b1a1a;background:#fdf0f0;padding:16px 20px;margin-bottom:14px">
+        <div style="font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#8b1a1a;margin-bottom:6px">Alerta de placa en este corte</div>
+        ${alertasEnCorte.map(a => `<div style="font-size:12px;color:var(--ink-m);padding:5px 0;border-bottom:1px solid #f2dcdc"><strong style="color:#8b1a1a">${a.placa}</strong> · ${a.viajes} viaje${a.viajes!==1?'s':''} en este corte — ${a.nota}${a.autor?` <span style="color:var(--ink-l);font-size:10px">(${a.autor})</span>`:''}</div>`).join('')}
+      </div>`;
+    }
+  }
+
   // Relleno de pesos faltantes (0 o 1) con promedio, si está activo
   _rellenoPesoActivo = (document.getElementById('corte-rellenar-peso')||{}).checked;
   const modoEl = document.querySelector('input[name="corte-rellenar-modo"]:checked');
@@ -7869,7 +7990,7 @@ function generarCorte() {
   });
 
   html += '</div>';
-  cont.innerHTML = avisoCortesHtml + html;
+  cont.innerHTML = alertasPlacaHtml + avisoCortesHtml + html;
 
   // Construir el informe/certificado de facturación en paralelo
   renderInformeCorte();
