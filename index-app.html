@@ -3541,6 +3541,7 @@ async function loadAllData() {
       if (mt.match(/^\d{4}-\d{2}-\d{2}/)) return true; // formato ISO OK
       return false; // cualquier otro formato → corrupto
     });
+    try { window.dataIngreso = dataIngreso; aplicarMarcasCorteLocales(); } catch(e2) { console.error('aplicarMarcasCorteLocales error:', e2); }
     try { renderIngreso(dataIngreso, currentFilter); } catch(e2) { console.error('renderIngreso error:', e2); }
     try { window.dataIngreso = dataIngreso; renderCmpChart(dataIngreso); } catch(e2) { console.error('renderCmpChart error:', e2); }
     try { renderCliCmpChart(dataIngreso); } catch(e3) { console.error('renderCliCmpChart error:', e3); }
@@ -6682,6 +6683,36 @@ const CORTES_FAV_API = "https://script.google.com/macros/s/AKfycbw6VAF6KaJfznpTE
 // omite silenciosamente (las advertencias visuales siguen funcionando).
 const INGRESO_API = "https://script.google.com/macros/s/AKfycbz1CznJcepKoBIJXwnQ6yc82n7fFX7q20kCxes5Na4OgPQUoe3xe5AllPhXUAe2JNg/exec";
 
+// Marcas de corte hechas EN ESTA SESION (clave viaje → marcador). El CSV publicado
+// de Google tarda varios minutos en reflejar lo que se escribe en el sheet, y el
+// refresco automatico recarga dataIngreso pisando lo que se habia marcado en
+// memoria. Este overlay re-aplica las marcas locales tras cada recarga, y se va
+// limpiando solo cuando el CSV ya trae el mismo valor.
+let _marcasCorteLocales = {};
+function aplicarMarcasCorteLocales() {
+  if (!window.dataIngreso) return;
+  // Alias: si el encabezado AF1 del sheet esta vacio, Google publica la columna
+  // como "Column 32". Se copia ese valor a 'INCLUIDO EN CORTE' para que el
+  // sistema de cortes funcione igual, tenga o no titulo la columna.
+  window.dataIngreso.forEach(r => {
+    if (r['INCLUIDO EN CORTE'] === undefined) {
+      const alias = r['Column 32'] !== undefined ? r['Column 32'] : r['COLUMN 32'];
+      if (alias !== undefined) r['INCLUIDO EN CORTE'] = alias || '';
+    }
+  });
+  const keys = Object.keys(_marcasCorteLocales || {});
+  if (!keys.length) return;
+  window.dataIngreso.forEach(r => {
+    const k = claveViajeCorte(r);
+    if (k in _marcasCorteLocales) {
+      const csvVal = (r['INCLUIDO EN CORTE']||'').toString().trim();
+      const localVal = _marcasCorteLocales[k];
+      if (csvVal === localVal) delete _marcasCorteLocales[k]; // el CSV ya lo trae: overlay innecesario
+      else r['INCLUIDO EN CORTE'] = localVal;
+    }
+  });
+}
+
 // Clave unica de un viaje para el marcado de cortes: TIQUETE|FECHA(yyyy-mm-dd)|PLACA
 function claveViajeCorte(r) {
   const tiq = (r['NUMERO TIQUETE']||'').toString().trim().replace(/['"]/g,'');
@@ -6705,6 +6736,7 @@ function toggleExcluirViajeCorte(clave) {
 function liberarMarcaViaje(clave) {
   if (!confirm('¿Quitar la marca de "usado en corte" de este viaje? Quedara disponible para incluirse en cualquier corte.')) return;
   (window.dataIngreso||[]).forEach(r => { if (claveViajeCorte(r) === clave) r['INCLUIDO EN CORTE'] = ''; });
+  _marcasCorteLocales[clave] = '';
   generarCorte();
   if (typeof INGRESO_API === 'string' && INGRESO_API.indexOf('PEGAR') === -1) {
     fetch(INGRESO_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
@@ -6770,6 +6802,7 @@ async function rellenarMarcasCortesAnteriores() {
     if (claves.length === 0) continue;
     const marcador = c.prov + ' · ' + c.ini + ' a ' + c.cie;
     regs.forEach(r => { r['INCLUIDO EN CORTE'] = marcador; });
+    claves.forEach(k => { _marcasCorteLocales[k] = marcador; });
     try {
       const res = await fetch(INGRESO_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
         body: JSON.stringify({ accion:'marcarCorte', marcador: marcador, claves: claves }) });
@@ -6792,6 +6825,7 @@ function marcarViajesEnCorte() {
   const claves = [...new Set(regs.map(claveViajeCorte))];
   // Reflejar de inmediato en memoria (la proxima recarga del CSV traera el valor real)
   regs.forEach(r => { r['INCLUIDO EN CORTE'] = marcador; });
+  claves.forEach(k => { _marcasCorteLocales[k] = marcador; });
   fetch(INGRESO_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
     body: JSON.stringify({ accion:'marcarCorte', marcador: marcador, claves: claves }) })
     .then(r => r.json())
