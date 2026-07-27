@@ -2306,7 +2306,10 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
         <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy)">Cortes y facturación</div>
         <div style="font-size:11px;color:var(--ink-l);margin-top:2px">Tus cortes guardados y su estado — verde: facturado · rojo: pendiente</div>
       </div>
-      <button onclick="cargarInformesGuardados(true)" style="padding:7px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Actualizar</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button id="btn-backfill-cortes" onclick="rellenarMarcasCortesAnteriores()" style="padding:7px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--white);color:#8b6914;border:1px solid #8b6914;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif" title="Marca en el sheet los viajes de todos los cortes guardados antes de este cambio">Marcar cortes anteriores</button>
+        <button onclick="cargarInformesGuardados(true)" style="padding:7px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Actualizar</button>
+      </div>
     </div>
     <!-- Navegador de meses (filtra las tarjetas por el periodo) -->
     <div id="corte-resumen-nav"></div>
@@ -6711,6 +6714,73 @@ function liberarMarcaViaje(clave) {
 
 // Marca automaticamente en el sheet (columna AF) todos los viajes del corte recien
 // guardado como "incluidos en corte". Se llama al guardar el informe/favorito.
+// ── BACKFILL: marcar retroactivamente los viajes de cortes guardados ANTES de
+// este cambio. Recorre los informes guardados (periodo exacto) y los favoritos
+// (fechas originales), recalcula que viajes pertenecen a cada corte y los marca
+// en la columna AF del sheet. Se procesan de mas reciente a mas antiguo, de modo
+// que si un viaje aparece en dos cortes, queda marcado con el corte MAS ANTIGUO
+// (el primero que lo uso, que es el relevante para detectar dobles cobros).
+async function rellenarMarcasCortesAnteriores() {
+  if (typeof INGRESO_API !== 'string' || INGRESO_API.indexOf('PEGAR') !== -1) {
+    alert('Primero hay que configurar INGRESO_API (la URL /exec del Apps Script del sheet de Ingreso).');
+    return;
+  }
+  if (!window.dataIngreso || !window.dataIngreso.length) { alert('Los datos de ingreso aun no han cargado. Intenta de nuevo en unos segundos.'); return; }
+  const btn = document.getElementById('btn-backfill-cortes');
+
+  // 1) Reunir todos los cortes conocidos, sin duplicar (prov + periodo)
+  const MESES_ABREV = {ene:0,feb:1,mar:2,abr:3,may:4,jun:5,jul:6,ago:7,sep:8,oct:9,nov:10,dic:11};
+  const parseFechaCorta = s => {
+    const m = (s||'').trim().match(/^(\d{1,2})\s+([a-z]{3})\.?\s+(\d{4})$/i);
+    if (!m) return '';
+    const mes = MESES_ABREV[m[2].toLowerCase()];
+    if (mes === undefined) return '';
+    return m[3]+'-'+String(mes+1).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0');
+  };
+  const cortes = [];
+  const vistos = new Set();
+  (_informesGuardados||[]).forEach(inf => {
+    const partes = (inf.periodo||'').split('—').map(x=>x.trim());
+    if (partes.length !== 2 || !inf.operacion) return;
+    const ini = parseFechaCorta(partes[0]), cie = parseFechaCorta(partes[1]);
+    if (!ini || !cie) return;
+    const key = inf.operacion+'|'+ini+'|'+cie;
+    if (vistos.has(key)) return; vistos.add(key);
+    cortes.push({ prov: inf.operacion, ini, cie });
+  });
+  (_cortesFavoritosCache||[]).forEach(f => {
+    if (!f.prov || !f.ini || !f.cie) return;
+    const key = f.prov+'|'+f.ini+'|'+f.cie;
+    if (vistos.has(key)) return; vistos.add(key);
+    cortes.push({ prov: f.prov, ini: f.ini, cie: f.cie });
+  });
+  if (cortes.length === 0) { alert('No se encontraron cortes guardados para marcar. Abre primero esta pestaña con los informes cargados.'); return; }
+
+  if (!confirm('Se van a marcar los viajes de '+cortes.length+' corte(s) guardado(s) en la columna "INCLUIDO EN CORTE" del sheet de Ingreso. Esta operacion puede tardar un poco. ¿Continuar?')) return;
+
+  // 2) Mas reciente primero → el mas antiguo se escribe de ultimo y "gana" en solapes
+  cortes.sort((a,b) => (b.ini||'').localeCompare(a.ini||''));
+
+  let totalFilas = 0, procesados = 0, fallidos = 0;
+  for (const c of cortes) {
+    procesados++;
+    if (btn) btn.textContent = 'Marcando '+procesados+' de '+cortes.length+'...';
+    const regs = filtrarRegistrosCorte(c.prov, c.ini, c.cie);
+    const claves = [...new Set(regs.map(claveViajeCorte))].filter(k => k !== '||');
+    if (claves.length === 0) continue;
+    const marcador = c.prov + ' · ' + c.ini + ' a ' + c.cie;
+    regs.forEach(r => { r['INCLUIDO EN CORTE'] = marcador; });
+    try {
+      const res = await fetch(INGRESO_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body: JSON.stringify({ accion:'marcarCorte', marcador: marcador, claves: claves }) });
+      const d = await res.json();
+      totalFilas += (d && d.filas) || 0;
+    } catch(e) { fallidos++; console.warn('Backfill fallo en', marcador, e); }
+  }
+  if (btn) btn.textContent = 'Marcar cortes anteriores';
+  alert('Listo. '+cortes.length+' cortes procesados · '+totalFilas+' filas marcadas en el sheet'+(fallidos>0?' · '+fallidos+' con error (revisa la consola)':'')+'.');
+}
+
 function marcarViajesEnCorte() {
   if (typeof INGRESO_API !== 'string' || INGRESO_API.indexOf('PEGAR') !== -1) return;
   const c = window._corteActual;
@@ -7559,7 +7629,7 @@ function generarCorte() {
     }).join('');
     avisoCortesHtml = `<div class="card" style="border-left:4px solid #8b6914;background:#fdf8ec;padding:16px 20px;margin-bottom:14px">
       <div style="font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#8b6914;margin-bottom:4px">Advertencia · viajes ya usados en otro corte</div>
-      <div style="font-size:12px;color:var(--ink-m);margin-bottom:8px">${conflictosCorte.length} viaje${conflictosCorte.length!==1?'s':''} de este rango ya ${conflictosCorte.length!==1?'fueron incluidos':'fue incluido'} en un corte anterior${numExcluidosCorte>0?` · <strong>${numExcluidosCorte} excluido${numExcluidosCorte!==1?'s':''} de este corte</strong>`:''}. Excluyelos para no cobrarlos dos veces, o libera la marca si el corte anterior no aplica.</div>
+      <div style="font-size:12px;color:var(--ink-m);margin-bottom:8px">${conflictosCorte.length} viaje${conflictosCorte.length!==1?'s':''} de este rango ya ${conflictosCorte.length!==1?'fueron incluidos':'fue incluido'} en un corte anterior${numExcluidosCorte>0?` · <strong>${numExcluidosCorte} excluido${numExcluidosCorte!==1?'s':''} de este corte</strong>`:''}. Excluyelos para no cobrarlos dos veces, o libera la marca si el corte anterior no aplica. En la tabla de abajo estos viajes aparecen resaltados en rojo.</div>
       ${filasAviso}
     </div>`;
   }
@@ -7727,15 +7797,21 @@ function generarCorte() {
     regs.forEach((r, idx) => {
       // ¿La fecha del registro cae en domingo o festivo en Colombia? → resaltar (si el toggle está activo)
       const esEspecial = resaltarFestivos && esDomingoOFestivo(fechaYMDdeRegistro(r));
+      // ¿Este viaje ya esta marcado como usado en OTRO corte? → resaltar la fila en rojo suave
+      const _marcaOtroCorte = (() => {
+        const m = (r['INCLUIDO EN CORTE']||'').toString().trim();
+        return (m && m !== marcadorCorteActual) ? m : '';
+      })();
       let bg = idx % 2 === 1 ? `background:${filaColor}` : '';
       if (esEspecial) bg = 'background:#fff4e0'; // resaltado ámbar suave para domingo/festivo
+      if (_marcaOtroCorte) bg = 'background:#fdeaea;box-shadow:inset 3px 0 0 #b91c1c'; // viaje de otro corte
       let valorFilaMaterial = mostrarColValor ? valorMaterialDeFila(r) : 0;
       let valorFilaTransporte = mostrarColValor ? valorTransporteDeFila(r) : 0;
       let valorFilaTotal = valorFilaMaterial + valorFilaTransporte;
       const celdasValor = mostrarDosColumnas
         ? `<td class="num" style="color:${color}">${fmtCOP(valorFilaMaterial)}</td><td class="num" style="color:${color}">${fmtCOP(valorFilaTransporte)}</td><td class="num" style="color:${color};font-weight:600">${fmtCOP(valorFilaTotal)}</td>`
         : (mostrarColValor ? `<td class="num" style="color:${color};font-weight:600">${fmtCOP(valorFilaTotal)}</td>` : '');
-      html += `<tr style="${bg}"${esEspecial?' title="Domingo o festivo en Colombia"':''}>` + colsDef.map(c => {
+      html += `<tr style="${bg}"${_marcaOtroCorte?` title="YA INCLUIDO EN OTRO CORTE: ${_marcaOtroCorte}"`:(esEspecial?' title="Domingo o festivo en Colombia"':'')}>` + colsDef.map(c => {
         if (c.secuencial) return `<td style="font-weight:700">${getConsecutivo(r)}</td>`;
         let v = c.get(r);
         if (c.num) v = fmt(Math.round(v));
