@@ -7804,6 +7804,57 @@ function generarCorte() {
     }
   }
 
+  // ── VIAJES DUPLICADOS DENTRO DE ESTE CORTE ──
+  // Un duplicado real es la MISMA info repetida: tiquete + fecha + hora + placa +
+  // material + los dos pesos. No basta con que coincida el peso neto (dos viajes
+  // distintos pueden pesar igual), por eso la firma incluye todos esos campos.
+  const _firmaDuplicado = r => [
+    (r['NUMERO TIQUETE']||'').toString().trim().toUpperCase(),
+    (r['FECHA DISPOSICION PLANTA']||r['FECHA DISPOSICION']||'').toString().trim(),
+    (r['HORA DISPOSICION PLANTA']||r['HORA DISPOSICION']||'').toString().trim(),
+    (r['PLACA']||'').toString().trim().toUpperCase(),
+    (r['RESIDUO']||'').toString().trim().toUpperCase(),
+    (r['PESO LLENO']||'').toString().trim(),
+    (r['PESO VACIO']||'').toString().trim()
+  ].join('|');
+  const _gruposDup = {};
+  registros.forEach(r => {
+    const f = _firmaDuplicado(r);
+    (_gruposDup[f] = _gruposDup[f] || []).push(r);
+  });
+  const _dupSet = new Set();
+  const _dupResumen = [];
+  Object.keys(_gruposDup).forEach(f => {
+    const g = _gruposDup[f];
+    if (g.length > 1) {
+      g.forEach(r => _dupSet.add(r));
+      const r0 = g[0];
+      _dupResumen.push({
+        veces: g.length,
+        tiquete: (r0['NUMERO TIQUETE']||'—'),
+        fecha: (r0['FECHA DISPOSICION PLANTA']||'').toString().trim() || '—',
+        hora: (r0['HORA DISPOSICION PLANTA']||'').toString().trim() || '',
+        placa: (r0['PLACA']||'—'),
+        material: (r0['RESIDUO']||'').toString().trim(),
+        kg: Math.round(pesoNetoAjustado(r0))
+      });
+    }
+  });
+  let duplicadosHtml = '';
+  if (_dupResumen.length) {
+    _dupResumen.sort((a,b) => b.veces - a.veces);
+    const totalFilasDup = _dupResumen.reduce((s,d) => s + d.veces, 0);
+    const totalSobrantes = _dupResumen.reduce((s,d) => s + (d.veces - 1), 0);
+    const kgSobrantes = _dupResumen.reduce((s,d) => s + d.kg * (d.veces - 1), 0);
+    duplicadosHtml = `<div class="card" style="border-left:4px solid #7a1fa2;background:#f7f0fb;padding:16px 20px;margin-bottom:14px">
+      <div style="font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#7a1fa2;margin-bottom:4px">Posibles viajes duplicados</div>
+      <div style="font-size:12px;color:var(--ink-m);margin-bottom:8px">${_dupResumen.length} viaje${_dupResumen.length!==1?'s':''} aparece${_dupResumen.length!==1?'n':''} repetido${_dupResumen.length!==1?'s':''} (${totalFilasDup} filas en total · ${totalSobrantes} de mas · ${fmt(kgSobrantes)} kg de mas). Mismo tiquete, fecha, hora, placa, material y pesos. Revisa si es un doble registro antes de facturar.</div>
+      ${_dupResumen.map(d => `<div style="font-size:12px;color:var(--ink-m);padding:5px 0;border-bottom:1px solid #ead9f5">
+        <strong style="color:#7a1fa2">×${d.veces}</strong> · Tiq <strong>${d.tiquete}</strong> · ${d.fecha}${d.hora?' '+d.hora:''} · ${d.placa}${d.material?' · '+d.material:''} · ${fmt(d.kg)} kg c/u
+      </div>`).join('')}
+    </div>`;
+  }
+
   // Relleno de pesos faltantes (0 o 1) con promedio, si está activo
   _rellenoPesoActivo = (document.getElementById('corte-rellenar-peso')||{}).checked;
   const modoEl = document.querySelector('input[name="corte-rellenar-modo"]:checked');
@@ -7979,19 +8030,23 @@ function generarCorte() {
         const hits = _alertasPlacas.filter(a => (a.placa||'').toString().toUpperCase().trim() === pl);
         return hits.length ? hits.map(a => a.nota||'').filter(Boolean).join(' · ') : '';
       })();
+      const _esDuplicado = _dupSet.has(r);
       let bg = idx % 2 === 1 ? `background:${filaColor}` : '';
       if (esEspecial) bg = 'background:#fff4e0'; // resaltado ámbar suave para domingo/festivo
       if (_marcaOtroCorte) bg = 'background:#fdeaea;box-shadow:inset 3px 0 0 #b91c1c'; // viaje de otro corte
       if (_alertaPlacaFila && !_marcaOtroCorte) bg = 'background:#fdf0f0;box-shadow:inset 3px 0 0 #8b1a1a'; // placa con alerta
+      if (_esDuplicado && !_marcaOtroCorte) bg = 'background:#f7f0fb;box-shadow:inset 3px 0 0 #7a1fa2'; // viaje duplicado
       let valorFilaMaterial = mostrarColValor ? valorMaterialDeFila(r) : 0;
       let valorFilaTransporte = mostrarColValor ? valorTransporteDeFila(r) : 0;
       let valorFilaTotal = valorFilaMaterial + valorFilaTransporte;
       const celdasValor = mostrarDosColumnas
         ? `<td class="num" style="color:${color}">${fmtCOP(valorFilaMaterial)}</td><td class="num" style="color:${color}">${fmtCOP(valorFilaTransporte)}</td><td class="num" style="color:${color};font-weight:600">${fmtCOP(valorFilaTotal)}</td>`
         : (mostrarColValor ? `<td class="num" style="color:${color};font-weight:600">${fmtCOP(valorFilaTotal)}</td>` : '');
-      const _titleFila = _marcaOtroCorte
-        ? `YA INCLUIDO EN OTRO CORTE: ${_marcaOtroCorte}${_alertaPlacaFila?` — ALERTA PLACA: ${_alertaPlacaFila}`:''}`
-        : (_alertaPlacaFila ? `ALERTA PLACA: ${_alertaPlacaFila}` : (esEspecial ? 'Domingo o festivo en Colombia' : ''));
+      const _avisosFila = [];
+      if (_marcaOtroCorte) _avisosFila.push('YA INCLUIDO EN OTRO CORTE: ' + _marcaOtroCorte);
+      if (_esDuplicado) _avisosFila.push('POSIBLE VIAJE DUPLICADO (misma info repetida en este corte)');
+      if (_alertaPlacaFila) _avisosFila.push('ALERTA PLACA: ' + _alertaPlacaFila);
+      const _titleFila = _avisosFila.length ? _avisosFila.join(' — ') : (esEspecial ? 'Domingo o festivo en Colombia' : '');
       html += `<tr style="${bg}"${_titleFila?` title="${_titleFila.replace(/"/g,'&quot;')}"`:''}>` + colsDef.map(c => {
         if (c.secuencial) return `<td style="font-weight:700">${getConsecutivo(r)}</td>`;
         let v = c.get(r);
@@ -8000,6 +8055,8 @@ function generarCorte() {
         if (c.id === 'diaSem' && esEspecial) return `<td style="font-weight:800;color:#b45309">${v||'—'} ●</td>`;
         // Marcar la celda de la placa cuando esa placa tiene una alerta registrada
         if (c.id === 'placa' && _alertaPlacaFila) return `<td style="font-weight:700;color:#8b1a1a">${v||'—'} <span title="${_alertaPlacaFila.replace(/"/g,'&quot;')}" style="cursor:help">&#9888;</span></td>`;
+        // Marcar la celda del tiquete cuando el viaje aparece duplicado en el corte
+        if (c.id === 'ticket' && _esDuplicado) return `<td style="font-weight:700;color:#7a1fa2">${v||'—'} <span title="Posible viaje duplicado: misma info repetida en este corte" style="cursor:help">&#8646;</span></td>`;
         return `<td ${c.num?'class="num"':''}>${v||'—'}</td>`;
       }).join('') + celdasValor + '</tr>';
     });
@@ -8018,7 +8075,7 @@ function generarCorte() {
   });
 
   html += '</div>';
-  cont.innerHTML = alertasPlacaHtml + avisoCortesHtml + html;
+  cont.innerHTML = duplicadosHtml + alertasPlacaHtml + avisoCortesHtml + html;
 
   // Construir el informe/certificado de facturación en paralelo
   renderInformeCorte();
