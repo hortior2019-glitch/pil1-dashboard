@@ -6774,6 +6774,7 @@ function liberarMarcaViaje(clave) {
 // INGRESO_API), compartidas entre todos los usuarios del dashboard.
 let _alertasPlacas = [];
 let _alertasPlacasCargadas = false;
+let _alertasPlacasApiOk = true;
 
 function toggleAlertasPlacaCard() {
   const body = document.getElementById('corte-alertas-placa-body');
@@ -6792,7 +6793,19 @@ function cargarAlertasPlacas(forzar) {
     body: JSON.stringify({ accion:'listarAlertasPlaca' }) })
     .then(r => r.json())
     .then(d => {
-      if (d && d.success) { _alertasPlacas = d.alertas || []; _alertasPlacasCargadas = true; renderAlertasPlacas(); }
+      // Si la respuesta no trae el campo "alertas", el Apps Script todavia no tiene
+      // las acciones de alertas por placa: se avisa claro en consola en vez de
+      // quedar en silencio (y se evita creer que "no hay alertas").
+      if (!d || !Array.isArray(d.alertas)) {
+        console.warn('El Apps Script de Ingreso aun no responde a "listarAlertasPlaca". Actualiza el Code.gs y crea una nueva version de la implementacion.');
+        _alertasPlacasApiOk = false;
+        renderAlertasPlacas();
+        return;
+      }
+      _alertasPlacasApiOk = true;
+      _alertasPlacas = d.alertas;
+      _alertasPlacasCargadas = true;
+      renderAlertasPlacas();
     })
     .catch(e => console.warn('No se pudieron cargar las alertas de placa:', e));
 }
@@ -6806,7 +6819,9 @@ function renderAlertasPlacas() {
   }
   if (!cont) return;
   if (!_alertasPlacas.length) {
-    cont.innerHTML = '<div style="font-size:11px;color:var(--ink-l);font-style:italic">Sin alertas de placa activas</div>';
+    cont.innerHTML = _alertasPlacasApiOk
+      ? '<div style="font-size:11px;color:var(--ink-l);font-style:italic">Sin alertas de placa activas</div>'
+      : '<div style="font-size:11px;color:#8b1a1a;background:#fdf0f0;padding:8px 12px;border-left:3px solid #8b1a1a;border-radius:3px">El Apps Script del sheet de Ingreso todavia no tiene las acciones de alertas por placa. Actualiza el Code.gs y crea una <strong>nueva version</strong> de la implementacion para que las alertas se guarden.</div>';
     return;
   }
   cont.innerHTML = _alertasPlacas.map((a, i) => `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#fdf0f0;border-left:3px solid #8b1a1a;border-radius:3px;flex-wrap:wrap">
@@ -7957,21 +7972,34 @@ function generarCorte() {
         const m = (r['INCLUIDO EN CORTE']||'').toString().trim();
         return (m && m !== marcadorCorteActual) ? m : '';
       })();
+      // ¿Esta placa tiene una alerta puntual registrada? → marca por registro
+      const _alertaPlacaFila = (() => {
+        const pl = (r['PLACA']||'').toString().toUpperCase().trim();
+        if (!pl || !_alertasPlacas || !_alertasPlacas.length) return '';
+        const hits = _alertasPlacas.filter(a => (a.placa||'').toString().toUpperCase().trim() === pl);
+        return hits.length ? hits.map(a => a.nota||'').filter(Boolean).join(' · ') : '';
+      })();
       let bg = idx % 2 === 1 ? `background:${filaColor}` : '';
       if (esEspecial) bg = 'background:#fff4e0'; // resaltado ámbar suave para domingo/festivo
       if (_marcaOtroCorte) bg = 'background:#fdeaea;box-shadow:inset 3px 0 0 #b91c1c'; // viaje de otro corte
+      if (_alertaPlacaFila && !_marcaOtroCorte) bg = 'background:#fdf0f0;box-shadow:inset 3px 0 0 #8b1a1a'; // placa con alerta
       let valorFilaMaterial = mostrarColValor ? valorMaterialDeFila(r) : 0;
       let valorFilaTransporte = mostrarColValor ? valorTransporteDeFila(r) : 0;
       let valorFilaTotal = valorFilaMaterial + valorFilaTransporte;
       const celdasValor = mostrarDosColumnas
         ? `<td class="num" style="color:${color}">${fmtCOP(valorFilaMaterial)}</td><td class="num" style="color:${color}">${fmtCOP(valorFilaTransporte)}</td><td class="num" style="color:${color};font-weight:600">${fmtCOP(valorFilaTotal)}</td>`
         : (mostrarColValor ? `<td class="num" style="color:${color};font-weight:600">${fmtCOP(valorFilaTotal)}</td>` : '');
-      html += `<tr style="${bg}"${_marcaOtroCorte?` title="YA INCLUIDO EN OTRO CORTE: ${_marcaOtroCorte}"`:(esEspecial?' title="Domingo o festivo en Colombia"':'')}>` + colsDef.map(c => {
+      const _titleFila = _marcaOtroCorte
+        ? `YA INCLUIDO EN OTRO CORTE: ${_marcaOtroCorte}${_alertaPlacaFila?` — ALERTA PLACA: ${_alertaPlacaFila}`:''}`
+        : (_alertaPlacaFila ? `ALERTA PLACA: ${_alertaPlacaFila}` : (esEspecial ? 'Domingo o festivo en Colombia' : ''));
+      html += `<tr style="${bg}"${_titleFila?` title="${_titleFila.replace(/"/g,'&quot;')}"`:''}>` + colsDef.map(c => {
         if (c.secuencial) return `<td style="font-weight:700">${getConsecutivo(r)}</td>`;
         let v = c.get(r);
         if (c.num) v = fmt(Math.round(v));
         // Marcar la celda del día con un puntico si es especial
         if (c.id === 'diaSem' && esEspecial) return `<td style="font-weight:800;color:#b45309">${v||'—'} ●</td>`;
+        // Marcar la celda de la placa cuando esa placa tiene una alerta registrada
+        if (c.id === 'placa' && _alertaPlacaFila) return `<td style="font-weight:700;color:#8b1a1a">${v||'—'} <span title="${_alertaPlacaFila.replace(/"/g,'&quot;')}" style="cursor:help">&#9888;</span></td>`;
         return `<td ${c.num?'class="num"':''}>${v||'—'}</td>`;
       }).join('') + celdasValor + '</tr>';
     });
