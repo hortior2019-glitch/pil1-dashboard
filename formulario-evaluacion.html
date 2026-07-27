@@ -172,6 +172,17 @@
     border-radius:6px;
     border:1px solid var(--linea);
   }
+  .foto-na{
+    display:none;
+    font-size:12.5px;
+    color:var(--texto-suave);
+    font-style:italic;
+    padding:10px 12px;
+    text-align:center;
+  }
+  .foto-box.foto-deshabilitada{
+    opacity:.85;
+  }
   .btn-enviar{
     width:100%;
     background:var(--verde-oscuro);
@@ -278,20 +289,40 @@ PUNTOS.forEach((texto, i) => {
           <option value="N/A">N/A</option>
         </select>
       </div>
-      <div class="foto-box">
+      <div class="foto-box" id="fotobox_${id}">
         <input type="file" accept="image/*" capture="environment" class="foto-input" id="foto_${id}">
         <label class="foto-btn" for="foto_${id}">📷 Adjuntar foto de evidencia</label>
         <div class="foto-preview" id="preview_${id}">
           <img src="" alt="">
           <span>Foto cargada</span>
         </div>
+        <div class="foto-na" id="fotona_${id}">No aplica foto para este punto (N/A)</div>
       </div>
     </div>
   `;
   contenedor.appendChild(div);
 
+  const selectValor = div.querySelector(`#valor_${id}`);
   const fotoInput = div.querySelector(`#foto_${id}`);
+  const fotoLabel = div.querySelector(`label[for="foto_${id}"]`);
+  const fotoBox = div.querySelector(`#fotobox_${id}`);
+  const fotoNaMsg = div.querySelector(`#fotona_${id}`);
   const preview = div.querySelector(`#preview_${id}`);
+
+  selectValor.addEventListener('change', () => {
+    if (selectValor.value === 'N/A') {
+      fotoInput.value = '';
+      fotoBox.classList.add('foto-deshabilitada');
+      fotoLabel.style.display = 'none';
+      fotoNaMsg.style.display = 'block';
+      preview.style.display = 'none';
+    } else {
+      fotoBox.classList.remove('foto-deshabilitada');
+      fotoLabel.style.display = 'flex';
+      fotoNaMsg.style.display = 'none';
+    }
+  });
+
   fotoInput.addEventListener('change', () => {
     const file = fotoInput.files[0];
     if (!file) { preview.style.display = 'none'; return; }
@@ -423,6 +454,16 @@ document.getElementById('formEvaluacion').addEventListener('submit', async (e) =
   try {
     const fecha = document.getElementById('fecha').value;
     const responsable = document.getElementById('responsable').value.trim();
+
+    // Validación: la foto solo es obligatoria si el punto NO es N/A
+    for (let i = 0; i < PUNTOS.length; i++) {
+      const id = 'p' + i;
+      const valor = document.getElementById('valor_' + id).value;
+      const file = document.getElementById('foto_' + id).files[0];
+      if (valor !== 'N/A' && !file) {
+        throw new Error(`Falta la foto de evidencia del punto ${i + 1} ("${PUNTOS[i]}"). Si no aplica, seleccione N/A.`);
+      }
+    }
 
     const respuestas = [];
     for (let i = 0; i < PUNTOS.length; i++) {
