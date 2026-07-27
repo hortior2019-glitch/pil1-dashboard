@@ -3045,8 +3045,21 @@ function getMarcaTemporal(r) {
   // Solo si esas columnas vienen vacías se usa Marca temporal (columna A) como respaldo.
   const fecha = (r['FECHA DISPOSICION PLANTA'] || r['FECHA DISPOSICION'] || '').trim();
   const hora  = (r['HORA DISPOSICION PLANTA']  || r['HORA DISPOSICION']  || '').trim();
-  if (fecha) return fecha + (hora ? ' ' + hora : ' 00:00:00');
   const mt = (r['Marca temporal'] || '').trim();
+  if (fecha) {
+    const disp = fecha + (hora ? ' ' + hora : ' 00:00:00');
+    // Validacion anti-error de digitación: la disposición no puede ocurrir DESPUÉS
+    // del momento en que se registró (Marca temporal). Si la fecha de disposición
+    // queda mas de 3 horas "en el futuro" respecto al registro, es una fecha mal
+    // digitada en el formulario (ej: pusieron 24 en vez de 23) → se usa la Marca
+    // temporal, que es automática y confiable.
+    if (mt) {
+      const dDisp = parseDateTime(disp);
+      const dMt = parseDateTime(mt);
+      if (dDisp && dMt && (dDisp - dMt) > 3*60*60*1000) return mt;
+    }
+    return disp;
+  }
   if (mt) return mt;
   return '';
 }
@@ -6658,6 +6671,64 @@ function limpiarFiltrosEquipo() {
 // URL del Apps Script Web App para favoritos de cortes (reemplazar con la URL real al implementar)
 const CORTES_FAV_API = "https://script.google.com/macros/s/AKfycbw6VAF6KaJfznpTEU_YrJNOuzgqB9FD6-0I4YgSpnblx6KwPix_Db2aq-f80JhC-lqt/exec";
 
+// ═══ VIAJES USADOS EN CORTES (columna AF del sheet de Ingreso) ═══
+// URL de implementacion del Apps Script del SHEET DE INGRESO (el que inserta las
+// filas de viajes). Se usa para marcar/desmarcar la columna "INCLUIDO EN CORTE".
+// IMPORTANTE: pegar aqui la URL /exec de ese script una vez agregado el bloque
+// "marcarCorte" (ver instrucciones). Mientras diga PEGAR, el marcado remoto se
+// omite silenciosamente (las advertencias visuales siguen funcionando).
+const INGRESO_API = "PEGAR_URL_IMPLEMENTACION_APPSCRIPT_INGRESO";
+
+// Clave unica de un viaje para el marcado de cortes: TIQUETE|FECHA(yyyy-mm-dd)|PLACA
+function claveViajeCorte(r) {
+  const tiq = (r['NUMERO TIQUETE']||'').toString().trim().replace(/['"]/g,'');
+  const placa = (r['PLACA']||'').toString().trim().toUpperCase().replace(/['"]/g,'');
+  let fecha = (r['FECHA DISPOSICION PLANTA']||r['FECHA DISPOSICION']||'').toString().trim();
+  let m = fecha.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) fecha = m[1]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[3]).padStart(2,'0');
+  else { m = fecha.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); if (m) fecha = m[3]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0'); else fecha = ''; }
+  return tiq+'|'+fecha+'|'+placa;
+}
+
+// Excluir/reincluir un viaje del corte que se esta generando (solo local, no toca el sheet)
+function toggleExcluirViajeCorte(clave) {
+  window._corteExcluidos = window._corteExcluidos || new Set();
+  if (window._corteExcluidos.has(clave)) window._corteExcluidos.delete(clave);
+  else window._corteExcluidos.add(clave);
+  generarCorte();
+}
+
+// Quitar la marca "incluido en corte" de un viaje (local + remoto en el sheet)
+function liberarMarcaViaje(clave) {
+  if (!confirm('¿Quitar la marca de "usado en corte" de este viaje? Quedara disponible para incluirse en cualquier corte.')) return;
+  (window.dataIngreso||[]).forEach(r => { if (claveViajeCorte(r) === clave) r['INCLUIDO EN CORTE'] = ''; });
+  generarCorte();
+  if (typeof INGRESO_API === 'string' && INGRESO_API.indexOf('PEGAR') === -1) {
+    fetch(INGRESO_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ accion:'desmarcarCorte', claves:[clave] }) }).catch(e => console.warn('No se pudo liberar la marca en el sheet:', e));
+  }
+}
+
+// Marca automaticamente en el sheet (columna AF) todos los viajes del corte recien
+// guardado como "incluidos en corte". Se llama al guardar el informe/favorito.
+function marcarViajesEnCorte() {
+  if (typeof INGRESO_API !== 'string' || INGRESO_API.indexOf('PEGAR') !== -1) return;
+  const c = window._corteActual;
+  if (!c || !c.grupos) return;
+  const marcador = c.prov + ' · ' + c.ini + ' a ' + c.cie;
+  const regs = [];
+  Object.keys(c.grupos).forEach(k => (c.grupos[k]||[]).forEach(r => regs.push(r)));
+  if (regs.length === 0) return;
+  const claves = [...new Set(regs.map(claveViajeCorte))];
+  // Reflejar de inmediato en memoria (la proxima recarga del CSV traera el valor real)
+  regs.forEach(r => { r['INCLUIDO EN CORTE'] = marcador; });
+  fetch(INGRESO_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({ accion:'marcarCorte', marcador: marcador, claves: claves }) })
+    .then(r => r.json())
+    .then(d => console.log('Viajes marcados como incluidos en corte:', d && d.filas))
+    .catch(e => console.warn('No se pudo marcar los viajes del corte en el sheet:', e));
+}
+
 // PIN de respaldo (si el Apps Script no responde, se usa este valor hardcodeado)
 const CORTES_PIN_FALLBACK = "798937";
 let _cortePinOk = false; // marca si ya se desbloqueó en esta sesión
@@ -7449,10 +7520,48 @@ function generarCorte() {
 
   if (colsSel.length === 0) { cont.innerHTML = '<div class="card" style="padding:24px;text-align:center;color:var(--ink-l)">Selecciona al menos una columna</div>'; return; }
 
-  const registros = filtrarRegistrosCorte(prov, ini, cie);
+  let registros = filtrarRegistrosCorte(prov, ini, cie);
   if (registros.length === 0) {
     cont.innerHTML = '<div class="card" style="padding:40px;text-align:center;color:var(--ink-l)">No hay registros de <strong>'+prov+'</strong> en el rango seleccionado</div>';
     return;
+  }
+
+  // ── ADVERTENCIA: VIAJES YA USADOS EN OTRO CORTE (columna AF del sheet) ──
+  const marcadorCorteActual = prov + ' · ' + ini + ' a ' + cie;
+  const _exclSig = prov + '|' + ini + '|' + cie;
+  if (window._corteExclSig !== _exclSig) { window._corteExclSig = _exclSig; window._corteExcluidos = new Set(); }
+  const conflictosCorte = registros.filter(r => {
+    const m = (r['INCLUIDO EN CORTE']||'').toString().trim();
+    return m && m !== marcadorCorteActual;
+  });
+  const _numAntesExcl = registros.length;
+  registros = registros.filter(r => !window._corteExcluidos.has(claveViajeCorte(r)));
+  const numExcluidosCorte = _numAntesExcl - registros.length;
+  if (registros.length === 0) {
+    cont.innerHTML = '<div class="card" style="padding:40px;text-align:center;color:var(--ink-l)">Todos los viajes del rango fueron excluidos de este corte.</div>';
+    return;
+  }
+  let avisoCortesHtml = '';
+  if (conflictosCorte.length > 0) {
+    const filasAviso = conflictosCorte.map(r => {
+      const clave = claveViajeCorte(r);
+      const excluido = window._corteExcluidos.has(clave);
+      const fechaR = (r['FECHA DISPOSICION PLANTA']||'').toString().trim() || ((r['Marca temporal']||'').toString().split(' ')[0]);
+      const marcaDe = (r['INCLUIDO EN CORTE']||'').toString().trim();
+      return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #f0e2c0;flex-wrap:wrap">
+        <span style="font-size:12px;color:var(--ink-m);${excluido?'text-decoration:line-through;opacity:.55':''}">${fechaR} · Tiq <strong>${r['NUMERO TIQUETE']||'—'}</strong> · ${r['PLACA']||'—'} · ${fmt(Math.round(pesoNetoAjustado(r)))} kg</span>
+        <span style="font-size:10px;font-weight:700;color:#8b6914;background:#f5eed8;padding:2px 8px;border-radius:3px;${excluido?'opacity:.55':''}">Usado en: ${marcaDe}</span>
+        <span style="margin-left:auto;display:flex;gap:6px">
+          <button onclick="toggleExcluirViajeCorte('${clave}')" style="padding:4px 10px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:${excluido?'var(--green)':'var(--red)'};color:white;border:none;border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">${excluido?'Reincluir':'Excluir de este corte'}</button>
+          ${!excluido?`<button onclick="liberarMarcaViaje('${clave}')" style="padding:4px 10px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--white);color:#8b6914;border:1px solid #8b6914;border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Liberar marca</button>`:''}
+        </span>
+      </div>`;
+    }).join('');
+    avisoCortesHtml = `<div class="card" style="border-left:4px solid #8b6914;background:#fdf8ec;padding:16px 20px;margin-bottom:14px">
+      <div style="font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#8b6914;margin-bottom:4px">Advertencia · viajes ya usados en otro corte</div>
+      <div style="font-size:12px;color:var(--ink-m);margin-bottom:8px">${conflictosCorte.length} viaje${conflictosCorte.length!==1?'s':''} de este rango ya ${conflictosCorte.length!==1?'fueron incluidos':'fue incluido'} en un corte anterior${numExcluidosCorte>0?` · <strong>${numExcluidosCorte} excluido${numExcluidosCorte!==1?'s':''} de este corte</strong>`:''}. Excluyelos para no cobrarlos dos veces, o libera la marca si el corte anterior no aplica.</div>
+      ${filasAviso}
+    </div>`;
   }
 
   // Relleno de pesos faltantes (0 o 1) con promedio, si está activo
@@ -7650,7 +7759,7 @@ function generarCorte() {
   });
 
   html += '</div>';
-  cont.innerHTML = html;
+  cont.innerHTML = avisoCortesHtml + html;
 
   // Construir el informe/certificado de facturación en paralelo
   renderInformeCorte();
@@ -8160,6 +8269,8 @@ function guardarInformeCorte() {
       clearTimeout(timeout);
       if (estado) { estado.style.color = 'var(--green)'; estado.textContent = (data && data.ok) ? 'Informe guardado correctamente' : 'Informe guardado'; }
       setTimeout(() => { if (estado) estado.textContent = ''; }, 3000);
+      // Marcar los viajes de este corte como "incluidos en corte" (columna AF del sheet)
+      try { marcarViajesEnCorte(); } catch(eM) { console.warn('marcarViajesEnCorte:', eM); }
       // Refrescar el resumen de facturación arriba (favoritos + informes, ya que ambos se guardaron juntos)
       setTimeout(() => { cargarCortesFavoritosRemoto(true); cargarInformesGuardados(true); }, 800);
     })
@@ -8168,6 +8279,7 @@ function guardarInformeCorte() {
       console.warn('Respuesta no legible al guardar informe:', e);
       if (estado) { estado.style.color = 'var(--green)'; estado.textContent = 'Informe guardado'; }
       setTimeout(() => { if (estado) estado.textContent = ''; }, 3000);
+      try { marcarViajesEnCorte(); } catch(eM) { console.warn('marcarViajesEnCorte:', eM); }
       setTimeout(() => { cargarCortesFavoritosRemoto(true); cargarInformesGuardados(true); }, 800);
     });
 }
