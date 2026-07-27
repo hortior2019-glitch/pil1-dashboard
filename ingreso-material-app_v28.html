@@ -311,6 +311,15 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 .spinner{display:inline-block;width:11px;height:11px;border:2px solid rgba(26,92,53,.3);border-top-color:var(--navy);border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:5px}
 @keyframes spin{to{transform:rotate(360deg)}}
 
+/* CAMPO CON ERROR (resaltado al enviar formulario incompleto) */
+.campo-error-resaltado{animation:pulsoErrorCampo 1.4s ease-out 2;border-radius:6px}
+@keyframes pulsoErrorCampo{
+  0%{box-shadow:0 0 0 0 rgba(139,26,26,.55)}
+  60%{box-shadow:0 0 0 9px rgba(139,26,26,0)}
+  100%{box-shadow:0 0 0 0 rgba(139,26,26,0)}
+}
+input.campo-error-resaltado,select.campo-error-resaltado,textarea.campo-error-resaltado{border-color:var(--red)!important}
+
 /* CONSULTA */
 .filter-bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
 .fbtn{padding:6px 13px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:.2s}
@@ -2711,6 +2720,30 @@ function resetFotos() {
   renderVehiculoExtra();
 }
 
+// ── SCROLL AL CAMPO CON ERROR ─────────────────────
+// Recibe un selector (o lista de selectores) y desplaza la pantalla
+// hasta el primero que exista, dejandolo centrado, y le agrega un
+// resalte visual breve a todos los que encuentre. No rompe nada si
+// el selector no existe (por ejemplo un campo que solo aparece con
+// ciertas operaciones).
+function marcarCampoConError(selectores) {
+  try {
+    var lista = Array.isArray(selectores) ? selectores : [selectores];
+    var primero = null;
+    lista.forEach(function (sel) {
+      var el = document.querySelector(sel);
+      if (!el) return;
+      if (!primero) primero = el;
+      el.classList.remove('campo-error-resaltado');
+      // forzar reinicio de la animacion si se vuelve a marcar el mismo campo
+      void el.offsetWidth;
+      el.classList.add('campo-error-resaltado');
+      setTimeout(function () { el.classList.remove('campo-error-resaltado'); }, 2900);
+    });
+    if (primero) primero.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } catch (e) { /* si algo falla aqui, no debe bloquear el mensaje de error */ }
+}
+
 // ── ENVIO ─────────────────────────────────────────
 async function enviarFormulario() {
   var operario  = document.getElementById('operario').value;
@@ -2732,24 +2765,24 @@ async function enviarFormulario() {
     residuo = resOtro ? resOtro.value.trim() : '';
   }
 
-  if (!tiquete)   { mostrarStatus('error','Campo requerido','Ingrese el numero de tiquete.'); return; }
-  if (!fecha)     { mostrarStatus('error','Campo requerido','Seleccione la fecha.'); return; }
-  if (fecha > fechaLocalYYYYMMDD(new Date())) { mostrarStatus('error','Fecha inválida','La fecha de disposición no puede ser posterior a hoy.'); return; }
-  if (!placa)     { mostrarStatus('error','Campo requerido','Ingrese la placa del vehiculo.'); return; }
+  if (!tiquete)   { mostrarStatus('error','Campo requerido','Ingrese el numero de tiquete.'); marcarCampoConError('#numero_tiquete'); return; }
+  if (!fecha)     { mostrarStatus('error','Campo requerido','Seleccione la fecha.'); marcarCampoConError('#fecha_disposicion'); return; }
+  if (fecha > fechaLocalYYYYMMDD(new Date())) { mostrarStatus('error','Fecha inválida','La fecha de disposición no puede ser posterior a hoy.'); marcarCampoConError('#fecha_disposicion'); return; }
+  if (!placa)     { mostrarStatus('error','Campo requerido','Ingrese la placa del vehiculo.'); marcarCampoConError('#placa'); return; }
   // Conductor y celular ya NO son obligatorios (a pedido).
   var conductorCelular = (document.getElementById('conductor_celular')||{value:''}).value.trim();
-  if (!pesoE)     { mostrarStatus('error','Campo requerido','Ingrese el peso del vehiculo cargado.'); return; }
+  if (!pesoE)     { mostrarStatus('error','Campo requerido','Ingrese el peso del vehiculo cargado.'); marcarCampoConError('#peso_entrada'); return; }
   var pesoEntradaNum = parseFloat(pesoE)||0;
   var pesoSalidaNum  = parseFloat(document.getElementById('peso_salida').value)||0;
-  if (pesoSalidaNum < 0)       { mostrarStatus('error','Peso inválido','El peso vacío no puede ser negativo.'); return; }
-  if (pesoEntradaNum < 0)      { mostrarStatus('error','Peso inválido','El peso con carga no puede ser negativo.'); return; }
-  if (pesoSalidaNum > 50000)   { mostrarStatus('error','Peso fuera de rango','El peso vacío no puede superar 50.000 kg.'); return; }
-  if (pesoEntradaNum > 50000)  { mostrarStatus('error','Peso fuera de rango','El peso con carga no puede superar 50.000 kg.'); return; }
-  if (pesoEntradaNum <= pesoSalidaNum) { mostrarStatus('error','Peso inválido','El peso con carga debe ser mayor que el peso vacío. Verifique los valores.'); return; }
-  if (!operacion) { mostrarStatus('error','Campo requerido','Seleccione la operacion de la lista.'); return; }
-  if (!residuo)   { mostrarStatus('error','Campo requerido','Seleccione el tipo de residuo de la lista.'); return; }
-  if (!fotosCapturadas['baucher-1']) { mostrarStatus('error','Campo requerido','Tome la foto del tiquete.'); return; }
-  if (!fotosCapturadas['vehiculo'])  { mostrarStatus('error','Campo requerido','Tome la foto del vehiculo.'); return; }
+  if (pesoSalidaNum < 0)       { mostrarStatus('error','Peso inválido','El peso vacío no puede ser negativo.'); marcarCampoConError('#peso_salida'); return; }
+  if (pesoEntradaNum < 0)      { mostrarStatus('error','Peso inválido','El peso con carga no puede ser negativo.'); marcarCampoConError('#peso_entrada'); return; }
+  if (pesoSalidaNum > 50000)   { mostrarStatus('error','Peso fuera de rango','El peso vacío no puede superar 50.000 kg.'); marcarCampoConError('#peso_salida'); return; }
+  if (pesoEntradaNum > 50000)  { mostrarStatus('error','Peso fuera de rango','El peso con carga no puede superar 50.000 kg.'); marcarCampoConError('#peso_entrada'); return; }
+  if (pesoEntradaNum <= pesoSalidaNum) { mostrarStatus('error','Peso inválido','El peso con carga debe ser mayor que el peso vacío. Verifique los valores.'); marcarCampoConError(['#peso_entrada','#peso_salida']); return; }
+  if (!operacion) { mostrarStatus('error','Campo requerido','Seleccione la operacion de la lista.'); marcarCampoConError(document.getElementById('operacion').value === 'Otro' ? '#operacion-otro-text' : '#operacion'); return; }
+  if (!residuo)   { mostrarStatus('error','Campo requerido','Seleccione el tipo de residuo de la lista.'); marcarCampoConError(document.getElementById('residuo').value === 'Otro' ? '#residuo-otro' : '#residuo'); return; }
+  if (!fotosCapturadas['baucher-1']) { mostrarStatus('error','Campo requerido','Tome la foto del tiquete.'); marcarCampoConError('#bloque-foto-baucher-1'); return; }
+  if (!fotosCapturadas['vehiculo'])  { mostrarStatus('error','Campo requerido','Tome la foto del vehiculo.'); marcarCampoConError('#bloque-foto-vehiculo'); return; }
 
   var opLow = operacion.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
 
