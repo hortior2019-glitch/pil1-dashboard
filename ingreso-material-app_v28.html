@@ -2356,6 +2356,8 @@ function cerrarModalesFotoResiduales() {
   cerrarInspeccionFoto();
   var modalSalida = document.getElementById('modal-confirmar-salida');
   if (modalSalida) modalSalida.classList.remove('open');
+  var modalDup = document.getElementById('modal-confirmar-duplicado');
+  if (modalDup) modalDup.classList.remove('open');
 }
 
 // ── CONFIRMACION AL PRESIONAR "ATRAS" (boton fisico o gesto del celular) ──
@@ -2949,6 +2951,32 @@ async function enviarFormulario() {
 
   var resultadoEnvio = await enviarRegistroConReintentos(datos);
 
+  // Si el Apps Script encontro un registro muy parecido en las ultimas
+  // 48h (mismos datos, distinta hora/observacion), se pausa y se le
+  // pregunta al operario si de verdad quiere ingresarlo de nuevo, en
+  // vez de guardarlo directo. Si confirma, se reenvia el mismo "datos"
+  // pero marcado con forzar_duplicado para que el script no lo vuelva
+  // a detener.
+  if (resultadoEnvio.posibleDuplicado) {
+    mostrarStatus('','',''); document.getElementById('status').className = 'status';
+    var continuarConDuplicado = await mostrarModalDuplicado(resultadoEnvio.detalle || {});
+    if (!continuarConDuplicado) {
+      document.getElementById('btn-submit').disabled = false;
+      return;
+    }
+    datos.forzar_duplicado = true;
+    mostrarStatus('loading','Guardando registro...','Enviando datos al sistema. Por favor espere.');
+    resultadoEnvio = await enviarRegistroConReintentos(datos);
+  }
+
+  procesarResultadoFinalEnvio(resultadoEnvio, placa, operacion, operario, conductor, conductorCelular, datos);
+}
+
+// Maneja el resultado (exito / error de servidor / error de conexion)
+// de un intento de guardado. Separado en su propia funcion porque se
+// usa tanto en el envio normal como despues de confirmar un posible
+// duplicado (para no repetir el mismo bloque dos veces).
+function procesarResultadoFinalEnvio(resultadoEnvio, placa, operacion, operario, conductor, conductorCelular, datos) {
   if (resultadoEnvio.ok) {
     mostrarStatus('success','Registro guardado','Ingreso de <strong>'+placa+'</strong> — '+operacion+' registrado por '+operario+'.');
     bavConfirmado=false; bavEsDiferente=false;
@@ -2962,6 +2990,32 @@ async function enviarFormulario() {
     mostrarStatus('error','Error de conexion','No se pudo confirmar el envio tras varios intentos. Puede volver a darle a Enviar: si el registro ya alcanzo a guardarse, no se duplicara.');
     document.getElementById('btn-submit').disabled=false;
   }
+}
+
+// ── MODAL: POSIBLE REGISTRO DUPLICADO (ultimas 48h) ──────────────
+// Se resuelve en true si el operario decide continuar igual, o false
+// si cancela para revisar/corregir el formulario.
+var resolverModalDuplicado = null;
+function mostrarModalDuplicado(detalle) {
+  return new Promise(function (resolve) {
+    resolverModalDuplicado = resolve;
+    var texto = document.getElementById('duplicado-detalle-texto');
+    if (texto) {
+      texto.textContent = 'Tiquete ' + (detalle.tiquete || '-') + ' — Placa ' + (detalle.placa || '-') + ' — ingresado el ' + (detalle.marcaTemporal || '-') + '.';
+    }
+    var modal = document.getElementById('modal-confirmar-duplicado');
+    if (modal) modal.classList.add('open');
+  });
+}
+function cancelarRegistroDuplicado() {
+  var modal = document.getElementById('modal-confirmar-duplicado');
+  if (modal) modal.classList.remove('open');
+  if (resolverModalDuplicado) { resolverModalDuplicado(false); resolverModalDuplicado = null; }
+}
+function confirmarRegistroDuplicado() {
+  var modal = document.getElementById('modal-confirmar-duplicado');
+  if (modal) modal.classList.remove('open');
+  if (resolverModalDuplicado) { resolverModalDuplicado(true); resolverModalDuplicado = null; }
 }
 
 // Intenta guardar el registro varias veces con espera creciente entre
@@ -2983,6 +3037,7 @@ async function enviarRegistroConReintentos(datos) {
       var res = await fetch(WEBAPP_URL, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(datos)});
       var json = await res.json();
       if (json.success) return { ok: true };
+      if (json.posibleDuplicado) return { ok: false, posibleDuplicado: true, detalle: json.detalle }; // no es error, requiere confirmar con el operario
       return { ok: false, errorServidor: true, mensaje: json.error }; // error real del servidor, no es de conexion: no reintentar
     } catch (err) {
       console.error('[envio] intento '+intento+' de '+intentosMax+' fallo:', err);
@@ -4424,6 +4479,20 @@ function getAHTSegundos() {
       <div class="modal-btns">
         <button class="modal-btn cancel" onclick="cancelarSalidaPorBack()">Cancelar</button>
         <button class="modal-btn confirm" onclick="confirmarSalidaPorBack()">Salir</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL POSIBLE REGISTRO DUPLICADO (mismos datos en las ultimas 48h, distinta hora/observacion) -->
+  <div class="modal-overlay" id="modal-confirmar-duplicado">
+    <div class="modal-box">
+      <div class="modal-title">Registro muy parecido a uno reciente</div>
+      <div class="modal-text">Ya existe un registro con los mismos datos en las últimas 48 horas:</div>
+      <div class="modal-text" id="duplicado-detalle-texto" style="font-weight:700;margin-top:-6px"></div>
+      <div class="modal-text">¿Desea ingresarlo de todas formas?</div>
+      <div class="modal-btns">
+        <button class="modal-btn cancel" onclick="cancelarRegistroDuplicado()">Cancelar</button>
+        <button class="modal-btn confirm" onclick="confirmarRegistroDuplicado()">Ingresar de todas formas</button>
       </div>
     </div>
   </div>
