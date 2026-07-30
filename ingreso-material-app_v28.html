@@ -3015,7 +3015,40 @@ function mostrarModalDuplicado(detalle) {
     }
     var modal = document.getElementById('modal-confirmar-duplicado');
     if (modal) modal.classList.add('open');
+    // Cargar (sin bloquear el modal) la foto del tiquete y del vehiculo
+    // del registro con el que coincide, usando el mismo endpoint que el
+    // export de PDF.
+    cargarFotoDuplicado('duplicado-foto-tiquete-cont', (detalle || {}).fotoTiquete);
+    cargarFotoDuplicado('duplicado-foto-vehiculo-cont', (detalle || {}).fotoVehiculo);
   });
+}
+
+// Pinta la foto (si existe) del registro duplicado dentro del contenedor
+// indicado. Muestra "Cargando..." mientras la trae y "Sin foto" si no
+// hay o si falla, sin romper el resto del modal.
+async function cargarFotoDuplicado(contId, driveUrl) {
+  var cont = document.getElementById(contId);
+  if (!cont) return;
+  if (!driveUrl) { cont.textContent = 'Sin foto'; return; }
+  cont.textContent = 'Cargando...';
+  try {
+    var dataUrl = await obtenerFotoBase64Cliente(driveUrl);
+    if (dataUrl) {
+      cont.innerHTML = '<img src="' + dataUrl + '" style="max-width:100%;max-height:150px;border-radius:5px;cursor:zoom-in" onclick="ampliarFotoDuplicado(this.src)">';
+    } else {
+      cont.textContent = 'Sin foto';
+    }
+  } catch (e) {
+    cont.textContent = 'Sin foto';
+  }
+}
+
+// Reutiliza el modal de inspeccion de fotos ya existente para ver la
+// foto del duplicado en grande.
+function ampliarFotoDuplicado(src) {
+  var img = document.getElementById('img-inspeccionar');
+  var modal = document.getElementById('modal-inspeccionar-foto');
+  if (img && modal) { img.src = src; modal.classList.add('open'); }
 }
 function cancelarRegistroDuplicado() {
   var modal = document.getElementById('modal-confirmar-duplicado');
@@ -4506,7 +4539,17 @@ function getAHTSegundos() {
       <div class="modal-title">Registro muy parecido a uno reciente</div>
       <div class="modal-text">Ya existe un registro con los mismos datos en las últimas 48 horas:</div>
       <div class="modal-text" id="duplicado-detalle-texto" style="margin-top:-2px;text-align:left;line-height:1.6"></div>
-      <div class="modal-text">¿Desea ingresarlo de todas formas?</div>
+      <div id="duplicado-fotos" style="display:flex;gap:8px;margin-top:10px">
+        <div style="flex:1;text-align:center">
+          <div style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px">Tiquete</div>
+          <div id="duplicado-foto-tiquete-cont" style="min-height:70px;display:flex;align-items:center;justify-content:center;border:1px solid var(--rule);border-radius:6px;background:var(--s2);font-size:11px;color:var(--ink-l)">—</div>
+        </div>
+        <div style="flex:1;text-align:center">
+          <div style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px">Vehículo</div>
+          <div id="duplicado-foto-vehiculo-cont" style="min-height:70px;display:flex;align-items:center;justify-content:center;border:1px solid var(--rule);border-radius:6px;background:var(--s2);font-size:11px;color:var(--ink-l)">—</div>
+        </div>
+      </div>
+      <div class="modal-text" style="margin-top:10px">¿Desea ingresarlo de todas formas?</div>
       <div class="modal-btns">
         <button class="modal-btn cancel" onclick="cancelarRegistroDuplicado()">Cancelar</button>
         <button class="modal-btn confirm" onclick="confirmarRegistroDuplicado()">Ingresar de todas formas</button>
