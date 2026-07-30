@@ -3034,7 +3034,14 @@ async function enviarRegistroConReintentos(datos) {
       await new Promise(function (resolve) { setTimeout(resolve, 2000 * (intento - 1)); });
     }
     try {
-      var res = await fetch(WEBAPP_URL, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(datos)});
+      // Content-Type text/plain (no application/json) a proposito: con
+      // application/json el navegador exige un "preflight" CORS que los
+      // Apps Script no responden, la peticion real falla y el codigo
+      // terminaba mandando todo en modo no-cors (a ciegas), sin poder
+      // leer la respuesta -> nunca se veia el aviso de duplicado ni el
+      // error real. Con text/plain no hay preflight y SI se puede leer
+      // la respuesta. El Apps Script lee e.postData.contents igual.
+      var res = await fetch(WEBAPP_URL, {method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(datos)});
       var json = await res.json();
       if (json.success) return { ok: true };
       if (json.posibleDuplicado) return { ok: false, posibleDuplicado: true, detalle: json.detalle }; // no es error, requiere confirmar con el operario
@@ -3044,7 +3051,7 @@ async function enviarRegistroConReintentos(datos) {
       if (intento === intentosMax) {
         // Ultimo respaldo: no-cors (no permite leer la respuesta, se asume enviado si no lanza error de red)
         try {
-          await fetch(WEBAPP_URL, {method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(datos)});
+          await fetch(WEBAPP_URL, {method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(datos)});
           return { ok: true };
         } catch (err2) {
           return { ok: false };
