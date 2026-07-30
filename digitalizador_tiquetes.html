@@ -167,21 +167,19 @@
 <!-- ============ TAB COMPARAR ============ -->
 <section id="compTab" class="tab">
   <div class="ayuda">Trae los registros directo de la base en Google Sheets (o carga un Excel), indica qué columna identifica cada tiquete y empareja las columnas. Las <b style="background:#fadbd8;padding:0 4px">diferencias</b> quedan en rojo y las filas <b style="background:#fdebd0;padding:0 4px">sin coincidencia</b> en naranja.</div>
+  <input type="hidden" id="gsUrl">
   <div class="card">
-    <div class="fila" style="margin-bottom:8px">
-      <b>📡 Base de datos (Google Sheets):</b>
-      <input type="text" id="gsUrl" placeholder="Pega la URL del sheet (https://docs.google.com/spreadsheets/d/.../edit#gid=...)" style="flex:1;min-width:240px">
-      <button class="b" id="btnGs" onclick="conectarSheets()">Conectar</button>
-      <span id="gsInfo" class="mini"></span>
-    </div>
-    <div class="mini" style="margin-bottom:6px">Lectura directa del sheet. Requiere que esté compartido como <b>"cualquiera con el enlace puede ver"</b>.</div>
-    <div id="gsFiltros" class="fila" style="display:none;border-top:1px solid #eef1f2;padding-top:8px">
+    <div id="gsFiltros" class="fila" style="display:none">
+      <b>📡 Base de datos:</b> <span id="gsInfo" class="mini"></span>
+      <button class="b sec" id="btnGs" onclick="conectarSheets()" style="font-size:.8rem">⟳ Recargar</button>
+      <span style="flex-basis:100%;height:0"></span>
       <b>Operación:</b> <select id="gsOp"></select>
       <b>Desde:</b> <input type="date" id="gsDesde">
       <b>Hasta:</b> <input type="date" id="gsHasta">
       <button class="b verde" onclick="aplicarFiltroSheets()">Traer registros</button>
       <span id="gsFiltroInfo" class="mini"></span>
     </div>
+    <div id="gsCargando" class="fila"><span id="gsInfoInit" class="mini">Conectando con la base de datos…</span></div>
   </div>
   <div class="card fila">
     <b>O bien:</b>
@@ -324,6 +322,7 @@ function tab(id,btn){
   document.querySelectorAll('.tabs button').forEach(e=>e.classList.remove('act'));
   document.getElementById(id).classList.add('act');btn.classList.add('act');
   if(id==='procTab')renderSelProc(); if(id==='datosTab')renderTabla(); if(id==='infTab')renderInforme(); if(id==='gerTab')renderGerencia(); if(id==='camTab')renderCamTab();
+  if(id==='compTab'&&!gsAll)conectarSheets();
 }
 
 /* ================= PLANTILLAS CRUD ================= */
@@ -786,7 +785,8 @@ function reiniciarTodo(){
   rows=[];saveRows();
   compRes=null;refData=null;camRes=null;camData=null;gsAll=null;
   document.getElementById('gsFiltros').style.display='none';
-  document.getElementById('gsInfo').textContent='';
+  document.getElementById('gsCargando').style.display='flex';
+  document.getElementById('gsInfoInit').textContent='Conectando con la base de datos…';
   document.getElementById('gsFiltroInfo').textContent='';
   document.getElementById('procFiles').value='';
   const log=document.getElementById('logProc');log.textContent='';log.style.display='none';
@@ -1063,13 +1063,15 @@ function fechaRegistro(r){
   const d=new Date(s);return isNaN(d)?null:d;
 }
 async function conectarSheets(){
-  const url=(document.getElementById('gsUrl').value||'').trim();
-  if(!url){alert('Pega la URL del Google Sheet.');return;}
+  const url=(document.getElementById('gsUrl').value||GS_URL_DEF).trim();
   const gviz=gvizUrl(url);
-  if(!gviz){alert('La URL no parece de un Google Sheet (no encontré /d/ID).');return;}
-  store.setItem('tq_gs_url',url);
-  const btn=document.getElementById('btnGs');btn.disabled=true;
-  const info=document.getElementById('gsInfo');info.textContent='Conectando…';
+  const init=document.getElementById('gsInfoInit');
+  if(!gviz){init.textContent='✖ URL de sheet inválida.';return;}
+  const btn=document.getElementById('btnGs');if(btn)btn.disabled=true;
+  document.getElementById('gsFiltros').style.display='none';
+  document.getElementById('gsCargando').style.display='flex';
+  init.textContent='Conectando con la base de datos…';
+  const info=document.getElementById('gsInfo');
   try{
     const r=await fetch(gviz);
     if(!r.ok)throw new Error('HTTP '+r.status);
@@ -1085,14 +1087,15 @@ async function conectarSheets(){
     document.getElementById('gsOp').innerHTML='<option value="">— todas las operaciones —</option>'+ops.map(o=>`<option>${esc(o)}</option>`).join('');
     /* rango de fechas por defecto: hoy */
     const hoy=new Date().toISOString().slice(0,10);
-    document.getElementById('gsDesde').value=hoy;
-    document.getElementById('gsHasta').value=hoy;
+    if(!document.getElementById('gsDesde').value)document.getElementById('gsDesde').value=hoy;
+    if(!document.getElementById('gsHasta').value)document.getElementById('gsHasta').value=hoy;
+    document.getElementById('gsCargando').style.display='none';
     document.getElementById('gsFiltros').style.display='flex';
-    info.textContent='✔ Conectado · '+gsAll.rows.length+' registros en la base';
+    info.textContent='✔ '+gsAll.rows.length+' registros · elige operación e intervalo';
   }catch(e){
-    info.textContent='✖ No se pudo conectar ('+e.message+'). Si abriste el archivo con doble clic, sírvelo por http/https; o descarga el sheet como Excel y usa "Cargar un Excel".';
+    init.textContent='✖ No se pudo conectar ('+e.message+'). Sírvelo por http/https, o usa "Cargar un Excel" abajo.';
   }
-  btn.disabled=false;
+  if(btn)btn.disabled=false;
 }
 function aplicarFiltroSheets(){
   if(!gsAll)return;
@@ -1553,6 +1556,7 @@ async function exportarCam(){
 /* ================= INICIO ================= */
 parseColores(store.getItem('tq_colors_csv')||CSV_DEFECTO);
 document.getElementById('gsUrl').value=store.getItem('tq_gs_url')||GS_URL_DEF;
+conectarSheets();  /* conexión automática al iniciar */
 renderSelTpl();
 renderSelProc();
 curName=Object.keys(templates)[0]||null;
