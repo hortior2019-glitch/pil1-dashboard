@@ -4541,9 +4541,19 @@ async function compartirBaucherRegistro(btn, tiquete, placa, operacion, baucher1
     } else {
       try {
         await navigator.share({ files: archivos, title: titulo, text: titulo });
-        return; // compartio la foto
+        return; // compartio la foto de una
       } catch (errShare) {
-        if (errShare && errShare.name === 'AbortError') return; // el usuario cerro la hoja: no abrir el respaldo
+        if (errShare && errShare.name === 'AbortError') return; // el usuario cerro la hoja
+        if (errShare && errShare.name === 'NotAllowedError') {
+          // El navegador exige un toque del usuario para compartir, y el
+          // "toque" se gasto al descargar la foto de Drive. Las fotos ya
+          // estan listas en memoria: se guardan y se pide un toque nuevo
+          // (boton del modal) para compartirlas.
+          compartirFotosPendiente = { archivos: archivos, titulo: titulo, links: fuentes.map(function (f) { return f.url; }) };
+          if (btn) { btn.disabled = false; btn.textContent = textoOriginal || '📤'; }
+          abrirModalCompartirFotos();
+          return;
+        }
         motivoRespaldo = 'El navegador rechazo compartir la foto (' + (errShare ? errShare.name : 'error') + ').';
       }
     }
@@ -4561,6 +4571,43 @@ async function compartirBaucherRegistro(btn, tiquete, placa, operacion, baucher1
   alert(aviso);
   var texto = titulo + '\n' + links.join('\n');
   abrirWhatsAppTexto(texto);
+}
+
+// ── COMPARTIR FOTOS QUE YA ESTAN LISTAS (con un toque del usuario) ──
+// Cuando compartir automatico falla por NotAllowedError (falta de gesto
+// tras descargar de Drive), las fotos quedan aqui y este boton las
+// comparte con un toque fresco. Como ya estan en memoria, no hay espera
+// antes de compartir y el navegador lo permite.
+var compartirFotosPendiente = null; // { archivos, titulo, links }
+
+function abrirModalCompartirFotos() {
+  var m = document.getElementById('modal-compartir-fotos');
+  if (m) m.classList.add('open');
+}
+function cerrarModalCompartirFotos() {
+  var m = document.getElementById('modal-compartir-fotos');
+  if (m) m.classList.remove('open');
+}
+async function ejecutarCompartirFotosPendiente() {
+  if (!compartirFotosPendiente) { cerrarModalCompartirFotos(); return; }
+  var p = compartirFotosPendiente;
+  try {
+    await navigator.share({ files: p.archivos, title: p.titulo, text: p.titulo });
+    cerrarModalCompartirFotos();
+    compartirFotosPendiente = null;
+  } catch (e) {
+    if (e && e.name === 'AbortError') { cerrarModalCompartirFotos(); compartirFotosPendiente = null; return; }
+    // Si aun asi no deja, respaldo por enlace.
+    cerrarModalCompartirFotos();
+    abrirWhatsAppTexto(p.titulo + '\n' + p.links.join('\n'));
+    compartirFotosPendiente = null;
+  }
+}
+function enviarEnlaceFotosPendiente() {
+  var p = compartirFotosPendiente;
+  cerrarModalCompartirFotos();
+  compartirFotosPendiente = null;
+  if (p) abrirWhatsAppTexto(p.titulo + '\n' + p.links.join('\n'));
 }
 
 // ── SUBIR UN BAUCHER POSTERIOR A UN REGISTRO YA GUARDADO ──────────
@@ -4793,6 +4840,18 @@ function getAHTSegundos() {
       <div class="modal-btns">
         <button class="modal-btn cancel" onclick="omitirEvidencia()">Omitir</button>
         <button class="modal-btn confirm" onclick="compartirEvidenciaAhora()">Compartir por WhatsApp</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL COMPARTIR FOTOS YA DESCARGADAS (por registro): pide un toque para que el navegador permita compartir la imagen -->
+  <div class="modal-overlay" id="modal-compartir-fotos">
+    <div class="modal-box">
+      <div class="modal-title">Fotos listas para enviar</div>
+      <div class="modal-text">Toque "Compartir foto" para enviar la(s) imagen(es) por WhatsApp.</div>
+      <div class="modal-btns">
+        <button class="modal-btn cancel" onclick="enviarEnlaceFotosPendiente()">Enviar enlace</button>
+        <button class="modal-btn confirm" onclick="ejecutarCompartirFotosPendiente()">Compartir foto</button>
       </div>
     </div>
   </div>
