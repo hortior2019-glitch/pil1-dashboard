@@ -4516,11 +4516,14 @@ async function compartirBaucherRegistro(btn, tiquete, placa, operacion, baucher1
   var textoOriginal = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
 
+  var archivos = [];
+  var fallos = 0;               // cuantas fotos no se pudieron descargar de Drive
+  var motivoRespaldo = '';      // por que se cae al link (diagnostico)
+
   try {
-    var archivos = [];
     for (var i = 0; i < fuentes.length; i++) {
       var dataUrl = await obtenerFotoBase64Cliente(fuentes[i].url);
-      if (!dataUrl) continue;
+      if (!dataUrl) { fallos++; continue; }
       var resp = await fetch(dataUrl);
       var blob = await resp.blob();
       var ext  = blob.type.indexOf('png') !== -1 ? 'png' : 'jpg';
@@ -4531,22 +4534,31 @@ async function compartirBaucherRegistro(btn, tiquete, placa, operacion, baucher1
     // aunque navigator.canShare diga que no o no exista: algunos
     // navegadores si comparten archivos pero reportan mal canShare.
     // Solo si esto lanza error se cae al respaldo de texto.
-    if (archivos.length > 0 && navigator.share) {
+    if (archivos.length === 0) {
+      motivoRespaldo = 'No se pudo descargar la(s) foto(s) desde Drive. Casi siempre es porque el Apps Script publicado esta desactualizado: vuelve a implementarlo (Nueva version) con la ultima version del .gs.';
+    } else if (!navigator.share) {
+      motivoRespaldo = 'Este navegador no permite compartir archivos (Web Share). Abre la app en Chrome/Safari actualizado.';
+    } else {
       try {
         await navigator.share({ files: archivos, title: titulo, text: titulo });
         return; // compartio la foto
       } catch (errShare) {
         if (errShare && errShare.name === 'AbortError') return; // el usuario cerro la hoja: no abrir el respaldo
-        throw errShare; // otro error: pasar al respaldo de texto
+        motivoRespaldo = 'El navegador rechazo compartir la foto (' + (errShare ? errShare.name : 'error') + ').';
       }
     }
   } catch (err) {
-    console.log('No se pudo compartir la foto directamente, se usara el link como respaldo:', err);
+    motivoRespaldo = motivoRespaldo || ('Error preparando las fotos: ' + err.message);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = textoOriginal || '📤'; }
   }
 
+  // Respaldo: enviar el/los enlace(s) por texto. Antes se avisa POR QUE,
+  // para no dejar al operario adivinando.
   var links = fuentes.map(function (f) { return f.url; });
+  var aviso = 'Se enviará el enlace por WhatsApp en vez de la foto.\n\nMotivo: ' + (motivoRespaldo || 'desconocido');
+  if (fallos > 0 && archivos.length > 0) aviso += '\n\n(' + fallos + ' de ' + fuentes.length + ' fotos no se pudieron descargar.)';
+  alert(aviso);
   var texto = titulo + '\n' + links.join('\n');
   abrirWhatsAppTexto(texto);
 }
