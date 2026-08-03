@@ -1001,6 +1001,11 @@ input.campo-error-resaltado,select.campo-error-resaltado,textarea.campo-error-re
     </div>
   </div>
 
+  <label for="chk-evidencia-wa" style="display:flex;align-items:center;gap:10px;margin-top:16px;padding:12px 14px;border:1px solid var(--rule);border-radius:8px;background:var(--s2);cursor:pointer">
+    <input type="checkbox" id="chk-evidencia-wa" checked style="width:20px;height:20px;flex-shrink:0;accent-color:var(--navy)">
+    <span style="font-size:13px;font-weight:600;color:var(--ink)">Enviar evidencia fotográfica a WhatsApp (ticket y foto del vehículo)</span>
+  </label>
+
   <button class="btn-submit" id="btn-submit" type="button">Guardar Formulario</button>
   <div class="status" id="status">
     <div class="status-title" id="status-title"></div>
@@ -2899,7 +2904,29 @@ function procesarResultadoFinalEnvio(resultadoEnvio, placa, operacion, operario,
     bavConfirmado=false; bavEsDiferente=false;
     detenerAHT();
     enviarAImplementacion(operacion, conductor, document.getElementById('ultimos_cuatro_cedula').value, datos.observacion, conductorCelular);
-    setTimeout(function(){ resetFormulario(); volverAlMenu(); }, 2500);
+
+    // Evidencia a WhatsApp (si el checklist quedo activado). Se toman
+    // las fotos LOCALES ya capturadas (ticket y vehiculo) — copiadas
+    // aqui antes de que resetFormulario() las borre — y se comparten.
+    var chkEvi = document.getElementById('chk-evidencia-wa');
+    var quiereEvidencia = chkEvi ? chkEvi.checked : false;
+    var fotosEvidencia = [];
+    if (quiereEvidencia) {
+      if (fotosCapturadas['baucher-1']) fotosEvidencia.push({ dataUrl: fotosCapturadas['baucher-1'], nombre: 'ticket_' + (datos.numero_tiquete || '') });
+      if (fotosCapturadas['vehiculo'])  fotosEvidencia.push({ dataUrl: fotosCapturadas['vehiculo'],  nombre: 'vehiculo_' + (datos.numero_tiquete || '') });
+    }
+    var tituloEvi = 'Evidencia ingreso — ' + placa + ' | tiquete ' + (datos.numero_tiquete || '') + ' (' + operacion + ')';
+
+    if (quiereEvidencia && fotosEvidencia.length > 0) {
+      // No se vuelve al menu automaticamente: primero se comparte la
+      // evidencia (abre WhatsApp / la hoja de "Compartir"), y al terminar
+      // u omitir se limpia y se vuelve al menu.
+      compartirEvidenciaWhatsApp(fotosEvidencia, tituloEvi, function () {
+        resetFormulario(); volverAlMenu();
+      });
+    } else {
+      setTimeout(function(){ resetFormulario(); volverAlMenu(); }, 2500);
+    }
   } else if (resultadoEnvio.errorServidor) {
     mostrarStatus('error','Error al guardar', resultadoEnvio.mensaje || 'Error desconocido.');
     document.getElementById('btn-submit').disabled=false;
@@ -2976,6 +3003,81 @@ function confirmarRegistroDuplicado() {
   var modal = document.getElementById('modal-confirmar-duplicado');
   if (modal) modal.classList.remove('open');
   if (resolverModalDuplicado) { resolverModalDuplicado(true); resolverModalDuplicado = null; }
+}
+
+// ── COMPARTIR EVIDENCIA POR WHATSAPP (despues de guardar) ─────────
+// Usa las fotos LOCALES (ticket + vehiculo) recien capturadas. Como
+// navigator.share exige un gesto del usuario y aqui venimos de una
+// operacion asincrona (el guardado), si el intento automatico queda
+// bloqueado se muestra un modal con un boton para compartir con un
+// solo toque. onDone se llama al terminar (compartio / omitio / cerro).
+var evidenciaPendiente = null; // { fotos, titulo, onDone }
+
+async function construirArchivosEvidencia(fotos) {
+  var archivos = [];
+  for (var i = 0; i < fotos.length; i++) {
+    try {
+      var resp = await fetch(fotos[i].dataUrl);
+      var blob = await resp.blob();
+      var ext = blob.type.indexOf('png') !== -1 ? 'png' : 'jpg';
+      archivos.push(new File([blob], fotos[i].nombre + '.' + ext, { type: blob.type || 'image/jpeg' }));
+    } catch (e) { /* si una falla, se omite */ }
+  }
+  return archivos;
+}
+
+async function compartirEvidenciaWhatsApp(fotos, titulo, onDone) {
+  evidenciaPendiente = { fotos: fotos, titulo: titulo, onDone: onDone || function(){} };
+  try {
+    var archivos = await construirArchivosEvidencia(fotos);
+    if (archivos.length > 0 && navigator.canShare && navigator.canShare({ files: archivos })) {
+      await navigator.share({ files: archivos, title: titulo, text: titulo });
+      finalizarEvidencia();      // compartio bien -> volver al menu
+      return;
+    }
+    throw new Error('share-no-disponible');
+  } catch (err) {
+    if (err && err.name === 'AbortError') { finalizarEvidencia(); return; } // cerro la hoja de compartir
+    abrirModalEvidencia();       // bloqueado o no soportado -> boton manual
+  }
+}
+
+function abrirModalEvidencia() {
+  var modal = document.getElementById('modal-evidencia-wa');
+  if (modal) modal.classList.add('open');
+  else finalizarEvidencia();
+}
+
+async function compartirEvidenciaAhora() {
+  // Llamado desde el boton del modal = gesto valido del usuario.
+  if (!evidenciaPendiente) { cerrarModalEvidencia(); return; }
+  var ep = evidenciaPendiente;
+  try {
+    var archivos = await construirArchivosEvidencia(ep.fotos);
+    if (archivos.length > 0 && navigator.canShare && navigator.canShare({ files: archivos })) {
+      await navigator.share({ files: archivos, title: ep.titulo, text: ep.titulo });
+    } else {
+      // Sin Web Share: respaldo con solo texto (WhatsApp no permite adjuntar imagen por link).
+      window.open('https://wa.me/?text=' + encodeURIComponent(ep.titulo), '_blank');
+    }
+  } catch (err) {
+    if (!(err && err.name === 'AbortError')) console.log('No se pudo compartir la evidencia:', err);
+  }
+  cerrarModalEvidencia();
+}
+
+function omitirEvidencia() { cerrarModalEvidencia(); }
+
+function cerrarModalEvidencia() {
+  var modal = document.getElementById('modal-evidencia-wa');
+  if (modal) modal.classList.remove('open');
+  finalizarEvidencia();
+}
+
+function finalizarEvidencia() {
+  var cb = evidenciaPendiente && evidenciaPendiente.onDone;
+  evidenciaPendiente = null;
+  if (cb) cb();
 }
 
 // Intenta guardar el registro varias veces con espera creciente entre
@@ -4565,6 +4667,18 @@ function getAHTSegundos() {
       <div class="modal-btns">
         <button class="modal-btn cancel" onclick="cancelarRegistroDuplicado()">Cancelar</button>
         <button class="modal-btn confirm" onclick="confirmarRegistroDuplicado()">Ingresar de todas formas</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL COMPARTIR EVIDENCIA POR WHATSAPP (aparece tras guardar si el checklist quedo activado y el navegador pidio un toque para abrir WhatsApp) -->
+  <div class="modal-overlay" id="modal-evidencia-wa">
+    <div class="modal-box">
+      <div class="modal-title">Enviar evidencia por WhatsApp</div>
+      <div class="modal-text">El registro se guardó. Toque para compartir el ticket y la foto del vehículo.</div>
+      <div class="modal-btns">
+        <button class="modal-btn cancel" onclick="omitirEvidencia()">Omitir</button>
+        <button class="modal-btn confirm" onclick="compartirEvidenciaAhora()">Compartir por WhatsApp</button>
       </div>
     </div>
   </div>
