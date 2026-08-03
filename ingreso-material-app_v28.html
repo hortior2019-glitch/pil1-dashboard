@@ -3080,6 +3080,68 @@ function finalizarEvidencia() {
   if (cb) cb();
 }
 
+// ── AGREGAR NOTA (COMENTARIO) A UNA CELDA DE UN REGISTRO ──────────
+// Desde la planilla. El operario elige a que campo (celda) va la nota
+// y escribe el texto. En el servidor se ubica la fila por su marca
+// temporal y se AGREGA la nota a esa celda (sin borrar la nota previa
+// ni el valor de la celda). La nota es la de Sheets (triangulito en la
+// esquina), invisible para lecturas de datos (CSV/valores).
+var notaRegistroCtx = null; // { marcaTemporal, tiquete, placa }
+
+function abrirNotaRegistro(btn, marcaTemporal, tiquete, placa) {
+  notaRegistroCtx = { marcaTemporal: marcaTemporal, tiquete: tiquete, placa: placa };
+  var ref = document.getElementById('nota-ref-texto');
+  if (ref) ref.textContent = 'Tiquete ' + (tiquete || '-') + ' — Placa ' + (placa || '-');
+  var txt = document.getElementById('nota-texto');
+  if (txt) txt.value = '';
+  var modal = document.getElementById('modal-nota-registro');
+  if (modal) modal.classList.add('open');
+}
+
+function cerrarModalNota() {
+  var modal = document.getElementById('modal-nota-registro');
+  if (modal) modal.classList.remove('open');
+  notaRegistroCtx = null;
+}
+
+async function guardarNotaRegistro() {
+  if (!notaRegistroCtx) { cerrarModalNota(); return; }
+  var texto = (document.getElementById('nota-texto') || { value: '' }).value.trim();
+  if (!texto) { alert('Escriba el comentario.'); return; }
+  var colSel = document.getElementById('nota-campo');
+  var columna = colSel ? parseInt(colSel.value, 10) : 8;
+  var campoNombre = colSel ? colSel.options[colSel.selectedIndex].text : '';
+  var ctx = notaRegistroCtx;
+  var btnG = document.getElementById('btn-guardar-nota');
+  var textoBtn = btnG ? btnG.textContent : '';
+  if (btnG) { btnG.disabled = true; btnG.textContent = 'Guardando...'; }
+  try {
+    var res = await fetch(WEBAPP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        accion: 'agregar_nota',
+        marca_temporal: ctx.marcaTemporal,
+        columna: columna,
+        campo: campoNombre,
+        texto: texto,
+        operario: (sesionUsuario ? sesionUsuario.nombre : '')
+      })
+    });
+    var json = await res.json();
+    if (json.success) {
+      alert('Nota agregada al campo "' + campoNombre + '" del tiquete ' + ctx.tiquete + '.');
+      cerrarModalNota();
+    } else {
+      alert('No se pudo agregar la nota: ' + (json.error || 'error desconocido'));
+    }
+  } catch (err) {
+    alert('Error agregando la nota: ' + err.message);
+  } finally {
+    if (btnG) { btnG.disabled = false; btnG.textContent = textoBtn || 'Guardar nota'; }
+  }
+}
+
 // Intenta guardar el registro varias veces con espera creciente entre
 // intento e intento, en vez de rendirse al primer error de red. El
 // boton de Enviar queda bloqueado durante TODOS los intentos, asi el
@@ -3781,6 +3843,7 @@ function renderConsulta() {
       +'<td style="white-space:nowrap">'
         +'<button onclick="compartirBaucherRegistro(this,'+argsWa+')" title="'+(tieneFoto?'Compartir baucher y foto del vehículo por WhatsApp':'Sin fotos guardadas')+'" style="padding:4px 8px;font-size:13px;border:1px solid #fff;background:transparent;color:#fff;cursor:pointer;border-radius:4px" '+(tieneFoto?'':'disabled')+'>📤</button>'
         +' <button onclick="subirBaucherPosterior(this,'+argsPost+')" title="Subir un baucher posterior a este registro" style="padding:4px 8px;font-size:13px;border:1px solid #fff;background:transparent;color:#fff;cursor:pointer;border-radius:4px">➕</button>'
+        +' <button onclick="abrirNotaRegistro(this,'+argsPost+')" title="Agregar una nota (comentario) a una celda de este registro" style="padding:4px 8px;font-size:13px;border:1px solid #fff;background:transparent;color:#fff;cursor:pointer;border-radius:4px">📝</button>'
       +'</td>'
       +'</tr>';
   }).join('');
@@ -4679,6 +4742,32 @@ function getAHTSegundos() {
       <div class="modal-btns">
         <button class="modal-btn cancel" onclick="omitirEvidencia()">Omitir</button>
         <button class="modal-btn confirm" onclick="compartirEvidenciaAhora()">Compartir por WhatsApp</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL AGREGAR NOTA A UNA CELDA DE UN REGISTRO (nota de Sheets, no borra el valor) -->
+  <div class="modal-overlay" id="modal-nota-registro">
+    <div class="modal-box">
+      <div class="modal-title">Agregar nota al registro</div>
+      <div class="modal-text" id="nota-ref-texto" style="margin-top:-2px;font-weight:700"></div>
+      <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-l);margin:12px 0 4px">¿A qué campo?</label>
+      <select id="nota-campo" style="width:100%;padding:9px 10px;font-size:14px;border:1px solid var(--rule);border-radius:6px;background:var(--white);color:var(--ink);font-family:'Source Sans 3',sans-serif">
+        <option value="8">Peso neto</option>
+        <option value="6">Peso lleno</option>
+        <option value="7">Peso vacío</option>
+        <option value="5">Placa</option>
+        <option value="2">Número de tiquete</option>
+        <option value="9">Operación</option>
+        <option value="10">Residuo</option>
+        <option value="11">Observación</option>
+        <option value="12">Conductor</option>
+      </select>
+      <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-l);margin:12px 0 4px">Comentario</label>
+      <textarea id="nota-texto" rows="3" placeholder="Escriba la nota..." style="width:100%;padding:9px 10px;font-size:14px;border:1px solid var(--rule);border-radius:6px;background:var(--white);color:var(--ink);font-family:'Source Sans 3',sans-serif;resize:vertical"></textarea>
+      <div class="modal-btns">
+        <button class="modal-btn cancel" onclick="cerrarModalNota()">Cancelar</button>
+        <button class="modal-btn confirm" id="btn-guardar-nota" onclick="guardarNotaRegistro()">Guardar nota</button>
       </div>
     </div>
   </div>
