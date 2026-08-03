@@ -3011,6 +3011,26 @@ function confirmarRegistroDuplicado() {
 // operacion asincrona (el guardado), si el intento automatico queda
 // bloqueado se muestra un modal con un boton para compartir con un
 // solo toque. onDone se llama al terminar (compartio / omitio / cerro).
+// Abre WhatsApp con un texto. Intenta primero la APP instalada
+// (esquema whatsapp://) para no terminar en la pagina web / "descargar
+// la app" del navegador; si en ~1.2s la app no tomo el control (no
+// esta instalada), cae al enlace web wa.me como respaldo.
+function abrirWhatsAppTexto(texto) {
+  var enc = encodeURIComponent(texto);
+  var cambioApp = false;
+  var marcar = function () { cambioApp = true; };
+  document.addEventListener('visibilitychange', marcar, { once: true });
+  window.addEventListener('blur', marcar, { once: true });
+  try { window.location.href = 'whatsapp://send?text=' + enc; } catch (e) {}
+  setTimeout(function () {
+    document.removeEventListener('visibilitychange', marcar);
+    window.removeEventListener('blur', marcar);
+    if (!cambioApp && !document.hidden) {
+      window.location.href = 'https://wa.me/?text=' + enc;
+    }
+  }, 1200);
+}
+
 var evidenciaPendiente = null; // { fotos, titulo, onDone }
 
 async function construirArchivosEvidencia(fotos) {
@@ -3058,7 +3078,7 @@ async function compartirEvidenciaAhora() {
       await navigator.share({ files: archivos, title: ep.titulo, text: ep.titulo });
     } else {
       // Sin Web Share: respaldo con solo texto (WhatsApp no permite adjuntar imagen por link).
-      window.open('https://wa.me/?text=' + encodeURIComponent(ep.titulo), '_blank');
+      abrirWhatsAppTexto(ep.titulo);
     }
   } catch (err) {
     if (!(err && err.name === 'AbortError')) console.log('No se pudo compartir la evidencia:', err);
@@ -4509,7 +4529,7 @@ async function compartirBaucherRegistro(btn, tiquete, placa, operacion, baucher1
 
   var links = fuentes.map(function (f) { return f.url; });
   var texto = titulo + '\n' + links.join('\n');
-  window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
+  abrirWhatsAppTexto(texto);
 }
 
 // ── SUBIR UN BAUCHER POSTERIOR A UN REGISTRO YA GUARDADO ──────────
