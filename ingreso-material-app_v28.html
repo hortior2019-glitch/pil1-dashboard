@@ -3050,7 +3050,10 @@ async function compartirEvidenciaWhatsApp(fotos, titulo, onDone) {
   evidenciaPendiente = { fotos: fotos, titulo: titulo, onDone: onDone || function(){} };
   try {
     var archivos = await construirArchivosEvidencia(fotos);
-    if (archivos.length > 0 && navigator.canShare && navigator.canShare({ files: archivos })) {
+    if (archivos.length > 0 && navigator.share) {
+      // Se intenta compartir las FOTOS reales aunque canShare no lo
+      // reporte (algunos navegadores lo reportan mal); si lanza error
+      // se pasa al respaldo.
       await navigator.share({ files: archivos, title: titulo, text: titulo });
       finalizarEvidencia();      // compartio bien -> volver al menu
       return;
@@ -3074,10 +3077,17 @@ async function compartirEvidenciaAhora() {
   var ep = evidenciaPendiente;
   try {
     var archivos = await construirArchivosEvidencia(ep.fotos);
-    if (archivos.length > 0 && navigator.canShare && navigator.canShare({ files: archivos })) {
-      await navigator.share({ files: archivos, title: ep.titulo, text: ep.titulo });
-    } else {
-      // Sin Web Share: respaldo con solo texto (WhatsApp no permite adjuntar imagen por link).
+    var compartido = false;
+    if (archivos.length > 0 && navigator.share) {
+      try {
+        await navigator.share({ files: archivos, title: ep.titulo, text: ep.titulo });
+        compartido = true;
+      } catch (errShare) {
+        if (errShare && errShare.name === 'AbortError') { compartido = true; } // cerro la hoja: no abrir respaldo
+      }
+    }
+    if (!compartido) {
+      // Sin Web Share de archivos: respaldo con solo texto (WhatsApp no permite adjuntar imagen por link).
       abrirWhatsAppTexto(ep.titulo);
     }
   } catch (err) {
@@ -4517,9 +4527,18 @@ async function compartirBaucherRegistro(btn, tiquete, placa, operacion, baucher1
       archivos.push(new File([blob], fuentes[i].nombre + '.' + ext, { type: blob.type || 'image/jpeg' }));
     }
 
-    if (archivos.length > 0 && navigator.canShare && navigator.canShare({ files: archivos })) {
-      await navigator.share({ files: archivos, title: titulo, text: titulo });
-      return;
+    // Se intenta compartir las FOTOS reales (no el link). Se prueba
+    // aunque navigator.canShare diga que no o no exista: algunos
+    // navegadores si comparten archivos pero reportan mal canShare.
+    // Solo si esto lanza error se cae al respaldo de texto.
+    if (archivos.length > 0 && navigator.share) {
+      try {
+        await navigator.share({ files: archivos, title: titulo, text: titulo });
+        return; // compartio la foto
+      } catch (errShare) {
+        if (errShare && errShare.name === 'AbortError') return; // el usuario cerro la hoja: no abrir el respaldo
+        throw errShare; // otro error: pasar al respaldo de texto
+      }
     }
   } catch (err) {
     console.log('No se pudo compartir la foto directamente, se usara el link como respaldo:', err);
