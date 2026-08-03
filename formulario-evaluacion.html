@@ -460,7 +460,7 @@
               <textarea id="textoAdicional" rows="3" placeholder="Describe la actividad adicional realizada..."></textarea>
             </div>
             <div class="foto-box">
-              <input type="file" accept="image/*" capture="environment" class="foto-input" id="fotoAdicional">
+              <input type="file" accept="image/*" class="foto-input" id="fotoAdicional">
               <label class="foto-btn" for="fotoAdicional">📷 Adjuntar foto</label>
               <div class="foto-preview" id="previewAdicional">
                 <img src="" alt="">
@@ -539,6 +539,71 @@ const PUNTOS = [
 
 const contenedor = document.getElementById('contenedorPuntos');
 
+// Guarda el archivo de foto realmente seleccionado por punto (id -> File).
+// Existen dos botones (cámara / galería) pero solo debe quedar UNA foto activa.
+const fotosSeleccionadas = {};
+
+function bloqueBotonesFoto(id) {
+  return `
+    <div class="foto-box" id="fotobox_${id}">
+      <div class="foto-botones">
+        <input type="file" accept="image/*" capture="environment" class="foto-input" id="fotoCam_${id}">
+        <label class="foto-btn" for="fotoCam_${id}">📷 Tomar foto</label>
+        <input type="file" accept="image/*" class="foto-input" id="fotoGal_${id}">
+        <label class="foto-btn" for="fotoGal_${id}">🖼️ Subir de galería</label>
+      </div>
+      <div class="foto-preview" id="preview_${id}">
+        <img src="" alt="">
+        <span>Foto cargada</span>
+        <button type="button" class="btn-quitar-foto" id="quitar_${id}" title="Quitar foto">✕</button>
+      </div>
+      <div class="foto-na" id="fotona_${id}">No aplica foto para este punto (N/A)</div>
+    </div>
+  `;
+}
+
+function activarBotonesFoto(id, opcional) {
+  const camInput = document.getElementById(`fotoCam_${id}`);
+  const galInput = document.getElementById(`fotoGal_${id}`);
+  const preview = document.getElementById(`preview_${id}`);
+  const quitarBtn = document.getElementById(`quitar_${id}`);
+  const fotoBotones = document.querySelector(`#fotobox_${id} .foto-botones`);
+
+  function mostrarPreview(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      preview.querySelector('img').src = e.target.result;
+      preview.style.display = 'flex';
+    };
+    reader.readAsDataURL(file);
+  }
+
+  camInput.addEventListener('change', () => {
+    const file = camInput.files[0];
+    if (!file) return;
+    fotosSeleccionadas[id] = file;
+    galInput.value = '';
+    mostrarPreview(file);
+  });
+
+  galInput.addEventListener('change', () => {
+    const file = galInput.files[0];
+    if (!file) return;
+    fotosSeleccionadas[id] = file;
+    camInput.value = '';
+    mostrarPreview(file);
+  });
+
+  quitarBtn.addEventListener('click', () => {
+    delete fotosSeleccionadas[id];
+    camInput.value = '';
+    galInput.value = '';
+    preview.style.display = 'none';
+  });
+
+  return { camInput, galInput, preview, fotoBotones };
+}
+
 PUNTOS.forEach((p, i) => {
   const id = 'p' + i;
   const esAbierto = p.tipo === 'abierto';
@@ -551,14 +616,7 @@ PUNTOS.forEach((p, i) => {
         <textarea id="obs_${id}" class="observaciones-input" rows="2"
           placeholder="Ej: 25 pilas inyectadas..." required></textarea>
       </div>
-      <div class="foto-box" id="fotobox_${id}">
-        <input type="file" accept="image/*" capture="environment" class="foto-input" id="foto_${id}">
-        <label class="foto-btn" for="foto_${id}">📷 Adjuntar foto (opcional)</label>
-        <div class="foto-preview" id="preview_${id}">
-          <img src="" alt="">
-          <span>Foto cargada</span>
-        </div>
-      </div>
+      ${bloqueBotonesFoto(id)}
     `
     : `
       <div class="campo-mini">
@@ -568,15 +626,7 @@ PUNTOS.forEach((p, i) => {
           <option value="N/A">N/A</option>
         </select>
       </div>
-      <div class="foto-box" id="fotobox_${id}">
-        <input type="file" accept="image/*" capture="environment" class="foto-input" id="foto_${id}">
-        <label class="foto-btn" for="foto_${id}">📷 Adjuntar foto de evidencia</label>
-        <div class="foto-preview" id="preview_${id}">
-          <img src="" alt="">
-          <span>Foto cargada</span>
-        </div>
-        <div class="foto-na" id="fotona_${id}">No aplica foto para este punto (N/A)</div>
-      </div>
+      ${bloqueBotonesFoto(id)}
     `;
 
   div.innerHTML = `
@@ -593,53 +643,35 @@ PUNTOS.forEach((p, i) => {
   `;
   contenedor.appendChild(div);
 
-  const fotoInput = div.querySelector(`#foto_${id}`);
-  const fotoLabel = div.querySelector(`label[for="foto_${id}"]`);
+  const { fotoBotones } = activarBotonesFoto(id);
   const fotoBox = div.querySelector(`#fotobox_${id}`);
   const preview = div.querySelector(`#preview_${id}`);
 
+  // El mensaje "no aplica" de N/A solo existe en puntos con calificación
   if (!esAbierto) {
     const selectValor = div.querySelector(`#valor_${id}`);
     const fotoNaMsg = div.querySelector(`#fotona_${id}`);
     selectValor.addEventListener('change', () => {
       if (selectValor.value === 'N/A') {
-        fotoInput.value = '';
+        delete fotosSeleccionadas[id];
+        document.getElementById(`fotoCam_${id}`).value = '';
+        document.getElementById(`fotoGal_${id}`).value = '';
         fotoBox.classList.add('foto-deshabilitada');
-        fotoLabel.style.display = 'none';
+        fotoBotones.style.display = 'none';
         fotoNaMsg.style.display = 'block';
         preview.style.display = 'none';
       } else {
         fotoBox.classList.remove('foto-deshabilitada');
-        fotoLabel.style.display = 'flex';
+        fotoBotones.style.display = 'flex';
         fotoNaMsg.style.display = 'none';
       }
     });
   }
-
-  fotoInput.addEventListener('change', () => {
-    const file = fotoInput.files[0];
-    if (!file) { preview.style.display = 'none'; return; }
-    const reader = new FileReader();
-    reader.onload = e => {
-      preview.querySelector('img').src = e.target.result;
-      preview.style.display = 'flex';
-    };
-    reader.readAsDataURL(file);
-  });
 });
 
-// Vista previa de la foto de "Actividades adicionales"
-document.getElementById('fotoAdicional').addEventListener('change', function () {
-  const file = this.files[0];
-  const preview = document.getElementById('previewAdicional');
-  if (!file) { preview.style.display = 'none'; return; }
-  const reader = new FileReader();
-  reader.onload = e => {
-    preview.querySelector('img').src = e.target.result;
-    preview.style.display = 'flex';
-  };
-  reader.readAsDataURL(file);
-});
+// "Actividades adicionales" también usa el mismo esquema de dos botones
+document.getElementById('contenedorAdicional').insertAdjacentHTML('beforeend', bloqueBotonesFoto('adicional'));
+activarBotonesFoto('adicional');
 
 function fileToBase64(file){
   return new Promise((resolve, reject) => {
@@ -669,6 +701,11 @@ function calcularResumen(respuestas) {
     resumen[clasificar(r.valor)]++;
   });
   return resumen;
+}
+
+// El informe (PDF) no debe incluir los puntos marcados como N/A
+function respuestasParaInforme(respuestas) {
+  return respuestas.filter(r => r.valor !== 'N/A');
 }
 
 function dibujarPastel(resumen) {
@@ -726,27 +763,91 @@ function generarInformePDF(fecha, responsable, respuestas, resumen) {
   doc.setFontSize(11);
   doc.text(`Fecha de evaluación: ${fecha || 'No especificada'}`, 14, 32);
   doc.text(`Responsable: ${responsable}`, 14, 38);
+  doc.setFontSize(9);
+  doc.setTextColor(110, 110, 100);
+  doc.text('Nota: los puntos marcados como N/A no se incluyen en este informe.', 14, 43.5);
 
   // Gráfico de pastel
   const chartImg = document.getElementById('chartCanvas').toDataURL('image/png', 1.0);
   const imgSize = 70;
   const imgX = (210 - imgSize) / 2;
-  doc.addImage(chartImg, 'PNG', imgX, 45, imgSize, imgSize);
+  doc.addImage(chartImg, 'PNG', imgX, 48, imgSize, imgSize);
 
   // Resumen numérico bajo el gráfico
   doc.setFontSize(10);
-  const resumenTexto = `Bueno: ${resumen.bueno}   Regular: ${resumen.regular}   Deficiente: ${resumen.deficiente}   N/A: ${resumen.na}   |   Total puntos: ${respuestas.length}`;
-  doc.text(resumenTexto, 105, 122, { align: 'center' });
+  doc.setTextColor(40, 40, 35);
+  const resumenTexto = `Bueno: ${resumen.bueno}   Regular: ${resumen.regular}   Deficiente: ${resumen.deficiente}   |   Total puntos evaluados: ${respuestas.length}`;
+  doc.text(resumenTexto, 105, 125, { align: 'center' });
 
   // Tabla de detalle
   doc.autoTable({
-    startY: 130,
+    startY: 133,
     head: [['#', 'Actividad', 'Calificación', 'Observaciones']],
     body: respuestas.map(r => [r.punto, r.descripcion, r.valor || '-', r.observaciones || '']),
     headStyles: { fillColor: [31, 77, 61] },
     styles: { fontSize: 9, cellPadding: 3 },
     columnStyles: { 0: { cellWidth: 10 }, 2: { cellWidth: 22, halign: 'center' }, 3: { cellWidth: 45 } }
   });
+
+  // ---------- Evidencia fotográfica ----------
+  const conFoto = respuestas.filter(r => r.fotoBase64 || r.urlFoto);
+  if (conFoto.length) {
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const imgW = 55, imgH = 55, gap = 8, maxCols = 3;
+    let y = doc.lastAutoTable.finalY + 14;
+
+    if (y + 20 > pageHeight - 15) { doc.addPage(); y = 20; }
+    doc.setFontSize(13);
+    doc.setTextColor(31, 77, 61);
+    doc.text('Evidencia fotográfica', 14, y);
+    y += 8;
+
+    let x = 14, col = 0;
+
+    conFoto.forEach(r => {
+      if (y + imgH + 14 > pageHeight - 15) {
+        doc.addPage();
+        y = 20;
+        x = 14;
+        col = 0;
+      }
+
+      if (r.fotoBase64) {
+        const formato = (r.fotoTipo && r.fotoTipo.toLowerCase().includes('png')) ? 'PNG' : 'JPEG';
+        try {
+          doc.addImage(r.fotoBase64, formato, x, y, imgW, imgH);
+        } catch (err) {
+          doc.setDrawColor(200);
+          doc.rect(x, y, imgW, imgH);
+          doc.setFontSize(8);
+          doc.text('No se pudo cargar la imagen', x + 4, y + imgH / 2);
+        }
+      } else if (r.urlFoto) {
+        // Informe regenerado desde el historial: no tenemos los bytes de la foto,
+        // solo el enlace guardado en Drive.
+        doc.setDrawColor(200);
+        doc.setFillColor(248, 247, 242);
+        doc.rect(x, y, imgW, imgH, 'FD');
+        doc.setFontSize(8);
+        doc.setTextColor(31, 77, 61);
+        doc.textWithLink('Ver foto en Drive', x + 6, y + imgH / 2, { url: r.urlFoto });
+      }
+
+      doc.setFontSize(8);
+      doc.setTextColor(60, 60, 55);
+      const captionLines = doc.splitTextToSize(`#${r.punto} — ${r.descripcion}`, imgW);
+      doc.text(captionLines, x, y + imgH + 5);
+
+      col++;
+      if (col >= maxCols) {
+        col = 0;
+        x = 14;
+        y += imgH + 20;
+      } else {
+        x += imgW + gap;
+      }
+    });
+  }
 
   const nombreArchivo = `informe-evaluacion_${fecha || 'sin-fecha'}_${(responsable || 'sin-responsable').replace(/\s+/g, '-')}.pdf`;
   doc.save(nombreArchivo);
@@ -835,12 +936,14 @@ function crearTarjetaHistorial(envio) {
         punto: p.punto,
         descripcion: p.descripcion,
         valor: p.valor,
-        observaciones: p.observaciones
+        observaciones: p.observaciones,
+        urlFoto: p.urlFoto
       }));
-      const resumenPdf = calcularResumen(respuestas);
+      const respuestasInforme = respuestasParaInforme(respuestas);
+      const resumenPdf = calcularResumen(respuestasInforme);
       dibujarPastel(resumenPdf);
       await new Promise(res => setTimeout(res, 150));
-      generarInformePDF(envio.fecha, envio.responsable, respuestas, resumenPdf);
+      generarInformePDF(envio.fecha, envio.responsable, respuestasInforme, resumenPdf);
     } catch (err) {
       alert('No se pudo generar el informe: ' + err.message);
     } finally {
@@ -936,10 +1039,11 @@ document.getElementById('formEvaluacion').addEventListener('submit', async (e) =
       // Cualquier problema al generar el PDF de aquí en adelante no debe reportarse
       // como una falla del envío.
       try {
-        const resumen = calcularResumen(respuestas);
+        const respuestasInforme = respuestasParaInforme(respuestas);
+        const resumen = calcularResumen(respuestasInforme);
         dibujarPastel(resumen);
         await new Promise(res => setTimeout(res, 150));
-        generarInformePDF(fecha, responsable, respuestas, resumen);
+        generarInformePDF(fecha, responsable, respuestasInforme, resumen);
 
         estado.className = 'ok';
         estado.textContent = 'Evaluación enviada correctamente. Las fotos se están guardando en Drive y el informe en PDF se descargó automáticamente.';
