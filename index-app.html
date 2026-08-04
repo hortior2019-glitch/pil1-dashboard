@@ -1158,11 +1158,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
     <div id="ingreso-crecimiento-total"></div>
   </div>
 
-  <!-- ── INFORME GERENCIAL: viajes y kg por proveedor, sin graficas, al estilo Proveedores ── -->
-  <div style="margin-bottom:24px">
-    <div style="font-size:13px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--ink-m);margin:0 0 14px 2px">Informe gerencial · Viajes y kg por proveedor</div>
-    <div id="ingreso-informe-gerencial"></div>
-  </div>
 
   <!-- ── GRÁFICA COMPARATIVA DE PICOS (KPIs y graficas; la cabecera con el titulo,
        las pills A/B y los botones de Semana/Mes ahora esta arriba de todo, antes
@@ -5662,7 +5657,6 @@ function renderCmpChart(data) {
   // Comparativo por proveedor: usa exactamente el mismo periodo (rangeA/rangeB/labels/
   // granularidad) que se acaba de calcular arriba para el resumen general.
   renderCmpPorProveedor(data, rangeA, rangeB, labels, labelsBarras, granularidad, lblA, lblB);
-  renderResumenGerencialIngreso(data, rangeA, rangeB);
   // Crecimiento total: reutiliza los mismos totales ya calculados arriba para el
   // resumen general (todos los proveedores sumados), sin volver a recorrer los datos.
   renderCrecimientoTotalIngreso(totVA, totVB, totKgA, totKgB);
@@ -5712,93 +5706,6 @@ function renderCrecimientoTotalIngreso(totVA, totVB, totKgA, totKgB) {
       </div>
     </div>
   </div>`;
-}
-
-// ── INFORME GERENCIAL DE INGRESO DE MATERIAL (arriba de todo, sin graficas) ──
-// Tarjetas al estilo de "Proveedores"/informe gerencial de Cortes: rank + logo +
-// barra + valor, una por proveedor, ordenadas de mayor a menor kg del periodo
-// actual. Incluye viajes y una etiqueta de SUBIÓ/BAJÓ/IGUAL frente al periodo
-// anterior (mismo rangeA/rangeB que ya usa el comparativo de abajo).
-function renderResumenGerencialIngreso(data, rangeA, rangeB) {
-  const cont = document.getElementById('ingreso-informe-gerencial');
-  if (!cont) return;
-
-  const dataA = filterByRange(data, rangeA.inicio, rangeA.fin);
-  const dataB = filterByRange(data, rangeB.inicio, rangeB.fin);
-
-  const nombreOp = r => splitSoftysGroup(
-    normEmpresa(r['OPERACION']||r['Operacion']||r['operacion']||r['OPERACIÓN']||''),
-    r['RESIDUO']||r['Residuo']||r['residuo']||''
-  );
-  const agrupar = lista => {
-    const m = {};
-    lista.forEach(r => {
-      const prov = nombreOp(r);
-      if (!prov) return;
-      if (!m[prov]) m[prov] = { viajes:0, kg:0 };
-      m[prov].viajes++;
-      m[prov].kg += getPesoNeto(r) || 0;
-    });
-    return m;
-  };
-  const mapA = agrupar(dataA), mapB = agrupar(dataB);
-  const proveedores = [...new Set([...Object.keys(mapA), ...Object.keys(mapB)])]
-    .sort((a,b) => (mapA[b]?.kg||0) - (mapA[a]?.kg||0));
-
-  if (proveedores.length === 0) { cont.innerHTML = '<div style="text-align:center;padding:24px;color:var(--ink-l);font-size:13px">Sin registros en este periodo.</div>'; return; }
-
-  const maxKg = Math.max(...proveedores.map(p => (mapA[p]||{kg:0}).kg), 1);
-
-  cont.innerHTML = proveedores.map((prov, idx) => {
-    const a = mapA[prov] || { viajes:0, kg:0 };
-    const b = mapB[prov] || { viajes:0, kg:0 };
-    const color = getClientColor(prov) || '#1a5c35';
-    const logo  = getClientLogo(prov);
-    const rank  = idx + 1;
-    const pct   = Math.round((a.kg / maxKg) * 100);
-
-    let badgeTxt, badgeColor, badgeBg;
-    if (a.kg === 0 && b.kg === 0) { badgeTxt = 'SIN DATOS'; badgeColor = 'var(--ink-l)'; badgeBg = 'var(--rule-l)'; }
-    else if (b.kg === 0) { badgeTxt = 'NUEVO'; badgeColor = '#1a7f37'; badgeBg = '#e6f4ea'; }
-    else if (a.kg === b.kg) { badgeTxt = 'IGUAL'; badgeColor = 'var(--ink-m)'; badgeBg = 'var(--rule-l)'; }
-    else {
-      const diffPct = (a.kg - b.kg) / b.kg * 100;
-      const subio = diffPct >= 0;
-      badgeTxt = (subio ? '↑ SUBIÓ +' : '↓ BAJÓ ') + Math.abs(diffPct).toFixed(1) + '%';
-      badgeColor = subio ? '#1a7f37' : '#b91c1c';
-      badgeBg = subio ? '#e6f4ea' : '#fde8e8';
-    }
-
-    return `<div class="ic-card" style="margin-bottom:14px;border:1px solid ${color};background:var(--white);overflow:hidden;transition:box-shadow .3s,transform .2s;border-left:6px solid ${color}" onmouseover="this.style.boxShadow='0 8px 32px rgba(0,0,0,.12)';this.style.transform='translateY(-2px)'" onmouseout="this.style.boxShadow='none';this.style.transform='none'">
-      <div class="ic-row" style="display:flex;align-items:stretch;min-height:80px">
-        <!-- Rank -->
-        <div class="ic-rank" style="display:flex;align-items:center;justify-content:center;padding:0 18px;background:${color}18;border-right:1px solid ${color}30;min-width:60px;flex-shrink:0">
-          <div style="font-family:'Libre Baskerville',serif;font-size:30px;font-weight:700;color:${color};opacity:.85;font-variant-numeric:lining-nums tabular-nums;line-height:1">${rank}</div>
-        </div>
-        <!-- Logo -->
-        <div class="ic-logo" style="display:flex;align-items:center;justify-content:center;padding:10px 14px;border-right:1px solid var(--rule-l);min-width:100px;flex-shrink:0;background:white">
-          ${logo ? `<img src="${logo}" alt="${nombreProveedorInforme(prov)}" style="width:76px;height:76px;object-fit:contain" onerror="this.parentNode.innerHTML='<div style=\'width:76px;height:76px;border-radius:4px;background:${color}18;display:flex;align-items:center;justify-content:center;font-family:Playfair Display,serif;font-size:20px;font-weight:700;color:${color}\'>${nombreProveedorInforme(prov).charAt(0)}</div>'">`
-          : `<div style="width:76px;height:76px;border-radius:4px;background:${color}18;display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:${color}">${prov.charAt(0)}</div>`}
-        </div>
-        <!-- Nombre + estado + barra -->
-        <div class="ic-name" style="flex:1;min-width:0;padding:14px 18px;display:flex;flex-direction:column;justify-content:center">
-          <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px;flex-wrap:wrap">
-            <span style="font-family:'Playfair Display',serif;font-size:18px;font-weight:700;color:var(--ink);letter-spacing:-.3px">${nombreProveedorInforme(prov)}</span>
-            <span style="font-size:9px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:${badgeColor};background:${badgeBg};padding:2px 8px;border-radius:3px">${badgeTxt}</span>
-          </div>
-          <div style="height:6px;background:var(--rule-l);overflow:hidden;border-radius:3px">
-            <div style="height:100%;width:${pct}%;background:${color};border-radius:3px;transition:width .8s ease"></div>
-          </div>
-          <div style="font-size:11px;color:var(--ink-m);margin-top:5px;font-weight:700">${fmt(a.viajes)} <span style="color:var(--ink-l);font-weight:600">vs</span> ${fmt(b.viajes)} viajes</div>
-        </div>
-        <!-- Valor -->
-        <div class="ic-valor" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 22px;border-left:1px solid var(--rule-l);min-width:150px;flex-shrink:0;background:${color}06">
-          <div style="font-family:'Libre Baskerville',serif;font-size:19px;font-weight:700;color:${color};line-height:1.3;font-variant-numeric:lining-nums tabular-nums;text-align:center">${fmtTon(a.kg)} <span style="font-size:13px;color:var(--ink-l);font-weight:600">vs</span> ${fmtTon(b.kg)}</div>
-          <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);margin-top:4px">peso neto</div>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
 }
 
 // ── COMPARATIVO POR PROVEEDOR (debajo del resumen general) ──
