@@ -6082,10 +6082,15 @@ function renderVolquetasVisual(data, filter) {
     const ultimaFecha = regs.map(r => r['Fecha']||r['Timestamp']||'').sort().reverse()[0] || '';
     const km = regs.map(r => r['Kilometraje']||r['km']||'').filter(Boolean).sort().reverse()[0] || '';
     // Hallazgos
-    const malosMap = {};
-    regs.forEach(row => { allItems.forEach(col => { if(isMalo(row[col]||'')) malosMap[col]=(malosMap[col]||0)+1; }); });
+    const malosMap = {}, regularesMap = {};
+    regs.forEach(row => { allItems.forEach(col => {
+      const val = row[col]||'';
+      if(isMalo(val)) malosMap[col]=(malosMap[col]||0)+1;
+      else if(isRegular(val)) regularesMap[col]=(regularesMap[col]||0)+1;
+    }); });
     const hallazgos = Object.entries(malosMap).sort((a,b)=>b[1]-a[1]).slice(0,4);
-    return { placa, regs, malos, regulares, buenos, total, pctBuenos, conductores, ultimaFecha, km, hallazgos };
+    const hallazgosReg = Object.entries(regularesMap).sort((a,b)=>b[1]-a[1]).slice(0,4);
+    return { placa, regs, malos, regulares, buenos, total, pctBuenos, conductores, ultimaFecha, km, hallazgos, hallazgosReg };
   }).sort((a,b) => b.malos - a.malos || b.regulares - a.regulares);
 
   cont.innerHTML = vehiculos.map(v => {
@@ -6093,10 +6098,14 @@ function renderVolquetasVisual(data, filter) {
     const badgeColor = v.malos > 0 ? 'var(--red)' : v.regulares > 0 ? '#d4a017' : 'var(--green)';
     const badgeText = v.malos > 0 ? 'REQUIERE ATENCIÓN' : v.regulares > 0 ? 'REGULAR' : 'ÓPTIMO';
 
-    const hallHtml = v.hallazgos.length > 0 ? v.hallazgos.map(([item, cnt]) => {
-      const shortName = item.replace(/^[A-Z]+\d+\s*-\s*/,'');
-      return `<span style="font-size:15px;background:var(--red-l);color:var(--red);padding:5px 10px;border-radius:4px;font-weight:700">${shortName} (${cnt})</span>`;
-    }).join(' ') : '<span style="font-size:11px;color:var(--green);font-weight:600">Sin hallazgos</span>';
+    const _short = item => item.replace(/^[A-Z]+\d+\s*-\s*/,'');
+    const hallMalosHtml = v.hallazgos.map(([item, cnt]) =>
+      `<span style="font-size:15px;background:var(--red-l);color:var(--red);padding:5px 10px;border-radius:4px;font-weight:700">${_short(item)} (${cnt})</span>`).join(' ');
+    const hallRegHtml = v.hallazgosReg.map(([item, cnt]) =>
+      `<span style="font-size:15px;background:#fdf3d8;color:#8b6914;padding:5px 10px;border-radius:4px;font-weight:700">${_short(item)} (${cnt})</span>`).join(' ');
+    const hallHtml = (v.hallazgos.length > 0 || v.hallazgosReg.length > 0)
+      ? (hallMalosHtml + (hallMalosHtml && hallRegHtml ? ' ' : '') + hallRegHtml)
+      : '<span style="font-size:11px;color:var(--green);font-weight:600">Sin hallazgos</span>';
 
     return `<div class="card" style="margin-bottom:14px;border-left:5px solid ${borderColor}">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;flex-wrap:wrap;gap:12px">
@@ -6477,13 +6486,18 @@ function renderPreopUnificado(dataCar, dataTra, filter) {
     });
     const pctBuenos = total > 0 ? Math.round(buenos/total*100) : 0;
     // Hallazgos
-    const malosMap = {};
-    rows.forEach(row => { allItems.forEach(col => { if(isMalo(row[col]||'')) malosMap[col]=(malosMap[col]||0)+1; }); });
+    const malosMap = {}, regularesMap = {};
+    rows.forEach(row => { allItems.forEach(col => {
+      const val = row[col]||'';
+      if(isMalo(val)) malosMap[col]=(malosMap[col]||0)+1;
+      else if(isRegular(val)) regularesMap[col]=(regularesMap[col]||0)+1;
+    }); });
     const hallazgos = Object.entries(malosMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    const hallazgosReg = Object.entries(regularesMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
     const ops = new Set(rows.map(r => r['Operador']||r['operador']||'').filter(Boolean));
     const horos = rows.map(r => parseFloat((r['Horometro']||r['horometro']||'0').replace(/[^0-9.]/g,''))).filter(n=>!isNaN(n)&&n>0);
     const avgH = horos.length ? Math.round(horos.reduce((a,b)=>a+b,0)/horos.length) : 0;
-    return { rows, malos, regs, buenos, total, pctBuenos, hallazgos, operadores: ops.size, horometro: avgH };
+    return { rows, malos, regs, buenos, total, pctBuenos, hallazgos, hallazgosReg, operadores: ops.size, horometro: avgH };
   }
 
   const estadoCar = calcEstado(rowsCar, PREOP_SECCIONES_CAR);
@@ -6514,7 +6528,20 @@ function renderPreopUnificado(dataCar, dataTra, filter) {
           <span style="font-size:18px;font-weight:800;color:var(--red);min-width:28px;text-align:right">${cnt}</span>
         </div>`;
       }).join('');
-    } else {
+    }
+    if (e.hallazgosReg.length > 0) {
+      const maxR = e.hallazgosReg[0][1] || 1;
+      hallHtml += e.hallazgosReg.map(([item, cnt]) => {
+        const shortName = item.replace(/^[A-Z]+\d+\s*-\s*/,'');
+        const pct = Math.round(cnt/maxR*100);
+        return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <div style="flex:1"><div style="height:6px;background:var(--rule-l);border-radius:3px"><div style="width:${pct}%;height:100%;background:#d4a017;border-radius:3px"></div></div></div>
+          <span style="font-size:15px;color:var(--ink);font-weight:700;min-width:120px">${shortName}</span>
+          <span style="font-size:18px;font-weight:800;color:#d4a017;min-width:28px;text-align:right">${cnt}</span>
+        </div>`;
+      }).join('');
+    }
+    if (!hallHtml) {
       hallHtml = '<div style="color:var(--green);font-size:12px;font-weight:600;padding:8px 0">Sin hallazgos críticos</div>';
     }
 
