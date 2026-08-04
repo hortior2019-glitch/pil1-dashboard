@@ -183,6 +183,31 @@
   .foto-box.foto-deshabilitada{
     opacity:.85;
   }
+  .foto-botones{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+  }
+  .foto-botones .foto-btn{
+    flex:1;
+    min-width:130px;
+  }
+  .foto-preview{
+    position:relative;
+  }
+  .btn-quitar-foto{
+    background:var(--rojo);
+    color:#fff;
+    border:none;
+    width:20px;
+    height:20px;
+    border-radius:50%;
+    font-size:11px;
+    line-height:1;
+    cursor:pointer;
+    margin-left:auto;
+  }
+  .btn-quitar-foto:hover{ opacity:.85; }
   textarea{
     width:100%;
     padding:10px 12px;
@@ -459,14 +484,7 @@
             <div class="campo-mini" style="flex:2; min-width:240px;">
               <textarea id="textoAdicional" rows="3" placeholder="Describe la actividad adicional realizada..."></textarea>
             </div>
-            <div class="foto-box">
-              <input type="file" accept="image/*" class="foto-input" id="fotoAdicional">
-              <label class="foto-btn" for="fotoAdicional">📷 Adjuntar foto</label>
-              <div class="foto-preview" id="previewAdicional">
-                <img src="" alt="">
-                <span>Foto cargada</span>
-              </div>
-            </div>
+            <div id="contenedorAdicional" style="flex:1; min-width:200px;"></div>
           </div>
         </div>
 
@@ -972,7 +990,7 @@ document.getElementById('formEvaluacion').addEventListener('submit', async (e) =
       if (PUNTOS[i].tipo === 'abierto') continue;
       const id = 'p' + i;
       const valor = document.getElementById('valor_' + id).value;
-      const file = document.getElementById('foto_' + id).files[0];
+      const file = fotosSeleccionadas[id];
       if (valor !== 'N/A' && !file) {
         throw new Error(`Falta la foto de evidencia del punto ${i + 1} ("${PUNTOS[i].texto}"). Si no aplica, seleccione N/A.`);
       }
@@ -984,8 +1002,7 @@ document.getElementById('formEvaluacion').addEventListener('submit', async (e) =
       const esAbierto = PUNTOS[i].tipo === 'abierto';
       const valor = esAbierto ? '' : document.getElementById('valor_' + id).value;
       const observaciones = document.getElementById('obs_' + id).value.trim();
-      const fotoInput = document.getElementById('foto_' + id);
-      const file = fotoInput.files[0];
+      const file = fotosSeleccionadas[id];
       let fotoBase64 = null, fotoNombre = null, fotoTipo = null;
       if (file) {
         fotoBase64 = await fileToBase64(file);
@@ -1005,7 +1022,7 @@ document.getElementById('formEvaluacion').addEventListener('submit', async (e) =
 
     // Actividades adicionales (opcional): se agrega como un punto extra solo si tiene contenido
     const textoAdicional = document.getElementById('textoAdicional').value.trim();
-    const fileAdicional = document.getElementById('fotoAdicional').files[0];
+    const fileAdicional = fotosSeleccionadas['adicional'];
     if (textoAdicional || fileAdicional) {
       let fotoBase64 = null, fotoNombre = null, fotoTipo = null;
       if (fileAdicional) {
@@ -1054,7 +1071,7 @@ document.getElementById('formEvaluacion').addEventListener('submit', async (e) =
       estado.style.display = 'block';
       document.getElementById('formEvaluacion').reset();
       document.querySelectorAll('.foto-preview').forEach(p => p.style.display = 'none');
-      document.getElementById('previewAdicional').style.display = 'none';
+      Object.keys(fotosSeleccionadas).forEach(k => delete fotosSeleccionadas[k]);
       historialCargado = false; // para que el historial se recargue con este nuevo envío
     } else {
       throw new Error((data && data.message) || 'Respuesta inesperada del servidor');
