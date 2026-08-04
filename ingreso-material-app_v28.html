@@ -1003,7 +1003,11 @@ input.campo-error-resaltado,select.campo-error-resaltado,textarea.campo-error-re
 
   <label for="chk-evidencia-wa" style="display:flex;align-items:center;gap:10px;margin-top:16px;padding:12px 14px;border:1px solid var(--rule);border-radius:8px;background:var(--s2);cursor:pointer">
     <input type="checkbox" id="chk-evidencia-wa" checked style="width:20px;height:20px;flex-shrink:0;accent-color:var(--navy)">
-    <span style="font-size:13px;font-weight:600;color:var(--ink)">Enviar evidencia fotográfica a WhatsApp (ticket y foto del vehículo)</span>
+    <span style="font-size:13px;font-weight:600;color:var(--ink)">Enviar evidencia fotográfica a WhatsApp (ticket)</span>
+  </label>
+  <label for="chk-evidencia-vehiculo" style="display:flex;align-items:center;gap:10px;margin-top:8px;padding:12px 14px;border:1px solid var(--rule);border-radius:8px;background:var(--s2);cursor:pointer">
+    <input type="checkbox" id="chk-evidencia-vehiculo" style="width:20px;height:20px;flex-shrink:0;accent-color:var(--navy)">
+    <span style="font-size:13px;font-weight:600;color:var(--ink)">Enviar también la foto del vehículo a WhatsApp</span>
   </label>
 
   <button class="btn-submit" id="btn-submit" type="button">Guardar Formulario</button>
@@ -2905,19 +2909,20 @@ function procesarResultadoFinalEnvio(resultadoEnvio, placa, operacion, operario,
     detenerAHT();
     enviarAImplementacion(operacion, conductor, document.getElementById('ultimos_cuatro_cedula').value, datos.observacion, conductorCelular);
 
-    // Evidencia a WhatsApp (si el checklist quedo activado). Se toman
-    // las fotos LOCALES ya capturadas (ticket y vehiculo) — copiadas
-    // aqui antes de que resetFormulario() las borre — y se comparten.
+    // Evidencia a WhatsApp. Dos casillas independientes: el ticket (por
+    // defecto activada) y la foto del vehiculo (por defecto DESactivada).
+    // Se toman las fotos LOCALES ya capturadas — copiadas aqui antes de
+    // que resetFormulario() las borre — segun lo que este marcado.
     var chkEvi = document.getElementById('chk-evidencia-wa');
-    var quiereEvidencia = chkEvi ? chkEvi.checked : false;
+    var chkVeh = document.getElementById('chk-evidencia-vehiculo');
+    var quiereTicket   = chkEvi ? chkEvi.checked : false;
+    var quiereVehiculo = chkVeh ? chkVeh.checked : false;
     var fotosEvidencia = [];
-    if (quiereEvidencia) {
-      if (fotosCapturadas['baucher-1']) fotosEvidencia.push({ dataUrl: fotosCapturadas['baucher-1'], nombre: 'ticket_' + (datos.numero_tiquete || '') });
-      if (fotosCapturadas['vehiculo'])  fotosEvidencia.push({ dataUrl: fotosCapturadas['vehiculo'],  nombre: 'vehiculo_' + (datos.numero_tiquete || '') });
-    }
+    if (quiereTicket && fotosCapturadas['baucher-1']) fotosEvidencia.push({ dataUrl: fotosCapturadas['baucher-1'], nombre: 'ticket_' + (datos.numero_tiquete || '') });
+    if (quiereVehiculo && fotosCapturadas['vehiculo']) fotosEvidencia.push({ dataUrl: fotosCapturadas['vehiculo'], nombre: 'vehiculo_' + (datos.numero_tiquete || '') });
     var tituloEvi = 'Evidencia ingreso — ' + placa + ' | tiquete ' + (datos.numero_tiquete || '') + ' (' + operacion + ')';
 
-    if (quiereEvidencia && fotosEvidencia.length > 0) {
+    if (fotosEvidencia.length > 0) {
       // No se vuelve al menu automaticamente: primero se comparte la
       // evidencia (abre WhatsApp / la hoja de "Compartir"), y al terminar
       // u omitir se limpia y se vuelve al menu.
@@ -3220,6 +3225,10 @@ async function enviarRegistroConReintentos(datos) {
 // ── RESET ─────────────────────────────────────────
 function resetFormulario() {
   idEnvioActual = generarIdEnvio(); // proximo registro = id nuevo
+  // Restaurar las casillas de evidencia a su estado por defecto:
+  // ticket activado, vehiculo DESactivado.
+  var _chkTk = document.getElementById('chk-evidencia-wa'); if (_chkTk) _chkTk.checked = true;
+  var _chkVh = document.getElementById('chk-evidencia-vehiculo'); if (_chkVh) _chkVh.checked = false;
   document.getElementById('conductor-select').value = '';
   ['numero_tiquete','placa','conductor','conductor_celular','ultimos_cuatro_cedula','peso_entrada','observacion','seccion_depositaria'].forEach(function(id){
     var el=document.getElementById(id); if(el) el.value='';
