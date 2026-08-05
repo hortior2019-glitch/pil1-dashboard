@@ -7464,8 +7464,15 @@ function reubicarPaso2() {
 let _ordenColumnas = [];
 
 // Cada vez que se marca/desmarca una columna, actualiza el orden y regenera
+// Preferencia "pegajosa" de la columna de baucher: los cortes guardados ANTES de
+// que existiera esta columna no la traen en su lista, y al cargarlos se perdia.
+// Si el usuario la activa una vez, se mantiene activa tambien al abrir cortes
+// antiguos (hasta que la desactive). null = sin preferencia explicita.
+let _prefColumnaBaucher = null;
+
 function onColumnaToggle(chk) {
   const id = chk.value;
+  if (id === 'baucher') _prefColumnaBaucher = chk.checked;
   if (chk.checked) {
     // Agregar al final si no estaba
     if (!_ordenColumnas.includes(id)) _ordenColumnas.push(id);
@@ -9977,6 +9984,18 @@ function _aplicarFav(f, ini, cie) {
   // Restaurar columnas y su orden de selección guardado
   document.querySelectorAll('.corte-col-chk').forEach(chk => { chk.checked = (f.colsSel||[]).includes(chk.value); });
   _ordenColumnas = [...(f.colsSel||[])]; // respeta el orden guardado
+  // Cortes guardados antes de que existiera la columna de baucher: si el usuario
+  // la dejo activada, se agrega tambien aqui (al final) para no tener que
+  // marcarla a mano cada vez que abre un corte antiguo.
+  if (_prefColumnaBaucher === true && !_ordenColumnas.includes('baucher')) {
+    _ordenColumnas.push('baucher');
+    const chkB = document.querySelector('.corte-col-chk[value="baucher"]');
+    if (chkB) chkB.checked = true;
+  } else if (_prefColumnaBaucher === false) {
+    _ordenColumnas = _ordenColumnas.filter(x => x !== 'baucher');
+    const chkB = document.querySelector('.corte-col-chk[value="baucher"]');
+    if (chkB) chkB.checked = false;
+  }
   actualizarNumerosColumnas();
   document.getElementById('corte-separar-material').checked = !!f.sepMaterial;
   document.getElementById('corte-separar-empresa').checked = !!f.sepEmpresa;
