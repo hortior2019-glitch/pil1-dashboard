@@ -3962,13 +3962,21 @@ function extraerIdDriveDesdeUrl(url) {
 async function obtenerFotoBase64Cliente(driveUrl) {
   var id = extraerIdDriveDesdeUrl(driveUrl);
   if (!id) return '';
+  // Tiempo limite: si una foto no responde en 20s, se aborta y se
+  // devuelve '' para que el proceso (PDF / compartir) NO se quede
+  // cargando infinitamente por una sola foto trabada.
+  var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 20000) : null;
   try {
-    var res = await fetch(WEBAPP_URL + '?foto=1&id=' + encodeURIComponent(id) + '&t=' + Date.now());
+    var opts = ctrl ? { signal: ctrl.signal } : {};
+    var res = await fetch(WEBAPP_URL + '?foto=1&id=' + encodeURIComponent(id) + '&t=' + Date.now(), opts);
     var json = await res.json();
     return json.success ? json.dataUrl : '';
   } catch (e) {
-    console.error('Error obteniendo foto para PDF:', e);
+    console.error('Error/timeout obteniendo foto:', e);
     return '';
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -4050,8 +4058,11 @@ async function exportarLotePDF() {
       var altoDisp  = pageH - margen*2 - 60;
       var propor    = await new Promise(function(resolve){
         var img = new Image();
-        img.onload = function(){ resolve(img.width / img.height); };
-        img.onerror = function(){ resolve(4/3); };
+        var listo = false;
+        var fin = function(v){ if(!listo){ listo=true; resolve(v); } };
+        img.onload = function(){ fin(img.width / img.height); };
+        img.onerror = function(){ fin(4/3); };
+        setTimeout(function(){ fin(4/3); }, 8000); // por si la imagen nunca dispara onload/onerror
         img.src = dataUrl;
       });
       var anchoImg = anchoDisp;
@@ -4143,8 +4154,11 @@ async function exportarEvidenciaFotograficaPDF() {
         var altoDisp  = pageH - margen*2 - 60;
         var propor    = await new Promise(function(resolve){
           var img = new Image();
-          img.onload = function(){ resolve(img.width / img.height); };
-          img.onerror = function(){ resolve(4/3); };
+          var listo = false;
+          var fin = function(v){ if(!listo){ listo=true; resolve(v); } };
+          img.onload = function(){ fin(img.width / img.height); };
+          img.onerror = function(){ fin(4/3); };
+          setTimeout(function(){ fin(4/3); }, 8000);
           img.src = dataUrl;
         });
         var anchoImg = anchoDisp;
