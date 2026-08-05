@@ -691,12 +691,43 @@ PUNTOS.forEach((p, i) => {
 document.getElementById('contenedorAdicional').insertAdjacentHTML('beforeend', bloqueBotonesFoto('adicional'));
 activarBotonesFoto('adicional');
 
-function fileToBase64(file){
+// Redimensiona y comprime la imagen antes de convertirla a base64.
+// Esto evita payloads enormes (fotos de celular pueden pesar varios MB cada una)
+// que provocan fallos de envío o de lectura en el navegador móvil.
+function comprimirImagen(file, maxDim = 1280, calidad = 0.7) {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result.split(',')[1]);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > height && width > maxDim) {
+        height = Math.round(height * (maxDim / width));
+        width = maxDim;
+      } else if (height >= width && height > maxDim) {
+        width = Math.round(width * (maxDim / height));
+        height = maxDim;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      URL.revokeObjectURL(url);
+      try {
+        const dataUrl = canvas.toDataURL('image/jpeg', calidad);
+        resolve(dataUrl.split(',')[1]); // base64 puro, sin encabezado
+      } catch (err) {
+        reject(new Error('No se pudo procesar la imagen (formato no soportado).'));
+      }
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('No se pudo leer la imagen seleccionada. Intenta con otra foto.'));
+    };
+
+    img.src = url;
   });
 }
 
@@ -1005,9 +1036,9 @@ document.getElementById('formEvaluacion').addEventListener('submit', async (e) =
       const file = fotosSeleccionadas[id];
       let fotoBase64 = null, fotoNombre = null, fotoTipo = null;
       if (file) {
-        fotoBase64 = await fileToBase64(file);
-        fotoNombre = `${fecha || 'sin-fecha'}_${responsable || 'sin-responsable'}_punto${i+1}_${file.name}`;
-        fotoTipo = file.type;
+        fotoBase64 = await comprimirImagen(file);
+        fotoNombre = `${fecha || 'sin-fecha'}_${responsable || 'sin-responsable'}_punto${i+1}_${file.name.replace(/\.[^.]+$/, '')}.jpg`;
+        fotoTipo = 'image/jpeg';
       }
       respuestas.push({
         punto: i + 1,
@@ -1026,9 +1057,9 @@ document.getElementById('formEvaluacion').addEventListener('submit', async (e) =
     if (textoAdicional || fileAdicional) {
       let fotoBase64 = null, fotoNombre = null, fotoTipo = null;
       if (fileAdicional) {
-        fotoBase64 = await fileToBase64(fileAdicional);
-        fotoNombre = `${fecha || 'sin-fecha'}_${responsable || 'sin-responsable'}_adicional_${fileAdicional.name}`;
-        fotoTipo = fileAdicional.type;
+        fotoBase64 = await comprimirImagen(fileAdicional);
+        fotoNombre = `${fecha || 'sin-fecha'}_${responsable || 'sin-responsable'}_adicional_${fileAdicional.name.replace(/\.[^.]+$/, '')}.jpg`;
+        fotoTipo = 'image/jpeg';
       }
       respuestas.push({
         punto: 'Adicional',
@@ -1066,7 +1097,8 @@ document.getElementById('formEvaluacion').addEventListener('submit', async (e) =
         estado.textContent = 'Evaluación enviada correctamente. Las fotos se están guardando en Drive y el informe en PDF se descargó automáticamente.';
       } catch (pdfErr) {
         estado.className = 'ok';
-        estado.textContent = 'Evaluación enviada y guardada correctamente. No se pudo generar el informe PDF automático (' + pdfErr.message + '), pero tus datos ya quedaron registrados.';
+        const detallePdf = (pdfErr && pdfErr.message) ? pdfErr.message : 'error desconocido al generar el PDF';
+        estado.textContent = 'Evaluación enviada y guardada correctamente. No se pudo generar el informe PDF automático (' + detallePdf + '), pero tus datos ya quedaron registrados.';
       }
       estado.style.display = 'block';
       document.getElementById('formEvaluacion').reset();
@@ -1078,7 +1110,8 @@ document.getElementById('formEvaluacion').addEventListener('submit', async (e) =
     }
   } catch (err) {
     estado.className = 'error';
-    estado.textContent = 'No se pudo enviar el formulario: ' + err.message;
+    const detalle = (err && err.message) ? err.message : 'Error desconocido (revisa tu conexión o el tamaño/formato de las fotos e intenta de nuevo).';
+    estado.textContent = 'No se pudo enviar el formulario: ' + detalle;
     estado.style.display = 'block';
   } finally {
     btn.disabled = false;
