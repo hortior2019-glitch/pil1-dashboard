@@ -7045,6 +7045,7 @@ const CORTE_COLUMNAS_DISP = [
 // guardan como un set de claves TIQUETE|FECHA|PLACA.
 let _auditadosSet = new Set();
 let _auditadosCargados = false;
+let _auditadosApiOk = null; // null = aun no se consulto
 function cargarAuditados(forzar) {
   if (typeof INGRESO_API !== 'string' || INGRESO_API.indexOf('PEGAR') !== -1) return Promise.resolve();
   if (_auditadosCargados && !forzar) return Promise.resolve();
@@ -7056,7 +7057,9 @@ function cargarAuditados(forzar) {
         _auditadosSet = new Set(d.claves);
         _auditadosCargados = true;
         console.log('Registros auditados (por color en el sheet):', _auditadosSet.size);
+        _auditadosApiOk = true;
       } else {
+        _auditadosApiOk = false;
         console.warn('El Apps Script de Ingreso aun no responde a "listarAuditados". Actualiza el Code.gs y crea una nueva version de la implementacion.');
       }
     })
@@ -7496,10 +7499,12 @@ let _ordenColumnas = [];
 // Si el usuario la activa una vez, se mantiene activa tambien al abrir cortes
 // antiguos (hasta que la desactive). null = sin preferencia explicita.
 let _prefColumnaBaucher = null;
+let _prefColumnaAuditado = null;
 
 function onColumnaToggle(chk) {
   const id = chk.value;
   if (id === 'baucher') _prefColumnaBaucher = chk.checked;
+  if (id === 'auditado') _prefColumnaAuditado = chk.checked;
   if (chk.checked) {
     // Agregar al final si no estaba
     if (!_ordenColumnas.includes(id)) _ordenColumnas.push(id);
@@ -7815,6 +7820,14 @@ function generarCorte() {
     }
   }
 
+  // Aviso si se pidio la columna "Auditado" pero el Apps Script aun no la soporta
+  let avisoAuditadoHtml = '';
+  if (colsSel.includes('auditado') && _auditadosApiOk === false) {
+    avisoAuditadoHtml = `<div class="card" style="border-left:4px solid #8b6914;background:#fdf8ec;padding:12px 18px;margin-bottom:14px">
+      <div style="font-size:11px;color:#8b6914;font-weight:700">La columna "Auditado" no puede leer los colores del sheet todavia: falta actualizar el Apps Script de Ingreso (accion "listarAuditados") y crear una nueva version de la implementacion.</div>
+    </div>`;
+  }
+
   // ── VIAJES DUPLICADOS DENTRO DE ESTE CORTE ──
   // Un duplicado real es la MISMA info repetida: tiquete + fecha + hora + placa +
   // material + los dos pesos. No basta con que coincida el peso neto (dos viajes
@@ -8098,7 +8111,7 @@ function generarCorte() {
   });
 
   html += '</div>';
-  cont.innerHTML = duplicadosHtml + alertasPlacaHtml + avisoCortesHtml + html;
+  cont.innerHTML = avisoAuditadoHtml + duplicadosHtml + alertasPlacaHtml + avisoCortesHtml + html;
 
   // Construir el informe/certificado de facturación en paralelo
   renderInformeCorte();
@@ -10024,15 +10037,16 @@ function _aplicarFav(f, ini, cie) {
   // Cortes guardados antes de que existiera la columna de baucher: si el usuario
   // la dejo activada, se agrega tambien aqui (al final) para no tener que
   // marcarla a mano cada vez que abre un corte antiguo.
-  if (_prefColumnaBaucher === true && !_ordenColumnas.includes('baucher')) {
-    _ordenColumnas.push('baucher');
-    const chkB = document.querySelector('.corte-col-chk[value="baucher"]');
-    if (chkB) chkB.checked = true;
-  } else if (_prefColumnaBaucher === false) {
-    _ordenColumnas = _ordenColumnas.filter(x => x !== 'baucher');
-    const chkB = document.querySelector('.corte-col-chk[value="baucher"]');
-    if (chkB) chkB.checked = false;
-  }
+  [['baucher', _prefColumnaBaucher], ['auditado', _prefColumnaAuditado]].forEach(([cid, pref]) => {
+    const chkX = document.querySelector('.corte-col-chk[value="'+cid+'"]');
+    if (pref === true) {
+      if (!_ordenColumnas.includes(cid)) _ordenColumnas.push(cid);
+      if (chkX) chkX.checked = true;
+    } else if (pref === false) {
+      _ordenColumnas = _ordenColumnas.filter(x => x !== cid);
+      if (chkX) chkX.checked = false;
+    }
+  });
   actualizarNumerosColumnas();
   document.getElementById('corte-separar-material').checked = !!f.sepMaterial;
   document.getElementById('corte-separar-empresa').checked = !!f.sepEmpresa;
