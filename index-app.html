@@ -1756,10 +1756,21 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
     <div style="display:flex;align-items:center;justify-content:space-between;padding:0 0 16px;border-bottom:1px solid var(--rule-l);flex-wrap:wrap;gap:12px">
       <div>
         <div style="font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px">Distribución por material</div>
-        <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink)">Residuos y materiales ingresados</div>
+        <div id="res-title" style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink)">Residuos y materiales ingresados</div>
+      </div>
+      <div style="display:flex;gap:0;border:1px solid var(--rule)">
+        <button id="res-tab-viajes" onclick="switchResTab('viajes')"
+          style="padding:8px 20px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:none;border-right:1px solid var(--rule);cursor:pointer;background:var(--navy);color:white;font-family:'Source Sans 3',sans-serif;transition:.2s">
+          Viajes
+        </button>
+        <button id="res-tab-peso" onclick="switchResTab('peso')"
+          style="padding:8px 20px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:none;cursor:pointer;background:transparent;color:var(--ink-m);font-family:'Source Sans 3',sans-serif;transition:.2s">
+          Peso (kg)
+        </button>
       </div>
     </div>
     <div id="hbar-residuos" style="padding:16px 20px"></div>
+    <div id="hbar-residuos-peso" style="padding:16px 20px;display:none"></div>
   </div>
 
   <!-- ── GRÁFICA COMPARATIVA DE PICOS (MES) ── -->
@@ -4677,6 +4688,7 @@ function getResidueColor(nombre) {
 function renderChartClientes(data) {
   const grupos = {}, pesos = {};
   const residuosCnt = {};
+  const residuosKg = {};
   const diasCnt = {'Lun':0,'Mar':0,'Mie':0,'Jue':0,'Vie':0,'Sab':0,'Dom':0}; // orden lunes -> domingo
   const diasNombres = ['Dom','Lun','Mar','Mie','Jue','Vie','Sab'];
   /* Para vista mensual: agrupar por día del mes (1-31) */
@@ -4693,6 +4705,7 @@ function renderChartClientes(data) {
     pesos[op] = (pesos[op]||0) + Math.max(e,0);
     const res = r['RESIDUO'] || r['Residuo'] || r['residuo'] || 'Sin clasificar';
     residuosCnt[res] = (residuosCnt[res]||0) + 1;
+    residuosKg[res]  = (residuosKg[res]||0) + getPesoNeto(r);
     const fecha = parseDate(getMarcaTemporal(r) || '');
     if (fecha) {
       diasCnt[diasNombres[fecha.getDay()]]++;
@@ -4704,6 +4717,7 @@ function renderChartClientes(data) {
   const sortedGrupos = Object.entries(grupos).sort((a,b)=>b[1]-a[1]).slice(0,10);
   const sortedPesos  = Object.entries(pesos).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,10);
   const sortedRes    = Object.entries(residuosCnt).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const sortedResKg  = Object.entries(residuosKg).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,10);
 
   // Colores por cliente
   const coloresCliente = sortedGrupos.map(([op]) => getClientColor(op));
@@ -4737,6 +4751,26 @@ function renderChartClientes(data) {
     return assigned;
   })();
     drawHBars('hbar-residuos', sortedRes, coloresResiduos, 'count');
+    // Misma lista de residuos pero por KILOS (segunda pestaña)
+    const coloresResiduosKg = (() => {
+      const asignados = [];
+      const usados = new Set();
+      for (const [nombre] of sortedResKg) {
+        // Se reutiliza el color que ya tiene ese residuo en la vista de viajes,
+        // para que un mismo material se vea del mismo color en ambas pestañas.
+        const idxV = sortedRes.findIndex(([n]) => n === nombre);
+        let color = idxV >= 0 ? coloresResiduos[idxV] : getResidueColor(nombre);
+        if (usados.has(color)) {
+          const paleta = ['#2563eb','#16a34a','#dc2626','#d97706','#7c3aed','#0891b2','#65a30d',
+            '#be123c','#0f766e','#9d174d','#0369a1','#4f46e5','#b45309','#166534'];
+          for (const alt of paleta) { if (!usados.has(alt)) { color = alt; break; } }
+        }
+        usados.add(color);
+        asignados.push(color);
+      }
+      return asignados;
+    })();
+    drawHBars('hbar-residuos-peso', sortedResKg, coloresResiduosKg, 'kg');
     /* Barras: si el filtro es mes o total, mostrar todos los días del mes; si no, por día de semana */
     const tituloEl = document.getElementById('dias-bar-titulo');
     const subEl = document.getElementById('dias-bar-subtitulo');
@@ -5291,6 +5325,21 @@ function renderCoachingBars(opKey) {
 }
 
 // ── SWITCH PIE TAB ───────────────────────────────
+// Cambia entre viajes y kilos en la tarjeta de "Distribución por material"
+function switchResTab(tab) {
+  const viajes = tab === 'viajes';
+  const cV = document.getElementById('hbar-residuos');
+  const cP = document.getElementById('hbar-residuos-peso');
+  if (cV) cV.style.display = viajes ? '' : 'none';
+  if (cP) cP.style.display = viajes ? 'none' : '';
+  const t = document.getElementById('res-title');
+  if (t) t.textContent = viajes ? 'Residuos y materiales ingresados' : 'Peso neto por material';
+  const bV = document.getElementById('res-tab-viajes');
+  const bP = document.getElementById('res-tab-peso');
+  if (bV) { bV.style.background = viajes ? 'var(--navy)' : 'transparent'; bV.style.color = viajes ? 'white' : 'var(--ink-m)'; }
+  if (bP) { bP.style.background = viajes ? 'transparent' : 'var(--navy)'; bP.style.color = viajes ? 'var(--ink-m)' : 'white'; }
+}
+
 function switchPieTab(tab) {
   const viajes = tab === 'viajes';
   // Mostrar/ocultar las barras horizontales según tab
