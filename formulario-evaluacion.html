@@ -694,39 +694,48 @@ activarBotonesFoto('adicional');
 // Redimensiona y comprime la imagen antes de convertirla a base64.
 // Esto evita payloads enormes (fotos de celular pueden pesar varios MB cada una)
 // que provocan fallos de envío o de lectura en el navegador móvil.
+//
+// Si el navegador no puede decodificar la imagen (ej: formato HEIC/HEIF de algunas
+// cámaras Samsung/iPhone), esta función NUNCA rechaza la promesa: intenta enviar
+// el archivo original sin comprimir, y si tampoco se puede leer, resuelve con
+// base64:null para que el punto de la evaluación se envíe igual, solo sin esa foto.
 function comprimirImagen(file, maxDim = 1280, calidad = 0.7) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
 
+    const usarArchivoOriginal = () => {
+      URL.revokeObjectURL(url);
+      const reader = new FileReader();
+      reader.onload = () => resolve({ base64: reader.result.split(',')[1], tipo: file.type || 'image/jpeg', comprimida: false });
+      reader.onerror = () => resolve({ base64: null, tipo: null, comprimida: false });
+      reader.readAsDataURL(file);
+    };
+
     img.onload = () => {
-      let { width, height } = img;
-      if (width > height && width > maxDim) {
-        height = Math.round(height * (maxDim / width));
-        width = maxDim;
-      } else if (height >= width && height > maxDim) {
-        width = Math.round(width * (maxDim / height));
-        height = maxDim;
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, width, height);
-      URL.revokeObjectURL(url);
       try {
+        let { width, height } = img;
+        if (width > height && width > maxDim) {
+          height = Math.round(height * (maxDim / width));
+          width = maxDim;
+        } else if (height >= width && height > maxDim) {
+          width = Math.round(width * (maxDim / height));
+          height = maxDim;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        URL.revokeObjectURL(url);
         const dataUrl = canvas.toDataURL('image/jpeg', calidad);
-        resolve(dataUrl.split(',')[1]); // base64 puro, sin encabezado
+        resolve({ base64: dataUrl.split(',')[1], tipo: 'image/jpeg', comprimida: true });
       } catch (err) {
-        reject(new Error('No se pudo procesar la imagen (formato no soportado).'));
+        usarArchivoOriginal();
       }
     };
 
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('No se pudo leer la imagen seleccionada. Intenta con otra foto.'));
-    };
-
+    img.onerror = usarArchivoOriginal;
     img.src = url;
   });
 }
@@ -1028,6 +1037,7 @@ document.getElementById('formEvaluacion').addEventListener('submit', async (e) =
     }
 
     const respuestas = [];
+    const fotosNoAdjuntadas = [];
     for (let i = 0; i < PUNTOS.length; i++) {
       const id = 'p' + i;
       const esAbierto = PUNTOS[i].tipo === 'abierto';
@@ -1036,9 +1046,14 @@ document.getElementById('formEvaluacion').addEventListener('submit', async (e) =
       const file = fotosSeleccionadas[id];
       let fotoBase64 = null, fotoNombre = null, fotoTipo = null;
       if (file) {
-        fotoBase64 = await comprimirImagen(file);
-        fotoNombre = `${fecha || 'sin-fecha'}_${responsable || 'sin-responsable'}_punto${i+1}_${file.name.replace(/\.[^.]+$/, '')}.jpg`;
-        fotoTipo = 'image/jpeg';
+        const resultado = await comprimirImagen(file);
+        if (resultado.base64) {
+          fotoBase64 = resultado.base64;
+          fotoNombre = `${fecha || 'sin-fecha'}_${responsable || 'sin-responsable'}_punto${i+1}_${file.name.replace(/\.[^.]+$/, '')}.${resultado.comprimida ? 'jpg' : (file.name.split('.').pop() || 'jpg')}`;
+          fotoTipo = resultado.tipo;
+        } else {
+          fotosNoAdjuntadas.push(`Punto ${i + 1}`);
+        }
       }
       respuestas.push({
         punto: i + 1,
@@ -1057,9 +1072,14 @@ document.getElementById('formEvaluacion').addEventListener('submit', async (e) =
     if (textoAdicional || fileAdicional) {
       let fotoBase64 = null, fotoNombre = null, fotoTipo = null;
       if (fileAdicional) {
-        fotoBase64 = await comprimirImagen(fileAdicional);
-        fotoNombre = `${fecha || 'sin-fecha'}_${responsable || 'sin-responsable'}_adicional_${fileAdicional.name.replace(/\.[^.]+$/, '')}.jpg`;
-        fotoTipo = 'image/jpeg';
+        const resultadoAdicional = await comprimirImagen(fileAdicional);
+        if (resultadoAdicional.base64) {
+          fotoBase64 = resultadoAdicional.base64;
+          fotoNombre = `${fecha || 'sin-fecha'}_${responsable || 'sin-responsable'}_adicional_${fileAdicional.name.replace(/\.[^.]+$/, '')}.${resultadoAdicional.comprimida ? 'jpg' : (fileAdicional.name.split('.').pop() || 'jpg')}`;
+          fotoTipo = resultadoAdicional.tipo;
+        } else {
+          fotosNoAdjuntadas.push('Actividades adicionales');
+        }
       }
       respuestas.push({
         punto: 'Adicional',
@@ -1083,6 +1103,9 @@ document.getElementById('formEvaluacion').addEventListener('submit', async (e) =
 
     const data = await resp.json();
     if (data && data.status === 'ok') {
+      const avisoFotos = fotosNoAdjuntadas.length
+        ? ` Nota: no se pudo adjuntar la foto de: ${fotosNoAdjuntadas.join(', ')} (formato no compatible, ej. HEIC). El resto de la evaluación sí quedó guardada; puedes volver a intentar esa foto convirtiéndola a JPG o desde otra app.`
+        : '';
       // El registro y las fotos YA quedaron guardados en Sheets/Drive en este punto.
       // Cualquier problema al generar el PDF de aquí en adelante no debe reportarse
       // como una falla del envío.
@@ -1094,11 +1117,11 @@ document.getElementById('formEvaluacion').addEventListener('submit', async (e) =
         generarInformePDF(fecha, responsable, respuestasInforme, resumen);
 
         estado.className = 'ok';
-        estado.textContent = 'Evaluación enviada correctamente. Las fotos se están guardando en Drive y el informe en PDF se descargó automáticamente.';
+        estado.textContent = 'Evaluación enviada correctamente. Las fotos se están guardando en Drive y el informe en PDF se descargó automáticamente.' + avisoFotos;
       } catch (pdfErr) {
         estado.className = 'ok';
         const detallePdf = (pdfErr && pdfErr.message) ? pdfErr.message : 'error desconocido al generar el PDF';
-        estado.textContent = 'Evaluación enviada y guardada correctamente. No se pudo generar el informe PDF automático (' + detallePdf + '), pero tus datos ya quedaron registrados.';
+        estado.textContent = 'Evaluación enviada y guardada correctamente. No se pudo generar el informe PDF automático (' + detallePdf + '), pero tus datos ya quedaron registrados.' + avisoFotos;
       }
       estado.style.display = 'block';
       document.getElementById('formEvaluacion').reset();
