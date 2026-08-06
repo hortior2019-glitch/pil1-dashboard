@@ -7,7 +7,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3/dist/jspdf.plugin.autotable.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/heic2any/dist/heic2any.min.js"></script>
 <style>
   :root{
     --verde-oscuro:#1f4d3d;
@@ -456,8 +455,10 @@
       <div class="intro">
         <h2>Antes de empezar</h2>
         <p>
-          Cada punto se califica de <strong>1 a 10</strong> (o N/A si no aplica) y debe acompañarse
-          de una foto como evidencia (salvo N/A). El formulario no exige un responsable fijo por día: cualquier
+          Cada punto se califica de <strong>1 a 10</strong>. Si un punto no aplica o se deja en blanco,
+          se envía automáticamente como <strong>N/A</strong>. Se recomienda adjuntar una foto como evidencia,
+          pero el formulario se enviará igual aunque alguna foto no se pueda procesar (por formato del celular
+          o falla de red). El formulario no exige un responsable fijo por día: cualquier
           persona autorizada puede diligenciarlo, siempre y cuando quede registrado un responsable
           para cada envío.
         </p>
@@ -633,14 +634,14 @@ PUNTOS.forEach((p, i) => {
     ? `
       <div class="campo-mini" style="flex:2; min-width:240px;">
         <textarea id="obs_${id}" class="observaciones-input" rows="2"
-          placeholder="Ej: 25 pilas inyectadas..." required></textarea>
+          placeholder="Ej: 25 pilas inyectadas..."></textarea>
       </div>
       ${bloqueBotonesFoto(id)}
     `
     : `
       <div class="campo-mini">
-        <select id="valor_${id}" required>
-          <option value="" disabled selected>Calificación</option>
+        <select id="valor_${id}">
+          <option value="" selected>Calificación (vacío = N/A)</option>
           ${[...Array(10)].map((_, n) => `<option value="${n+1}">${n+1}</option>`).join('')}
           <option value="N/A">N/A</option>
         </select>
@@ -700,44 +701,8 @@ activarBotonesFoto('adicional');
 // cámaras Samsung/iPhone), esta función NUNCA rechaza la promesa: intenta enviar
 // el archivo original sin comprimir, y si tampoco se puede leer, resuelve con
 // base64:null para que el punto de la evaluación se envíe igual, solo sin esa foto.
-// Detecta archivos HEIC / HEIF (típicos de iPhone y algunos Samsung),
-// que los navegadores móviles Chrome / Android no pueden decodificar directamente.
-function esHeic(file) {
-  const nombre = (file && file.name ? file.name : '').toLowerCase();
-  const tipo = (file && file.type ? file.type : '').toLowerCase();
-  return (
-    nombre.endsWith('.heic') ||
-    nombre.endsWith('.heif') ||
-    tipo === 'image/heic' ||
-    tipo === 'image/heif' ||
-    tipo === 'image/heic-sequence' ||
-    tipo === 'image/heif-sequence'
-  );
-}
-
-// Si el archivo es HEIC/HEIF y la librería heic2any está disponible, lo convierte
-// a un Blob JPEG antes de que el resto del flujo lo procese. Si no se puede
-// convertir, devuelve el archivo original y dejamos que el fallback lo intente.
-async function normalizarSiHeic(file) {
-  if (!esHeic(file)) return file;
-  if (typeof heic2any !== 'function') return file;
-  try {
-    const convertido = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
-    const blob = Array.isArray(convertido) ? convertido[0] : convertido;
-    const nuevoNombre = (file.name || 'foto').replace(/\.[^.]+$/, '') + '.jpg';
-    return new File([blob], nuevoNombre, { type: 'image/jpeg' });
-  } catch (err) {
-    return file;
-  }
-}
-
 function comprimirImagen(file, maxDim = 1280, calidad = 0.7) {
-  return new Promise(async (resolve) => {
-    // Paso 0: si viene en HEIC/HEIF, primero convertir a JPEG usando heic2any
-    try {
-      file = await normalizarSiHeic(file);
-    } catch (_) { /* ignoramos: seguimos con el archivo original */ }
-
+  return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
 
@@ -1062,14 +1027,18 @@ document.getElementById('formEvaluacion').addEventListener('submit', async (e) =
     const fecha = document.getElementById('fecha').value;
     const responsable = document.getElementById('responsable').value.trim();
 
-    // Validación: la foto solo es obligatoria en puntos de calificación que NO sean N/A
+    // Validación relajada: si el punto no es N/A y el usuario NO seleccionó foto,
+    // registramos el punto en una lista para avisar al final, pero NO bloqueamos
+    // el envío. La política es: siempre enviar el informe, con o sin fotos.
+    const puntosSinFoto = [];
     for (let i = 0; i < PUNTOS.length; i++) {
       if (PUNTOS[i].tipo === 'abierto') continue;
       const id = 'p' + i;
-      const valor = document.getElementById('valor_' + id).value;
+      const valorCrudo = document.getElementById('valor_' + id).value;
+      const valor = valorCrudo === '' ? 'N/A' : valorCrudo;
       const file = fotosSeleccionadas[id];
       if (valor !== 'N/A' && !file) {
-        throw new Error(`Falta la foto de evidencia del punto ${i + 1} ("${PUNTOS[i].texto}"). Si no aplica, seleccione N/A.`);
+        puntosSinFoto.push(`Punto ${i + 1}`);
       }
     }
 
@@ -1078,13 +1047,25 @@ document.getElementById('formEvaluacion').addEventListener('submit', async (e) =
     for (let i = 0; i < PUNTOS.length; i++) {
       const id = 'p' + i;
       const esAbierto = PUNTOS[i].tipo === 'abierto';
-      const valor = esAbierto ? '' : document.getElementById('valor_' + id).value;
+      const valorCrudoP = esAbierto ? '' : document.getElementById('valor_' + id).value;
+      const valor = (!esAbierto && valorCrudoP === '') ? 'N/A' : valorCrudoP;
       const observaciones = document.getElementById('obs_' + id).value.trim();
       const file = fotosSeleccionadas[id];
       let fotoBase64 = null, fotoNombre = null, fotoTipo = null;
       if (file) {
-        const resultado = await comprimirImagen(file);
-        if (resultado.base64) {
+        // Blindaje: cualquier fallo al procesar la foto (excepción, timeout, HEIC ilegible,
+        // canvas colgado en el celular) se trata como "sin foto",
+        // pero el punto se envía igual al servidor.
+        let resultado = { base64: null, tipo: null, comprimida: false };
+        try {
+          resultado = await Promise.race([
+            comprimirImagen(file),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 20000))
+          ]);
+        } catch (_) {
+          resultado = { base64: null, tipo: null, comprimida: false };
+        }
+        if (resultado && resultado.base64) {
           fotoBase64 = resultado.base64;
           fotoNombre = `${fecha || 'sin-fecha'}_${responsable || 'sin-responsable'}_punto${i+1}_${file.name.replace(/\.[^.]+$/, '')}.${resultado.comprimida ? 'jpg' : (file.name.split('.').pop() || 'jpg')}`;
           fotoTipo = resultado.tipo;
@@ -1109,8 +1090,16 @@ document.getElementById('formEvaluacion').addEventListener('submit', async (e) =
     if (textoAdicional || fileAdicional) {
       let fotoBase64 = null, fotoNombre = null, fotoTipo = null;
       if (fileAdicional) {
-        const resultadoAdicional = await comprimirImagen(fileAdicional);
-        if (resultadoAdicional.base64) {
+        let resultadoAdicional = { base64: null, tipo: null, comprimida: false };
+        try {
+          resultadoAdicional = await Promise.race([
+            comprimirImagen(fileAdicional),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 20000))
+          ]);
+        } catch (_) {
+          resultadoAdicional = { base64: null, tipo: null, comprimida: false };
+        }
+        if (resultadoAdicional && resultadoAdicional.base64) {
           fotoBase64 = resultadoAdicional.base64;
           fotoNombre = `${fecha || 'sin-fecha'}_${responsable || 'sin-responsable'}_adicional_${fileAdicional.name.replace(/\.[^.]+$/, '')}.${resultadoAdicional.comprimida ? 'jpg' : (fileAdicional.name.split('.').pop() || 'jpg')}`;
           fotoTipo = resultadoAdicional.tipo;
@@ -1140,9 +1129,14 @@ document.getElementById('formEvaluacion').addEventListener('submit', async (e) =
 
     const data = await resp.json();
     if (data && data.status === 'ok') {
-      const avisoFotos = fotosNoAdjuntadas.length
-        ? ` Nota: no se pudo adjuntar la foto de: ${fotosNoAdjuntadas.join(', ')} (formato no compatible, ej. HEIC). El resto de la evaluación sí quedó guardada; puedes volver a intentar esa foto convirtiéndola a JPG o desde otra app.`
-        : '';
+      const avisos = [];
+      if (puntosSinFoto.length) {
+        avisos.push(`No se seleccionó foto en: ${puntosSinFoto.join(', ')}.`);
+      }
+      if (fotosNoAdjuntadas.length) {
+        avisos.push(`No se pudo procesar la foto de: ${fotosNoAdjuntadas.join(', ')} (formato no compatible o error al leerla). El informe se envió sin esas fotos.`);
+      }
+      const avisoFotos = avisos.length ? ' ' + avisos.join(' ') : '';
       // El registro y las fotos YA quedaron guardados en Sheets/Drive en este punto.
       // Cualquier problema al generar el PDF de aquí en adelante no debe reportarse
       // como una falla del envío.
