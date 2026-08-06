@@ -7034,8 +7034,34 @@ const CORTE_COLUMNAS_DISP = [
   { id:'conductor',label:'Conductor',         get:r => (r['CONDUCTOR - PRIMER NOMBRE Y PRIMER APELLIDO']||r['CONDUCTOR - PRIME NOMBRE Y PRIMER APELLIDO']||r['CONDUCTOR']||r['Conductor']||r['conductor']||'').trim() },
   { id:'ticket',   label:'N° Tiquete',        get:r => (r['NUMERO TIQUETE']||r['NÚMERO TIQUETE']||r['TIQUETE']||r['Tiquete']||r['tiquete']||r['TICKET']||'').trim() },
   { id:'observacion', label:'Observación',    get:r => (r['OBSERVACION']||r['OBSERVACIÓN']||r['Observacion']||r['Observación']||r['observacion']||r['observación']||'').trim() },
-  { id:'baucher',  label:'Baucher (foto)',    get:r => (r['BAUCHER I']||r['BAUCHER']||r['Baucher']||r['baucher']||'').toString().trim(), foto:true, noTotal:true },
+  { id:'baucher',  label:'Baucher (foto)',    get:r => (r['BAUCHER I']||r['BAUCHER']||r['Baucher']||r['baucher']||'').toString().trim(), foto:true, noTotal:true, noExport:true },
+  { id:'auditado', label:'Auditado',          get:r => (_auditadosSet && _auditadosSet.has(claveViajeCorte(r))) ? 'SI' : '', auditado:true, noTotal:true, noExport:true },
 ];
+
+// ── AUDITORIA POR COLOR DE CELDA EN EL SHEET ───────────────
+// En el Google Sheet, cuando una fila se pinta con un color distinto al de la
+// tabla (blanco / gris), significa que esa informacion ya fue auditada. El CSV
+// publicado NO incluye colores, asi que se consultan aparte al Apps Script y se
+// guardan como un set de claves TIQUETE|FECHA|PLACA.
+let _auditadosSet = new Set();
+let _auditadosCargados = false;
+function cargarAuditados(forzar) {
+  if (typeof INGRESO_API !== 'string' || INGRESO_API.indexOf('PEGAR') !== -1) return Promise.resolve();
+  if (_auditadosCargados && !forzar) return Promise.resolve();
+  return fetch(INGRESO_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({ accion:'listarAuditados' }) })
+    .then(r => r.json())
+    .then(d => {
+      if (d && Array.isArray(d.claves)) {
+        _auditadosSet = new Set(d.claves);
+        _auditadosCargados = true;
+        console.log('Registros auditados (por color en el sheet):', _auditadosSet.size);
+      } else {
+        console.warn('El Apps Script de Ingreso aun no responde a "listarAuditados". Actualiza el Code.gs y crea una nueva version de la implementacion.');
+      }
+    })
+    .catch(e => console.warn('No se pudieron cargar los registros auditados:', e));
+}
 
 // ── VISOR DE FOTOS DE BAUCHER ──────────────────────────────
 // En el sheet la columna V guarda un enlace de Drive tipo
@@ -7437,6 +7463,7 @@ function initCortesProveedores() {
   cargarCortesFavoritosRemoto();
   cargarInformesGuardados();
   try { cargarAlertasPlacas(); } catch(e) { console.warn('cargarAlertasPlacas:', e); }
+  try { cargarAuditados().then(() => { if (window._corteActual) generarCorte(); }); } catch(e) { console.warn('cargarAuditados:', e); }
   if (!_calendarioCargado) cargarCalendarioRemoto();
   else renderCalendarioCortes();
 
@@ -8041,6 +8068,12 @@ function generarCorte() {
         if (c.id === 'placa' && _alertaPlacaFila) return `<td style="font-weight:700;color:#8b1a1a">${v||'—'} <span title="${_alertaPlacaFila.replace(/"/g,'&quot;')}" style="cursor:help">&#9888;</span></td>`;
         // Marcar la celda del tiquete cuando el viaje aparece duplicado en el corte
         if (c.id === 'ticket' && _esDuplicado) return `<td style="font-weight:700;color:#7a1fa2">${v||'—'} <span title="Posible viaje duplicado: misma info repetida en este corte" style="cursor:help">&#8646;</span></td>`;
+        // Columna de auditoria: check verde si la fila esta pintada en el sheet
+        if (c.auditado) {
+          return v === 'SI'
+            ? '<td style="text-align:center;color:var(--green);font-size:17px;font-weight:800" title="Informacion ya auditada (fila con color en el sheet)">&#10004;</td>'
+            : '<td style="text-align:center;color:var(--rule)" title="Sin auditar">—</td>';
+        }
         // Columna de foto: miniatura clickeable (abre el visor) en vez del enlace crudo
         if (c.foto) {
           if (!v) return '<td style="color:var(--ink-l)">—</td>';
@@ -9619,13 +9652,14 @@ function exportarCorteCSV() {
   let csv = '';
   Object.keys(c.grupos).sort().forEach(clave => {
     if (clave !== 'Todos') csv += '\n' + clave + '\n';
-    csv += c.colsDef.map(col => '"'+col.label+'"').join(',') +
+    const _colsExp = c.colsDef.filter(col => !col.noExport);
+    csv += _colsExp.map(col => '"'+col.label+'"').join(',') +
       (mostrarDosCSV ? ',"Valor material","Valor transporte","Total"' : (c.mostrarColValor ? ',"Valor (COP)"' : '')) + '\n';
     c.grupos[clave].forEach(r => {
       const vMat = c.mostrarColValor ? _valorMaterialFilaCorte(c, r) : 0;
       const vTra = c.mostrarColValor ? _valorTransporteFilaCorte(c, r) : 0;
       const vTot = vMat + vTra;
-      csv += c.colsDef.map(col => {
+      csv += _colsExp.map(col => {
         if (col.secuencial) return '"' + (c.consecutivoMap.get(r) ?? '') + '"';
         let v = col.get(r);
         if (col.num) v = Math.round(v);
@@ -9709,12 +9743,15 @@ function exportarCorteExcel() {
   }
   rowsXml += `<Row></Row>`;
 
+  // Las columnas visuales (foto del baucher, check de auditado) no se exportan
+  const _colsExpX = c.colsDef.filter(col => !col.noExport);
+
   Object.keys(c.grupos).sort().forEach(clave => {
     if (clave !== 'Todos') {
       rowsXml += `<Row><Cell ss:StyleID="grupo"><Data ss:Type="String">${esc(clave)}</Data></Cell></Row>`;
     }
     // Encabezados
-    rowsXml += '<Row>' + c.colsDef.map(col =>
+    rowsXml += '<Row>' + _colsExpX.map(col =>
       `<Cell ss:StyleID="header"><Data ss:Type="String">${esc(col.label)}</Data></Cell>`
     ).join('') + (mostrarDosExcel
         ? '<Cell ss:StyleID="header"><Data ss:Type="String">Valor material</Data></Cell><Cell ss:StyleID="header"><Data ss:Type="String">Valor transporte</Data></Cell><Cell ss:StyleID="header"><Data ss:Type="String">Total</Data></Cell>'
@@ -9722,7 +9759,7 @@ function exportarCorteExcel() {
       ) + '</Row>';
     // Datos
     const totales = {};
-    c.colsDef.forEach(col => { if (col.num && !col.noTotal) totales[col.id] = 0; });
+    _colsExpX.forEach(col => { if (col.num && !col.noTotal) totales[col.id] = 0; });
     let valorGrupoMaterial = 0, valorGrupoTransporte = 0, valorGrupoTotal = 0;
     c.grupos[clave].forEach((r, idx) => {
       const esEspecial = (c.resaltarFestivos !== false) && esDomingoOFestivo(fechaYMDdeRegistro(r));
@@ -9737,7 +9774,7 @@ function exportarCorteExcel() {
         valorGrupoTransporte += valorFilaTransporte;
         valorGrupoTotal += valorFilaMaterial + valorFilaTransporte;
       }
-      rowsXml += '<Row>' + c.colsDef.map(col => {
+      rowsXml += '<Row>' + _colsExpX.map(col => {
         if (col.secuencial) {
           const num = c.consecutivoMap.get(r) ?? '';
           return `<Cell ss:StyleID="${styleZebraNum}"><Data ss:Type="Number">${num}</Data></Cell>`;
@@ -9756,7 +9793,7 @@ function exportarCorteExcel() {
     });
     // Totales
     if (Object.keys(totales).length || c.mostrarColValor) {
-      rowsXml += '<Row>' + c.colsDef.map((col,i) => {
+      rowsXml += '<Row>' + _colsExpX.map((col,i) => {
         if (col.num && !col.noTotal) return `<Cell ss:StyleID="total"><Data ss:Type="Number">${Math.round(totales[col.id])}</Data></Cell>`;
         if (col.num && col.noTotal) return '<Cell ss:StyleID="total"></Cell>';
         return i === 0 ? `<Cell ss:StyleID="totalLbl"><Data ss:Type="String">TOTAL</Data></Cell>` : '<Cell ss:StyleID="total"></Cell>';
@@ -9799,7 +9836,7 @@ function exportarCorteExcel() {
 </Styles>
 <Worksheet ss:Name="Corte">
 <Table>
-${c.colsDef.map(()=>'<Column ss:Width="120"/>').join('')}${(c.mostrarColValor && c.tieneTarifaMaterial && c.tieneTransporte)?'<Column ss:Width="120"/><Column ss:Width="120"/><Column ss:Width="120"/>':(c.mostrarColValor?'<Column ss:Width="120"/>':'')}
+${c.colsDef.filter(col=>!col.noExport).map(()=>'<Column ss:Width="120"/>').join('')}${(c.mostrarColValor && c.tieneTarifaMaterial && c.tieneTransporte)?'<Column ss:Width="120"/><Column ss:Width="120"/><Column ss:Width="120"/>':(c.mostrarColValor?'<Column ss:Width="120"/>':'')}
 ${rowsXml}
 </Table>
 </Worksheet>
