@@ -22,7 +22,7 @@
     navigator.serviceWorker.register(URL.createObjectURL(new Blob([SW],{type:'application/javascript'}))).catch(()=>{});
   }
   const _appIcon = 'https://raw.githubusercontent.com/hortior2019-glitch/pil1-dashboard/main/app-icon-512.png';
-  const _M={name:"Horti Organic — Analítica & BI",short_name:"Horti",display:"standalone",orientation:"any",background_color:"#ffffff",theme_color:"#1a5c35",start_url:location.pathname+location.search,icons:[{src:_appIcon,sizes:"512x512",type:"image/png",purpose:"any"},{src:_appIcon,sizes:"192x192",type:"image/png",purpose:"any"},{src:_appIcon,sizes:"512x512",type:"image/png",purpose:"maskable"}]};
+  const _M={name:"Horti Organic — Analítica & BI",short_name:"Horti",display:"standalone",orientation:"any",background_color:"#ffffff",theme_color:"#1a5c35",start_url:location.origin+location.pathname+location.search,scope:location.origin+location.pathname.replace(/[^/]*$/,""),icons:[{src:_appIcon,sizes:"512x512",type:"image/png",purpose:"any"},{src:_appIcon,sizes:"192x192",type:"image/png",purpose:"any"},{src:_appIcon,sizes:"512x512",type:"image/png",purpose:"maskable"}]};
   const _ml=document.createElement('link');_ml.rel='manifest';_ml.href=URL.createObjectURL(new Blob([JSON.stringify(_M)],{type:'application/manifest+json'}));document.head.appendChild(_ml);
   document.addEventListener('DOMContentLoaded',()=>{
     const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
@@ -3165,6 +3165,11 @@ async function fetchCSV(url) {
   // Cada intento tiene limite de 8s: si un proxy esta caido o muy lento, se
   // pasa al siguiente en vez de esperar el timeout largo por defecto del
   // navegador (lo que hacia sentir TODO el dashboard trabado por minutos).
+  // Si el navegador ya sabe que no hay internet, no tiene sentido intentar con
+  // los 3 proxies (solo llena la consola de errores rojos): se falla de una.
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    throw new Error('Sin conexion a internet');
+  }
   for (const proxy of proxies) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 8000);
@@ -3174,7 +3179,14 @@ async function fetchCSV(url) {
         const text = await res.text();
         if (text.length > 10) return parseCSV(text);
       }
-    } catch(e) { console.log('Proxy fallo:', proxy(url).slice(0,50)); }
+    } catch(e) {
+      // Sin internet: no se reporta proxy por proxy (seria ruido inutil)
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        clearTimeout(timer);
+        throw new Error('Sin conexion a internet');
+      }
+      console.log('Proxy fallo:', proxy(url).slice(0,50));
+    }
     finally { clearTimeout(timer); }
   }
   throw new Error('Todos los proxies fallaron');
@@ -6769,18 +6781,45 @@ function toggleAlertasPlacaCard() {
   if (!abierto && !_alertasPlacasCargadas) cargarAlertasPlacas();
 }
 
+// ── FETCH JSON TOLERANTE ───────────────────────────────────
+// Apps Script a veces responde una pagina HTML de error (404 en
+// script.googleusercontent.com/macros/echo) en vez del JSON esperado,
+// sobre todo tras un corte de red o si el despliegue esta reiniciando.
+// Antes eso lanzaba "SyntaxError: Unexpected token '<'" y ensuciaba la
+// consola. Ahora se lee como texto, se valida, y se reintenta una vez.
+async function fetchJSONTolerante(url, opts, reintentos) {
+  reintentos = (reintentos === undefined) ? 1 : reintentos;
+  for (let intento = 0; intento <= reintentos; intento++) {
+    try {
+      const res = await fetch(url, opts);
+      const txt = await res.text();
+      const limpio = (txt || '').trim();
+      if (limpio.startsWith('{') || limpio.startsWith('[')) {
+        try { return JSON.parse(limpio); } catch(e) { /* sigue al reintento */ }
+      }
+      // Respuesta no-JSON (HTML de error, redirect roto, etc.)
+      if (intento < reintentos) { await new Promise(r => setTimeout(r, 1200)); continue; }
+      console.warn('Respuesta no valida de', url.slice(0, 60) + '…', '→', limpio.slice(0, 80));
+      return null;
+    } catch(e) {
+      if (intento < reintentos) { await new Promise(r => setTimeout(r, 1200)); continue; }
+      if (!navigator.onLine) console.warn('Sin conexion a internet al consultar', url.slice(0, 60) + '…');
+      else console.warn('Error de red al consultar', url.slice(0, 60) + '…', e.message);
+      return null;
+    }
+  }
+  return null;
+}
+
 function cargarAlertasPlacas(forzar) {
   if (typeof INGRESO_API !== 'string' || INGRESO_API.indexOf('PEGAR') !== -1) return;
   if (_alertasPlacasCargadas && !forzar) { renderAlertasPlacas(); return; }
-  fetch(INGRESO_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+  fetchJSONTolerante(INGRESO_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
     body: JSON.stringify({ accion:'listarAlertasPlaca' }) })
-    .then(r => r.json())
     .then(d => {
-      // Si la respuesta no trae el campo "alertas", el Apps Script todavia no tiene
-      // las acciones de alertas por placa: se avisa claro en consola en vez de
-      // quedar en silencio (y se evita creer que "no hay alertas").
+      // Si la respuesta no trae el campo "alertas", puede ser una caida temporal
+      // de red / Apps Script, o que el Code.gs aun no tenga esas acciones.
       if (!d || !Array.isArray(d.alertas)) {
-        console.warn('El Apps Script de Ingreso aun no responde a "listarAlertasPlaca". Actualiza el Code.gs y crea una nueva version de la implementacion.');
         _alertasPlacasApiOk = false;
         renderAlertasPlacas();
         return;
@@ -6789,8 +6828,7 @@ function cargarAlertasPlacas(forzar) {
       _alertasPlacas = d.alertas;
       _alertasPlacasCargadas = true;
       renderAlertasPlacas();
-    })
-    .catch(e => console.warn('No se pudieron cargar las alertas de placa:', e));
+    });
 }
 
 function renderAlertasPlacas() {
@@ -7098,9 +7136,8 @@ let _auditadosApiOk = null; // null = aun no se consulto
 function cargarAuditados(forzar) {
   if (typeof INGRESO_API !== 'string' || INGRESO_API.indexOf('PEGAR') !== -1) return Promise.resolve();
   if (_auditadosCargados && !forzar) return Promise.resolve();
-  return fetch(INGRESO_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+  return fetchJSONTolerante(INGRESO_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
     body: JSON.stringify({ accion:'listarAuditados' }) })
-    .then(r => r.json())
     .then(d => {
       if (d && Array.isArray(d.claves)) {
         _auditadosSet = new Set(d.claves);
@@ -7109,10 +7146,8 @@ function cargarAuditados(forzar) {
         _auditadosApiOk = true;
       } else {
         _auditadosApiOk = false;
-        console.warn('El Apps Script de Ingreso aun no responde a "listarAuditados". Actualiza el Code.gs y crea una nueva version de la implementacion.');
       }
-    })
-    .catch(e => console.warn('No se pudieron cargar los registros auditados:', e));
+    });
 }
 
 // ── VISOR DE FOTOS DE BAUCHER ──────────────────────────────
@@ -8699,16 +8734,15 @@ function cargarInformesGuardados(forzar) {
   if (tieneCache) renderInformesGuardados();
   else if (lista) lista.innerHTML = '<div style="color:var(--ink-l);font-size:13px;padding:8px">Cargando informes...</div>';
   if (!forzar && tieneCache && (Date.now() - _informesUltimaCarga) < 60000) return;
-  fetch(CORTES_FAV_API + '?accion=listarInformes', { redirect:'follow' })
-    .then(r => r.json())
+  fetchJSONTolerante(CORTES_FAV_API + '?accion=listarInformes', { redirect:'follow' })
     .then(data => {
-      _informesGuardados = (data && data.ok && Array.isArray(data.informes)) ? data.informes : [];
-      _informesUltimaCarga = Date.now();
-      renderInformesGuardados();
-    })
-    .catch(e => {
-      console.error('Error cargando informes:', e);
-      if (lista && !tieneCache) lista.innerHTML = '<div style="color:var(--red);font-size:13px;padding:8px">No se pudieron cargar los informes.</div>';
+      if (data && data.ok && Array.isArray(data.informes)) {
+        _informesGuardados = data.informes;
+        _informesUltimaCarga = Date.now();
+        renderInformesGuardados();
+      } else if (lista && !tieneCache) {
+        lista.innerHTML = '<div style="color:var(--ink-l);font-size:13px;padding:8px">No se pudieron cargar los informes en este momento. Usa "Actualizar" para reintentar.</div>';
+      }
     });
 }
 
@@ -9929,15 +9963,10 @@ async function cargarCortesFavoritosRemoto(forzar) {
 
   const loadingEl = document.getElementById('corte-fav-loading');
   if (loadingEl && !tieneCache) loadingEl.textContent = 'Cargando favoritos...';
-  try {
-    const res = await fetch(CORTES_FAV_API + '?accion=listar', { redirect: 'follow' });
-    const data = await res.json();
-    if (data.ok) {
-      _cortesFavoritosCache = data.favoritos || [];
-      _favUltimaCarga = Date.now();
-    }
-  } catch(e) {
-    console.error('Error cargando favoritos de cortes:', e);
+  const data = await fetchJSONTolerante(CORTES_FAV_API + '?accion=listar', { redirect: 'follow' });
+  if (data && data.ok) {
+    _cortesFavoritosCache = data.favoritos || [];
+    _favUltimaCarga = Date.now();
   }
   if (loadingEl) loadingEl.textContent = '';
   renderCortesFavoritos();
