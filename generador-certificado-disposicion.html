@@ -161,6 +161,16 @@
     background:#f9fbf9;
   }
   .db-box .row2{margin-bottom:10px;}
+  .db-box select{
+    width:100%;
+    padding:8px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    font-size:13px;
+    font-family:inherit;
+    background:#fff;
+  }
+  .db-box select:disabled{background:#f2f2f2;color:#999;}
   .db-preview{
     font-size:11.5px;
     color:#333;
@@ -503,7 +513,15 @@
           <input id="dbHasta" type="date">
         </div>
       </div>
-      <button class="btn-list" id="btnCargarDB" onclick="cargarDesdeBaseDeDatos()" style="width:100%;">Buscar y llenar campos</button>
+      <button class="btn-list" id="btnCargarDB" onclick="buscarEnIntervalo()" style="width:100%;">Buscar en el intervalo</button>
+
+      <div class="field" style="margin-top:10px;">
+        <label>Operación</label>
+        <select id="dbOperacion" disabled>
+          <option value="">-- primero busca un intervalo --</option>
+        </select>
+      </div>
+
       <div class="db-preview" id="dbPreview"></div>
     </div>
 
@@ -565,7 +583,7 @@
     </div>
 
     <div class="hint">
-      "Buscar y llenar campos" trae de la base de datos (Sheets) los registros del intervalo elegido, suma el peso neto y llena Cantidad, Descripción, Empresa receptora (abreviada, ajústala a la razón social completa) y Periodo. El logo (logo1) y la marca de agua (logo2) se cargan desde el mismo repositorio/carpeta que este archivo. "Guardar en el sistema" envía los datos a tu Apps Script / Google Sheets; "Consultar guardados" trae la lista y al hacer clic en un registro se recarga en el formulario.
+      "Buscar en el intervalo" trae de la base de datos (Sheets) los registros de esas fechas y llena el selector de Operación. Al elegir una operación, se totaliza el peso neto por tipo de residuo y se llenan los Materiales, Empresa receptora (abreviada, ajústala a la razón social completa) y Periodo. El logo (logo1) y la marca de agua (logo2) se cargan desde el mismo repositorio/carpeta que este archivo. "Guardar en el sistema" envía los datos a tu Apps Script / Google Sheets; "Consultar guardados" trae la lista y al hacer clic en un registro se recarga en el formulario.
     </div>
   </div>
 
@@ -955,9 +973,12 @@
     return f(desde) + ' al ' + f(hasta);
   }
 
-  async function cargarDesdeBaseDeDatos(){
+  let dbFilas = []; // {fecha, peso, operacion, residuo} — filtradas solo por fecha, guardadas para elegir la operación después
+
+  async function buscarEnIntervalo(){
     const btn = document.getElementById('btnCargarDB');
     const preview = document.getElementById('dbPreview');
+    const selectOp = document.getElementById('dbOperacion');
     const desdeStr = document.getElementById('dbDesde').value;
     const hastaStr = document.getElementById('dbHasta').value;
 
@@ -971,6 +992,8 @@
     const hasta = new Date(hastaStr + 'T23:59:59');
 
     btn.disabled = true;
+    selectOp.disabled = true;
+    selectOp.innerHTML = '<option value="">-- buscando... --</option>';
     preview.className = 'db-preview show';
     preview.textContent = 'Consultando base de datos...';
 
@@ -982,11 +1005,7 @@
       const json = JSON.parse(match ? match[1] : text);
       const rows = json.table.rows || [];
 
-      let totalPeso = 0;
-      const porResiduo = new Map(); // residuo -> suma de peso, uno por material
-      const operaciones = new Set();
-      let filas = 0;
-
+      dbFilas = [];
       rows.forEach(row => {
         const c = row.c || [];
         const fecha = parseGvizDate(c[2]);   // columna C
@@ -997,36 +1016,64 @@
         if (!fecha) return;
         if (fecha < desde || fecha > hasta) return;
 
-        filas++;
-        totalPeso += peso;
-        porResiduo.set(residuo, (porResiduo.get(residuo) || 0) + peso);
-        if (operacion) operaciones.add(operacion);
+        dbFilas.push({ fecha, peso, operacion, residuo });
       });
 
-      if (filas === 0){
+      if (dbFilas.length === 0){
         preview.innerHTML = 'No se encontraron registros en ese intervalo.';
+        selectOp.innerHTML = '<option value="">-- sin resultados --</option>';
         return;
       }
 
-      // Un material (fila de la tabla) por cada tipo de residuo encontrado; el nombre queda
-      // editable para poder reemplazarlo por su nombre técnico si se requiere.
-      const nuevaLista = Array.from(porResiduo.entries()).map(([descripcion, cantidad]) => ({
-        descripcion,
-        cantidad: cantidad.toFixed(3)
-      }));
-      setMateriales(nuevaLista);
+      const operaciones = Array.from(new Set(dbFilas.map(f => f.operacion).filter(Boolean))).sort();
+      selectOp.innerHTML = '<option value="">-- selecciona una operación --</option>' +
+        operaciones.map(op => '<option value="' + op.replace(/"/g,'&quot;') + '">' + op + '</option>').join('');
+      selectOp.disabled = false;
 
-      document.getElementById('empresaReceptora').value = Array.from(operaciones).join(' / ');
-      document.getElementById('periodo').value = formatearPeriodo(desdeStr, hastaStr);
-      update();
-
-      preview.innerHTML = '<b>' + filas + '</b> registros encontrados · Total: <b>' + totalPeso.toFixed(3) + ' kg</b> en <b>' + porResiduo.size + '</b> material(es)<br>Operación(es): ' + (Array.from(operaciones).join(', ') || '—') + '<br><span style="color:#888;">Revisa y ajusta "Empresa receptora" y el nombre de cada material (puedes usar el nombre técnico) en la lista de materiales.</span>';
+      preview.innerHTML = '<b>' + dbFilas.length + '</b> registros encontrados en el intervalo, con <b>' + operaciones.length + '</b> operación(es) distintas.<br><span style="color:#888;">Elige una operación arriba para totalizar sus materiales.</span>';
     }catch(err){
       preview.innerHTML = 'Error al consultar la base de datos: ' + err.message;
+      selectOp.innerHTML = '<option value="">-- error --</option>';
     }finally{
       btn.disabled = false;
     }
   }
+
+  function aplicarOperacionSeleccionada(){
+    const preview = document.getElementById('dbPreview');
+    const operacion = document.getElementById('dbOperacion').value;
+    const desdeStr = document.getElementById('dbDesde').value;
+    const hastaStr = document.getElementById('dbHasta').value;
+
+    if (!operacion){
+      preview.innerHTML = 'Elige una operación para totalizar sus materiales.';
+      return;
+    }
+
+    const filasOp = dbFilas.filter(f => f.operacion === operacion);
+    const porResiduo = new Map();
+    let totalPeso = 0;
+    filasOp.forEach(f => {
+      totalPeso += f.peso;
+      porResiduo.set(f.residuo, (porResiduo.get(f.residuo) || 0) + f.peso);
+    });
+
+    // Un material (fila de la tabla) por cada tipo de residuo encontrado; el nombre queda
+    // editable para poder reemplazarlo por su nombre técnico si se requiere.
+    const nuevaLista = Array.from(porResiduo.entries()).map(([descripcion, cantidad]) => ({
+      descripcion,
+      cantidad: cantidad.toFixed(3)
+    }));
+    setMateriales(nuevaLista);
+
+    document.getElementById('empresaReceptora').value = operacion;
+    document.getElementById('periodo').value = formatearPeriodo(desdeStr, hastaStr);
+    update();
+
+    preview.innerHTML = '<b>' + filasOp.length + '</b> registros de "' + operacion + '" · Total: <b>' + totalPeso.toFixed(3) + ' kg</b> en <b>' + porResiduo.size + '</b> material(es)<br><span style="color:#888;">Revisa y ajusta "Empresa receptora" con la razón social completa, y el nombre de cada material si necesitas su nombre técnico.</span>';
+  }
+
+  document.getElementById('dbOperacion').addEventListener('change', aplicarOperacionSeleccionada);
 </script>
 </body>
 </html>
