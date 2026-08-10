@@ -171,6 +171,31 @@
     background:#fff;
   }
   .db-box select:disabled{background:#f2f2f2;color:#999;}
+  .ops-list{
+    max-height:150px;
+    overflow-y:auto;
+    border:1px solid var(--border);
+    border-radius:6px;
+    padding:4px;
+    background:#fff;
+  }
+  .ops-list label{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:12.5px;
+    font-weight:400;
+    color:#333;
+    padding:6px 6px;
+    border-radius:4px;
+    cursor:pointer;
+    margin:0;
+  }
+  .ops-list label:hover{background:#f4f7f4;}
+  .ops-list input[type="checkbox"]{
+    width:auto;
+    flex-shrink:0;
+  }
   .db-preview{
     font-size:11.5px;
     color:#333;
@@ -516,11 +541,12 @@
       <button class="btn-list" id="btnCargarDB" onclick="buscarEnIntervalo()" style="width:100%;">Buscar en el intervalo</button>
 
       <div class="field" style="margin-top:10px;">
-        <label>Operación</label>
-        <select id="dbOperacion" disabled>
-          <option value="">-- primero busca un intervalo --</option>
-        </select>
+        <label>Operación(es) &mdash; puedes elegir varias</label>
+        <div class="ops-list" id="dbOperacionesList">
+          <div class="saved-empty">Primero busca un intervalo</div>
+        </div>
       </div>
+      <button class="btn-list" id="btnAplicarOps" onclick="aplicarOperacionesSeleccionadas()" style="width:100%;" disabled>Totalizar operación(es) seleccionada(s)</button>
 
       <div class="db-preview" id="dbPreview"></div>
     </div>
@@ -583,7 +609,7 @@
     </div>
 
     <div class="hint">
-      "Buscar en el intervalo" trae de la base de datos (Sheets) los registros de esas fechas y llena el selector de Operación. Al elegir una operación, se totaliza el peso neto por tipo de residuo y se llenan los Materiales, Empresa receptora (abreviada, ajústala a la razón social completa) y Periodo. El logo (logo1) y la marca de agua (logo2) se cargan desde el mismo repositorio/carpeta que este archivo. "Guardar en el sistema" envía los datos a tu Apps Script / Google Sheets; "Consultar guardados" trae la lista y al hacer clic en un registro se recarga en el formulario.
+      "Buscar en el intervalo" trae de la base de datos (Sheets) los registros de esas fechas y llena la lista de Operaciones con casillas. Marca una o varias y presiona "Totalizar" para sumar el peso neto por tipo de residuo entre todas las seleccionadas, y llenar Materiales, Empresa receptora (junta los nombres separados por "/", ajústalos a la razón social completa) y Periodo. El logo (logo1) y la marca de agua (logo2) se cargan desde el mismo repositorio/carpeta que este archivo. "Guardar en el sistema" envía los datos a tu Apps Script / Google Sheets; "Consultar guardados" trae la lista y al hacer clic en un registro se recarga en el formulario.
     </div>
   </div>
 
@@ -989,7 +1015,8 @@
   async function buscarEnIntervalo(){
     const btn = document.getElementById('btnCargarDB');
     const preview = document.getElementById('dbPreview');
-    const selectOp = document.getElementById('dbOperacion');
+    const listaOps = document.getElementById('dbOperacionesList');
+    const btnAplicar = document.getElementById('btnAplicarOps');
     const desdeStr = document.getElementById('dbDesde').value;
     const hastaStr = document.getElementById('dbHasta').value;
 
@@ -1003,8 +1030,8 @@
     const hasta = new Date(hastaStr + 'T23:59:59');
 
     btn.disabled = true;
-    selectOp.disabled = true;
-    selectOp.innerHTML = '<option value="">-- buscando... --</option>';
+    btnAplicar.disabled = true;
+    listaOps.innerHTML = '<div class="saved-empty">Buscando...</div>';
     preview.className = 'db-preview show';
     preview.textContent = 'Consultando base de datos...';
 
@@ -1032,36 +1059,39 @@
 
       if (dbFilas.length === 0){
         preview.innerHTML = 'No se encontraron registros en ese intervalo.';
-        selectOp.innerHTML = '<option value="">-- sin resultados --</option>';
+        listaOps.innerHTML = '<div class="saved-empty">Sin resultados</div>';
         return;
       }
 
       const operaciones = Array.from(new Set(dbFilas.map(f => f.operacion).filter(Boolean))).sort();
-      selectOp.innerHTML = '<option value="">-- selecciona una operación --</option>' +
-        operaciones.map(op => '<option value="' + op.replace(/"/g,'&quot;') + '">' + op + '</option>').join('');
-      selectOp.disabled = false;
+      listaOps.innerHTML = operaciones.map((op, i) =>
+        '<label><input type="checkbox" class="chk-operacion" value="' + op.replace(/"/g,'&quot;') + '">' + op + '</label>'
+      ).join('');
+      btnAplicar.disabled = false;
 
-      preview.innerHTML = '<b>' + dbFilas.length + '</b> registros encontrados en el intervalo, con <b>' + operaciones.length + '</b> operación(es) distintas.<br><span style="color:#888;">Elige una operación arriba para totalizar sus materiales.</span>';
+      preview.innerHTML = '<b>' + dbFilas.length + '</b> registros encontrados en el intervalo, con <b>' + operaciones.length + '</b> operación(es) distintas.<br><span style="color:#888;">Marca una o varias operaciones y presiona "Totalizar" para sumar sus materiales juntos.</span>';
     }catch(err){
       preview.innerHTML = 'Error al consultar la base de datos: ' + err.message;
-      selectOp.innerHTML = '<option value="">-- error --</option>';
+      listaOps.innerHTML = '<div class="saved-empty">Error</div>';
     }finally{
       btn.disabled = false;
     }
   }
 
-  function aplicarOperacionSeleccionada(){
+  function aplicarOperacionesSeleccionadas(){
     const preview = document.getElementById('dbPreview');
-    const operacion = document.getElementById('dbOperacion').value;
     const desdeStr = document.getElementById('dbDesde').value;
     const hastaStr = document.getElementById('dbHasta').value;
 
-    if (!operacion){
-      preview.innerHTML = 'Elige una operación para totalizar sus materiales.';
+    const checks = Array.from(document.querySelectorAll('.chk-operacion:checked'));
+    const operacionesSeleccionadas = checks.map(c => c.value);
+
+    if (!operacionesSeleccionadas.length){
+      preview.innerHTML = 'Marca al menos una operación para totalizar sus materiales.';
       return;
     }
 
-    const filasOp = dbFilas.filter(f => f.operacion === operacion);
+    const filasOp = dbFilas.filter(f => operacionesSeleccionadas.includes(f.operacion));
     const porResiduo = new Map();
     let totalPeso = 0;
     filasOp.forEach(f => {
@@ -1077,14 +1107,12 @@
     }));
     setMateriales(nuevaLista);
 
-    document.getElementById('empresaReceptora').value = operacion;
+    document.getElementById('empresaReceptora').value = operacionesSeleccionadas.join(' / ');
     document.getElementById('periodo').value = formatearPeriodo(desdeStr, hastaStr);
     update();
 
-    preview.innerHTML = '<b>' + filasOp.length + '</b> registros de "' + operacion + '" · Total: <b>' + formatKg(totalPeso) + ' kg</b> en <b>' + porResiduo.size + '</b> material(es)<br><span style="color:#888;">Revisa y ajusta "Empresa receptora" con la razón social completa, y el nombre de cada material si necesitas su nombre técnico.</span>';
+    preview.innerHTML = '<b>' + filasOp.length + '</b> registros de <b>' + operacionesSeleccionadas.length + '</b> operación(es) (' + operacionesSeleccionadas.join(', ') + ') · Total: <b>' + formatKg(totalPeso) + ' kg</b> en <b>' + porResiduo.size + '</b> material(es)<br><span style="color:#888;">Revisa y ajusta "Empresa receptora" con la razón social completa, y el nombre de cada material si necesitas su nombre técnico.</span>';
   }
-
-  document.getElementById('dbOperacion').addEventListener('change', aplicarOperacionSeleccionada);
 </script>
 </body>
 </html>
