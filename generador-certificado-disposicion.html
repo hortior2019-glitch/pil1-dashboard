@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Generador de Certificado de Disposición - HORTI ORGANIC SAS CI BIC</title>
+<style>
+  :root{
+    --green:#3f9142;
+    --green-dark:#2c5e28;
+    --gray:#555;
+    --border:#ddd;
+  }
+  *{box-sizing:border-box;}
+  body{
+    font-family:'Segoe UI',Arial,sans-serif;
+    margin:0;
+    background:#f2f4f2;
+    color:#222;
+  }
+  .app{
+    display:flex;
+    min-height:100vh;
+  }
+  .panel{
+    width:380px;
+    flex-shrink:0;
+    background:#fff;
+    padding:24px;
+    border-right:1px solid var(--border);
+    overflow-y:auto;
+  }
+  .panel h2{
+    font-size:16px;
+    margin:0 0 16px;
+    color:var(--green-dark);
+  }
+  .field{
+    margin-bottom:14px;
+  }
+  .field label{
+    display:block;
+    font-size:12px;
+    font-weight:600;
+    color:var(--gray);
+    margin-bottom:4px;
+  }
+  .field input, .field textarea{
+    width:100%;
+    padding:8px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    font-size:13px;
+    font-family:inherit;
+  }
+  .field textarea{
+    resize:vertical;
+    min-height:70px;
+  }
+  .row2{
+    display:flex;
+    gap:10px;
+  }
+  .row2 .field{
+    flex:1;
+  }
+  .actions{
+    margin-top:20px;
+    display:flex;
+    gap:10px;
+  }
+  button{
+    flex:1;
+    padding:10px;
+    border:none;
+    border-radius:6px;
+    font-size:13px;
+    cursor:pointer;
+    font-weight:600;
+  }
+  .btn-print{
+    background:var(--green);
+    color:#fff;
+  }
+  .btn-print:hover{
+    background:var(--green-dark);
+  }
+  .btn-save{
+    background:#2c5e28;
+    color:#fff;
+  }
+  .btn-save:hover{
+    background:#1f4a1c;
+  }
+  .btn-list{
+    background:#eef3ee;
+    color:var(--green-dark);
+    border:1px solid var(--border) !important;
+  }
+  .btn-list:hover{
+    background:#e2ebe2;
+  }
+  .status-msg{
+    font-size:12px;
+    margin-top:8px;
+    min-height:16px;
+  }
+  .status-msg.ok{color:var(--green-dark);}
+  .status-msg.err{color:#b23b3b;}
+  .saved-list{
+    max-height:180px;
+    overflow-y:auto;
+    border:1px solid var(--border);
+    border-radius:6px;
+  }
+  .saved-item{
+    padding:8px 10px;
+    font-size:12px;
+    border-bottom:1px solid var(--border);
+    cursor:pointer;
+  }
+  .saved-item:last-child{border-bottom:none;}
+  .saved-item:hover{background:#f4f7f4;}
+  .saved-item b{display:block;color:var(--green-dark);}
+  .saved-empty{
+    padding:10px;
+    font-size:12px;
+    color:#999;
+    text-align:center;
+  }
+  .hint{
+    font-size:11px;
+    color:#888;
+    margin-top:16px;
+    line-height:1.4;
+  }
+  .preview-wrap{
+    flex:1;
+    padding:40px;
+    display:flex;
+    justify-content:center;
+    align-items:flex-start;
+    overflow-y:auto;
+  }
+
+  /* ---- Page / letterhead ---- */
+  .certificate{
+    position:relative;
+    background:#fff;
+    width:210mm;
+    max-width:100%;
+    padding:14mm 18mm 0 18mm;
+    box-shadow:0 0 12px rgba(0,0,0,0.15);
+    display:flex;
+    flex-direction:column;
+  }
+
+  .watermark{
+    position:absolute;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%);
+    width:65mm;
+    opacity:0.08;
+    pointer-events:none;
+    z-index:0;
+  }
+  .watermark img{width:100%;display:block;}
+  .watermark .fallback{
+    width:65mm;
+    height:65mm;
+    border-radius:50%;
+    border:6px solid #999;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:14px;
+    font-weight:700;
+    color:#999;
+    text-align:center;
+    letter-spacing:1px;
+  }
+
+  .cert-topbar{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    position:relative;
+    z-index:1;
+  }
+  .cert-topbar .acta{
+    font-size:11px;
+    color:var(--green-dark);
+    padding-top:10px;
+  }
+  .cert-topbar .acta b{font-weight:700;}
+  .cert-topbar .page{
+    font-size:11px;
+    color:var(--gray);
+    padding-top:10px;
+  }
+  .cert-logo{
+    text-align:center;
+  }
+  .cert-logo img{
+    height:80px;
+  }
+  .cert-logo .fallback-logo{
+    width:80px;
+    height:80px;
+    margin:0 auto;
+    border-radius:50%;
+    border:4px solid var(--green);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    color:var(--green-dark);
+    font-weight:700;
+    font-size:11px;
+    line-height:1.1;
+  }
+  .cert-logo .nit{
+    font-size:9px;
+    color:var(--gray);
+    margin-top:4px;
+  }
+
+  .cert-title{
+    text-align:center;
+    font-size:19px;
+    font-weight:700;
+    color:#222;
+    letter-spacing:1px;
+    margin:18px 0 22px;
+    position:relative;
+    z-index:1;
+  }
+
+  .cert-body{
+    position:relative;
+    z-index:1;
+  }
+  .cert-body p{
+    font-size:12.5px;
+    line-height:1.7;
+    text-align:justify;
+    margin:0 0 14px;
+  }
+
+  table.cert-table{
+    width:100%;
+    border-collapse:collapse;
+    margin:18px 0;
+    font-size:12.5px;
+  }
+  table.cert-table th{
+    color:var(--green-dark);
+    font-weight:700;
+    padding:6px 8px;
+    text-align:left;
+    border-bottom:2px solid var(--green);
+  }
+  table.cert-table td{
+    border:1px solid var(--border);
+    padding:6px 8px;
+  }
+  table.cert-table tfoot td{
+    font-weight:700;
+  }
+
+  .cert-date{
+    font-size:12.5px;
+    margin:16px 0 30px;
+  }
+
+  .signature{
+    font-size:12.5px;
+    line-height:1.5;
+  }
+  .signature .name{
+    font-weight:700;
+    margin-top:32px;
+  }
+  .signature .role{
+    font-weight:700;
+    font-style:italic;
+    color:var(--green-dark);
+  }
+  .signature .company{
+    font-weight:700;
+  }
+  .signature .firma{
+    margin-top:6px;
+    color:#888;
+    font-size:11px;
+  }
+
+  .cert-footer{
+    position:relative;
+    z-index:1;
+    margin:20px -18mm 0;
+    padding:0;
+  }
+  .cert-footer .info-row{
+    display:flex;
+    justify-content:space-around;
+    align-items:center;
+    gap:10px;
+    border-top:1px solid #d8d8d8;
+    padding:10px 18mm 12px;
+  }
+  .cert-footer .info-item{
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .cert-footer .info-item svg{
+    flex-shrink:0;
+    width:26px;
+    height:26px;
+    color:#9fb8a8;
+  }
+  .cert-footer .info-item .lines{
+    font-size:10px;
+    line-height:1.4;
+    color:#333;
+    white-space:nowrap;
+  }
+  .cert-footer .wave{
+    display:block;
+    width:100%;
+    height:34px;
+  }
+
+  @media print{
+    body{background:#fff;}
+    .panel{display:none;}
+    .preview-wrap{padding:0;}
+    .certificate{box-shadow:none;width:auto;min-height:297mm;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="panel">
+    <h2>Datos del certificado</h2>
+
+    <div class="row2">
+      <div class="field">
+        <label>N° de Acta</label>
+        <input id="actaNo" value="007-2026">
+      </div>
+      <div class="field">
+        <label>Página</label>
+        <input id="pagina" value="1 de 1">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Empresa receptora</label>
+      <input id="empresaReceptora" value="EMPRESA DE SERVICIOS PUBLICOS DE CAJICA SA ESP">
+    </div>
+
+    <div class="field">
+      <label>NIT receptora</label>
+      <input id="nitReceptora" value="832.002.386-5">
+    </div>
+
+    <div class="field">
+      <label>Descripción del residuo</label>
+      <input id="descripcion" value="Residuos Orgánicos">
+    </div>
+
+    <div class="row2">
+      <div class="field">
+        <label>Cantidad (kg)</label>
+        <input id="cantidad" value="748.190">
+      </div>
+      <div class="field">
+        <label>Mes / periodo</label>
+        <input id="periodo" value="Junio de 2026">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Fecha de expedición</label>
+      <input id="fechaExpedicion" value="3 de julio de 2026">
+    </div>
+
+    <div class="field">
+      <label>Segundo párrafo (editable)</label>
+      <textarea id="parrafo2">HORTI ORGANIC SAS CI BIC, en su compromiso con la mejora continua y la sostenibilidad, propone nuevas alternativas basadas en los principios de la economía circular, diseñadas para optimizar la gestión ambiental y promover el uso eficiente de los recursos. Estas iniciativas no solo reflejan nuestra dedicación a la excelencia, sino que también garantizan el estricto cumplimiento de la Resolución 1362 de 2007, alineándonos con los Objetivos de Desarrollo Sostenible (ODS), reafirmando nuestro liderazgo en la transición hacia un futuro más consciente, sostenible y en armonía con el entorno.</textarea>
+    </div>
+
+    <div class="actions">
+      <button class="btn-print" onclick="window.print()">Imprimir / Guardar PDF</button>
+    </div>
+
+    <div class="actions">
+      <button class="btn-save" id="btnGuardar" onclick="guardarCertificado()">Guardar en el sistema</button>
+    </div>
+    <div class="status-msg" id="saveStatus"></div>
+
+    <div class="field" style="margin-top:18px;">
+      <label>Certificados guardados</label>
+      <button class="btn-list" id="btnConsultar" onclick="cargarGuardados()" style="width:100%;margin-bottom:8px;">Consultar guardados</button>
+      <div class="saved-list" id="listaGuardados"><div class="saved-empty">Aún no has consultado</div></div>
+    </div>
+
+    <div class="hint">
+      El logo (logo1.png) y la marca de agua (logo2.png) se cargan desde el mismo repositorio/carpeta que este archivo. Si aún no los has subido, se muestra un reemplazo temporal en su lugar. Empresa emisora, firmante, pie de página y estructura quedan fijos para mantener consistencia entre certificados. "Guardar en el sistema" envía los datos a tu Apps Script / Google Sheets; "Consultar guardados" trae la lista y al hacer clic en un registro se recarga en el formulario.
+    </div>
+  </div>
+
+  <div class="preview-wrap">
+    <div class="certificate" id="certificate">
+
+      <div class="watermark">
+        <img src="logo2.png" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+        <div class="fallback" style="display:none;">HORTI<br>ORGANIC</div>
+      </div>
+
+      <div class="cert-topbar">
+        <div class="acta">Acta No. <b id="hActa">007-2026</b></div>
+        <div class="cert-logo">
+          <img src="logo1.png" alt="Horti Organic" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+          <div class="fallback-logo" style="display:none;">HORTI<br>ORGANIC</div>
+          <div class="nit">NIT. 800.135.337-9</div>
+        </div>
+        <div class="page">Pag. <span id="hPagina">1 de 1</span></div>
+      </div>
+
+      <div class="cert-title">CERTIFICADO DE DISPOSICIÓN</div>
+
+      <div class="cert-body">
+        <p>La empresa <b>HORTI ORGANIC SAS CI BIC</b> certifica que, en cumplimiento de la normativa legal ambiental vigente y en concordancia con nuestra política de sostenibilidad y compromiso con la gestión ambiental responsable, se realizó la disposición del material detallado a continuación a la empresa <b id="pEmpresa">EMPRESA DE SERVICIOS PUBLICOS DE CAJICA SA ESP</b>, identificada con el NIT: <b id="pNit">832.002.386-5</b>.</p>
+
+        <table class="cert-table">
+          <thead>
+            <tr><th>ÍTEM</th><th>DESCRIPCIÓN</th><th>CANTIDAD KG</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>1</td><td id="tDescripcion">Residuos Orgánicos</td><td id="tCantidad">748.190</td></tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="2">Total, disposición mes de <span id="tPeriodo">Junio de 2026</span></td>
+              <td id="tCantidadTotal">748.190</td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <p><b>HORTI ORGANIC SAS CI BIC</b><span id="pParrafo2Rest"></span></p>
+
+        <p class="cert-date">Se expide la presente certificación el <span id="pFecha">3 de julio de 2026</span>.</p>
+
+        <div class="signature">
+          Cordialmente,
+          <div class="name">Felipe Sánchez Garzón</div>
+          <div class="role">Gerente General</div>
+          <div class="company">HORTI ORGANIC SAS CI BIC</div>
+          <div class="firma">Firma electrónica</div>
+        </div>
+      </div>
+
+      <div class="cert-footer">
+        <div class="info-row">
+          <div class="info-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7l9-4 9 4v10l-9 4-9-4V7z"/><path d="M3 7l9 4 9-4"/><path d="M12 11v10"/></svg>
+            <div class="lines">Km. 5 vía Zipaquirá<br>Nemocón &middot; Colombia</div>
+          </div>
+          <div class="info-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 12a8 8 0 0 1 16 0"/><rect x="2.5" y="12" width="4" height="6" rx="1.5"/><rect x="17.5" y="12" width="4" height="6" rx="1.5"/></svg>
+            <div class="lines">+57 (1) 851 2596<br>(316) 548 - 6856</div>
+          </div>
+          <div class="info-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 7l10 6 10-6"/></svg>
+            <div class="lines">Info@hortiorganic.com<br>www.hortiorganic.com</div>
+          </div>
+        </div>
+        <svg class="wave" viewBox="0 0 600 34" preserveAspectRatio="none">
+          <path d="M0,20 Q150,2 300,14 Q450,26 600,8 L600,34 L0,34 Z" fill="#8fc79a"></path>
+        </svg>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const ids = ['actaNo','pagina','empresaReceptora','nitReceptora','descripcion','cantidad','periodo','fechaExpedicion','parrafo2'];
+
+  function update(){
+    const acta = document.getElementById('actaNo').value;
+    const pagina = document.getElementById('pagina').value;
+    const empresa = document.getElementById('empresaReceptora').value;
+    const nit = document.getElementById('nitReceptora').value;
+    const desc = document.getElementById('descripcion').value;
+    const cant = document.getElementById('cantidad').value;
+    const periodo = document.getElementById('periodo').value;
+    const fecha = document.getElementById('fechaExpedicion').value;
+    let parrafo2 = document.getElementById('parrafo2').value;
+
+    // Quita el nombre de la empresa al inicio del párrafo 2 porque ya va en negrilla aparte
+    const prefix = 'HORTI ORGANIC SAS CI BIC';
+    if (parrafo2.startsWith(prefix)) {
+      parrafo2 = parrafo2.slice(prefix.length);
+    }
+
+    document.getElementById('hActa').textContent = acta;
+    document.getElementById('hPagina').textContent = pagina;
+    document.getElementById('pEmpresa').textContent = empresa;
+    document.getElementById('pNit').textContent = nit;
+    document.getElementById('pParrafo2Rest').textContent = parrafo2;
+    document.getElementById('tDescripcion').textContent = desc;
+    document.getElementById('tCantidad').textContent = cant;
+    document.getElementById('tPeriodo').textContent = periodo;
+    document.getElementById('tCantidadTotal').textContent = cant;
+    document.getElementById('pFecha').textContent = fecha;
+  }
+
+  ids.forEach(id => {
+    document.getElementById(id).addEventListener('input', update);
+  });
+
+  update();
+
+  // ---- Guardar / consultar en Google Sheets vía Apps Script ----
+  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzq4P0XvEDXAKAPti3B_JL_J1CjogE60bn6TOdiNf69WVmvaRLdpkxabkGTsEX3_7ogwA/exec';
+
+  function recolectarDatos(){
+    return {
+      acta: document.getElementById('actaNo').value,
+      pagina: document.getElementById('pagina').value,
+      empresa: document.getElementById('empresaReceptora').value,
+      nit: document.getElementById('nitReceptora').value,
+      descripcion: document.getElementById('descripcion').value,
+      cantidad: document.getElementById('cantidad').value,
+      periodo: document.getElementById('periodo').value,
+      fecha: document.getElementById('fechaExpedicion').value,
+      parrafo2: document.getElementById('parrafo2').value
+    };
+  }
+
+  function setStatus(msg, tipo){
+    const el = document.getElementById('saveStatus');
+    el.textContent = msg;
+    el.className = 'status-msg ' + (tipo || '');
+  }
+
+  async function guardarCertificado(){
+    const btn = document.getElementById('btnGuardar');
+    btn.disabled = true;
+    setStatus('Guardando...', '');
+    try{
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        // text/plain evita el preflight CORS; el Apps Script igual parsea el JSON del body
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(recolectarDatos())
+      });
+      const data = await res.json().catch(() => ({ok:true}));
+      if (data.ok === false) throw new Error(data.error || 'Error desconocido');
+      setStatus('Certificado guardado correctamente.', 'ok');
+    }catch(err){
+      setStatus('No se pudo guardar: ' + err.message, 'err');
+    }finally{
+      btn.disabled = false;
+    }
+  }
+
+  async function cargarGuardados(){
+    const cont = document.getElementById('listaGuardados');
+    const btn = document.getElementById('btnConsultar');
+    btn.disabled = true;
+    cont.innerHTML = '<div class="saved-empty">Cargando...</div>';
+    try{
+      const res = await fetch(APPS_SCRIPT_URL, { method: 'GET' });
+      const data = await res.json();
+      const records = data.records || [];
+      if (!records.length){
+        cont.innerHTML = '<div class="saved-empty">No hay certificados guardados aún</div>';
+        return;
+      }
+      cont.innerHTML = '';
+      records.slice().reverse().forEach(rec => {
+        const div = document.createElement('div');
+        div.className = 'saved-item';
+        div.innerHTML = '<b>Acta ' + (rec.Acta || '') + '</b>' + (rec['Empresa Receptora'] || '') + ' · ' + (rec['Fecha Expedicion'] || '');
+        div.onclick = () => aplicarRegistro(rec);
+        cont.appendChild(div);
+      });
+    }catch(err){
+      cont.innerHTML = '<div class="saved-empty">Error al consultar: ' + err.message + '</div>';
+    }finally{
+      btn.disabled = false;
+    }
+  }
+
+  function aplicarRegistro(rec){
+    document.getElementById('actaNo').value = rec.Acta || '';
+    document.getElementById('pagina').value = rec.Pagina || '1 de 1';
+    document.getElementById('empresaReceptora').value = rec['Empresa Receptora'] || '';
+    document.getElementById('nitReceptora').value = rec.NIT || '';
+    document.getElementById('descripcion').value = rec.Descripcion || '';
+    document.getElementById('cantidad').value = rec['Cantidad KG'] || '';
+    document.getElementById('periodo').value = rec.Periodo || '';
+    document.getElementById('fechaExpedicion').value = rec['Fecha Expedicion'] || '';
+    document.getElementById('parrafo2').value = rec.Parrafo2 || document.getElementById('parrafo2').value;
+    update();
+    setStatus('Certificado cargado en el formulario.', 'ok');
+  }
+</script>
+</body>
+</html>
