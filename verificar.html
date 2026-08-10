@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Verificar Certificado - HORTI ORGANIC SAS CI BIC</title>
+<style>
+  :root{
+    --green:#3f9142;
+    --green-dark:#2c5e28;
+    --border:#ddd;
+  }
+  *{box-sizing:border-box;}
+  body{
+    font-family:'Segoe UI',Arial,sans-serif;
+    margin:0;
+    background:#f2f4f2;
+    color:#222;
+    display:flex;
+    align-items:flex-start;
+    justify-content:center;
+    min-height:100vh;
+    padding:40px 16px;
+  }
+  .box{
+    width:100%;
+    max-width:440px;
+    background:#fff;
+    border-radius:12px;
+    box-shadow:0 6px 24px rgba(0,0,0,0.1);
+    padding:28px;
+  }
+  h1{
+    font-size:17px;
+    color:var(--green-dark);
+    margin:0 0 4px;
+    text-align:center;
+  }
+  p.sub{
+    font-size:12px;
+    color:#888;
+    text-align:center;
+    margin:0 0 22px;
+  }
+  label{
+    display:block;
+    font-size:12px;
+    font-weight:600;
+    color:#555;
+    margin-bottom:6px;
+  }
+  input{
+    width:100%;
+    padding:10px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    font-size:14px;
+    text-transform:uppercase;
+    letter-spacing:1px;
+    text-align:center;
+  }
+  button{
+    width:100%;
+    margin-top:12px;
+    padding:11px;
+    border:none;
+    border-radius:6px;
+    background:var(--green);
+    color:#fff;
+    font-size:14px;
+    font-weight:600;
+    cursor:pointer;
+  }
+  button:hover{background:var(--green-dark);}
+  button:disabled{opacity:0.6;cursor:default;}
+  .resultado{
+    margin-top:20px;
+    border-radius:8px;
+    padding:16px;
+    font-size:13px;
+    line-height:1.6;
+    display:none;
+  }
+  .resultado.show{display:block;}
+  .resultado.ok{background:#eaf6ec;border:1px solid #b8dfc0;}
+  .resultado.warn{background:#fff6e5;border:1px solid #f0d8a0;}
+  .resultado.err{background:#fbeaea;border:1px solid #eabcbc;}
+  .resultado h2{
+    font-size:14px;
+    margin:0 0 10px;
+  }
+  .resultado.ok h2{color:var(--green-dark);}
+  .resultado.warn h2{color:#8a6415;}
+  .resultado.err h2{color:#a13a3a;}
+  .resultado dt{font-weight:600;color:#555;font-size:11px;margin-top:8px;}
+  .resultado dd{margin:0;}
+</style>
+</head>
+<body>
+  <div class="box">
+    <h1>Verificación de Certificado</h1>
+    <p class="sub">HORTI ORGANIC SAS CI BIC</p>
+
+    <label>Código de verificación</label>
+    <input id="codigo" placeholder="XXXX-XXXX">
+    <button id="btnVerificar" onclick="verificar()">Verificar</button>
+
+    <div class="resultado" id="resultado"></div>
+  </div>
+
+<script>
+  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzq4P0XvEDXAKAPti3B_JL_J1CjogE60bn6TOdiNf69WVmvaRLdpkxabkGTsEX3_7ogwA/exec';
+
+  function leerCodigoDeURL(){
+    const params = new URLSearchParams(location.search);
+    return params.get('codigo') || '';
+  }
+
+  async function verificar(){
+    const codigo = document.getElementById('codigo').value.trim();
+    const btn = document.getElementById('btnVerificar');
+    const res = document.getElementById('resultado');
+
+    if (!codigo){
+      res.className = 'resultado show err';
+      res.innerHTML = '<h2>Ingresa un código</h2>';
+      return;
+    }
+
+    btn.disabled = true;
+    res.className = 'resultado show';
+    res.innerHTML = 'Verificando...';
+
+    try{
+      const r = await fetch(APPS_SCRIPT_URL + '?codigo=' + encodeURIComponent(codigo));
+      const data = await r.json();
+
+      if (!data.found){
+        res.className = 'resultado show err';
+        res.innerHTML = '<h2>⚠️ Código no encontrado</h2>Este código no corresponde a ningún certificado emitido por HORTI ORGANIC SAS CI BIC. El documento podría ser falso o el código fue transcrito incorrectamente.';
+        return;
+      }
+
+      if (!data.integro){
+        res.className = 'resultado show warn';
+        res.innerHTML = '<h2>⚠️ Advertencia de integridad</h2>El código existe pero los datos asociados no coinciden con la firma original. Contacta directamente a HORTI ORGANIC para confirmar este documento.';
+        return;
+      }
+
+      const rec = data.record;
+      let materiales = [];
+      try{ materiales = JSON.parse(rec.Materiales || '[]'); }catch(e){}
+      const materialesHtml = materiales.map(m => (m.descripcion || '') + ': ' + (m.cantidad || '0') + ' kg').join('<br>');
+
+      res.className = 'resultado show ok';
+      res.innerHTML =
+        '<h2>✅ Documento auténtico</h2>' +
+        '<dl>' +
+        '<dt>Acta</dt><dd>' + (rec.Acta || '') + '</dd>' +
+        '<dt>Empresa receptora</dt><dd>' + (rec['Empresa Receptora'] || '') + '</dd>' +
+        '<dt>NIT</dt><dd>' + (rec.NIT || '') + '</dd>' +
+        '<dt>Materiales</dt><dd>' + (materialesHtml || '—') + '</dd>' +
+        '<dt>Periodo</dt><dd>' + (rec.Periodo || '') + '</dd>' +
+        '<dt>Fecha de expedición</dt><dd>' + (rec['Fecha Expedicion'] || '') + '</dd>' +
+        '</dl>';
+    }catch(err){
+      res.className = 'resultado show err';
+      res.innerHTML = '<h2>Error al verificar</h2>' + err.message;
+    }finally{
+      btn.disabled = false;
+    }
+  }
+
+  const codigoUrl = leerCodigoDeURL();
+  if (codigoUrl){
+    document.getElementById('codigo').value = codigoUrl;
+    verificar();
+  }
+
+  document.getElementById('codigo').addEventListener('keydown', e => {
+    if (e.key === 'Enter') verificar();
+  });
+</script>
+</body>
+</html>

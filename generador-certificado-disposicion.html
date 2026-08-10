@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Generador de Certificado de Disposición - HORTI ORGANIC SAS CI BIC</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
   :root{
     --green:#3f9142;
@@ -288,6 +289,8 @@
   .cert-logo img{
     height:120px;
     opacity:0.4;
+    position:relative;
+    left:-10px;
   }
   .cert-logo .fallback-logo{
     width:80px;
@@ -314,7 +317,7 @@
     text-align:center;
     font-size:19px;
     font-weight:700;
-    color:#222;
+    color:var(--green);
     letter-spacing:1px;
     margin:18px 0 22px;
     position:relative;
@@ -378,6 +381,43 @@
     margin-top:6px;
     color:#888;
     font-size:11px;
+  }
+
+  .signature-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    gap:16px;
+  }
+  .verificacion{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    text-align:right;
+  }
+  .verificacion .qr{
+    width:70px;
+    height:70px;
+    flex-shrink:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .verificacion .qr img, .verificacion .qr canvas{
+    width:70px !important;
+    height:70px !important;
+  }
+  .verif-text{
+    font-size:9.5px;
+    line-height:1.4;
+    color:#777;
+    max-width:150px;
+  }
+  .verif-text b{
+    display:block;
+    font-size:11px;
+    color:var(--green-dark);
+    letter-spacing:0.5px;
   }
 
   .cert-footer{
@@ -568,12 +608,21 @@
 
         <p class="cert-date">Se expide la presente certificación el <span id="pFecha">3 de julio de 2026</span>.</p>
 
-        <div class="signature">
-          Cordialmente,
-          <div class="name">Felipe Sánchez Garzón</div>
-          <div class="role">Gerente General</div>
-          <div class="company">HORTI ORGANIC SAS CI BIC</div>
-          <div class="firma">Firma electrónica</div>
+        <div class="signature-row">
+          <div class="signature">
+            Cordialmente,
+            <div class="name">Felipe Sánchez Garzón</div>
+            <div class="role">Gerente General</div>
+            <div class="company">HORTI ORGANIC SAS CI BIC</div>
+            <div class="firma">Firma electrónica</div>
+          </div>
+
+          <div class="verificacion" id="verificacionBox">
+            <div class="qr" id="qrCode"></div>
+            <div class="verif-text">
+              <span id="verifCodigoTexto">Guarda el certificado para generar su código de verificación</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -694,6 +743,7 @@
 
   renderMateriales();
   update();
+  renderVerificacion();
 
   // ---- Carga de logos probando varias extensiones (png, jpg, jpeg, mayúsculas) ----
   function loadImageWithFallback(img, base, exts){
@@ -745,6 +795,29 @@
     el.className = 'status-msg ' + (tipo || '');
   }
 
+  // ---- Código de verificación (huella digital) + QR ----
+  let certCodigo = '';
+
+  function urlVerificacion(){
+    // Asume que verificar.html vive junto a este archivo en el mismo repo/carpeta.
+    return location.href.replace(/[^/]*$/, 'verificar.html');
+  }
+
+  function renderVerificacion(){
+    const qrEl = document.getElementById('qrCode');
+    const textoEl = document.getElementById('verifCodigoTexto');
+    qrEl.innerHTML = '';
+    if (!certCodigo){
+      textoEl.innerHTML = 'Guarda el certificado para generar su código de verificación';
+      return;
+    }
+    const link = urlVerificacion() + '?codigo=' + encodeURIComponent(certCodigo);
+    if (window.QRCode){
+      new QRCode(qrEl, { text: link, width: 70, height: 70, correctLevel: QRCode.CorrectLevel.M });
+    }
+    textoEl.innerHTML = '<b>' + certCodigo + '</b>Verifica la autenticidad de este documento escaneando el código o en:<br>' + urlVerificacion();
+  }
+
   async function guardarCertificado(){
     const btn = document.getElementById('btnGuardar');
     btn.disabled = true;
@@ -758,7 +831,9 @@
       });
       const data = await res.json().catch(() => ({ok:true}));
       if (data.ok === false) throw new Error(data.error || 'Error desconocido');
-      setStatus('Certificado guardado correctamente.', 'ok');
+      certCodigo = data.codigo || '';
+      renderVerificacion();
+      setStatus('Certificado guardado. Código de verificación: ' + (certCodigo || '—'), 'ok');
     }catch(err){
       setStatus('No se pudo guardar: ' + err.message, 'err');
     }finally{
@@ -812,6 +887,9 @@
       lista = [{ descripcion: rec.Descripcion, cantidad: rec['Cantidad KG'] || '' }];
     }
     setMateriales(lista);
+
+    certCodigo = rec.Codigo || '';
+    renderVerificacion();
 
     setStatus('Certificado cargado en el formulario.', 'ok');
   }
