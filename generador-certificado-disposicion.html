@@ -108,20 +108,58 @@
   .status-msg.ok{color:var(--green-dark);}
   .status-msg.err{color:#b23b3b;}
   .saved-list{
-    max-height:180px;
+    max-height:320px;
     overflow-y:auto;
     border:1px solid var(--border);
     border-radius:6px;
+    background:#fff;
+  }
+  #buscarGuardados{
+    width:100%;
+    padding:8px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    font-size:12.5px;
+    font-family:inherit;
   }
   .saved-item{
-    padding:8px 10px;
+    padding:10px 12px;
     font-size:12px;
     border-bottom:1px solid var(--border);
     cursor:pointer;
   }
   .saved-item:last-child{border-bottom:none;}
   .saved-item:hover{background:#f4f7f4;}
-  .saved-item b{display:block;color:var(--green-dark);}
+  .saved-item .fila-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    margin-bottom:3px;
+  }
+  .saved-item .acta{
+    font-weight:700;
+    color:var(--green-dark);
+    font-size:13px;
+  }
+  .saved-item .codigo{
+    font-family:monospace;
+    font-size:10.5px;
+    color:#999;
+    background:#f2f4f2;
+    padding:1px 6px;
+    border-radius:4px;
+  }
+  .saved-item .empresa{
+    font-weight:600;
+    color:#333;
+    margin-bottom:2px;
+  }
+  .saved-item .detalle{
+    color:#777;
+    font-size:11px;
+    line-height:1.5;
+  }
+  .saved-item .detalle b{color:#555;font-weight:600;}
   .saved-empty{
     padding:10px;
     font-size:12px;
@@ -458,8 +496,10 @@
   .cert-footer{
     position:relative;
     z-index:1;
-    margin:20px -18mm 0;
-    padding:0;
+    margin-top:auto;
+    margin-left:-18mm;
+    margin-right:-18mm;
+    padding-top:20px;
   }
   .cert-footer .info-row{
     display:flex;
@@ -594,7 +634,7 @@
     </div>
 
     <div class="actions">
-      <button class="btn-print" onclick="window.print()">Imprimir / Guardar PDF</button>
+      <button class="btn-print" onclick="imprimirCertificado()">Imprimir / Guardar PDF</button>
     </div>
 
     <div class="actions">
@@ -605,6 +645,7 @@
     <div class="field" style="margin-top:18px;">
       <label>Certificados guardados</label>
       <button class="btn-list" id="btnConsultar" onclick="cargarGuardados()" style="width:100%;margin-bottom:8px;">Consultar guardados</button>
+      <input id="buscarGuardados" placeholder="Buscar por acta, empresa o código..." style="display:none;margin-bottom:8px;">
       <div class="saved-list" id="listaGuardados"><div class="saved-empty">Aún no has consultado</div></div>
     </div>
 
@@ -741,6 +782,33 @@
 
   // Formatea kilos con separador de miles (punto) y decimales con coma;
   // si no hay decimales, no muestra ",000".
+  // ---- Nombre del archivo al exportar/imprimir: Empresa + intervalo de fechas ----
+  const tituloOriginal = document.title;
+
+  function nombreArchivoCertificado(){
+    const empresa = document.getElementById('empresaReceptora').value || 'Certificado';
+    const desde = document.getElementById('dbDesde').value; // yyyy-mm-dd
+    const hasta = document.getElementById('dbHasta').value;
+    let intervalo = document.getElementById('periodo').value || '';
+    if (desde && hasta) intervalo = desde + '_a_' + hasta;
+
+    const limpiar = s => String(s)
+      .normalize('NFD').replace(/[̀-ͯ]/g, '') // quita tildes
+      .replace(/[^a-zA-Z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+
+    return 'Certificado_' + limpiar(empresa) + (intervalo ? '_' + limpiar(intervalo) : '');
+  }
+
+  function imprimirCertificado(){
+    document.title = nombreArchivoCertificado();
+    window.print();
+  }
+
+  window.addEventListener('afterprint', () => {
+    document.title = tituloOriginal;
+  });
+
   function formatKg(valor){
     const num = parseFloat(String(valor).replace(/,/g, '')) || 0;
     let fixed = num.toFixed(3);
@@ -896,33 +964,77 @@
     }
   }
 
+  let registrosGuardados = [];
+
   async function cargarGuardados(){
     const cont = document.getElementById('listaGuardados');
     const btn = document.getElementById('btnConsultar');
+    const buscador = document.getElementById('buscarGuardados');
     btn.disabled = true;
     cont.innerHTML = '<div class="saved-empty">Cargando...</div>';
     try{
       const res = await fetch(APPS_SCRIPT_URL, { method: 'GET' });
       const data = await res.json();
-      const records = data.records || [];
-      if (!records.length){
-        cont.innerHTML = '<div class="saved-empty">No hay certificados guardados aún</div>';
-        return;
-      }
-      cont.innerHTML = '';
-      records.slice().reverse().forEach(rec => {
-        const div = document.createElement('div');
-        div.className = 'saved-item';
-        div.innerHTML = '<b>Acta ' + (rec.Acta || '') + '</b>' + (rec['Empresa Receptora'] || '') + ' · ' + (rec['Fecha Expedicion'] || '');
-        div.onclick = () => aplicarRegistro(rec);
-        cont.appendChild(div);
-      });
+      registrosGuardados = (data.records || []).slice().reverse();
+      buscador.style.display = registrosGuardados.length ? 'block' : 'none';
+      buscador.value = '';
+      renderListaGuardados('');
     }catch(err){
       cont.innerHTML = '<div class="saved-empty">Error al consultar: ' + err.message + '</div>';
     }finally{
       btn.disabled = false;
     }
   }
+
+  function totalYResumenMateriales(rec){
+    let lista = [];
+    try{ lista = JSON.parse(rec.Materiales || '[]'); }catch(e){}
+    if (!lista.length && rec.Descripcion) {
+      lista = [{ descripcion: rec.Descripcion, cantidad: rec['Cantidad KG'] || '' }];
+    }
+    let total = 0;
+    lista.forEach(m => { total += parseFloat(String(m.cantidad).replace(/,/g,'')) || 0; });
+    const nombres = lista.map(m => m.descripcion).filter(Boolean).join(', ');
+    return { total, nombres, cantidad: lista.length };
+  }
+
+  function renderListaGuardados(filtro){
+    const cont = document.getElementById('listaGuardados');
+    const f = (filtro || '').trim().toLowerCase();
+
+    const filtrados = !f ? registrosGuardados : registrosGuardados.filter(rec => {
+      const texto = [rec.Acta, rec['Empresa Receptora'], rec.NIT, rec.Codigo, rec.Periodo].join(' ').toLowerCase();
+      return texto.includes(f);
+    });
+
+    if (!registrosGuardados.length){
+      cont.innerHTML = '<div class="saved-empty">No hay certificados guardados aún</div>';
+      return;
+    }
+    if (!filtrados.length){
+      cont.innerHTML = '<div class="saved-empty">Sin resultados para "' + filtro + '"</div>';
+      return;
+    }
+
+    cont.innerHTML = '';
+    filtrados.forEach(rec => {
+      const { total, nombres, cantidad } = totalYResumenMateriales(rec);
+      const div = document.createElement('div');
+      div.className = 'saved-item';
+      div.innerHTML =
+        '<div class="fila-top"><span class="acta">Acta ' + (rec.Acta || '—') + '</span>' +
+        (rec.Codigo ? '<span class="codigo">' + rec.Codigo + '</span>' : '') + '</div>' +
+        '<div class="empresa">' + (rec['Empresa Receptora'] || 'Sin empresa') + '</div>' +
+        '<div class="detalle">' +
+        '<b>' + formatKg(total) + ' kg</b> en ' + cantidad + ' material(es)' + (nombres ? ' — ' + nombres : '') + '<br>' +
+        (rec.Periodo || '') + (rec['Fecha Expedicion'] ? ' · Expedido: ' + rec['Fecha Expedicion'] : '') +
+        '</div>';
+      div.onclick = () => aplicarRegistro(rec);
+      cont.appendChild(div);
+    });
+  }
+
+  document.getElementById('buscarGuardados').addEventListener('input', e => renderListaGuardados(e.target.value));
 
   function aplicarRegistro(rec){
     document.getElementById('actaNo').value = rec.Acta || '';
