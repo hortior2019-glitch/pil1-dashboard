@@ -133,6 +133,91 @@
     margin-top:16px;
     line-height:1.4;
   }
+  .material-row{
+    display:flex;
+    gap:6px;
+    margin-bottom:6px;
+    align-items:center;
+  }
+  .material-row .mat-desc{flex:2;}
+  .material-row .mat-cant{flex:1;}
+  .material-row .mat-remove{
+    flex:0 0 auto;
+    width:30px;
+    height:32px;
+    padding:0;
+    background:#f6e6e6;
+    color:#b23b3b;
+    border-radius:6px;
+    font-weight:700;
+  }
+  .material-row .mat-remove:hover{background:#f0d5d5;}
+  .db-box{
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:14px;
+    margin-top:8px;
+    background:#f9fbf9;
+  }
+  .db-box .row2{margin-bottom:10px;}
+  .db-preview{
+    font-size:11.5px;
+    color:#333;
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:6px;
+    padding:8px 10px;
+    margin-top:8px;
+    line-height:1.5;
+    display:none;
+  }
+  .db-preview.show{display:block;}
+  .db-preview b{color:var(--green-dark);}
+
+  /* ---- Login ---- */
+  .login-overlay{
+    position:fixed;
+    inset:0;
+    background:#eef2ee;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:100;
+  }
+  .login-box{
+    width:320px;
+    background:#fff;
+    border-radius:12px;
+    padding:32px 28px;
+    box-shadow:0 6px 24px rgba(0,0,0,0.12);
+    text-align:center;
+  }
+  .login-box h1{
+    font-size:16px;
+    color:var(--green-dark);
+    margin:0 0 4px;
+  }
+  .login-box p{
+    font-size:12px;
+    color:#888;
+    margin:0 0 20px;
+  }
+  .login-box .field{text-align:left;}
+  .login-box .btn-login{
+    width:100%;
+    background:var(--green);
+    color:#fff;
+    margin-top:6px;
+  }
+  .login-box .btn-login:hover{background:var(--green-dark);}
+  .login-error{
+    font-size:12px;
+    color:#b23b3b;
+    margin-top:10px;
+    min-height:16px;
+  }
+  .app{display:none;}
+  .app.show{display:flex;}
   .preview-wrap{
     flex:1;
     padding:40px;
@@ -159,8 +244,7 @@
     top:50%;
     left:50%;
     transform:translate(-50%,-50%);
-    width:65mm;
-    opacity:0.18;
+    width:160mm;
     pointer-events:none;
     z-index:0;
   }
@@ -344,12 +428,46 @@
 </style>
 </head>
 <body>
-<div class="app">
+
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-box">
+    <h1>Certificados HORTI ORGANIC</h1>
+    <p>Ingresa para continuar</p>
+    <div class="field">
+      <label>Usuario</label>
+      <input id="loginUser" autocomplete="username">
+    </div>
+    <div class="field">
+      <label>Contraseña</label>
+      <input id="loginPass" type="password" autocomplete="current-password">
+    </div>
+    <button class="btn-login" onclick="intentarLogin()">Ingresar</button>
+    <div class="login-error" id="loginError"></div>
+  </div>
+</div>
+
+<div class="app" id="app">
 
   <div class="panel">
     <h2>Datos del certificado</h2>
 
-    <div class="row2">
+    <div class="db-box">
+      <label style="display:block;font-size:12px;font-weight:600;color:var(--gray);margin-bottom:8px;">Cargar desde base de datos</label>
+      <div class="row2">
+        <div class="field">
+          <label>Desde</label>
+          <input id="dbDesde" type="date">
+        </div>
+        <div class="field">
+          <label>Hasta</label>
+          <input id="dbHasta" type="date">
+        </div>
+      </div>
+      <button class="btn-list" id="btnCargarDB" onclick="cargarDesdeBaseDeDatos()" style="width:100%;">Buscar y llenar campos</button>
+      <div class="db-preview" id="dbPreview"></div>
+    </div>
+
+    <div class="row2" style="margin-top:18px;">
       <div class="field">
         <label>N° de Acta</label>
         <input id="actaNo" value="007-2026">
@@ -371,19 +489,14 @@
     </div>
 
     <div class="field">
-      <label>Descripción del residuo</label>
-      <input id="descripcion" value="" placeholder="Ej: Residuos Orgánicos">
+      <label>Materiales certificados</label>
+      <div id="materialesList"></div>
+      <button class="btn-list" type="button" onclick="agregarMaterialVacio()" style="width:100%;margin-top:4px;">+ Agregar material</button>
     </div>
 
-    <div class="row2">
-      <div class="field">
-        <label>Cantidad (kg)</label>
-        <input id="cantidad" value="" placeholder="Ej: 748.190">
-      </div>
-      <div class="field">
-        <label>Mes / periodo</label>
-        <input id="periodo" value="" placeholder="Ej: Junio de 2026">
-      </div>
+    <div class="field">
+      <label>Mes / periodo</label>
+      <input id="periodo" value="" placeholder="Ej: Junio de 2026">
     </div>
 
     <div class="field">
@@ -412,7 +525,7 @@
     </div>
 
     <div class="hint">
-      El logo (logo1.png) y la marca de agua (logo2.png) se cargan desde el mismo repositorio/carpeta que este archivo. Si aún no los has subido, se muestra un reemplazo temporal en su lugar. Empresa emisora, firmante, pie de página y estructura quedan fijos para mantener consistencia entre certificados. "Guardar en el sistema" envía los datos a tu Apps Script / Google Sheets; "Consultar guardados" trae la lista y al hacer clic en un registro se recarga en el formulario.
+      "Buscar y llenar campos" trae de la base de datos (Sheets) los registros del intervalo elegido, suma el peso neto y llena Cantidad, Descripción, Empresa receptora (abreviada, ajústala a la razón social completa) y Periodo. El logo (logo1) y la marca de agua (logo2) se cargan desde el mismo repositorio/carpeta que este archivo. "Guardar en el sistema" envía los datos a tu Apps Script / Google Sheets; "Consultar guardados" trae la lista y al hacer clic en un registro se recarga en el formulario.
     </div>
   </div>
 
@@ -429,7 +542,6 @@
         <div class="cert-logo">
           <img id="imgLogo1" src="" alt="Horti Organic">
           <div class="fallback-logo" style="display:none;">HORTI<br>ORGANIC</div>
-          <div class="nit">NIT. 800.135.337-9</div>
         </div>
         <div class="page">Pag. <span id="hPagina">1 de 1</span></div>
       </div>
@@ -443,13 +555,11 @@
           <thead>
             <tr><th>ÍTEM</th><th>DESCRIPCIÓN</th><th>CANTIDAD KG</th></tr>
           </thead>
-          <tbody>
-            <tr><td>1</td><td id="tDescripcion">Residuos Orgánicos</td><td id="tCantidad">748.190</td></tr>
-          </tbody>
+          <tbody id="tMaterialesBody"></tbody>
           <tfoot>
             <tr>
               <td colspan="2">Total, disposición mes de <span id="tPeriodo">Junio de 2026</span></td>
-              <td id="tCantidadTotal">748.190</td>
+              <td id="tCantidadTotal">0</td>
             </tr>
           </tfoot>
         </table>
@@ -493,15 +603,51 @@
 </div>
 
 <script>
-  const ids = ['actaNo','pagina','empresaReceptora','nitReceptora','descripcion','cantidad','periodo','fechaExpedicion','parrafo2'];
+  const ids = ['actaNo','pagina','empresaReceptora','nitReceptora','periodo','fechaExpedicion','parrafo2'];
+
+  // ---- Materiales certificados (uno o varios, con descripción editable a nombre técnico) ----
+  let materiales = [ { descripcion: '', cantidad: '' } ];
+
+  function renderMateriales(){
+    const cont = document.getElementById('materialesList');
+    cont.innerHTML = '';
+    materiales.forEach((m, i) => {
+      const row = document.createElement('div');
+      row.className = 'material-row';
+      row.innerHTML =
+        '<input class="mat-desc" placeholder="Ej: Residuos Orgánicos / nombre técnico" value="' + (m.descripcion || '').replace(/"/g,'&quot;') + '">' +
+        '<input class="mat-cant" placeholder="Kg" value="' + (m.cantidad || '') + '">' +
+        '<button type="button" class="mat-remove" title="Quitar">&times;</button>';
+      const [descInput, cantInput, removeBtn] = row.children;
+      descInput.addEventListener('input', () => { materiales[i].descripcion = descInput.value; update(); });
+      cantInput.addEventListener('input', () => { materiales[i].cantidad = cantInput.value; update(); });
+      removeBtn.addEventListener('click', () => {
+        materiales.splice(i, 1);
+        if (materiales.length === 0) materiales.push({ descripcion:'', cantidad:'' });
+        renderMateriales();
+        update();
+      });
+      cont.appendChild(row);
+    });
+  }
+
+  function agregarMaterialVacio(){
+    materiales.push({ descripcion: '', cantidad: '' });
+    renderMateriales();
+    update();
+  }
+
+  function setMateriales(nuevaLista){
+    materiales = nuevaLista.length ? nuevaLista : [{ descripcion:'', cantidad:'' }];
+    renderMateriales();
+    update();
+  }
 
   function update(){
     const acta = document.getElementById('actaNo').value;
     const pagina = document.getElementById('pagina').value;
     const empresa = document.getElementById('empresaReceptora').value;
     const nit = document.getElementById('nitReceptora').value;
-    const desc = document.getElementById('descripcion').value;
-    const cant = document.getElementById('cantidad').value;
     const periodo = document.getElementById('periodo').value;
     const fecha = document.getElementById('fechaExpedicion').value;
     let parrafo2 = document.getElementById('parrafo2').value;
@@ -517,17 +663,36 @@
     document.getElementById('pEmpresa').textContent = empresa;
     document.getElementById('pNit').textContent = nit;
     document.getElementById('pParrafo2Rest').textContent = parrafo2;
-    document.getElementById('tDescripcion').textContent = desc;
-    document.getElementById('tCantidad').textContent = cant;
     document.getElementById('tPeriodo').textContent = periodo;
-    document.getElementById('tCantidadTotal').textContent = cant;
     document.getElementById('pFecha').textContent = fecha;
+
+    // Filas de la tabla, una por material
+    const tbody = document.getElementById('tMaterialesBody');
+    tbody.innerHTML = '';
+    let total = 0;
+    materiales.forEach((m, i) => {
+      const cantNum = parseFloat(String(m.cantidad).replace(/,/g, '')) || 0;
+      total += cantNum;
+      const tr = document.createElement('tr');
+      const tdItem = document.createElement('td');
+      tdItem.textContent = i + 1;
+      const tdDesc = document.createElement('td');
+      tdDesc.textContent = m.descripcion || '';
+      const tdCant = document.createElement('td');
+      tdCant.textContent = m.cantidad || '0';
+      tr.appendChild(tdItem);
+      tr.appendChild(tdDesc);
+      tr.appendChild(tdCant);
+      tbody.appendChild(tr);
+    });
+    document.getElementById('tCantidadTotal').textContent = total.toFixed(3);
   }
 
   ids.forEach(id => {
     document.getElementById(id).addEventListener('input', update);
   });
 
+  renderMateriales();
   update();
 
   // ---- Carga de logos probando varias extensiones (png, jpg, jpeg, mayúsculas) ----
@@ -567,8 +732,7 @@
       pagina: document.getElementById('pagina').value,
       empresa: document.getElementById('empresaReceptora').value,
       nit: document.getElementById('nitReceptora').value,
-      descripcion: document.getElementById('descripcion').value,
-      cantidad: document.getElementById('cantidad').value,
+      materiales: JSON.stringify(materiales),
       periodo: document.getElementById('periodo').value,
       fecha: document.getElementById('fechaExpedicion').value,
       parrafo2: document.getElementById('parrafo2').value
@@ -635,13 +799,155 @@
     document.getElementById('pagina').value = rec.Pagina || '1 de 1';
     document.getElementById('empresaReceptora').value = rec['Empresa Receptora'] || '';
     document.getElementById('nitReceptora').value = rec.NIT || '';
-    document.getElementById('descripcion').value = rec.Descripcion || '';
-    document.getElementById('cantidad').value = rec['Cantidad KG'] || '';
     document.getElementById('periodo').value = rec.Periodo || '';
     document.getElementById('fechaExpedicion').value = rec['Fecha Expedicion'] || '';
     document.getElementById('parrafo2').value = rec.Parrafo2 || document.getElementById('parrafo2').value;
-    update();
+
+    let lista = [];
+    try{
+      lista = JSON.parse(rec.Materiales || '[]');
+    }catch(e){ lista = []; }
+    if (!lista.length && rec.Descripcion) {
+      // Compatibilidad con certificados guardados antes de tener múltiples materiales
+      lista = [{ descripcion: rec.Descripcion, cantidad: rec['Cantidad KG'] || '' }];
+    }
+    setMateriales(lista);
+
     setStatus('Certificado cargado en el formulario.', 'ok');
+  }
+
+  // ---- Login (usuario/contraseña "hardcodeados") ----
+  const LOGIN_USER = 'Horti';
+  const LOGIN_PASS = 'Horti123*';
+
+  function intentarLogin(){
+    const u = document.getElementById('loginUser').value.trim();
+    const p = document.getElementById('loginPass').value;
+    const err = document.getElementById('loginError');
+    if (u === LOGIN_USER && p === LOGIN_PASS){
+      sessionStorage.setItem('horti_logged_in', '1');
+      document.getElementById('loginOverlay').style.display = 'none';
+      document.getElementById('app').classList.add('show');
+    } else {
+      err.textContent = 'Usuario o contraseña incorrectos.';
+    }
+  }
+
+  document.getElementById('loginPass').addEventListener('keydown', e => {
+    if (e.key === 'Enter') intentarLogin();
+  });
+
+  if (sessionStorage.getItem('horti_logged_in') === '1'){
+    document.getElementById('loginOverlay').style.display = 'none';
+    document.getElementById('app').classList.add('show');
+  }
+
+  // ---- Cargar datos desde Google Sheets (base de datos de disposición) ----
+  // Columnas: C = FECHA DISPOSICION PLANTA, H = PESO NETO, I = OPERACION, J = RESIDUO
+  const DB_SHEET_ID = '1gXinTUA_n2NJp8eapLYLYDRUWTBzOb_q1vMepcdWkbs';
+  const DB_SHEET_GID = '1262525313';
+  const DB_URL = 'https://docs.google.com/spreadsheets/d/' + DB_SHEET_ID + '/gviz/tq?tqx=out:json&gid=' + DB_SHEET_GID;
+
+  const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+
+  function parseGvizDate(cell){
+    if (!cell || cell.v === null || cell.v === undefined) return null;
+    const v = cell.v;
+    if (typeof v === 'string' && v.startsWith('Date(')) {
+      const nums = v.slice(5, -1).split(',').map(n => parseInt(n, 10));
+      // Date(year, month0based, day, [h,m,s])
+      return new Date(nums[0], nums[1], nums[2] || 1);
+    }
+    if (typeof v === 'number') {
+      // fecha serial de Sheets (días desde 1899-12-30)
+      const base = new Date(1899, 11, 30);
+      return new Date(base.getTime() + v * 86400000);
+    }
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  function formatearPeriodo(desdeStr, hastaStr){
+    const desde = new Date(desdeStr + 'T00:00:00');
+    const hasta = new Date(hastaStr + 'T00:00:00');
+    if (desde.getFullYear() === hasta.getFullYear() && desde.getMonth() === hasta.getMonth()) {
+      return MESES[desde.getMonth()].charAt(0).toUpperCase() + MESES[desde.getMonth()].slice(1) + ' de ' + desde.getFullYear();
+    }
+    const f = d => d.getDate() + ' de ' + MESES[d.getMonth()] + ' de ' + d.getFullYear();
+    return f(desde) + ' al ' + f(hasta);
+  }
+
+  async function cargarDesdeBaseDeDatos(){
+    const btn = document.getElementById('btnCargarDB');
+    const preview = document.getElementById('dbPreview');
+    const desdeStr = document.getElementById('dbDesde').value;
+    const hastaStr = document.getElementById('dbHasta').value;
+
+    if (!desdeStr || !hastaStr){
+      preview.className = 'db-preview show';
+      preview.innerHTML = 'Selecciona fecha "Desde" y "Hasta".';
+      return;
+    }
+
+    const desde = new Date(desdeStr + 'T00:00:00');
+    const hasta = new Date(hastaStr + 'T23:59:59');
+
+    btn.disabled = true;
+    preview.className = 'db-preview show';
+    preview.textContent = 'Consultando base de datos...';
+
+    try{
+      const res = await fetch(DB_URL);
+      let text = await res.text();
+      // El endpoint gviz envuelve el JSON en: google.visualization.Query.setResponse({...});
+      const match = text.match(/setResponse\(([\s\S]*)\);?\s*$/);
+      const json = JSON.parse(match ? match[1] : text);
+      const rows = json.table.rows || [];
+
+      let totalPeso = 0;
+      const porResiduo = new Map(); // residuo -> suma de peso, uno por material
+      const operaciones = new Set();
+      let filas = 0;
+
+      rows.forEach(row => {
+        const c = row.c || [];
+        const fecha = parseGvizDate(c[2]);   // columna C
+        const peso = c[7] && typeof c[7].v === 'number' ? c[7].v : parseFloat(c[7] && c[7].v) || 0; // columna H
+        const operacion = c[8] && c[8].v != null ? String(c[8].v).trim() : ''; // columna I
+        const residuo = c[9] && c[9].v != null ? String(c[9].v).trim() : 'Sin especificar';   // columna J
+
+        if (!fecha) return;
+        if (fecha < desde || fecha > hasta) return;
+
+        filas++;
+        totalPeso += peso;
+        porResiduo.set(residuo, (porResiduo.get(residuo) || 0) + peso);
+        if (operacion) operaciones.add(operacion);
+      });
+
+      if (filas === 0){
+        preview.innerHTML = 'No se encontraron registros en ese intervalo.';
+        return;
+      }
+
+      // Un material (fila de la tabla) por cada tipo de residuo encontrado; el nombre queda
+      // editable para poder reemplazarlo por su nombre técnico si se requiere.
+      const nuevaLista = Array.from(porResiduo.entries()).map(([descripcion, cantidad]) => ({
+        descripcion,
+        cantidad: cantidad.toFixed(3)
+      }));
+      setMateriales(nuevaLista);
+
+      document.getElementById('empresaReceptora').value = Array.from(operaciones).join(' / ');
+      document.getElementById('periodo').value = formatearPeriodo(desdeStr, hastaStr);
+      update();
+
+      preview.innerHTML = '<b>' + filas + '</b> registros encontrados · Total: <b>' + totalPeso.toFixed(3) + ' kg</b> en <b>' + porResiduo.size + '</b> material(es)<br>Operación(es): ' + (Array.from(operaciones).join(', ') || '—') + '<br><span style="color:#888;">Revisa y ajusta "Empresa receptora" y el nombre de cada material (puedes usar el nombre técnico) en la lista de materiales.</span>';
+    }catch(err){
+      preview.innerHTML = 'Error al consultar la base de datos: ' + err.message;
+    }finally{
+      btn.disabled = false;
+    }
   }
 </script>
 </body>
