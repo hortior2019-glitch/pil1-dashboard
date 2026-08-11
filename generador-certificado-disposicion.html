@@ -642,6 +642,8 @@
     </div>
     <div class="status-msg" id="saveStatus"></div>
 
+    <button class="btn-list" id="btnResellar" onclick="resellarCertificado()" style="width:100%;margin-top:8px;display:none;">🔄 Resellar código (recalcular firma)</button>
+
     <div class="field" style="margin-top:18px;">
       <label>Certificados guardados</label>
       <button class="btn-list" id="btnConsultar" onclick="cargarGuardados()" style="width:100%;margin-bottom:8px;">Consultar guardados</button>
@@ -929,9 +931,11 @@
   function renderVerificacion(){
     const qrEl = document.getElementById('qrCode');
     const textoEl = document.getElementById('verifCodigoTexto');
+    const btnResellar = document.getElementById('btnResellar');
     qrEl.innerHTML = '';
     if (!certCodigo){
       textoEl.innerHTML = 'Guarda el certificado para generar su código de verificación';
+      btnResellar.style.display = 'none';
       return;
     }
     const link = urlVerificacion() + '?codigo=' + encodeURIComponent(certCodigo);
@@ -939,6 +943,36 @@
       new QRCode(qrEl, { text: link, width: 70, height: 70, correctLevel: QRCode.CorrectLevel.M });
     }
     textoEl.innerHTML = '<b>' + certCodigo + '</b>Verifica la autenticidad de este documento escaneando el código.';
+    btnResellar.style.display = 'block';
+  }
+
+  async function resellarCertificado(){
+    if (!certCodigo){
+      setStatus('Primero guarda o carga un certificado.', 'err');
+      return;
+    }
+    const password = window.prompt('Solo úsalo si corregiste datos a mano en la hoja después de guardar este certificado.\n\nContraseña de administrador:');
+    if (password === null) return; // canceló
+
+    const btn = document.getElementById('btnResellar');
+    btn.disabled = true;
+    setStatus('Resellando...', '');
+    try{
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'resellar', codigo: certCodigo, password: password })
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Error desconocido');
+      certCodigo = data.codigo;
+      renderVerificacion();
+      setStatus('Certificado resellado. Nuevo código: ' + certCodigo, 'ok');
+    }catch(err){
+      setStatus('No se pudo resellar: ' + err.message, 'err');
+    }finally{
+      btn.disabled = false;
+    }
   }
 
   async function guardarCertificado(){
