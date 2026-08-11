@@ -649,6 +649,9 @@
       <button class="btn-list" id="btnConsultar" onclick="cargarGuardados()" style="width:100%;margin-bottom:8px;">Consultar guardados</button>
       <input id="buscarGuardados" placeholder="Buscar por acta, empresa o código..." style="display:none;margin-bottom:8px;">
       <div class="saved-list" id="listaGuardados"><div class="saved-empty">Aún no has consultado</div></div>
+
+      <button class="btn-list" id="btnRellenarAnteriores" onclick="rellenarCertificadosAnteriores()" style="width:100%;margin-top:8px;">🔁 Rellenar ID en certificados anteriores</button>
+      <div class="db-preview" id="resultadoRellenoAnteriores" style="max-height:180px;overflow-y:auto;"></div>
     </div>
 
     <div class="hint">
@@ -758,11 +761,15 @@
         '<input class="mat-cant" placeholder="Kg" value="' + (m.cantidad || '') + '">' +
         '<button type="button" class="mat-remove" title="Quitar">&times;</button>';
       const [descInput, cantInput, removeBtn] = row.children;
-      descInput.addEventListener('input', () => { materiales[i].descripcion = descInput.value; update(); });
-      cantInput.addEventListener('input', () => { materiales[i].cantidad = cantInput.value; update(); });
+      // Cualquier edición manual de los materiales invalida el vínculo con los viajes de
+      // la base de datos: así, si el certificado ya no coincide exactamente con lo que se
+      // buscó, no se deja marca en la columna AG (evita marcar algo que no se certificó).
+      descInput.addEventListener('input', () => { materiales[i].descripcion = descInput.value; idsEnvioMaterialesActuales = []; update(); });
+      cantInput.addEventListener('input', () => { materiales[i].cantidad = cantInput.value; idsEnvioMaterialesActuales = []; update(); });
       removeBtn.addEventListener('click', () => {
         materiales.splice(i, 1);
         if (materiales.length === 0) materiales.push({ descripcion:'', cantidad:'' });
+        idsEnvioMaterialesActuales = [];
         renderMateriales();
         update();
       });
@@ -772,6 +779,7 @@
 
   function agregarMaterialVacio(){
     materiales.push({ descripcion: '', cantidad: '' });
+    idsEnvioMaterialesActuales = [];
     renderMateriales();
     update();
   }
@@ -990,11 +998,44 @@
       if (data.ok === false) throw new Error(data.error || 'Error desconocido');
       certCodigo = data.codigo || '';
       renderVerificacion();
-      setStatus('Certificado guardado. Código de verificación: ' + (certCodigo || '—'), 'ok');
+
+      const acta = document.getElementById('actaNo').value || 'SIN-ACTA';
+      const marcado = await marcarViajesComoCertificados(acta + ' / ' + certCodigo);
+
+      let msg = 'Certificado guardado. Código de verificación: ' + (certCodigo || '—');
+      if (marcado.omitido) msg += ' (sin conectar con la base de ingresos: configura INGRESO_SCRIPT_URL)';
+      else if (marcado.conflictos > 0) msg += ' — Aviso: ' + marcado.conflictos + ' viaje(s) ya estaban certificados y no se volvieron a marcar.';
+      setStatus(msg, 'ok');
     }catch(err){
       setStatus('No se pudo guardar: ' + err.message, 'err');
     }finally{
       btn.disabled = false;
+    }
+  }
+
+  // ---- Marcar en la base de datos de ingresos (columna AG) los viajes usados en este certificado ----
+  // Rellena INGRESO_SCRIPT_URL con la URL /exec del Apps Script que recibe los ingresos
+  // (el que tiene SHEET_ID_INGRESO). Es un script DISTINTO al de Certificados.
+  const INGRESO_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz1CznJcepKoBIJXwnQ6yc82n7fFX7q20kCxes5Na4OgPQUoe3xe5AllPhXUAe2JNg/exec';
+
+  async function marcarViajesComoCertificados(certificadoId){
+    if (!INGRESO_SCRIPT_URL || !idsEnvioMaterialesActuales.length){
+      return { omitido: !INGRESO_SCRIPT_URL, conflictos: 0 };
+    }
+    try{
+      const res = await fetch(INGRESO_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          accion: 'marcar_certificado',
+          ids_envio: idsEnvioMaterialesActuales,
+          certificado_id: certificadoId
+        })
+      });
+      const data = await res.json();
+      return { omitido: false, conflictos: (data.yaCertificados || []).length };
+    }catch(err){
+      return { omitido: false, conflictos: 0, error: err.message };
     }
   }
 
@@ -1156,7 +1197,161 @@
     return f(desde) + ' al ' + f(hasta);
   }
 
-  let dbFilas = []; // {fecha, peso, operacion, residuo} — filtradas solo por fecha, guardadas para elegir la operación después
+  // Interpreta el texto de "Periodo" (el que arma formatearPeriodo) de vuelta a un rango
+  // de fechas. Devuelve {desde, hasta} o null si no lo reconoce (certificados donde el
+  // periodo se escribió a mano con otro formato).
+  function parsearPeriodo(periodoStr){
+    const s = (periodoStr || '').trim().toLowerCase();
+    if (!s) return null;
+
+    // Formato "D de mes de AAAA al D de mes de AAAA"
+    const reRango = /^(\d{1,2}) de (\w+) de (\d{4}) al (\d{1,2}) de (\w+) de (\d{4})$/;
+    let m = s.match(reRango);
+    if (m){
+      const mes1 = MESES.indexOf(m[2]);
+      const mes2 = MESES.indexOf(m[5]);
+      if (mes1 === -1 || mes2 === -1) return null;
+      return {
+        desde: new Date(parseInt(m[3]), mes1, parseInt(m[1]), 0, 0, 0),
+        hasta: new Date(parseInt(m[6]), mes2, parseInt(m[4]), 23, 59, 59)
+      };
+    }
+
+    // Formato "Mes de AAAA" (todo el mes)
+    const reMes = /^(\w+) de (\d{4})$/;
+    m = s.match(reMes);
+    if (m){
+      const mes = MESES.indexOf(m[1]);
+      if (mes === -1) return null;
+      const anio = parseInt(m[2]);
+      return {
+        desde: new Date(anio, mes, 1, 0, 0, 0),
+        hasta: new Date(anio, mes + 1, 0, 23, 59, 59) // último día del mes
+      };
+    }
+
+    return null;
+  }
+
+  // Trae TODAS las filas del ingreso (sin filtrar por fecha), para poder ubicar los
+  // viajes de certificados ya guardados antes de que existiera la marca de la columna AG.
+  async function obtenerTodasFilasIngreso(){
+    const res = await fetch(DB_URL);
+    const text = await res.text();
+    const match = text.match(/setResponse\(([\s\S]*)\);?\s*$/);
+    const json = JSON.parse(match ? match[1] : text);
+    const rows = json.table.rows || [];
+    const filas = [];
+    rows.forEach(row => {
+      const c = row.c || [];
+      const fecha = parseGvizDate(c[2]);
+      if (!fecha) return;
+      filas.push({
+        fecha,
+        peso: c[7] && typeof c[7].v === 'number' ? c[7].v : parseFloat(c[7] && c[7].v) || 0,
+        operacion: c[8] && c[8].v != null ? String(c[8].v).trim() : '',
+        residuo: c[9] && c[9].v != null ? String(c[9].v).trim() : '',
+        tiquete: c[1] && c[1].v != null ? String(c[1].v).trim() : '',
+        placa: c[4] && c[4].v != null ? String(c[4].v).trim() : '',
+        idEnvio: c[30] && c[30].v != null ? String(c[30].v).trim() : '',
+        idCertificado: c[32] && c[32].v != null ? String(c[32].v).trim() : ''
+      });
+    });
+    return filas;
+  }
+
+  // ---- Rellenar retroactivamente la columna AG para certificados ya guardados ----
+  // Como esos certificados se guardaron antes de existir esta función, no quedó registro
+  // de qué viajes (id_envio) exactos se usaron. Este botón los reconstruye buscando, para
+  // cada certificado guardado, los viajes del ingreso cuya fecha cae dentro del periodo,
+  // cuya OPERACION está en la "Empresa receptora" del certificado, y cuyo RESIDUO coincide
+  // (texto exacto) con alguno de sus materiales — y que todavía no tengan marca en AG.
+  // Es "mejor esfuerzo": si cambiaste el nombre de un material a uno técnico distinto del
+  // que aparece en la hoja, o el periodo no se puede interpretar, ese certificado no se
+  // podrá rellenar solo y hay que dejarlo así o marcarlo a mano.
+  async function rellenarCertificadosAnteriores(){
+    if (!INGRESO_SCRIPT_URL){
+      alert('Falta configurar INGRESO_SCRIPT_URL en el código.');
+      return;
+    }
+    if (!registrosGuardados.length){
+      alert('Primero presiona "Consultar guardados" para traer la lista de certificados.');
+      return;
+    }
+
+    const btn = document.getElementById('btnRellenarAnteriores');
+    const resultado = document.getElementById('resultadoRellenoAnteriores');
+    btn.disabled = true;
+    resultado.style.display = 'block';
+    resultado.innerHTML = 'Cargando todos los registros de la base de datos...';
+
+    try{
+      const todasFilas = await obtenerTodasFilasIngreso();
+      const reporte = [];
+
+      for (const cert of registrosGuardados){
+        const rango = parsearPeriodo(cert.Periodo);
+        if (!rango){
+          reporte.push('⚠️ Acta ' + (cert.Acta || '—') + ': periodo "' + (cert.Periodo || '') + '" no se pudo interpretar, se dejó igual.');
+          continue;
+        }
+
+        let materiales = [];
+        try{ materiales = JSON.parse(cert.Materiales || '[]'); }catch(e){}
+        if (!materiales.length && cert.Descripcion){
+          materiales = [{ descripcion: cert.Descripcion }];
+        }
+        const residuosBuscados = materiales.map(m => (m.descripcion || '').trim().toLowerCase()).filter(Boolean);
+        const operaciones = (cert['Empresa Receptora'] || '').split(' / ').map(s => s.trim()).filter(Boolean);
+
+        if (!residuosBuscados.length || !operaciones.length){
+          reporte.push('⚠️ Acta ' + (cert.Acta || '—') + ': no tiene materiales u operación reconocibles, se dejó igual.');
+          continue;
+        }
+
+        const candidatos = todasFilas.filter(f =>
+          f.fecha >= rango.desde && f.fecha <= rango.hasta &&
+          operaciones.includes(f.operacion) &&
+          residuosBuscados.includes(f.residuo.trim().toLowerCase()) &&
+          !f.idCertificado &&
+          f.idEnvio
+        );
+
+        if (!candidatos.length){
+          reporte.push('— Acta ' + (cert.Acta || '—') + ': sin coincidencias nuevas (puede que ya estuviera marcado, o los nombres de material no coinciden).');
+          continue;
+        }
+
+        const idsEnvio = candidatos.map(f => f.idEnvio);
+        const certificadoId = (cert.Acta || 'SIN-ACTA') + ' / ' + (cert.Codigo || 'sin-codigo');
+
+        try{
+          const res = await fetch(INGRESO_SCRIPT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ accion: 'marcar_certificado', ids_envio: idsEnvio, certificado_id: certificadoId })
+          });
+          const data = await res.json();
+          const marcados = (data.marcados || []).length;
+          const conflictos = (data.yaCertificados || []).length;
+          reporte.push('✅ Acta ' + (cert.Acta || '—') + ': ' + marcados + ' viaje(s) marcados' + (conflictos ? ', ' + conflictos + ' con conflicto' : '') + '.');
+          // Actualiza en memoria para que el resto del bucle no vuelva a tomar los mismos.
+          candidatos.forEach(f => { f.idCertificado = certificadoId; });
+        }catch(err){
+          reporte.push('❌ Acta ' + (cert.Acta || '—') + ': error al marcar — ' + err.message);
+        }
+      }
+
+      resultado.innerHTML = reporte.join('<br>');
+    }catch(err){
+      resultado.innerHTML = 'Error general: ' + err.message;
+    }finally{
+      btn.disabled = false;
+    }
+  }
+
+  let dbFilas = []; // {fecha, peso, operacion, residuo, tiquete, placa, idEnvio, idCertificado} — filtradas solo por fecha
+  let idsEnvioMaterialesActuales = []; // id_envio de los viajes que quedaron incluidos en los materiales actuales
 
   async function buscarEnIntervalo(){
     const btn = document.getElementById('btnCargarDB');
@@ -1196,11 +1391,15 @@
         const peso = c[7] && typeof c[7].v === 'number' ? c[7].v : parseFloat(c[7] && c[7].v) || 0; // columna H
         const operacion = c[8] && c[8].v != null ? String(c[8].v).trim() : ''; // columna I
         const residuo = c[9] && c[9].v != null ? String(c[9].v).trim() : 'Sin especificar';   // columna J
+        const tiquete = c[1] && c[1].v != null ? String(c[1].v).trim() : '';   // columna B
+        const placa = c[4] && c[4].v != null ? String(c[4].v).trim() : '';     // columna E
+        const idEnvio = c[30] && c[30].v != null ? String(c[30].v).trim() : ''; // columna AE
+        const idCertificado = c[32] && c[32].v != null ? String(c[32].v).trim() : ''; // columna AG
 
         if (!fecha) return;
         if (fecha < desde || fecha > hasta) return;
 
-        dbFilas.push({ fecha, peso, operacion, residuo });
+        dbFilas.push({ fecha, peso, operacion, residuo, tiquete, placa, idEnvio, idCertificado });
       });
 
       if (dbFilas.length === 0){
@@ -1224,23 +1423,38 @@
     }
   }
 
-  function aplicarOperacionesSeleccionadas(){
-    const preview = document.getElementById('dbPreview');
-    const desdeStr = document.getElementById('dbDesde').value;
-    const hastaStr = document.getElementById('dbHasta').value;
+  let filasOpActuales = [];       // últimas filas encontradas para la selección de operación(es)
+  let idsEnvioForzados = new Set(); // id_envio ya certificados que el usuario decidió incluir igual
 
+  function aplicarOperacionesSeleccionadas(){
     const checks = Array.from(document.querySelectorAll('.chk-operacion:checked'));
     const operacionesSeleccionadas = checks.map(c => c.value);
+    const preview = document.getElementById('dbPreview');
 
     if (!operacionesSeleccionadas.length){
       preview.innerHTML = 'Marca al menos una operación para totalizar sus materiales.';
       return;
     }
 
-    const filasOp = dbFilas.filter(f => operacionesSeleccionadas.includes(f.operacion));
+    filasOpActuales = dbFilas.filter(f => operacionesSeleccionadas.includes(f.operacion));
+    idsEnvioForzados = new Set(); // nueva selección de operaciones reinicia las exclusiones
+    window.operacionesSeleccionadasActuales = operacionesSeleccionadas;
+    recalcularMaterialesConExclusiones();
+  }
+
+  function recalcularMaterialesConExclusiones(){
+    const preview = document.getElementById('dbPreview');
+    const desdeStr = document.getElementById('dbDesde').value;
+    const hastaStr = document.getElementById('dbHasta').value;
+    const operacionesSeleccionadas = window.operacionesSeleccionadasActuales || [];
+
+    // Ya certificadas antes (tienen idCertificado) Y el usuario no decidió incluirlas igual.
+    const yaCertificadas = filasOpActuales.filter(f => f.idCertificado && !idsEnvioForzados.has(f.idEnvio));
+    const filasIncluidas = filasOpActuales.filter(f => !f.idCertificado || idsEnvioForzados.has(f.idEnvio));
+
     const porResiduo = new Map();
     let totalPeso = 0;
-    filasOp.forEach(f => {
+    filasIncluidas.forEach(f => {
       totalPeso += f.peso;
       porResiduo.set(f.residuo, (porResiduo.get(f.residuo) || 0) + f.peso);
     });
@@ -1253,11 +1467,36 @@
     }));
     setMateriales(nuevaLista);
 
+    // Guarda los id_envio realmente usados, para marcarlos como certificados al guardar.
+    idsEnvioMaterialesActuales = filasIncluidas.map(f => f.idEnvio).filter(Boolean);
+
     document.getElementById('empresaReceptora').value = operacionesSeleccionadas.join(' / ');
     document.getElementById('periodo').value = formatearPeriodo(desdeStr, hastaStr);
     update();
 
-    preview.innerHTML = '<b>' + filasOp.length + '</b> registros de <b>' + operacionesSeleccionadas.length + '</b> operación(es) (' + operacionesSeleccionadas.join(', ') + ') · Total: <b>' + formatKg(totalPeso) + ' kg</b> en <b>' + porResiduo.size + '</b> material(es)<br><span style="color:#888;">Revisa y ajusta "Empresa receptora" con la razón social completa, y el nombre de cada material si necesitas su nombre técnico.</span>';
+    let html = '<b>' + filasIncluidas.length + '</b> registros de <b>' + operacionesSeleccionadas.length + '</b> operación(es) (' + operacionesSeleccionadas.join(', ') + ') · Total: <b>' + formatKg(totalPeso) + ' kg</b> en <b>' + porResiduo.size + '</b> material(es)<br><span style="color:#888;">Revisa y ajusta "Empresa receptora" con la razón social completa, y el nombre de cada material si necesitas su nombre técnico.</span>';
+
+    if (yaCertificadas.length){
+      html += '<div style="margin-top:10px;padding:8px 10px;background:#fff6e5;border:1px solid #f0d8a0;border-radius:6px;">' +
+        '⚠️ <b>' + yaCertificadas.length + '</b> registro(s) de este intervalo/operación YA fueron certificados antes y se excluyeron automáticamente del total:<br>' +
+        yaCertificadas.map(f =>
+          '<label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-weight:400;cursor:pointer;">' +
+          '<input type="checkbox" class="chk-forzar-incluir" data-id="' + f.idEnvio.replace(/"/g,'&quot;') + '">' +
+          'Tiquete ' + (f.tiquete || '—') + ' · Placa ' + (f.placa || '—') + ' · ' + formatKg(f.peso) + ' kg · ya en certificado <code>' + f.idCertificado + '</code> — incluir de todas formas' +
+          '</label>'
+        ).join('') +
+        '</div>';
+    }
+
+    preview.innerHTML = html;
+
+    document.querySelectorAll('.chk-forzar-incluir').forEach(chk => {
+      chk.addEventListener('change', () => {
+        if (chk.checked) idsEnvioForzados.add(chk.dataset.id);
+        else idsEnvioForzados.delete(chk.dataset.id);
+        recalcularMaterialesConExclusiones();
+      });
+    });
   }
 </script>
 </body>
