@@ -6371,31 +6371,49 @@ function renderPreop(tipo, data, filter, yaFiltrado) {
   secEl.innerHTML = secHtml || '<div class="empty">Sin datos</div>';
   }
 
-  // Hallazgos críticos por ítem
+  // Hallazgos por ítem: primero los MALOS (rojo) y luego los REGULARES (ámbar).
+  // Antes solo se listaban los malos, por eso el KPI "Ítems Regulares" mostraba
+  // un total (ej. 10) pero no se veia a que items correspondia.
   const hallEl = document.getElementById(prefix+'-hallazgos');
-  const malosMap = {};
+  const malosMap = {}, regsMap = {};
   rows.forEach(row => {
-    allItems.forEach(col => { if(isMalo(row[col]||'')) malosMap[col] = (malosMap[col]||0)+1; });
+    allItems.forEach(col => {
+      const val = row[col]||'';
+      if (isMalo(val)) malosMap[col] = (malosMap[col]||0)+1;
+      else if (isRegular(val)) regsMap[col] = (regsMap[col]||0)+1;
+    });
   });
-  const sorted = Object.entries(malosMap).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const sorted     = Object.entries(malosMap).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const sortedRegs = Object.entries(regsMap).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const _barraHall = (item, cnt, max, color) => {
+    const pct = Math.round(cnt/(max||1)*100);
+    const shortName = item.replace(/^[A-Z]+\d+\s*-\s*/,'');
+    return `<div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+        <span style="font-size:15px;color:var(--ink);font-weight:700">${shortName}</span>
+        <span style="font-size:11px;font-weight:700;color:${color}">${cnt}</span>
+      </div>
+      <div style="height:6px;background:var(--rule-l);border-radius:3px">
+        <div style="width:${pct}%;height:100%;background:${color};border-radius:3px"></div>
+      </div>
+    </div>`;
+  };
   if (!hallEl) { /* elemento removido del HTML */ }
-  else if (sorted.length === 0) {
-    hallEl.innerHTML = '<div class="empty" style="color:var(--green);font-weight:600">✓ Sin hallazgos críticos</div>';
+  else if (sorted.length === 0 && sortedRegs.length === 0) {
+    hallEl.innerHTML = '<div class="empty" style="color:var(--green);font-weight:600">✓ Sin hallazgos</div>';
   } else {
-    const max = sorted[0][1] || 1;
-    hallEl.innerHTML = sorted.map(([item, cnt]) => {
-      const pct = Math.round(cnt/max*100);
-      const shortName = item.replace(/^[A-Z]+\d+\s*-\s*/,'');
-      return `<div style="margin-bottom:10px">
-        <div style="display:flex;justify-content:space-between;margin-bottom:3px">
-          <span style="font-size:15px;color:var(--ink);font-weight:700">${shortName}</span>
-          <span style="font-size:11px;font-weight:700;color:var(--red)">${cnt}</span>
-        </div>
-        <div style="height:6px;background:var(--rule-l);border-radius:3px">
-          <div style="width:${pct}%;height:100%;background:var(--red);border-radius:3px"></div>
-        </div>
-      </div>`;
-    }).join('');
+    let htmlHall = '';
+    if (sorted.length) {
+      const max = sorted[0][1] || 1;
+      htmlHall += '<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--red);margin-bottom:8px">En mal estado</div>';
+      htmlHall += sorted.map(([item, cnt]) => _barraHall(item, cnt, max, 'var(--red)')).join('');
+    }
+    if (sortedRegs.length) {
+      const maxR = sortedRegs[0][1] || 1;
+      htmlHall += '<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#8b6914;margin:' + (sorted.length ? '14px 0 8px' : '0 0 8px') + '">Regulares · requieren seguimiento</div>';
+      htmlHall += sortedRegs.map(([item, cnt]) => _barraHall(item, cnt, maxR, '#d4a017')).join('');
+    }
+    hallEl.innerHTML = htmlHall;
   }
 
   // Tabla detalle (para vol, renderVolquetasVisual se encarga)
