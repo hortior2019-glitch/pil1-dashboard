@@ -456,6 +456,15 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
    reducen y se emparejan con el tamaño del dato de "mes anterior" (antes muy chico
    en comparación). También se agregó una versión en barras horizontales del mismo
    comparativo (más abajo en el HTML), pensada para verse mejor en pantallas chicas. */
+/* Boton para ocultar/mostrar secciones dentro de Ingreso de Material */
+#panel-ingreso .ing-toggle-btn{
+  padding:6px 14px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;
+  background:var(--white);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;
+  cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:.15s;white-space:nowrap
+}
+#panel-ingreso .ing-toggle-btn:hover{background:var(--s2);color:var(--ink);border-color:var(--ink-l)}
+#panel-ingreso .ing-toggle-btn[data-oculto="1"]{background:var(--navy);color:#fff;border-color:var(--navy)}
+
 @media(max-width:768px){
   #panel-ingreso .cmp-two-col{grid-template-columns:1fr !important}
   #panel-ingreso .cmp-two-col > div{border-right:none !important;border-bottom:1px solid var(--rule-l)}
@@ -1154,7 +1163,10 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 
   <!-- ── CRECIMIENTO TOTAL (todos los proveedores sumados), con el logo de Horti Organic ── -->
   <div style="margin-bottom:24px">
-    <div style="font-size:13px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--ink-m);margin:0 0 14px 2px">Crecimiento total</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin:0 0 14px 2px">
+      <div style="font-size:13px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--ink-m)">Crecimiento total</div>
+      <button id="btn-toggle-crecimiento" onclick="toggleSeccionIngreso('ingreso-crecimiento-total','btn-toggle-crecimiento')" class="ing-toggle-btn">Ocultar</button>
+    </div>
     <div id="ingreso-crecimiento-total"></div>
   </div>
 
@@ -1162,9 +1174,11 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   <!-- ── GRÁFICA COMPARATIVA DE PICOS (KPIs y graficas; la cabecera con el titulo,
        las pills A/B y los botones de Semana/Mes ahora esta arriba de todo, antes
        del Informe Gerencial) ── -->
-  <div style="margin-bottom:20px;border:1px solid var(--rule);background:var(--white)">
-
-
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin:0 0 14px 2px">
+    <div style="font-size:13px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--ink-m)">Análisis detallado · KPIs y gráficas</div>
+    <button id="btn-toggle-graficas" onclick="toggleSeccionIngreso('ingreso-bloque-graficas','btn-toggle-graficas')" class="ing-toggle-btn">Ocultar</button>
+  </div>
+  <div id="ingreso-bloque-graficas" style="margin-bottom:20px;border:1px solid var(--rule);background:var(--white)">
 
     <!-- ── KPIs COMPARATIVOS ── -->
     <div id="cmp-kpis" style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-bottom:1px solid var(--rule)"></div>
@@ -1246,6 +1260,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
         <select id="cmp-prov-filtro" onchange="filtrarCmpPorProveedor(this.value)" style="padding:6px 12px;font-size:13px;font-weight:700;border:1px solid var(--rule);background:var(--white);color:var(--ink);border-radius:4px;font-family:'Source Sans 3',sans-serif;max-width:220px">
           <option value="">Todos los proveedores</option>
         </select>
+        <button id="btn-toggle-porprov" onclick="toggleSeccionIngreso('cmp-por-proveedor','btn-toggle-porprov')" class="ing-toggle-btn">Ocultar</button>
       </div>
     </div>
     <div id="cmp-por-proveedor"></div>
@@ -2758,15 +2773,27 @@ function guardarPermisos() {
     });
 }
 
+// Limpia una credencial (usuario o contraseña) de caracteres invisibles que se
+// cuelan al copiar/pegar o al editar el Sheet: espacios normales, NBSP, espacios
+// de ancho cero, marcas de direccion y BOM. String.trim() NO quita varios de
+// estos (por ejemplo \u200B), y por eso un usuario "bien digitado" podia dar
+// "usuario o contraseña incorrectos".
+function _limpiarCredencial(s) {
+  return (s === null || s === undefined ? '' : s.toString())
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, '')   // ancho cero / BOM
+    .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ') // espacios raros → espacio normal
+    .trim();
+}
+
 async function cargarUsuariosDash() {
   try {
     const res  = await fetch(USUARIOS_CSV_DASH, {cache:'no-store'});
     const text = await res.text();
     const rows = parseCSV(text);
     dashUsuariosDB = rows.map(r => ({
-      usuario:    (r['USUARIO']        || '').toString().trim().toLowerCase(),
-      contrasena: (r['CONTRASENA']     || '').toString().trim(),
-      nombre:     (r['NOMBRE_COMPLETO']|| r['NOMBRE'] || '').trim(),
+      usuario:    _limpiarCredencial(r['USUARIO']).toLowerCase(),
+      contrasena: _limpiarCredencial(r['CONTRASENA']),
+      nombre:     (r['NOMBRE_COMPLETO']|| r['NOMBRE'] || '').toString().trim(),
       activo:     ['si','true','yes','1','TRUE'].includes((r['ACTIVO'] ||'').toString().trim().toLowerCase()),
       dashboard:  ['si','true','yes','1','TRUE'].includes((r['ACTIVO'] ||'').toString().trim().toLowerCase()),
       recepcion:  ['si','true','yes','1','TRUE'].includes((r['ACTIVO RECEPCION']||r['ACTIVO-RECEP']||r['ACTIVO RECEP']||'').toString().trim().toLowerCase()),
@@ -2788,8 +2815,8 @@ async function cargarUsuariosDash() {
 let dataAccesos = [];
 
 function intentarLoginDash() {
-  const usuario    = (document.getElementById('dash-usuario').value||'').replace(/^[\s\u00A0\u200B]+|[\s\u00A0\u200B]+$/g,'').toLowerCase();
-  const contrasena = (document.getElementById('dash-pass').value||'').toString().trim();
+  const usuario    = _limpiarCredencial(document.getElementById('dash-usuario').value).toLowerCase();
+  const contrasena = _limpiarCredencial(document.getElementById('dash-pass').value);
   const errEl      = document.getElementById('dash-login-error');
 
   if (!usuario || !contrasena) {
@@ -2823,6 +2850,16 @@ function intentarLoginDash() {
   const user = dashUsuariosDB.find(u => u.usuario === usuario && u.contrasena === contrasena && u.activo);
 
   if (!user) {
+    // Diagnostico en consola: distingue "usuario que no existe" de
+    // "clave equivocada" o "usuario inactivo", sin revelarlo en pantalla.
+    const _porNombre = dashUsuariosDB.find(u => u.usuario === usuario);
+    if (!_porNombre) {
+      console.warn('Login: el usuario "' + usuario + '" no existe en el Sheet. Usuarios disponibles:', dashUsuariosDB.map(u=>u.usuario).join(', '));
+    } else if (!_porNombre.activo) {
+      console.warn('Login: el usuario "' + usuario + '" existe pero esta marcado como INACTIVO en la columna ACTIVO del Sheet.');
+    } else if (_porNombre.contrasena !== contrasena) {
+      console.warn('Login: contraseña incorrecta para "' + usuario + '" (largo digitado: ' + contrasena.length + ', largo en el Sheet: ' + _porNombre.contrasena.length + ').');
+    }
     errEl.textContent = 'Usuario o contraseña incorrectos.';
     errEl.style.display = 'block';
     return;
@@ -5374,6 +5411,27 @@ function switchPieTab(tab) {
   - renderCmpChart(data) → calcula buckets A vs B, dibuja las líneas
   - kpiBox() → genera los KPIs comparativos (porcentajes grandes)
 */
+// Oculta/muestra una seccion del panel "Ingreso de Material". El boton queda
+// resaltado mientras la seccion esta oculta, para que sea evidente que hay
+// contenido escondido y no parezca que se perdio.
+function toggleSeccionIngreso(idSeccion, idBoton) {
+  const sec = document.getElementById(idSeccion);
+  const btn = document.getElementById(idBoton);
+  if (!sec) return;
+  const oculto = sec.style.display === 'none';
+  sec.style.display = oculto ? '' : 'none';
+  if (btn) {
+    btn.textContent = oculto ? 'Ocultar' : 'Mostrar';
+    if (oculto) btn.removeAttribute('data-oculto');
+    else btn.setAttribute('data-oculto', '1');
+  }
+  // Si se vuelve a mostrar, las graficas de canvas necesitan redibujarse
+  // (mientras estaban ocultas su tamaño era 0).
+  if (oculto && window.dataIngreso) {
+    requestAnimationFrame(() => { try { renderCmpChart(window.dataIngreso); } catch(e) {} });
+  }
+}
+
 // ── GRÁFICA COMPARATIVA DE PICOS ─────────────────
 let cmpMode = 'semana';
 
