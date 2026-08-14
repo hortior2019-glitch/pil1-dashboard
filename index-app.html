@@ -7234,6 +7234,29 @@ function cargarAuditados(forzar) {
 // estar en BAUCHER I (V), pero si se agrego despues desde la planilla queda en
 // BAUCHER II (W) o BAUCHER III (X). Antes solo se leia la primera columna, por
 // eso habia filas con foto en el sheet que aparecian vacias en el corte.
+// ── BAUCHERS LEIDOS DEL SHEET EN VIVO ──────────────────────
+// El CSV publicado de Google va rezagado en las columnas de foto: hay filas que
+// en la hoja tienen el enlace de Drive pero llegan vacias por CSV. Por eso los
+// bauchers se consultan aparte al Apps Script (clave TIQUETE|FECHA|PLACA → url)
+// y se usan como respaldo cuando el CSV no trae nada.
+let _bauchersRemotos = {};
+let _bauchersCargados = false;
+function cargarBauchersRemotos(forzar) {
+  if (typeof INGRESO_API !== 'string' || INGRESO_API.indexOf('PEGAR') !== -1) return Promise.resolve();
+  if (_bauchersCargados && !forzar) return Promise.resolve();
+  return fetchJSONTolerante(INGRESO_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({ accion:'listarBauchers' }) })
+    .then(d => {
+      if (d && d.fotos && typeof d.fotos === 'object') {
+        _bauchersRemotos = d.fotos;
+        _bauchersCargados = true;
+        console.log('Bauchers leidos del sheet en vivo:', Object.keys(_bauchersRemotos).length);
+      } else {
+        console.warn('El Apps Script aun no responde a "listarBauchers". Actualiza el Code.gs y crea una nueva version de la implementacion.');
+      }
+    });
+}
+
 function baucherUrlsDeRegistro(r) {
   // El orden importa: BAUCHER I es la foto principal (la del tiquete que se
   // factura) y SIEMPRE debe ir primero. II y III son fotos agregadas despues.
@@ -7253,6 +7276,15 @@ function baucherUrlsDeRegistro(r) {
       }
     }
   });
+  // Respaldo: si el CSV no trajo ninguna foto, se usa la del sheet en vivo.
+  if (!urls.length) {
+    const rem = _bauchersRemotos[claveViajeCorte(r)];
+    if (rem) {
+      (Array.isArray(rem) ? rem : [rem]).forEach(u => {
+        if (u && urls.indexOf(u) === -1) urls.push(u);
+      });
+    }
+  }
   return urls;
 }
 
@@ -7664,6 +7696,7 @@ function initCortesProveedores() {
   cargarInformesGuardados();
   try { cargarAlertasPlacas(); } catch(e) { console.warn('cargarAlertasPlacas:', e); }
   try { cargarAuditados().then(() => { if (window._corteActual) generarCorte(); }); } catch(e) { console.warn('cargarAuditados:', e); }
+  try { cargarBauchersRemotos().then(() => { if (window._corteActual) generarCorte(); }); } catch(e) { console.warn('cargarBauchersRemotos:', e); }
   if (!_calendarioCargado) cargarCalendarioRemoto();
   else renderCalendarioCortes();
 
