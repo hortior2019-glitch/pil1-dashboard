@@ -3844,6 +3844,21 @@ function splitSoftysGroup(opNorm, residuo) {
   return 'Softys - Lodos';
 }
 
+// ── SEPARAR OPERACION POR MATERIAL (solo en "Ingreso por Cliente") ──
+// En esa pestaña cada operacion se desglosa por el material que trajo, con el
+// formato "Operacion - Material" (ej. "Bavaria - Lodos"). Softys conserva su
+// nomenclatura de siempre (Tromel / Lodos) para no romper nada de lo que ya
+// estaba. Las demas pestañas siguen agrupando por operacion, sin dividir.
+function splitOperacionMaterial(opNorm, residuo) {
+  if (!opNorm) return opNorm;
+  if (opNorm === 'Softys') return splitSoftysGroup(opNorm, residuo);
+  const mat = (residuo || '').toString().trim();
+  if (!mat) return opNorm + ' - Sin material';
+  // Title Case corto para que se vea uniforme en las graficas
+  const matFmt = mat.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  return opNorm + ' - ' + matFmt;
+}
+
 const CLIENT_COLORS = {
   "3R":           "#2563EB",  // azul eléctrico
   "ALPINA":       "#0891B2",  // cian profundo
@@ -3987,7 +4002,7 @@ function poblarSelectOperaciones(data) {
   const sel = document.getElementById('cli-operacion');
   const current = sel.value;
   const normOp3 = normEmpresa;
-  const ops = [...new Set(data.map(r => splitSoftysGroup(normOp3(r['OPERACION'] || ''), r['RESIDUO']||r['Residuo']||r['residuo']||'')).filter(Boolean))].sort();
+  const ops = [...new Set(data.map(r => splitOperacionMaterial(normOp3(r['OPERACION'] || ''), r['RESIDUO']||r['Residuo']||r['residuo']||'')).filter(Boolean))].sort();
   sel.innerHTML = '<option value="">Todas las operaciones</option>' +
     ops.map(op => `<option value="${op}"${op===current?' selected':''}>${op}</option>`).join('');
 }
@@ -4044,7 +4059,7 @@ function renderClientes(data, filter) {
 
   if (opFiltro) {
     const normOp4 = normEmpresa;
-    filtered = filtered.filter(r => splitSoftysGroup(normOp4(r['OPERACION'] || ''), r['RESIDUO']||r['Residuo']||r['residuo']||'') === opFiltro);
+    filtered = filtered.filter(r => splitOperacionMaterial(normOp4(r['OPERACION'] || ''), r['RESIDUO']||r['Residuo']||r['residuo']||'') === opFiltro);
   }
 
   // Label periodo
@@ -4063,7 +4078,7 @@ function renderClientes(data, filter) {
 
   // Helper normalizar operacion
   const normOp = normEmpresa;
-  const getOp  = r => splitSoftysGroup(normOp(r['OPERACION'] || r['Operacion'] || r['operacion'] || r['OPERACIÓN'] || ''), r['RESIDUO']||r['Residuo']||r['residuo']||'');
+  const getOp  = r => splitOperacionMaterial(normOp(r['OPERACION'] || r['Operacion'] || r['operacion'] || r['OPERACIÓN'] || ''), r['RESIDUO']||r['Residuo']||r['residuo']||'');
 
   // Agrupar por operacion
   const grupos = {};
@@ -4748,7 +4763,7 @@ function renderChartClientes(data) {
   const diasMesCnt = {};
 
   const normOp2 = normEmpresa;
-  const getOp   = r => splitSoftysGroup(normOp2(r['OPERACION'] || r['Operacion'] || r['operacion'] || r['OPERACIÓN'] || r['L'] || ''), r['RESIDUO']||r['Residuo']||r['residuo']||'');
+  const getOp   = r => splitOperacionMaterial(normOp2(r['OPERACION'] || r['Operacion'] || r['operacion'] || r['OPERACIÓN'] || r['L'] || ''), r['RESIDUO']||r['Residuo']||r['residuo']||'');
 
   data.forEach(r => {
     const op = getOp(r);
