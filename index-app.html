@@ -7201,7 +7201,7 @@ const CORTE_COLUMNAS_DISP = [
   { id:'conductor',label:'Conductor',         get:r => (r['CONDUCTOR - PRIMER NOMBRE Y PRIMER APELLIDO']||r['CONDUCTOR - PRIME NOMBRE Y PRIMER APELLIDO']||r['CONDUCTOR']||r['Conductor']||r['conductor']||'').trim() },
   { id:'ticket',   label:'N° Tiquete',        get:r => (r['NUMERO TIQUETE']||r['NÚMERO TIQUETE']||r['TIQUETE']||r['Tiquete']||r['tiquete']||r['TICKET']||'').trim() },
   { id:'observacion', label:'Observación',    get:r => (r['OBSERVACION']||r['OBSERVACIÓN']||r['Observacion']||r['Observación']||r['observacion']||r['observación']||'').trim() },
-  { id:'baucher',  label:'Baucher (foto)',    get:r => (r['BAUCHER I']||r['BAUCHER']||r['Baucher']||r['baucher']||'').toString().trim(), foto:true, noTotal:true, noExport:true },
+  { id:'baucher',  label:'Baucher (foto)',    get:r => baucherUrlsDeRegistro(r).join(' | '), foto:true, noTotal:true, noExport:true },
   { id:'auditado', label:'Auditado',          get:r => (_auditadosSet && _auditadosSet.has(claveViajeCorte(r))) ? 'SI' : '', auditado:true, noTotal:true, noExport:true },
 ];
 
@@ -7230,6 +7230,32 @@ function cargarAuditados(forzar) {
     });
 }
 
+// Devuelve TODAS las fotos de baucher de un registro. En el sheet la foto puede
+// estar en BAUCHER I (V), pero si se agrego despues desde la planilla queda en
+// BAUCHER II (W) o BAUCHER III (X). Antes solo se leia la primera columna, por
+// eso habia filas con foto en el sheet que aparecian vacias en el corte.
+function baucherUrlsDeRegistro(r) {
+  // El orden importa: BAUCHER I es la foto principal (la del tiquete que se
+  // factura) y SIEMPRE debe ir primero. II y III son fotos agregadas despues.
+  const grupos = [
+    ['BAUCHER I','BAUCHER 1','BAUCHER_I','BAUCHER','Baucher','baucher'],
+    ['BAUCHER II','BAUCHER 2','BAUCHER_II'],
+    ['BAUCHER III','BAUCHER 3','BAUCHER_III']
+  ];
+  const urls = [];
+  grupos.forEach(alias => {
+    for (const k of alias) {
+      const v = (r[k] || '').toString().trim();
+      // Se ignoran los textos de error que a veces escribe el Apps Script
+      if (v && /^https?:\/\//i.test(v)) {
+        if (urls.indexOf(v) === -1) urls.push(v);
+        break; // ya se encontro la foto de este grupo
+      }
+    }
+  });
+  return urls;
+}
+
 // ── VISOR DE FOTOS DE BAUCHER ──────────────────────────────
 // En el sheet la columna V guarda un enlace de Drive tipo
 // https://drive.google.com/file/d/ID/view. Para poder mostrar la imagen
@@ -7248,6 +7274,13 @@ function urlFotoDrive(url) {
   const id = driveIdDesdeUrl(url);
   return id ? 'https://drive.google.com/thumbnail?id=' + id + '&sz=w1600' : (url||'');
 }
+// Segunda via para la misma imagen: el endpoint /thumbnail de Drive a veces
+// responde vacio o con error aunque el archivo sea publico. Este otro host suele
+// funcionar en esos casos, y solo si ambos fallan se muestra el enlace.
+function urlFotoDriveAlt(url) {
+  const id = driveIdDesdeUrl(url);
+  return id ? 'https://lh3.googleusercontent.com/d/' + id + '=w1600' : (url||'');
+}
 // Abre la foto en un visor a pantalla completa (sin salir del dashboard)
 function abrirFotoBaucher(url, titulo) {
   const src = urlFotoDrive(url);
@@ -7260,7 +7293,7 @@ function abrirFotoBaucher(url, titulo) {
   ov.onclick = e => { if (e.target === ov) ov.remove(); };
   ov.innerHTML = `
     <div style="color:#fff;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;text-align:center">${(titulo||'Baucher').replace(/</g,'&lt;')}</div>
-    <img src="${src}" alt="Baucher" style="max-width:92vw;max-height:74vh;object-fit:contain;background:#fff;border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.5)" onerror="this.style.display='none';document.getElementById('visor-baucher-err').style.display='block'">
+    <img src="${src}" data-alt="${urlFotoDriveAlt(url)}" alt="Baucher" style="max-width:92vw;max-height:74vh;object-fit:contain;background:#fff;border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.5)" onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src=this.dataset.alt;}else{this.style.display='none';document.getElementById('visor-baucher-err').style.display='block';}">
     <div id="visor-baucher-err" style="display:none;color:#fff;font-size:13px;background:rgba(139,26,26,.9);padding:10px 16px;border-radius:6px;max-width:520px;text-align:center">No se pudo cargar la imagen. Puede que el archivo de Drive no sea publico. Usa "Abrir en Drive" para verlo.</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
       <a href="${(url||'').replace(/"/g,'&quot;')}" target="_blank" rel="noopener" style="padding:8px 16px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--white);color:var(--ink);border-radius:4px;text-decoration:none;font-family:'Source Sans 3',sans-serif">Abrir en Drive</a>
@@ -8253,9 +8286,29 @@ function generarCorte() {
         }
         // Columna de foto: miniatura clickeable (abre el visor) en vez del enlace crudo
         if (c.foto) {
-          if (!v) return '<td style="color:var(--ink-l)">—</td>';
+          const _urls = baucherUrlsDeRegistro(r);
+          if (!_urls.length) return '<td style="color:var(--ink-l)">—</td>';
           const _tit = ((r['NUMERO TIQUETE']||'')+' · '+(r['PLACA']||'')+' · '+(fechaYMDdeRegistro(r)||'')).replace(/'/g,'');
-          return `<td style="text-align:center"><img src="${urlFotoDrive(v)}" alt="Baucher" loading="lazy" onclick="abrirFotoBaucher('${v.replace(/'/g,'')}','${_tit}')" onerror="this.outerHTML='<a href=\\'${v.replace(/'/g,'')}\\' target=_blank rel=noopener style=&quot;font-size:11px;color:var(--navy)&quot;>Ver baucher</a>'" style="width:44px;height:44px;object-fit:cover;border-radius:4px;border:1px solid var(--rule);cursor:zoom-in" title="Clic para ampliar"></td>`;
+          // Miniatura por cada foto del registro (I, II, III). Si el thumbnail de
+          // Drive falla, onerror prueba una segunda URL y solo despues cae al enlace.
+          const _minis = _urls.map((u, iU) => {
+            const _u = u.replace(/'/g,'');
+            const _alt = urlFotoDriveAlt(u).replace(/'/g,'');
+            const _esPrincipal = iU === 0;              // BAUCHER I: la que importa
+            const _lado = _esPrincipal ? 56 : 34;
+            const _borde = _esPrincipal ? '2px solid var(--navy)' : '1px solid var(--rule)';
+            const _rot = _esPrincipal ? 'Baucher I (principal)' : 'Baucher ' + (iU===1?'II':'III');
+            // Si ambas URLs de imagen fallan, la PRINCIPAL nunca desaparece: queda
+            // un recuadro visible con enlace directo al archivo en Drive.
+            const _fallback = _esPrincipal
+              ? `<a href=&quot;${_u}&quot; target=_blank rel=noopener title=&quot;Abrir Baucher I en Drive&quot; style=&quot;display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border:2px dashed var(--navy);border-radius:4px;font-size:9px;font-weight:700;color:var(--navy);text-decoration:none;text-align:center;line-height:1.1&quot;>VER<br>BAUCHER I</a>`
+              : `<a href=&quot;${_u}&quot; target=_blank rel=noopener style=&quot;font-size:10px;color:var(--navy)&quot;>Ver ${iU+1}</a>`;
+            return `<img src="${urlFotoDrive(u)}" alt="${_rot}" loading="lazy"
+              onclick="abrirFotoBaucher('${_u}','${_tit}${_urls.length>1?' · '+_rot:''}')"
+              onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src='${_alt}';}else{this.outerHTML='${_fallback}';}"
+              style="width:${_lado}px;height:${_lado}px;object-fit:cover;border-radius:4px;border:${_borde};cursor:zoom-in" title="${_rot} — clic para ampliar">`;
+          }).join(' ');
+          return `<td style="text-align:center"><div style="display:flex;gap:5px;justify-content:center;align-items:center;flex-wrap:wrap">${_minis}</div></td>`;
         }
         return `<td ${c.num?'class="num"':''}>${v||'—'}</td>`;
       }).join('') + celdasValor + '</tr>';
