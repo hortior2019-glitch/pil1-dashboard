@@ -924,7 +924,20 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
       <span style="font-size:10px;color:var(--ink-l);font-weight:600">—</span>
       <input type="time" id="cli-hora-hasta" onchange="renderClientesFiltro()" title="Hora hasta" style="padding:4px 8px;font-size:10px;border:1px solid var(--rule);background:var(--bg);font-family:'Source Sans 3',sans-serif;color:var(--ink);cursor:pointer">
     </div>
-    <select id="cli-operacion" onchange="renderClientesFiltro()" style="padding:4px 8px;font-size:10px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);font-family:'Source Sans 3',sans-serif;cursor:pointer">
+    <div style="position:relative;display:inline-block">
+      <button type="button" id="cli-operacion-btn" onclick="togglePanelOperaciones()" title="Filtrar por una o varias operaciones" style="padding:4px 10px;font-size:10px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);font-family:'Source Sans 3',sans-serif;cursor:pointer;white-space:nowrap">Todas las operaciones ▾</button>
+      <div id="cli-operacion-panel" style="display:none;position:absolute;z-index:9000;top:calc(100% + 4px);left:0;min-width:280px;max-height:340px;overflow:auto;background:var(--white);border:1px solid var(--rule);box-shadow:0 8px 24px rgba(0,0,0,.14);border-radius:4px;padding:8px">
+        <div style="display:flex;gap:6px;margin-bottom:8px;position:sticky;top:0;background:var(--white);padding-bottom:6px;border-bottom:1px solid var(--rule-l)">
+          <button type="button" onclick="marcarTodasOperaciones(true)" style="flex:1;padding:4px 8px;font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);cursor:pointer;font-family:'Source Sans 3',sans-serif">Todas</button>
+          <button type="button" onclick="marcarTodasOperaciones(false)" style="flex:1;padding:4px 8px;font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);cursor:pointer;font-family:'Source Sans 3',sans-serif">Ninguna</button>
+        </div>
+        <div id="cli-operacion-lista"></div>
+      </div>
+    </div>
+    <!-- Se conserva este select oculto: varias partes del codigo leen su .value.
+         Cuando hay UNA sola operacion marcada guarda ese valor; con varias
+         (o ninguna) queda vacio y el filtro real lo aplica _cliOpsSeleccionadas. -->
+    <select id="cli-operacion" onchange="renderClientesFiltro()" style="display:none">
       <option value="">Todas las operaciones</option>
     </select>
     <button onclick="limpiarFiltrosCliente()" style="padding:4px 10px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);cursor:pointer;font-family:'Source Sans 3',sans-serif">Limpiar</button>
@@ -2789,11 +2802,24 @@ function _limpiarCredencial(s) {
     .trim();
 }
 
+// Marca si la lista de usuarios quedo en la de respaldo (solo 5 usuarios
+// hardcodeados) porque no se pudo leer el Sheet. Sirve para dar un mensaje
+// claro en el login en vez de decir "usuario o contraseña incorrectos".
+let _usuariosDesdeFallback = false;
+
 async function cargarUsuariosDash() {
   try {
-    const res  = await fetch(USUARIOS_CSV_DASH, {cache:'no-store'});
-    const text = await res.text();
-    const rows = parseCSV(text);
+    // Se usa fetchCSV (con proxies y reintentos) en vez de un fetch directo:
+    // antes, si la red fallaba un instante, se caia al respaldo de 5 usuarios
+    // y los usuarios reales del Sheet no podian entrar.
+    let rows;
+    try {
+      rows = await fetchCSV(USUARIOS_CSV_DASH);
+    } catch(ePrimero) {
+      await new Promise(r => setTimeout(r, 1500));
+      rows = await fetchCSV(USUARIOS_CSV_DASH); // segundo intento
+    }
+    _usuariosDesdeFallback = false;
     dashUsuariosDB = rows.map(r => ({
       usuario:    _limpiarCredencial(r['USUARIO']).toLowerCase(),
       contrasena: _limpiarCredencial(r['CONTRASENA']),
@@ -2803,9 +2829,13 @@ async function cargarUsuariosDash() {
       recepcion:  ['si','true','yes','1','TRUE'].includes((r['ACTIVO RECEPCION']||r['ACTIVO-RECEP']||r['ACTIVO RECEP']||'').toString().trim().toLowerCase()),
       viajes:     ['si','true','yes','1','TRUE'].includes((r['ACTIVO VIAJES']   ||r['ACTIVO-VIAJES']||'').toString().trim().toLowerCase())
     }));
-    console.log('Usuarios cargados:', dashUsuariosDB);
+    console.log('Usuarios cargados:', dashUsuariosDB.length);
   } catch(e) {
-    console.error('Error cargando usuarios:', e);
+    console.error('No se pudo leer la lista de usuarios del Sheet:', e);
+    _usuariosDesdeFallback = true;
+    // Reintento en segundo plano: si la red vuelve, se reemplaza el respaldo
+    // por la lista real sin que el usuario tenga que recargar la pagina.
+    setTimeout(() => { if (_usuariosDesdeFallback) cargarUsuariosDash(); }, 8000);
     dashUsuariosDB = [
       {usuario:'saul',         contrasena:'pil2026',      nombre:'Saúl García Sandoval',  activo:true, dashboard:true, recepcion:false, viajes:false},
       {usuario:'juan',         contrasena:'pil2025',      nombre:'Juan Camilo Gomez',      activo:true, dashboard:true, recepcion:false, viajes:false},
@@ -2857,6 +2887,20 @@ function intentarLoginDash() {
     // Diagnostico en consola: distingue "usuario que no existe" de
     // "clave equivocada" o "usuario inactivo", sin revelarlo en pantalla.
     const _porNombre = dashUsuariosDB.find(u => u.usuario === usuario);
+    // Caso especial: la lista de usuarios no se pudo leer del Sheet y se esta
+    // usando el respaldo de 5 usuarios. Decir "contraseña incorrecta" seria
+    // engañoso: el usuario existe, solo que su lista no cargo.
+    if (!_porNombre && _usuariosDesdeFallback) {
+      console.warn('Login: la lista de usuarios no se pudo leer del Sheet (se esta usando el respaldo). Reintentando...');
+      errEl.textContent = 'No se pudo cargar la lista de usuarios. Reintentando, espera unos segundos...';
+      errEl.style.display = 'block';
+      cargarUsuariosDash().then(() => {
+        if (!_usuariosDesdeFallback) {
+          errEl.textContent = 'Lista de usuarios actualizada. Intenta ingresar de nuevo.';
+        }
+      });
+      return;
+    }
     if (!_porNombre) {
       console.warn('Login: el usuario "' + usuario + '" no existe en el Sheet. Usuarios disponibles:', dashUsuariosDB.map(u=>u.usuario).join(', '));
     } else if (!_porNombre.activo) {
@@ -3776,7 +3820,8 @@ function hayFiltroExtraActivo() {
          document.getElementById('cli-fecha-hasta').value ||
          document.getElementById('cli-hora-desde').value  ||
          document.getElementById('cli-hora-hasta').value  ||
-         document.getElementById('cli-operacion').value;
+         document.getElementById('cli-operacion').value ||
+         (_cliOpsSeleccionadas && _cliOpsSeleccionadas.length > 0);
 }
 
 // ── FILTROS ───────────────────────────────────────
@@ -3985,6 +4030,9 @@ function limpiarFiltrosCliente() {
   document.getElementById('cli-hora-desde').value  = '';
   document.getElementById('cli-hora-hasta').value  = '';
   document.getElementById('cli-operacion').value   = '';
+  _cliOpsSeleccionadas = [];
+  document.querySelectorAll('.cli-op-chk').forEach(c => { c.checked = false; });
+  actualizarBotonOperaciones();
   restaurarBotonesPeriodo();
   renderClientesFiltro();
 }
@@ -3998,13 +4046,87 @@ function renderClientesFiltro() {
   renderClientes(dataIngreso, currentFilter);
 }
 
+// Operaciones marcadas en el filtro multiple de "Ingreso por Cliente".
+// Vacio = sin filtro (se muestran todas).
+let _cliOpsSeleccionadas = [];
+
 function poblarSelectOperaciones(data) {
   const sel = document.getElementById('cli-operacion');
-  const current = sel.value;
   const normOp3 = normEmpresa;
   const ops = [...new Set(data.map(r => splitOperacionMaterial(normOp3(r['OPERACION'] || ''), r['RESIDUO']||r['Residuo']||r['residuo']||'')).filter(Boolean))].sort();
-  sel.innerHTML = '<option value="">Todas las operaciones</option>' +
-    ops.map(op => `<option value="${op}"${op===current?' selected':''}>${op}</option>`).join('');
+
+  // Si alguna operacion marcada ya no existe en los datos, se descarta
+  _cliOpsSeleccionadas = _cliOpsSeleccionadas.filter(o => ops.includes(o));
+
+  // Select oculto (compatibilidad con el codigo que lee .value)
+  if (sel) {
+    sel.innerHTML = '<option value="">Todas las operaciones</option>' +
+      ops.map(op => `<option value="${op}">${op}</option>`).join('');
+    sel.value = _cliOpsSeleccionadas.length === 1 ? _cliOpsSeleccionadas[0] : '';
+  }
+
+  // Lista de checkboxes
+  const lista = document.getElementById('cli-operacion-lista');
+  if (lista) {
+    lista.innerHTML = ops.length
+      ? ops.map(op => {
+          const chk = _cliOpsSeleccionadas.includes(op) ? ' checked' : '';
+          const color = getClientColor(op);
+          return `<label style="display:flex;align-items:center;gap:8px;padding:5px 4px;cursor:pointer;border-radius:3px">
+            <input type="checkbox" class="cli-op-chk" value="${op.replace(/"/g,'&quot;')}"${chk} onchange="onOperacionToggle()" style="width:15px;height:15px;accent-color:var(--navy);cursor:pointer">
+            <span style="width:9px;height:9px;border-radius:2px;background:${color};flex-shrink:0"></span>
+            <span style="font-size:12px;color:var(--ink)">${op}</span>
+          </label>`;
+        }).join('')
+      : '<div style="font-size:11px;color:var(--ink-l);font-style:italic;padding:6px">Sin operaciones en el periodo</div>';
+  }
+  actualizarBotonOperaciones(ops.length);
+}
+
+function actualizarBotonOperaciones(totalOps) {
+  const btn = document.getElementById('cli-operacion-btn');
+  if (!btn) return;
+  const n = _cliOpsSeleccionadas.length;
+  let txt;
+  if (n === 0) txt = 'Todas las operaciones';
+  else if (n === 1) txt = _cliOpsSeleccionadas[0];
+  else txt = n + ' operaciones';
+  btn.textContent = txt + ' ▾';
+  // Resaltado cuando hay filtro activo, para que no pase desapercibido
+  const activo = n > 0;
+  btn.style.background = activo ? 'var(--navy)' : 'var(--bg)';
+  btn.style.color = activo ? '#fff' : 'var(--ink-m)';
+  btn.style.borderColor = activo ? 'var(--navy)' : 'var(--rule)';
+  btn.style.maxWidth = '260px';
+  btn.style.overflow = 'hidden';
+  btn.style.textOverflow = 'ellipsis';
+}
+
+function togglePanelOperaciones() {
+  const p = document.getElementById('cli-operacion-panel');
+  if (!p) return;
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+
+// Cerrar el panel al hacer clic por fuera
+document.addEventListener('click', function(e) {
+  const p = document.getElementById('cli-operacion-panel');
+  const b = document.getElementById('cli-operacion-btn');
+  if (!p || !b) return;
+  if (p.style.display !== 'none' && !p.contains(e.target) && e.target !== b) p.style.display = 'none';
+});
+
+function onOperacionToggle() {
+  _cliOpsSeleccionadas = [...document.querySelectorAll('.cli-op-chk:checked')].map(c => c.value);
+  const sel = document.getElementById('cli-operacion');
+  if (sel) sel.value = _cliOpsSeleccionadas.length === 1 ? _cliOpsSeleccionadas[0] : '';
+  actualizarBotonOperaciones();
+  renderClientesFiltro();
+}
+
+function marcarTodasOperaciones(marcar) {
+  document.querySelectorAll('.cli-op-chk').forEach(c => { c.checked = !!marcar; });
+  onOperacionToggle();
 }
 
 function renderClientes(data, filter) {
@@ -4057,9 +4179,15 @@ function renderClientes(data, filter) {
     });
   }
 
-  if (opFiltro) {
+  // Filtro por operacion: ahora admite VARIAS marcadas a la vez.
+  if (_cliOpsSeleccionadas.length) {
     const normOp4 = normEmpresa;
-    filtered = filtered.filter(r => splitOperacionMaterial(normOp4(r['OPERACION'] || ''), r['RESIDUO']||r['Residuo']||r['residuo']||'') === opFiltro);
+    filtered = filtered.filter(r => _cliOpsSeleccionadas.includes(
+      splitOperacionMaterial(normOp4(r['OPERACION'] || ''), r['RESIDUO']||r['Residuo']||r['residuo']||'')
+    ));
+  } else if (opFiltro) {
+    const normOp4b = normEmpresa;
+    filtered = filtered.filter(r => splitOperacionMaterial(normOp4b(r['OPERACION'] || ''), r['RESIDUO']||r['Residuo']||r['residuo']||'') === opFiltro);
   }
 
   // Label periodo
@@ -6226,8 +6354,10 @@ function renderVolquetasVisual(data, filter) {
       if(isMalo(val)) malosMap[col]=(malosMap[col]||0)+1;
       else if(isRegular(val)) regularesMap[col]=(regularesMap[col]||0)+1;
     }); });
-    const hallazgos = Object.entries(malosMap).sort((a,b)=>b[1]-a[1]).slice(0,4);
-    const hallazgosReg = Object.entries(regularesMap).sort((a,b)=>b[1]-a[1]).slice(0,4);
+    // Se listan TODOS los items con hallazgo (antes se recortaba a 4 y por eso
+    // parecia que faltaban items, sobre todo los regulares).
+    const hallazgos = Object.entries(malosMap).sort((a,b)=>b[1]-a[1]);
+    const hallazgosReg = Object.entries(regularesMap).sort((a,b)=>b[1]-a[1]);
     return { placa, regs, malos, regulares, buenos, total, pctBuenos, conductores, ultimaFecha, km, hallazgos, hallazgosReg };
   }).sort((a,b) => b.malos - a.malos || b.regulares - a.regulares);
 
@@ -6272,8 +6402,13 @@ function renderVolquetasVisual(data, filter) {
           <div style="font-size:16px;font-weight:700;color:var(--ink-m);line-height:1">${v.km}</div>
           <div style="font-size:9px;font-weight:700;color:var(--ink-l);letter-spacing:1px;margin-top:2px">KM</div>
         </div>` : ''}
-        <!-- Hallazgos inline -->
-        <div style="flex:1;display:flex;gap:6px;flex-wrap:wrap;align-items:center;min-width:120px">${hallHtml}</div>
+      </div>
+      <!-- Hallazgos: fila propia de ancho completo. Antes iban en la misma fila
+           que los KPIs y el espacio los comprimia, cortando los items (sobre
+           todo los regulares, que van despues de los malos). -->
+      <div style="padding:0 20px 16px">
+        ${(v.hallazgos.length > 0 || v.hallazgosReg.length > 0) ? `<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:8px">Hallazgos · ${v.hallazgos.length} en mal estado · ${v.hallazgosReg.length} regulares</div>` : ''}
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${hallHtml}</div>
       </div>
     </div>`;
   }).join('');
@@ -6648,8 +6783,9 @@ function renderPreopUnificado(dataCar, dataTra, filter) {
       if(isMalo(val)) malosMap[col]=(malosMap[col]||0)+1;
       else if(isRegular(val)) regularesMap[col]=(regularesMap[col]||0)+1;
     }); });
-    const hallazgos = Object.entries(malosMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
-    const hallazgosReg = Object.entries(regularesMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    // Sin recorte: se muestran todos los items con hallazgo, malos y regulares.
+    const hallazgos = Object.entries(malosMap).sort((a,b)=>b[1]-a[1]);
+    const hallazgosReg = Object.entries(regularesMap).sort((a,b)=>b[1]-a[1]);
     const ops = new Set(rows.map(r => r['Operador']||r['operador']||'').filter(Boolean));
     const horos = rows.map(r => parseFloat((r['Horometro']||r['horometro']||'0').replace(/[^0-9.]/g,''))).filter(n=>!isNaN(n)&&n>0);
     const avgH = horos.length ? Math.round(horos.reduce((a,b)=>a+b,0)/horos.length) : 0;
@@ -10686,10 +10822,14 @@ function renderProduccionHumus(rows) {
     setT('stock-kpi-hoy', fmtInt(parseNum(filaHoy[colProd])));
     setT('stock-kpi-hoy-fecha', 'hoy · ' + (filaHoy[colFecha]||''));
   } else {
-    // Sin registro de hoy: mostrar el último día disponible con su fecha real
+    // Sin registro de HOY: la produccion del dia es 0. Antes se mostraba el
+    // valor del ultimo dia registrado, lo que hacia creer que ya se habia
+    // producido hoy. La fecha del ultimo registro queda como referencia.
     const ultimoConDato = sorted[0];
-    setT('stock-kpi-hoy', ultimoConDato ? fmtInt(parseNum(ultimoConDato[colProd])) : '0');
-    setT('stock-kpi-hoy-fecha', ultimoConDato ? 'sin registro de hoy · último: ' + (ultimoConDato[colFecha]||'') : 'sin registros');
+    setT('stock-kpi-hoy', '0');
+    setT('stock-kpi-hoy-fecha', ultimoConDato
+      ? 'hoy sin registro · último: ' + (ultimoConDato[colFecha]||'')
+      : 'sin registros');
   }
 
   setT('stock-kpi-actual',     fmtInt(stockAct));
