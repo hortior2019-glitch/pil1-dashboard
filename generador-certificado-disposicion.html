@@ -603,13 +603,63 @@
     </div>
 
     <div class="field">
-      <label>Empresa receptora</label>
-      <input id="empresaReceptora" value="" placeholder="Ej: EMPRESA DE SERVICIOS PUBLICOS DE CAJICA SA ESP">
+      <label>Plantilla de ayuda para el primer párrafo</label>
+      <select id="tipoParrafo1">
+        <option value="estandar">Estándar (HORTI certifica disposición)</option>
+        <option value="intermediario">Entrega con intermediario</option>
+      </select>
+    </div>
+
+    <div id="bloqueEstandar">
+      <div class="field">
+        <label>Empresa receptora</label>
+        <input id="empresaReceptora" value="" placeholder="Ej: EMPRESA DE SERVICIOS PUBLICOS DE CAJICA SA ESP">
+      </div>
+
+      <div class="field">
+        <label>NIT receptora</label>
+        <input id="nitReceptora" value="" placeholder="Ej: 832.002.386-5">
+      </div>
+    </div>
+
+    <div id="bloqueIntermediario" style="display:none;">
+      <div class="field">
+        <label>Empresa origen (dueña del material)</label>
+        <input id="empresaOrigen" value="" placeholder="Ej: INDUSTRIA NACIONAL DE GASEOSAS SAS">
+      </div>
+      <div class="field">
+        <label>NIT origen</label>
+        <input id="nitOrigen" value="" placeholder="Ej: 890.903.858-7">
+      </div>
+      <div class="field">
+        <label>Dirección origen</label>
+        <input id="direccionOrigen" value="" placeholder="Ej: Carretera Central del Norte km 22, Tocancipá">
+      </div>
+
+      <div class="field">
+        <label>Empresa intermediaria (opcional)</label>
+        <input id="empresaIntermediaria" value="" placeholder="Ej: SANEAMIENTO AMBIENTAL Y SANITARIO S.A.S">
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>NIT intermediaria</label>
+          <input id="nitIntermediaria" value="" placeholder="Ej: 900.167.617-6">
+        </div>
+        <div class="field">
+          <label>Tel. intermediaria</label>
+          <input id="telIntermediaria" value="" placeholder="Ej: 4860412">
+        </div>
+      </div>
+      <div class="field">
+        <label>Dirección intermediaria</label>
+        <input id="direccionIntermediaria" value="" placeholder="Ej: Carrera 129 # 22 F 70">
+      </div>
     </div>
 
     <div class="field">
-      <label>NIT receptora</label>
-      <input id="nitReceptora" value="" placeholder="Ej: 832.002.386-5">
+      <label>Primer párrafo (editable, esto es lo que se imprime)</label>
+      <textarea id="parrafo1" style="min-height:110px;"></textarea>
+      <button class="btn-list" type="button" onclick="regenerarParrafo1()" style="width:100%;margin-top:6px;">🔄 Generar desde los datos de arriba</button>
     </div>
 
     <div class="field">
@@ -679,7 +729,7 @@
       <div class="cert-title">CERTIFICADO DE DISPOSICIÓN</div>
 
       <div class="cert-body">
-        <p>La empresa <b>HORTI ORGANIC SAS CI BIC</b> certifica que, en cumplimiento de la normativa legal ambiental vigente y en concordancia con nuestra política de sostenibilidad y compromiso con la gestión ambiental responsable, se realizó la disposición del material detallado a continuación a la empresa <b id="pEmpresa">EMPRESA DE SERVICIOS PUBLICOS DE CAJICA SA ESP</b>, identificada con el NIT: <b id="pNit">832.002.386-5</b>.</p>
+        <p id="pPrimerParrafo"></p>
 
         <table class="cert-table">
           <thead>
@@ -742,7 +792,8 @@
 </div>
 
 <script>
-  const ids = ['actaNo','pagina','empresaReceptora','nitReceptora','periodo','fechaExpedicion','parrafo2'];
+  const ids = ['actaNo','pagina','empresaReceptora','nitReceptora','periodo','fechaExpedicion','parrafo1','parrafo2',
+    'empresaOrigen','nitOrigen','direccionOrigen','empresaIntermediaria','nitIntermediaria','direccionIntermediaria','telIntermediaria'];
 
   // ---- Materiales certificados (uno o varios, con descripción editable a nombre técnico) ----
   let materiales = [ { descripcion: '', cantidad: '' } ];
@@ -828,11 +879,50 @@
     return decPart ? intPart + ',' + decPart : intPart;
   }
 
+  function escapeHtml(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // Genera un texto SUGERIDO de primer párrafo a partir de los campos de arriba
+  // (según la plantilla elegida). Es solo un punto de partida: el texto real que se
+  // imprime es el que está en el textarea #parrafo1, que el usuario puede editar libremente.
+  function generarParrafo1Texto(){
+    const tipo = document.getElementById('tipoParrafo1').value;
+
+    if (tipo === 'intermediario'){
+      const empresaOrigen = document.getElementById('empresaOrigen').value;
+      const nitOrigen = document.getElementById('nitOrigen').value;
+      const direccionOrigen = document.getElementById('direccionOrigen').value;
+      const empresaInter = document.getElementById('empresaIntermediaria').value.trim();
+      const nitInter = document.getElementById('nitIntermediaria').value;
+      const direccionInter = document.getElementById('direccionIntermediaria').value;
+      const telInter = document.getElementById('telIntermediaria').value;
+
+      let intermediarioTxt = '';
+      if (empresaInter){
+        intermediarioTxt = ', por intermedio de la empresa ' + empresaInter + ', identificada con NIT:' + nitInter + ', con sede en ' + direccionInter + (telInter ? ', TEL: ' + telInter : '');
+      }
+
+      return 'La empresa ' + empresaOrigen + ', identificada con NIT:' + nitOrigen + ', localizada en ' + direccionOrigen + intermediarioTxt + ', entrega el material que ha sido recibido conforme a las siguientes especificaciones:';
+    }
+
+    // Estándar
+    const empresa = document.getElementById('empresaReceptora').value;
+    const nit = document.getElementById('nitReceptora').value;
+    return 'La empresa HORTI ORGANIC SAS CI BIC certifica que, en cumplimiento de la normativa legal ambiental vigente y en concordancia con nuestra política de sostenibilidad y compromiso con la gestión ambiental responsable, se realizó la disposición del material detallado a continuación a la empresa ' + empresa + ', identificada con el NIT: ' + nit + '.';
+  }
+
+  // Botón "Generar desde los datos de arriba": rellena (sobrescribe) el textarea editable
+  // con el texto sugerido según la plantilla y los campos actuales.
+  function regenerarParrafo1(){
+    document.getElementById('parrafo1').value = generarParrafo1Texto();
+    update();
+  }
+
   function update(){
     const acta = document.getElementById('actaNo').value;
     const pagina = document.getElementById('pagina').value;
-    const empresa = document.getElementById('empresaReceptora').value;
-    const nit = document.getElementById('nitReceptora').value;
     const periodo = document.getElementById('periodo').value;
     const fecha = document.getElementById('fechaExpedicion').value;
     let parrafo2 = document.getElementById('parrafo2').value;
@@ -845,8 +935,7 @@
 
     document.getElementById('hActa').textContent = acta;
     document.getElementById('hPagina').textContent = pagina;
-    document.getElementById('pEmpresa').textContent = empresa;
-    document.getElementById('pNit').textContent = nit;
+    document.getElementById('pPrimerParrafo').textContent = document.getElementById('parrafo1').value;
     document.getElementById('pParrafo2Rest').textContent = parrafo2;
     document.getElementById('tPeriodo').textContent = periodo;
     document.getElementById('pFecha').textContent = fecha;
@@ -877,6 +966,14 @@
     document.getElementById(id).addEventListener('input', update);
   });
 
+  document.getElementById('tipoParrafo1').addEventListener('change', () => {
+    const esIntermediario = document.getElementById('tipoParrafo1').value === 'intermediario';
+    document.getElementById('bloqueEstandar').style.display = esIntermediario ? 'none' : 'block';
+    document.getElementById('bloqueIntermediario').style.display = esIntermediario ? 'block' : 'none';
+    update();
+  });
+
+  document.getElementById('parrafo1').value = generarParrafo1Texto();
   renderMateriales();
   update();
   renderVerificacion();
@@ -912,6 +1009,40 @@
   // ---- Guardar / consultar en Google Sheets vía Apps Script ----
   const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzq4P0XvEDXAKAPti3B_JL_J1CjogE60bn6TOdiNf69WVmvaRLdpkxabkGTsEX3_7ogwA/exec';
 
+  function recolectarDatosParrafo1(){
+    return {
+      tipo: document.getElementById('tipoParrafo1').value,
+      texto: document.getElementById('parrafo1').value,
+      empresaOrigen: document.getElementById('empresaOrigen').value,
+      nitOrigen: document.getElementById('nitOrigen').value,
+      direccionOrigen: document.getElementById('direccionOrigen').value,
+      empresaIntermediaria: document.getElementById('empresaIntermediaria').value,
+      nitIntermediaria: document.getElementById('nitIntermediaria').value,
+      direccionIntermediaria: document.getElementById('direccionIntermediaria').value,
+      telIntermediaria: document.getElementById('telIntermediaria').value
+    };
+  }
+
+  function aplicarDatosParrafo1(datos){
+    datos = datos || {};
+    document.getElementById('tipoParrafo1').value = datos.tipo || 'estandar';
+    document.getElementById('empresaOrigen').value = datos.empresaOrigen || '';
+    document.getElementById('nitOrigen').value = datos.nitOrigen || '';
+    document.getElementById('direccionOrigen').value = datos.direccionOrigen || '';
+    document.getElementById('empresaIntermediaria').value = datos.empresaIntermediaria || '';
+    document.getElementById('nitIntermediaria').value = datos.nitIntermediaria || '';
+    document.getElementById('direccionIntermediaria').value = datos.direccionIntermediaria || '';
+    document.getElementById('telIntermediaria').value = datos.telIntermediaria || '';
+    const esIntermediario = document.getElementById('tipoParrafo1').value === 'intermediario';
+    document.getElementById('bloqueEstandar').style.display = esIntermediario ? 'none' : 'block';
+    document.getElementById('bloqueIntermediario').style.display = esIntermediario ? 'block' : 'none';
+    // El texto real del párrafo: si el certificado guardado ya tenía el texto exacto, se
+    // restaura tal cual (respeta cualquier edición manual que se haya hecho). Si es un
+    // certificado guardado antes de que este campo existiera, se genera uno sugerido con
+    // los datos ya cargados.
+    document.getElementById('parrafo1').value = datos.texto || generarParrafo1Texto();
+  }
+
   function recolectarDatos(){
     return {
       acta: document.getElementById('actaNo').value,
@@ -921,7 +1052,8 @@
       materiales: JSON.stringify(materiales),
       periodo: document.getElementById('periodo').value,
       fecha: document.getElementById('fechaExpedicion').value,
-      parrafo2: document.getElementById('parrafo2').value
+      parrafo2: document.getElementById('parrafo2').value,
+      parrafo1Datos: JSON.stringify(recolectarDatosParrafo1())
     };
   }
 
@@ -1130,9 +1262,14 @@
     }
     setMateriales(lista);
 
+    let parrafo1Datos = {};
+    try{ parrafo1Datos = JSON.parse(rec.Parrafo1Datos || '{}'); }catch(e){}
+    aplicarDatosParrafo1(parrafo1Datos);
+
     certCodigo = rec.Codigo || '';
     renderVerificacion();
 
+    update();
     setStatus('Certificado cargado en el formulario.', 'ok');
   }
 
@@ -1217,8 +1354,8 @@
       };
     }
 
-    // Formato "Mes de AAAA" (todo el mes)
-    const reMes = /^(\w+) de (\d{4})$/;
+    // Formato "Mes de AAAA" o "Mes AAAA" (todo el mes)
+    const reMes = /^(\w+)(?: de)? (\d{4})$/;
     m = s.match(reMes);
     if (m){
       const mes = MESES.indexOf(m[1]);
@@ -1228,6 +1365,20 @@
         desde: new Date(anio, mes, 1, 0, 0, 0),
         hasta: new Date(anio, mes + 1, 0, 23, 59, 59) // último día del mes
       };
+    }
+
+    // Formato "Mes primera/segunda quincena [de] AAAA"
+    const reQuincena = /^(\w+)\s+(primera|segunda)\s+quincena(?:\s+de)?\s*(\d{4})?$/;
+    m = s.match(reQuincena);
+    if (m){
+      const mes = MESES.indexOf(m[1]);
+      if (mes === -1) return null;
+      const anio = parseInt(m[3]) || new Date().getFullYear();
+      const ultimoDia = new Date(anio, mes + 1, 0).getDate();
+      if (m[2] === 'primera'){
+        return { desde: new Date(anio, mes, 1, 0,0,0), hasta: new Date(anio, mes, 15, 23,59,59) };
+      }
+      return { desde: new Date(anio, mes, 16, 0,0,0), hasta: new Date(anio, mes, ultimoDia, 23,59,59) };
     }
 
     return null;
@@ -1309,16 +1460,32 @@
           continue;
         }
 
-        const candidatos = todasFilas.filter(f =>
+        const enRangoOperacionLibres = todasFilas.filter(f =>
           f.fecha >= rango.desde && f.fecha <= rango.hasta &&
           operaciones.includes(f.operacion) &&
-          residuosBuscados.includes(f.residuo.trim().toLowerCase()) &&
           !f.idCertificado &&
           f.idEnvio
         );
 
+        // Intento 1: coincidencia exacta por nombre de material (caso normal).
+        let candidatos = enRangoOperacionLibres.filter(f => residuosBuscados.includes(f.residuo.trim().toLowerCase()));
+        let metodo = 'nombre de material';
+
+        // Intento 2 (respaldo): si el nombre no calza (ej. se reemplazó por nombre técnico),
+        // busca por fecha+operación y compara el peso TOTAL de esas filas contra el total
+        // declarado en el certificado. Si coincide casi exacto, son casi con certeza los
+        // mismos viajes aunque el texto del material sea distinto.
+        if (!candidatos.length && enRangoOperacionLibres.length){
+          const totalCertificado = materiales.reduce((s, m) => s + (parseFloat(String(m.cantidad).replace(/,/g,'')) || 0), 0);
+          const totalRango = enRangoOperacionLibres.reduce((s, f) => s + f.peso, 0);
+          if (totalCertificado > 0 && Math.abs(totalRango - totalCertificado) < 0.5){
+            candidatos = enRangoOperacionLibres;
+            metodo = 'peso total (el nombre del material no coincidía)';
+          }
+        }
+
         if (!candidatos.length){
-          reporte.push('— Acta ' + (cert.Acta || '—') + ': sin coincidencias nuevas (puede que ya estuviera marcado, o los nombres de material no coinciden).');
+          reporte.push('— Acta ' + (cert.Acta || '—') + ': sin coincidencias nuevas (puede que ya estuviera marcado, o el peso total no calza con ningún grupo fecha+operación).');
           continue;
         }
 
@@ -1334,7 +1501,7 @@
           const data = await res.json();
           const marcados = (data.marcados || []).length;
           const conflictos = (data.yaCertificados || []).length;
-          reporte.push('✅ Acta ' + (cert.Acta || '—') + ': ' + marcados + ' viaje(s) marcados' + (conflictos ? ', ' + conflictos + ' con conflicto' : '') + '.');
+          reporte.push('✅ Acta ' + (cert.Acta || '—') + ': ' + marcados + ' viaje(s) marcados (por ' + metodo + ')' + (conflictos ? ', ' + conflictos + ' con conflicto' : '') + '.');
           // Actualiza en memoria para que el resto del bucle no vuelva a tomar los mismos.
           candidatos.forEach(f => { f.idCertificado = certificadoId; });
         }catch(err){
