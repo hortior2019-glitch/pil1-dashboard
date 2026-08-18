@@ -3525,6 +3525,54 @@ const OPS = [
 // Paleta de colores de acento por posición
 const OPS_ACCENT = ['var(--navy)','var(--green)','var(--gold)','var(--blue)','#7b5ea7','#c0392b','#16a085','#e67e22','#2980b9','#27ae60'];
 
+// ── LISTA DE PROVEEDORES CONSTRUIDA DESDE EL SHEET ──────────
+// Antes esta pestaña dependia SOLO de la lista fija OPS del codigo, asi que un
+// proveedor nuevo (o renombrado en el Sheet) no aparecia hasta tocar el HTML.
+// Ahora la fuente de verdad es el Sheet: se listan todas las operaciones que
+// tengan registros, y de OPS solo se reutiliza la descripcion de materiales y
+// las sub-sedes (ej. Prodensa) cuando existen.
+let OPS_DINAMICO = null;
+
+function construirOpsDesdeSheet() {
+  if (!window.dataIngreso || !dataIngreso.length) return OPS;
+  const porOp = {};
+  dataIngreso.forEach(r => {
+    const op = normEmpresa(r['OPERACION']||r['Operacion']||r['operacion']||r['OPERACIÓN']||'');
+    if (!op) return;
+    if (!porOp[op]) porOp[op] = new Set();
+    const mat = (r['RESIDUO']||r['Residuo']||r['residuo']||'').toString().trim();
+    if (mat) porOp[op].add(tituloBonito(mat));
+  });
+
+  const lista = [];
+  const yaPuestas = new Set();
+
+  // 1) Operaciones que SI estan en el Sheet
+  Object.keys(porOp).sort().forEach(op => {
+    const base = OPS.find(o => normEmpresa(o.c) === op);
+    const matsSheet = [...porOp[op]].sort().join('; ');
+    lista.push({
+      c: base ? base.c : op,                       // nombre tal como esta en el Sheet
+      m: matsSheet || (base ? base.m : ''),        // materiales reales del Sheet
+      s: base && base.s ? base.s : undefined       // sub-sedes definidas a mano (Prodensa, etc.)
+    });
+    yaPuestas.add(op);
+  });
+
+  // 2) Operaciones de la lista fija que aun no tienen registros: se conservan
+  //    para no perder proveedores dados de alta pero sin viajes todavia.
+  OPS.forEach(o => {
+    if (!yaPuestas.has(normEmpresa(o.c))) lista.push(o);
+  });
+
+  return lista;
+}
+
+// Lista vigente: la del Sheet si ya cargaron los datos, si no la fija.
+function opsActuales() {
+  return OPS_DINAMICO || OPS;
+}
+
 function renderOps(ops) {
   // Cruzar con dataIngreso para obtener viajes y peso por operación
   const normOp = normEmpresa;
@@ -3658,8 +3706,8 @@ function renderOps(ops) {
 let _opsFiltered = null;
 function filterOps(q) {
   q = q.toLowerCase().trim();
-  if (!q) { _opsFiltered = null; renderOps(OPS); return; }
-  _opsFiltered = OPS.filter(o => o.c.toLowerCase().includes(q) || o.m.toLowerCase().includes(q) || (o.s||[]).some(s=>s.n.toLowerCase().includes(q)||s.m.toLowerCase().includes(q)));
+  if (!q) { _opsFiltered = null; renderOps(opsActuales()); return; }
+  _opsFiltered = opsActuales().filter(o => (o.c||'').toLowerCase().includes(q) || (o.m||'').toLowerCase().includes(q) || (o.s||[]).some(s=>s.n.toLowerCase().includes(q)||s.m.toLowerCase().includes(q)));
   renderOps(_opsFiltered);
 }
 
@@ -3710,7 +3758,7 @@ async function loadAllData() {
     try { renderCliCmpChart(dataIngreso); } catch(e3) { console.error('renderCliCmpChart error:', e3); }
     try { renderClientes(dataIngreso, currentFilter); } catch(e2) { console.error('renderClientes error:', e2); }
     try { renderKPI(dataIngreso); } catch(e2) { console.error('renderKPI error:', e2); }
-    try { renderOps(_opsFiltered || OPS); } catch(e2) { console.error('renderOps error:', e2); }
+    try { OPS_DINAMICO = construirOpsDesdeSheet(); renderOps(_opsFiltered || opsActuales()); } catch(e2) { console.error('renderOps error:', e2); }
     try { initCortesProveedores(); } catch(e2) { console.error('initCortes error:', e2); }
     const _fi2 = document.getElementById('footer-ingreso'); if (_fi2) _fi2.textContent = 'Ingreso: '+fmt(dataIngreso.length)+' registros';
     ok++;
@@ -3893,6 +3941,16 @@ setInterval(()=>{
 // ── COLORES POR CLIENTE ───────────────────────────
 // ── NORMALIZACIÓN CENTRAL DE NOMBRES DE EMPRESA ──
 // Única fuente de verdad — usar en TODAS las partes del código
+// Title Case que NO se rompe con tildes ni con la ñ. El clasico
+// .replace(/\b\w/g, ...) trata "ó" como separador de palabra y termina
+// escribiendo "CaptacióN"; por eso aqui se recorre palabra por palabra.
+function tituloBonito(s) {
+  return (s || '').toString().toLowerCase()
+    .split(/(\s+|-)/)
+    .map(p => (/^\s+$/.test(p) || p === '-') ? p : (p.charAt(0).toUpperCase() + p.slice(1)))
+    .join('');
+}
+
 function normEmpresa(s) {
   if (!s) return '';
   // 1. Quitar tildes para normalización robusta
@@ -3902,8 +3960,8 @@ function normEmpresa(s) {
   r = r.replace(/\b(SAS|S\.A\.S|S\.A|LTDA|SA|CV|C\.V)\b/gi, '')
     .replace(/[.,]/g, '')
     .replace(/\s+/g, ' ').trim();
-  // 3. Capitalizar cada palabra
-  r = r.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  // 3. Capitalizar cada palabra (respetando tildes)
+  r = tituloBonito(r);
   // 4. Correcciones ortográficas conocidas
   r = r
     .replace(/Prodenza/gi,   'Prodensa')
@@ -3938,9 +3996,8 @@ function splitOperacionMaterial(opNorm, residuo) {
   if (opNorm === 'Softys') return splitSoftysGroup(opNorm, residuo);
   const mat = (residuo || '').toString().trim();
   if (!mat) return opNorm + ' - Sin material';
-  // Title Case corto para que se vea uniforme en las graficas
-  const matFmt = mat.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
-  return opNorm + ' - ' + matFmt;
+  // Title Case respetando tildes (antes salia "CaptacióN")
+  return opNorm + ' - ' + tituloBonito(mat);
 }
 
 const CLIENT_COLORS = {
@@ -6551,7 +6608,7 @@ function filtrarCmpPorProveedor(prov) {
 // Adjust padding-top so panels don't hide under fixed bars
 function adjustScrollOffset() { ajustarPosiciones(); }
 window.addEventListener("load", function(){ ajustarPosiciones(); setTimeout(ajustarPosiciones, 100); setTimeout(ajustarPosiciones, 400); });// ── INICIO ────────────────────────────────────────// ── INICIO ────────────────────────────────────────
-renderOps(OPS);
+renderOps(opsActuales());
 renderTablaEmp(COLABORADORS_DB);
 cargarUsuariosDash().then(() => { cargarPermisosRemoto(); });
 loadAllData();
