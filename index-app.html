@@ -7762,7 +7762,9 @@ const CORTE_COLUMNAS_DISP = [
   { id:'conductor',label:'Conductor',         get:r => (r['CONDUCTOR - PRIMER NOMBRE Y PRIMER APELLIDO']||r['CONDUCTOR - PRIME NOMBRE Y PRIMER APELLIDO']||r['CONDUCTOR']||r['Conductor']||r['conductor']||'').trim() },
   { id:'ticket',   label:'N° Tiquete',        get:r => (r['NUMERO TIQUETE']||r['NÚMERO TIQUETE']||r['TIQUETE']||r['Tiquete']||r['tiquete']||r['TICKET']||'').trim() },
   { id:'observacion', label:'Observación',    get:r => (r['OBSERVACION']||r['OBSERVACIÓN']||r['Observacion']||r['Observación']||r['observacion']||r['observación']||'').trim() },
-  { id:'baucher',  label:'Baucher (foto)',    get:r => baucherUrlsDeRegistro(r).join(' | '), foto:true, noTotal:true },
+  { id:'baucher',   label:'Baucher I (foto)',   get:r => baucherUrlPorIndice(r,0), foto:true, noTotal:true },
+  { id:'baucher2',  label:'Baucher II (foto)',  get:r => baucherUrlPorIndice(r,1), foto:true, noTotal:true },
+  { id:'baucher3',  label:'Baucher III (foto)', get:r => baucherUrlPorIndice(r,2), foto:true, noTotal:true },
   { id:'auditado', label:'Auditado',          get:r => (_auditadosSet && _auditadosSet.has(claveViajeCorte(r))) ? 'SI' : '', auditado:true, noTotal:true, noExport:true },
 ];
 
@@ -7795,6 +7797,29 @@ function cargarAuditados(forzar) {
 // estar en BAUCHER I (V), pero si se agrego despues desde la planilla queda en
 // BAUCHER II (W) o BAUCHER III (X). Antes solo se leia la primera columna, por
 // eso habia filas con foto en el sheet que aparecian vacias en el corte.
+// Devuelve la foto del slot pedido (0 = BAUCHER I, 1 = II, 2 = III). Respeta el
+// orden de las columnas del sheet: cada slot es una foto distinta, no se corren
+// de posicion. Solo el slot 0 usa el respaldo del sheet en vivo.
+function baucherUrlPorIndice(r, idx) {
+  const grupos = [
+    ['BAUCHER I','BAUCHER 1','BAUCHER_I','BAUCHER','Baucher','baucher'],
+    ['BAUCHER II','BAUCHER 2','BAUCHER_II'],
+    ['BAUCHER III','BAUCHER 3','BAUCHER_III']
+  ];
+  const alias = grupos[idx] || [];
+  for (const k of alias) {
+    const v = (r[k] || '').toString().trim();
+    if (v && /^https?:\/\//i.test(v)) return v;
+  }
+  // Respaldo del sheet en vivo (el CSV publicado llega rezagado en estas columnas)
+  const rem = _bauchersRemotos[claveViajeCorte(r)];
+  if (rem) {
+    const arr = Array.isArray(rem) ? rem : [rem];
+    if (arr[idx]) return arr[idx];
+  }
+  return '';
+}
+
 // ── BAUCHERS LEIDOS DEL SHEET EN VIVO ──────────────────────
 // El CSV publicado de Google va rezagado en las columnas de foto: hay filas que
 // en la hoja tienen el enlace de Drive pero llegan vacias por CSV. Por eso los
@@ -8289,12 +8314,19 @@ let _ordenColumnas = [];
 // que existiera esta columna no la traen en su lista, y al cargarlos se perdia.
 // Si el usuario la activa una vez, se mantiene activa tambien al abrir cortes
 // antiguos (hasta que la desactive). null = sin preferencia explicita.
+// Preferencia pegajosa por columna "extra" (id → true/false). Los cortes
+// guardados antes de que existieran estas columnas no las traen, y sin esto se
+// desmarcaban cada vez que se abria un corte antiguo.
+let _prefColsExtra = {};
 let _prefColumnaBaucher = null;
 let _prefColumnaAuditado = null;
 
 function onColumnaToggle(chk) {
   const id = chk.value;
-  if (id === 'baucher') _prefColumnaBaucher = chk.checked;
+  if (id === 'baucher' || id === 'baucher2' || id === 'baucher3') {
+    _prefColsExtra[id] = chk.checked;
+    if (id === 'baucher') _prefColumnaBaucher = chk.checked;
+  }
   if (id === 'auditado') _prefColumnaAuditado = chk.checked;
   if (chk.checked) {
     // Agregar al final si no estaba
@@ -8880,29 +8912,23 @@ function generarCorte() {
         }
         // Columna de foto: miniatura clickeable (abre el visor) en vez del enlace crudo
         if (c.foto) {
-          const _urls = baucherUrlsDeRegistro(r);
-          if (!_urls.length) return '<td style="color:var(--ink-l)">—</td>';
-          const _tit = ((r['NUMERO TIQUETE']||'')+' · '+(r['PLACA']||'')+' · '+(fechaYMDdeRegistro(r)||'')).replace(/'/g,'');
-          // Miniatura por cada foto del registro (I, II, III). Si el thumbnail de
-          // Drive falla, onerror prueba una segunda URL y solo despues cae al enlace.
-          const _minis = _urls.map((u, iU) => {
-            const _u = u.replace(/'/g,'');
-            const _alt = urlFotoDriveAlt(u).replace(/'/g,'');
-            const _esPrincipal = iU === 0;              // BAUCHER I: la que importa
-            const _lado = _esPrincipal ? 56 : 34;
-            const _borde = _esPrincipal ? '2px solid var(--navy)' : '1px solid var(--rule)';
-            const _rot = _esPrincipal ? 'Baucher I (principal)' : 'Baucher ' + (iU===1?'II':'III');
-            // Si ambas URLs de imagen fallan, la PRINCIPAL nunca desaparece: queda
-            // un recuadro visible con enlace directo al archivo en Drive.
-            const _fallback = _esPrincipal
-              ? `<a href=&quot;${_u}&quot; target=_blank rel=noopener title=&quot;Abrir Baucher I en Drive&quot; style=&quot;display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border:2px dashed var(--navy);border-radius:4px;font-size:9px;font-weight:700;color:var(--navy);text-decoration:none;text-align:center;line-height:1.1&quot;>VER<br>BAUCHER I</a>`
-              : `<a href=&quot;${_u}&quot; target=_blank rel=noopener style=&quot;font-size:10px;color:var(--navy)&quot;>Ver ${iU+1}</a>`;
-            return `<img src="${urlFotoDrive(u)}" alt="${_rot}" loading="lazy"
-              onclick="abrirFotoBaucher('${_u}','${_tit}${_urls.length>1?' · '+_rot:''}')"
-              onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src='${_alt}';}else{this.outerHTML='${_fallback}';}"
-              style="width:${_lado}px;height:${_lado}px;object-fit:cover;border-radius:4px;border:${_borde};cursor:zoom-in" title="${_rot} — clic para ampliar">`;
-          }).join(' ');
-          return `<td style="text-align:center"><div style="display:flex;gap:5px;justify-content:center;align-items:center;flex-wrap:wrap">${_minis}</div></td>`;
+          // Cada columna de baucher muestra UNA sola foto (la de su slot V/W/X).
+          const _u0 = (v || '').toString().trim();
+          if (!_u0) return '<td style="text-align:center;color:var(--ink-l)">—</td>';
+          const _u = _u0.replace(/'/g,'');
+          const _alt = urlFotoDriveAlt(_u0).replace(/'/g,'');
+          const _rot = (c.label || 'Baucher').replace(/ \(foto\)/,'');
+          const _tit = ((r['NUMERO TIQUETE']||'')+' · '+(r['PLACA']||'')+' · '+(fechaYMDdeRegistro(r)||'')+' · '+_rot).replace(/'/g,'');
+          const _principal = c.id === 'baucher';
+          const _lado = _principal ? 56 : 44;
+          const _borde = _principal ? '2px solid var(--navy)' : '1px solid var(--rule)';
+          // Si las dos URLs de imagen fallan, la celda NO queda vacia: deja un
+          // recuadro con enlace directo al archivo en Drive.
+          const _fallback = `<a href=&quot;${_u}&quot; target=_blank rel=noopener title=&quot;Abrir ${_rot} en Drive&quot; style=&quot;display:inline-flex;align-items:center;justify-content:center;width:${_lado}px;height:${_lado}px;border:2px dashed var(--navy);border-radius:4px;font-size:8px;font-weight:700;color:var(--navy);text-decoration:none;text-align:center;line-height:1.1&quot;>VER<br>FOTO</a>`;
+          return `<td style="text-align:center"><img src="${urlFotoDrive(_u0)}" alt="${_rot}" loading="lazy"
+            onclick="abrirFotoBaucher('${_u}','${_tit}')"
+            onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src='${_alt}';}else{this.outerHTML='${_fallback}';}"
+            style="width:${_lado}px;height:${_lado}px;object-fit:cover;border-radius:4px;border:${_borde};cursor:zoom-in" title="${_rot} — clic para ampliar"></td>`;
         }
         return `<td ${c.num?'class="num"':''}>${v||'—'}</td>`;
       }).join('') + celdasValor + '</tr>';
@@ -10851,7 +10877,10 @@ function _aplicarFav(f, ini, cie) {
   // Cortes guardados antes de que existiera la columna de baucher: si el usuario
   // la dejo activada, se agrega tambien aqui (al final) para no tener que
   // marcarla a mano cada vez que abre un corte antiguo.
-  [['baucher', _prefColumnaBaucher], ['auditado', _prefColumnaAuditado]].forEach(([cid, pref]) => {
+  [['baucher',  _prefColsExtra.baucher  !== undefined ? _prefColsExtra.baucher  : _prefColumnaBaucher],
+   ['baucher2', _prefColsExtra.baucher2 !== undefined ? _prefColsExtra.baucher2 : null],
+   ['baucher3', _prefColsExtra.baucher3 !== undefined ? _prefColsExtra.baucher3 : null],
+   ['auditado', _prefColumnaAuditado]].forEach(([cid, pref]) => {
     const chkX = document.querySelector('.corte-col-chk[value="'+cid+'"]');
     if (pref === true) {
       if (!_ordenColumnas.includes(cid)) _ordenColumnas.push(cid);
