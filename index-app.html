@@ -7762,7 +7762,7 @@ const CORTE_COLUMNAS_DISP = [
   { id:'conductor',label:'Conductor',         get:r => (r['CONDUCTOR - PRIMER NOMBRE Y PRIMER APELLIDO']||r['CONDUCTOR - PRIME NOMBRE Y PRIMER APELLIDO']||r['CONDUCTOR']||r['Conductor']||r['conductor']||'').trim() },
   { id:'ticket',   label:'N° Tiquete',        get:r => (r['NUMERO TIQUETE']||r['NÚMERO TIQUETE']||r['TIQUETE']||r['Tiquete']||r['tiquete']||r['TICKET']||'').trim() },
   { id:'observacion', label:'Observación',    get:r => (r['OBSERVACION']||r['OBSERVACIÓN']||r['Observacion']||r['Observación']||r['observacion']||r['observación']||'').trim() },
-  { id:'baucher',  label:'Baucher (foto)',    get:r => baucherUrlsDeRegistro(r).join(' | '), foto:true, noTotal:true, noExport:true },
+  { id:'baucher',  label:'Baucher (foto)',    get:r => baucherUrlsDeRegistro(r).join(' | '), foto:true, noTotal:true },
   { id:'auditado', label:'Auditado',          get:r => (_auditadosSet && _auditadosSet.has(claveViajeCorte(r))) ? 'SI' : '', auditado:true, noTotal:true, noExport:true },
 ];
 
@@ -10608,6 +10608,15 @@ function exportarCorteExcel() {
           if (!col.noTotal) totales[col.id] += n;
           return `<Cell ss:StyleID="${styleZebraNum}"><Data ss:Type="Number">${Math.round(n)}</Data></Cell>`;
         }
+        // Columna de fotos: se exporta el enlace y ademas queda clicable en Excel.
+        // Si el registro tiene varias fotos, el hipervinculo apunta a la primera
+        // (BAUCHER I) y en el texto de la celda quedan todas las URLs.
+        if (col.foto) {
+          const urlsCell = (v || '').toString().trim();
+          if (!urlsCell) return `<Cell${styleZebra}><Data ss:Type="String"></Data></Cell>`;
+          const primera = urlsCell.split('|')[0].trim();
+          return `<Cell${styleZebra} ss:HRef="${esc(primera)}"><Data ss:Type="String">${esc(urlsCell)}</Data></Cell>`;
+        }
         return `<Cell${styleZebra}><Data ss:Type="String">${esc(v)}</Data></Cell>`;
       }).join('') + (mostrarDosExcel
           ? `<Cell ss:StyleID="${styleZebraNum}"><Data ss:Type="Number">${Math.round(valorFilaMaterial)}</Data></Cell><Cell ss:StyleID="${styleZebraNum}"><Data ss:Type="Number">${Math.round(valorFilaTransporte)}</Data></Cell><Cell ss:StyleID="${styleZebraNum}"><Data ss:Type="Number">${Math.round(valorFilaMaterial+valorFilaTransporte)}</Data></Cell>`
@@ -10659,7 +10668,7 @@ function exportarCorteExcel() {
 </Styles>
 <Worksheet ss:Name="Corte">
 <Table>
-${c.colsDef.filter(col=>!col.noExport).map(()=>'<Column ss:Width="120"/>').join('')}${(c.mostrarColValor && c.tieneTarifaMaterial && c.tieneTransporte)?'<Column ss:Width="120"/><Column ss:Width="120"/><Column ss:Width="120"/>':(c.mostrarColValor?'<Column ss:Width="120"/>':'')}
+${c.colsDef.filter(col=>!col.noExport).map(col=>'<Column ss:Width="'+(col.foto?260:120)+'"/>').join('')}${(c.mostrarColValor && c.tieneTarifaMaterial && c.tieneTransporte)?'<Column ss:Width="120"/><Column ss:Width="120"/><Column ss:Width="120"/>':(c.mostrarColValor?'<Column ss:Width="120"/>':'')}
 ${rowsXml}
 </Table>
 </Worksheet>
