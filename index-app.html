@@ -9435,42 +9435,72 @@ function guardarInformeCorte() {
   if (favExistente) payloadFav.id = favExistente.id; // actualizar el favorito existente, no duplicar
 
   if (estado) { estado.style.color = 'var(--ink-l)'; estado.textContent = 'Guardando informe...'; }
-  const timeout = setTimeout(() => {
-    if (estado) { estado.style.color = 'var(--green)'; estado.textContent = 'Informe enviado.'; }
-    setTimeout(() => { if (estado) estado.textContent = ''; }, 3000);
-  }, 12000);
 
-  // 1) Guardar/actualizar la configuración del corte (favorito) — solo si hay un nombre para identificarlo
-  const guardarFavPromise = nombreCorteVal
-    ? fetch(CORTES_FAV_API, {
+  // Antes se mostraba "Informe guardado" incluso cuando la peticion fallaba
+  // (y ademas un temporizador lo daba por enviado a los 12s). Eso hacia creer
+  // que el corte habia quedado guardado cuando en realidad no. Ahora se espera
+  // la respuesta real, se verifica que el corte quedo en la lista, y si algo
+  // falla se dice claramente.
+  (async () => {
+    try {
+      // 1) Configuracion del corte (favorito) — solo si tiene nombre que lo identifique
+      let okFav = true;
+      if (nombreCorteVal) {
+        const rFav = await fetchJSONTolerante(CORTES_FAV_API, {
+          method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+          body: JSON.stringify(payloadFav)
+        });
+        okFav = !!(rFav && (rFav.ok || rFav.success));
+        if (!okFav) console.warn('No se pudo guardar la configuracion del corte (favorito). Respuesta:', rFav);
+      }
+
+      // 2) Informe (datos financieros)
+      const rInf = await fetchJSONTolerante(CORTES_FAV_API, {
         method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
-        body: JSON.stringify(payloadFav)
-      }).then(r => r.json()).catch(e => { console.warn('No se pudo guardar la configuración del corte:', e); return null; })
-    : Promise.resolve(null);
+        body: JSON.stringify(payload)
+      });
+      const okInf = !!(rInf && (rInf.ok || rInf.success));
 
-  // 2) Luego guardar el informe (datos financieros)
-  guardarFavPromise.then(() => fetch(CORTES_FAV_API, {
-    method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body: JSON.stringify(payload)
-  }))
-    .then(r => r.json())
-    .then(data => {
-      clearTimeout(timeout);
-      if (estado) { estado.style.color = 'var(--green)'; estado.textContent = (data && data.ok) ? 'Informe guardado correctamente' : 'Informe guardado'; }
-      setTimeout(() => { if (estado) estado.textContent = ''; }, 3000);
+      if (!okFav || !okInf) {
+        if (estado) {
+          estado.style.color = 'var(--red)';
+          estado.textContent = 'No se pudo guardar el corte. Revisa la conexión y vuelve a intentar.';
+        }
+        console.error('Guardado del corte fallido →', { favorito: okFav, informe: okInf, respuestaInforme: rInf });
+        return;
+      }
+
       // Marcar los viajes de este corte como "incluidos en corte" (columna AF del sheet)
       try { marcarViajesEnCorte(); } catch(eM) { console.warn('marcarViajesEnCorte:', eM); }
-      // Refrescar el resumen de facturación arriba (favoritos + informes, ya que ambos se guardaron juntos)
-      setTimeout(() => { cargarCortesFavoritosRemoto(true); cargarInformesGuardados(true); }, 800);
-    })
-    .catch(e => {
-      clearTimeout(timeout);
-      console.warn('Respuesta no legible al guardar informe:', e);
-      if (estado) { estado.style.color = 'var(--green)'; estado.textContent = 'Informe guardado'; }
-      setTimeout(() => { if (estado) estado.textContent = ''; }, 3000);
-      try { marcarViajesEnCorte(); } catch(eM) { console.warn('marcarViajesEnCorte:', eM); }
-      setTimeout(() => { cargarCortesFavoritosRemoto(true); cargarInformesGuardados(true); }, 800);
-    });
+
+      // 3) Verificar que quedo realmente guardado releyendo del servidor
+      if (estado) { estado.style.color = 'var(--ink-l)'; estado.textContent = 'Verificando...'; }
+      await cargarCortesFavoritosRemoto(true);
+      await new Promise(r => setTimeout(r, 300));
+      cargarInformesGuardados(true);
+
+      const quedo = (_cortesFavoritosCache||[]).some(f =>
+        (f.prov||'').trim().toLowerCase() === (c.prov||'').trim().toLowerCase() &&
+        (!nombreCorteVal || (f.nombre||'').trim().toLowerCase() === nombreCorteVal.trim().toLowerCase())
+      );
+      if (estado) {
+        if (quedo || !nombreCorteVal) {
+          estado.style.color = 'var(--green)';
+          estado.textContent = 'Corte guardado correctamente';
+          setTimeout(() => { if (estado) estado.textContent = ''; }, 3500);
+        } else {
+          estado.style.color = 'var(--gold)';
+          estado.textContent = 'Se envió, pero aún no aparece en la lista. Usa "Actualizar" en unos segundos.';
+        }
+      }
+    } catch(e) {
+      console.error('Error guardando el corte:', e);
+      if (estado) {
+        estado.style.color = 'var(--red)';
+        estado.textContent = 'Error al guardar: ' + (e && e.message ? e.message : 'revisa la conexión');
+      }
+    }
+  })();
 }
 
 // ── RESUMEN DE FACTURACIÓN (informes guardados, vista gerencia) ──
