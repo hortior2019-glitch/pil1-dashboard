@@ -869,6 +869,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   <div class="nav-sep"></div>
   <div class="nav-tab" data-panel="preopvolquetas" onclick="showPanel('preopvolquetas',this)"><span class="nav-lbl">Preop. Volquetas</span></div>
   <div class="nav-tab" data-panel="preopequipo" onclick="showPanel('preopequipo',this)"><span class="nav-lbl">Preop. Equipo Pesado</span></div>
+  <div class="nav-tab" data-panel="vehiculos" onclick="showPanel('vehiculos',this)"><span class="nav-lbl">Vehículos Carga</span></div>
   <div class="nav-tab" data-panel="dalas" onclick="showPanel('dalas',this)"><span class="nav-lbl">Dalas_Solutions</span></div>
   <div class="nav-sep"></div>
   <div class="nav-tab" data-panel="cortes" onclick="showPanel('cortes',this)"><span class="nav-lbl">Cortes a Proveedor</span></div>
@@ -2492,6 +2493,39 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   <div id="equipo-contenido"></div>
 </div>
 
+<!--
+  ═══════════════════════════════════════════════════════════
+  PANEL: VEHICULOS DE CARGA
+  - Alta manual de vehiculos con foto, SOAT, tecnomecanica y kilometraje
+  - Alerta en rojo cuando falta una semana (o menos) para vencer
+  - Mantenimientos con evidencia fotografica e historial consultable
+  - Se llena con: renderVehiculos()
+  ═══════════════════════════════════════════════════════════
+-->
+<div class="panel" id="panel-vehiculos">
+  <div class="sec-hdr">
+    <div class="sec-title">Vehículos de Carga</div>
+    <div class="sec-sub" id="veh-sub">Documentos, kilometraje y mantenimientos</div>
+  </div>
+
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:18px">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <input id="veh-buscar" oninput="renderVehiculos()" placeholder="Buscar placa..." style="padding:7px 12px;font-size:13px;border:1px solid var(--rule);border-radius:4px;background:var(--white);color:var(--ink);font-family:'Source Sans 3',sans-serif;width:170px">
+      <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-m);cursor:pointer">
+        <input type="checkbox" id="veh-solo-vencidos" onchange="renderVehiculos()" style="width:15px;height:15px;accent-color:var(--red);cursor:pointer">
+        Solo por vencer / vencidos
+      </label>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button onclick="abrirFormVehiculo()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">+ Agregar vehículo</button>
+      <button onclick="cargarVehiculos(true)" style="padding:9px 16px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Actualizar</button>
+    </div>
+  </div>
+
+  <div id="veh-kpis" class="kpi-grid" style="margin-bottom:20px"></div>
+  <div id="veh-lista" style="display:flex;flex-direction:column;gap:14px"></div>
+</div>
+
 </div><!-- /wrapper -->
 </div>
 
@@ -2617,6 +2651,7 @@ const PESTANAS_CONTROLABLES = [
   { id:'ProduccionHumus', label:'Producción Humus' },
   { id:'preopvolquetas',  label:'Preop. Volquetas' },
   { id:'preopequipo',     label:'Preop. Equipo Pesado' },
+  { id:'vehiculos',       label:'Vehículos Carga' },
   { id:'cortes',          label:'Cortes a Proveedor' },
   { id:'solicitudes',     label:'Solicitudes de Compra' },
   { id:'pedidos',         label:'Pedidos' },
@@ -3795,6 +3830,8 @@ function showPanel(id, el) {
         try { mostrarEstadoPinCorte(); if (_cortePinOk) initCortesProveedores(); } catch(e){}
       } else if (id === 'informecortes') {
         try { cargarCortesFavoritosRemoto(); cargarInformesGuardados(); } catch(e){ console.error('initInformeCortes error:', e); }
+      } else if (id === 'vehiculos') {
+        try { cargarVehiculos(); } catch(e) { console.error('cargarVehiculos:', e); }
       } else if (id === 'permisos') {
         try { renderPermisosTabla(); } catch(e){}
       }
@@ -5520,6 +5557,377 @@ function renderCoachingBars(opKey) {
     <div style="font-size:10px;color:var(--ink-m);margin-bottom:8px">Evaluado: ${fechaLbl} · ${cache.filas.length} evaluacion${cache.filas.length!==1?'es':''} en el periodo</div>
     ${barsHtml}
   `;
+}
+
+
+/*
+  ═══════════════════════════════════════════════════════════
+  VEHICULOS DE CARGA
+  - Datos en el Sheet de Ingreso (pestañas VEHICULOS y MANTENIMIENTOS)
+    a traves del mismo Apps Script que ya usa el dashboard (INGRESO_API).
+  - Fotos: se comprimen en el navegador y se suben a Drive.
+  ═══════════════════════════════════════════════════════════
+*/
+// Apps Script PROPIO de vehiculos (sheet aparte del de Ingreso de Material)
+const VEHICULOS_API = "https://script.google.com/macros/s/AKfycbwf1gu_r2HhyzrtFhYJUjcnu4e5Naksauk-Cn1nplh94rKH_Ha3dhTtiDqmPZzRhDEB/exec";
+
+let _vehiculos = [];
+let _mantenimientos = [];
+let _vehiculosCargados = false;
+
+// Dias de anticipacion con los que se avisa un vencimiento (en rojo)
+const VEH_DIAS_ALERTA = 7;
+
+// Comprime una imagen en el navegador antes de subirla (max 1000px, JPEG .75)
+function _comprimirImagenVeh(file) {
+  return new Promise(resolve => {
+    if (!file) { resolve(''); return; }
+    const rd = new FileReader();
+    rd.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1000; let w = img.width, h = img.height;
+        if (w > MAX || h > MAX) { if (w >= h) { h = Math.round(h*MAX/w); w = MAX; } else { w = Math.round(w*MAX/h); h = MAX; } }
+        const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        cv.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(cv.toDataURL('image/jpeg', 0.75));
+      };
+      img.onerror = () => resolve('');
+      img.src = rd.result;
+    };
+    rd.onerror = () => resolve('');
+    rd.readAsDataURL(file);
+  });
+}
+
+// Dias que faltan para una fecha (negativo = ya vencio). '' si no hay fecha.
+function _diasParaVencer(fechaStr) {
+  const s = (fechaStr || '').toString().trim();
+  if (!s) return null;
+  const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (!m) return null;
+  const f = new Date(parseInt(m[1],10), parseInt(m[2],10)-1, parseInt(m[3],10));
+  const hoy = new Date(); const hoy0 = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+  return Math.round((f - hoy0) / 86400000);
+}
+
+function _fmtFechaVeh(fechaStr) {
+  const s = (fechaStr || '').toString().trim();
+  const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (!m) return s || '—';
+  const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  return parseInt(m[3],10) + ' ' + MESES[parseInt(m[2],10)-1] + ' ' + m[1];
+}
+
+// Caja de un documento (SOAT / tecnomecanica). Rojo si vence en <= 7 dias.
+function _cajaDocVeh(titulo, fechaStr) {
+  const d = _diasParaVencer(fechaStr);
+  let bg = 'var(--white)', borde = 'var(--rule)', color = 'var(--ink)', nota = '';
+  if (d === null) { nota = 'sin fecha'; color = 'var(--ink-l)'; }
+  else if (d < 0)  { bg = '#fdeaea'; borde = '#b91c1c'; color = '#b91c1c'; nota = 'VENCIDO hace ' + Math.abs(d) + ' día' + (Math.abs(d)!==1?'s':''); }
+  else if (d <= VEH_DIAS_ALERTA) { bg = '#fdeaea'; borde = '#b91c1c'; color = '#b91c1c'; nota = d === 0 ? 'VENCE HOY' : 'vence en ' + d + ' día' + (d!==1?'s':''); }
+  else { nota = 'vence en ' + d + ' días'; color = 'var(--ink-m)'; }
+  return `<div style="background:${bg};border:1px solid ${borde};border-radius:4px;padding:8px 12px;min-width:150px">
+    <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">${titulo}</div>
+    <div style="font-size:14px;font-weight:700;color:${color}">${_fmtFechaVeh(fechaStr)}</div>
+    <div style="font-size:10px;font-weight:700;color:${color};margin-top:2px">${nota}</div>
+  </div>`;
+}
+
+function _vehTieneAlerta(v) {
+  const a = _diasParaVencer(v.soat), b = _diasParaVencer(v.tecno);
+  return (a !== null && a <= VEH_DIAS_ALERTA) || (b !== null && b <= VEH_DIAS_ALERTA);
+}
+
+async function cargarVehiculos(forzar) {
+  if (typeof VEHICULOS_API !== 'string' || VEHICULOS_API.indexOf('PEGAR') !== -1) return;
+  if (_vehiculosCargados && !forzar) { renderVehiculos(); return; }
+  const cont = document.getElementById('veh-lista');
+  if (cont && !_vehiculos.length) cont.innerHTML = '<div class="empty" style="padding:30px">Cargando vehículos...</div>';
+  const d = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({ accion:'listarVehiculos' }) });
+  if (d && Array.isArray(d.vehiculos)) {
+    _vehiculos = d.vehiculos;
+    _mantenimientos = Array.isArray(d.mantenimientos) ? d.mantenimientos : [];
+    _vehiculosCargados = true;
+  } else if (cont) {
+    cont.innerHTML = '<div class="empty" style="padding:30px;color:var(--red)">No se pudo cargar la lista. Verifica que el Apps Script tenga la acción "listarVehiculos" y vuelve a intentar.</div>';
+    return;
+  }
+  renderVehiculos();
+}
+
+function renderVehiculos() {
+  const cont = document.getElementById('veh-lista');
+  if (!cont) return;
+  const busca = (document.getElementById('veh-buscar')||{}).value || '';
+  const soloVenc = (document.getElementById('veh-solo-vencidos')||{}).checked;
+
+  // KPIs
+  const kpis = document.getElementById('veh-kpis');
+  if (kpis) {
+    const nAlerta = _vehiculos.filter(_vehTieneAlerta).length;
+    const nVencidos = _vehiculos.filter(v => {
+      const a = _diasParaVencer(v.soat), b = _diasParaVencer(v.tecno);
+      return (a !== null && a < 0) || (b !== null && b < 0);
+    }).length;
+    kpis.innerHTML = `
+      <div class="kpi" style="--ac:var(--navy)"><div class="kpi-lbl">Vehículos</div><div class="kpi-val">${_vehiculos.length}</div><div class="kpi-desc">registrados</div></div>
+      <div class="kpi" style="--ac:var(--red)"><div class="kpi-lbl">Documentos vencidos</div><div class="kpi-val">${nVencidos}</div><div class="kpi-desc">requieren acción</div></div>
+      <div class="kpi" style="--ac:var(--gold)"><div class="kpi-lbl">Por vencer</div><div class="kpi-val">${nAlerta}</div><div class="kpi-desc">en ${VEH_DIAS_ALERTA} días o menos</div></div>
+      <div class="kpi" style="--ac:var(--green)"><div class="kpi-lbl">Mantenimientos</div><div class="kpi-val">${_mantenimientos.length}</div><div class="kpi-desc">registrados en total</div></div>`;
+  }
+
+  let lista = _vehiculos.slice();
+  if (busca) lista = lista.filter(v => (v.placa||'').toUpperCase().includes(busca.toUpperCase()));
+  if (soloVenc) lista = lista.filter(_vehTieneAlerta);
+  // Primero los que tienen alerta, luego por placa
+  lista.sort((a,b) => (_vehTieneAlerta(b)?1:0) - (_vehTieneAlerta(a)?1:0) || (a.placa||'').localeCompare(b.placa||''));
+
+  if (!lista.length) {
+    cont.innerHTML = '<div class="empty" style="padding:30px">' + (_vehiculos.length ? 'Ningún vehículo coincide con el filtro.' : 'Aún no hay vehículos. Usa "+ Agregar vehículo" para crear el primero.') + '</div>';
+    return;
+  }
+
+  cont.innerHTML = lista.map(v => {
+    const alerta = _vehTieneAlerta(v);
+    const mantsV = _mantenimientos.filter(m => (m.placa||'').toUpperCase() === (v.placa||'').toUpperCase())
+      .sort((a,b) => (b.fecha||'').localeCompare(a.fecha||''));
+    const ultimo = mantsV[0];
+    const fotoHtml = v.foto
+      ? `<img src="${urlFotoDrive(v.foto)}" data-alt="${urlFotoDriveAlt(v.foto)}" alt="${v.placa}" onclick="abrirFotoBaucher('${(v.foto||'').replace(/'/g,'')}','${(v.placa||'').replace(/'/g,'')}')" onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src=this.dataset.alt;}else{this.style.display='none';}" style="width:130px;height:100px;object-fit:cover;border-radius:5px;border:1px solid var(--rule);cursor:zoom-in;flex-shrink:0">`
+      : `<div style="width:130px;height:100px;border:1px dashed var(--rule);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--ink-l);flex-shrink:0;text-align:center">Sin foto</div>`;
+    return `<div class="card" style="padding:16px 18px;border-left:5px solid ${alerta?'var(--red)':'var(--green)'}">
+      <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+        ${fotoHtml}
+        <div style="flex:1;min-width:240px">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+            <div style="font-family:'Libre Baskerville',serif;font-size:26px;font-weight:800;color:var(--ink);letter-spacing:1px">${v.placa||'—'}</div>
+            ${alerta?'<span style="font-size:9px;font-weight:700;letter-spacing:1px;padding:3px 10px;border-radius:20px;background:var(--red);color:#fff">REVISAR DOCUMENTOS</span>':''}
+            <span style="font-size:12px;color:var(--ink-m)">${fmt(parseInt(v.km||0,10)||0)} km</span>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+            ${_cajaDocVeh('SOAT', v.soat)}
+            ${_cajaDocVeh('Tecnomecánica', v.tecno)}
+          </div>
+          <div style="background:var(--s2);border-radius:4px;padding:8px 12px;margin-bottom:10px">
+            <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">Último mantenimiento</div>
+            ${ultimo
+              ? `<div style="font-size:13px;font-weight:700;color:var(--ink)">${(ultimo.titulo||'—')} <span style="font-size:11px;font-weight:400;color:var(--ink-l)">· ${_fmtFechaVeh(ultimo.fecha)}</span></div>
+                 <div style="font-size:12px;color:var(--ink-m);margin-top:2px">${(ultimo.descripcion||'').slice(0,160)}</div>`
+              : '<div style="font-size:12px;color:var(--ink-l);font-style:italic">Sin mantenimientos registrados</div>'}
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button onclick="abrirFormKm('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--white);color:var(--navy);border:1px solid var(--navy);border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Actualizar km</button>
+            <button onclick="abrirFormMantenimiento('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">+ Mantenimiento</button>
+            <button onclick="verHistorialVehiculo('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Historial (${mantsV.length})</button>
+            <button onclick="abrirFormVehiculo('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:transparent;color:var(--ink-l);border:1px solid var(--rule);border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Editar</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── MODAL GENERICO ──────────────────────────────────────────
+function _modalVeh(html) {
+  const prev = document.getElementById('veh-modal'); if (prev) prev.remove();
+  const ov = document.createElement('div');
+  ov.id = 'veh-modal';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,20,18,.6);z-index:100000;display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = `<div style="background:var(--white);border-radius:6px;max-width:560px;width:100%;max-height:88vh;overflow:auto;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.35)">${html}</div>`;
+  document.body.appendChild(ov);
+}
+function _cerrarModalVeh() { const m = document.getElementById('veh-modal'); if (m) m.remove(); }
+
+// ── ALTA / EDICION DE VEHICULO ──────────────────────────────
+let _vehFotoTmp = '';
+function abrirFormVehiculo(placa) {
+  const v = placa ? _vehiculos.find(x => (x.placa||'').toUpperCase() === placa.toUpperCase()) : null;
+  _vehFotoTmp = '';
+  _modalVeh(`
+    <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">${v?'Editar vehículo':'Nuevo vehículo'}</div>
+    <div style="font-size:12px;color:var(--ink-l);margin-bottom:16px">${v?'Modifica los datos del vehículo.':'Registra un vehículo de carga con sus documentos.'}</div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Placa *</label>
+        <input id="vf-placa" value="${v?(v.placa||''):''}" ${v?'readonly':''} maxlength="8" placeholder="ABC123" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:15px;border:1px solid var(--rule);border-radius:4px;text-transform:uppercase;font-family:'Source Sans 3',sans-serif;${v?'background:var(--s2);color:var(--ink-l)':''}">
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:150px">
+          <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Vence SOAT</label>
+          <input id="vf-soat" type="date" value="${v?(v.soat||''):''}" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px">
+        </div>
+        <div style="flex:1;min-width:150px">
+          <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Vence tecnomecánica</label>
+          <input id="vf-tecno" type="date" value="${v?(v.tecno||''):''}" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px">
+        </div>
+      </div>
+      <div>
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Kilometraje ${v?'(solo se edita desde "Actualizar km")':'inicial'}</label>
+        <input id="vf-km" type="number" min="0" value="${v?(v.km||0):''}" ${v?'readonly':''} placeholder="0" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:15px;border:1px solid var(--rule);border-radius:4px;${v?'background:var(--s2);color:var(--ink-l)':''}">
+      </div>
+      <div>
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Foto del vehículo ${v&&v.foto?'(deja vacío para conservar la actual)':''}</label>
+        <input id="vf-foto" type="file" accept="image/*" onchange="_previewFotoVeh(this)" style="font-size:12px">
+        <div id="vf-foto-prev" style="margin-top:8px">${v&&v.foto?`<img src="${urlFotoDrive(v.foto)}" style="width:110px;height:80px;object-fit:cover;border-radius:4px;border:1px solid var(--rule)">`:''}</div>
+      </div>
+      <div id="vf-error" style="display:none;font-size:12px;color:var(--red);font-weight:600"></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+      <button onclick="_cerrarModalVeh()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Cancelar</button>
+      <button id="vf-guardar" onclick="guardarVehiculo(${v?'true':'false'})" style="padding:9px 20px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Guardar</button>
+    </div>`);
+}
+
+async function _previewFotoVeh(input) {
+  const f = input.files && input.files[0];
+  _vehFotoTmp = await _comprimirImagenVeh(f);
+  const prev = document.getElementById('vf-foto-prev');
+  if (prev) prev.innerHTML = _vehFotoTmp ? `<img src="${_vehFotoTmp}" style="width:110px;height:80px;object-fit:cover;border-radius:4px;border:1px solid var(--rule)">` : '';
+}
+
+async function guardarVehiculo(esEdicion) {
+  const placa = ((document.getElementById('vf-placa')||{}).value||'').trim().toUpperCase();
+  const soat  = (document.getElementById('vf-soat')||{}).value || '';
+  const tecno = (document.getElementById('vf-tecno')||{}).value || '';
+  const km    = parseInt((document.getElementById('vf-km')||{}).value, 10) || 0;
+  const err   = document.getElementById('vf-error');
+  const btn   = document.getElementById('vf-guardar');
+  const _err  = msg => { if (err) { err.textContent = msg; err.style.display = 'block'; } };
+
+  if (!placa) { _err('La placa es obligatoria.'); return; }
+  if (!esEdicion && _vehiculos.some(v => (v.placa||'').toUpperCase() === placa)) { _err('Ya existe un vehículo con esa placa.'); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = _vehFotoTmp ? 'Subiendo foto...' : 'Guardando...'; }
+  const payload = { accion:'guardarVehiculo', placa, soat, tecno, foto: _vehFotoTmp || '' };
+  if (!esEdicion) payload.km = km;
+  const d = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify(payload) });
+  if (!d || !d.success) { _err('No se pudo guardar. Revisa la conexión e intenta de nuevo.'); if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; } return; }
+  _cerrarModalVeh();
+  await cargarVehiculos(true);
+}
+
+// ── ACTUALIZAR KILOMETRAJE ──────────────────────────────────
+function abrirFormKm(placa) {
+  const v = _vehiculos.find(x => (x.placa||'').toUpperCase() === placa.toUpperCase());
+  if (!v) return;
+  const actual = parseInt(v.km||0, 10) || 0;
+  _modalVeh(`
+    <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">Actualizar kilometraje · ${v.placa}</div>
+    <div style="font-size:12px;color:var(--ink-l);margin-bottom:16px">Kilometraje actual registrado: <strong style="color:var(--ink)">${fmt(actual)} km</strong>. El nuevo valor no puede ser menor.</div>
+    <input id="vk-km" type="number" min="${actual}" value="${actual}" style="width:100%;box-sizing:border-box;padding:10px 12px;font-size:17px;font-weight:700;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif">
+    <div id="vk-error" style="display:none;font-size:12px;color:var(--red);font-weight:600;margin-top:8px"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+      <button onclick="_cerrarModalVeh()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Cancelar</button>
+      <button id="vk-guardar" onclick="guardarKmVehiculo('${v.placa.replace(/'/g,'')}',${actual})" style="padding:9px 20px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Guardar</button>
+    </div>`);
+}
+
+async function guardarKmVehiculo(placa, actual) {
+  const nuevo = parseInt((document.getElementById('vk-km')||{}).value, 10);
+  const err = document.getElementById('vk-error');
+  const btn = document.getElementById('vk-guardar');
+  if (isNaN(nuevo)) { if (err) { err.textContent = 'Escribe un número válido.'; err.style.display='block'; } return; }
+  if (nuevo < actual) {
+    if (err) { err.textContent = 'El kilometraje no puede ser menor al último registrado (' + fmt(actual) + ' km).'; err.style.display='block'; }
+    return;
+  }
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+  const d = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({ accion:'actualizarKmVehiculo', placa, km: nuevo }) });
+  if (!d || !d.success) {
+    if (err) { err.textContent = (d && d.error) ? d.error : 'No se pudo guardar. Intenta de nuevo.'; err.style.display='block'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+    return;
+  }
+  _cerrarModalVeh();
+  await cargarVehiculos(true);
+}
+
+// ── MANTENIMIENTOS ──────────────────────────────────────────
+let _mantFotoTmp = '';
+function abrirFormMantenimiento(placa) {
+  _mantFotoTmp = '';
+  const hoy = new Date();
+  const hoyStr = hoy.getFullYear()+'-'+String(hoy.getMonth()+1).padStart(2,'0')+'-'+String(hoy.getDate()).padStart(2,'0');
+  _modalVeh(`
+    <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">Nuevo mantenimiento · ${placa}</div>
+    <div style="font-size:12px;color:var(--ink-l);margin-bottom:16px">Queda guardado en el historial del vehículo.</div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Fecha</label>
+        <input id="vm-fecha" type="date" value="${hoyStr}" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px">
+      </div>
+      <div>
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Título *</label>
+        <input id="vm-titulo" placeholder="Ej. Cambio de aceite y filtros" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif">
+      </div>
+      <div>
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Descripción</label>
+        <textarea id="vm-desc" rows="3" placeholder="Detalle del trabajo realizado, repuestos, taller..." style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif;resize:vertical"></textarea>
+      </div>
+      <div>
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Evidencia fotográfica</label>
+        <input id="vm-foto" type="file" accept="image/*" onchange="_previewFotoMant(this)" style="font-size:12px">
+        <div id="vm-foto-prev" style="margin-top:8px"></div>
+      </div>
+      <div id="vm-error" style="display:none;font-size:12px;color:var(--red);font-weight:600"></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+      <button onclick="_cerrarModalVeh()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Cancelar</button>
+      <button id="vm-guardar" onclick="guardarMantenimiento('${placa.replace(/'/g,'')}')" style="padding:9px 20px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Guardar</button>
+    </div>`);
+}
+
+async function _previewFotoMant(input) {
+  const f = input.files && input.files[0];
+  _mantFotoTmp = await _comprimirImagenVeh(f);
+  const prev = document.getElementById('vm-foto-prev');
+  if (prev) prev.innerHTML = _mantFotoTmp ? `<img src="${_mantFotoTmp}" style="width:110px;height:80px;object-fit:cover;border-radius:4px;border:1px solid var(--rule)">` : '';
+}
+
+async function guardarMantenimiento(placa) {
+  const titulo = ((document.getElementById('vm-titulo')||{}).value||'').trim();
+  const desc   = ((document.getElementById('vm-desc')||{}).value||'').trim();
+  const fecha  = (document.getElementById('vm-fecha')||{}).value || '';
+  const err    = document.getElementById('vm-error');
+  const btn    = document.getElementById('vm-guardar');
+  if (!titulo) { if (err) { err.textContent = 'El título es obligatorio.'; err.style.display='block'; } return; }
+  if (btn) { btn.disabled = true; btn.textContent = _mantFotoTmp ? 'Subiendo foto...' : 'Guardando...'; }
+  const autor = (window._usuarioActual && _usuarioActual.nombre) || '';
+  const d = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({ accion:'guardarMantenimiento', placa, fecha, titulo, descripcion: desc, foto: _mantFotoTmp || '', autor }) });
+  if (!d || !d.success) {
+    if (err) { err.textContent = 'No se pudo guardar. Intenta de nuevo.'; err.style.display='block'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+    return;
+  }
+  _cerrarModalVeh();
+  await cargarVehiculos(true);
+}
+
+function verHistorialVehiculo(placa) {
+  const mants = _mantenimientos.filter(m => (m.placa||'').toUpperCase() === placa.toUpperCase())
+    .sort((a,b) => (b.fecha||'').localeCompare(a.fecha||''));
+  const filas = mants.length ? mants.map(m => `
+    <div style="border-left:3px solid var(--navy);background:var(--s2);border-radius:0 4px 4px 0;padding:10px 14px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+        <div style="font-size:14px;font-weight:700;color:var(--ink)">${m.titulo||'—'}</div>
+        <div style="font-size:11px;color:var(--ink-l)">${_fmtFechaVeh(m.fecha)}${m.autor?' · '+m.autor:''}</div>
+      </div>
+      ${m.descripcion?`<div style="font-size:12px;color:var(--ink-m);margin-top:5px;white-space:pre-wrap">${m.descripcion}</div>`:''}
+      ${m.foto?`<img src="${urlFotoDrive(m.foto)}" data-alt="${urlFotoDriveAlt(m.foto)}" onclick="abrirFotoBaucher('${(m.foto||'').replace(/'/g,'')}','${(m.titulo||'').replace(/'/g,'')}')" onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src=this.dataset.alt;}else{this.style.display='none';}" style="margin-top:8px;width:110px;height:80px;object-fit:cover;border-radius:4px;border:1px solid var(--rule);cursor:zoom-in">`:''}
+    </div>`).join('') : '<div style="font-size:13px;color:var(--ink-l);font-style:italic;padding:10px 0">Este vehículo no tiene mantenimientos registrados.</div>';
+  _modalVeh(`
+    <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">Historial · ${placa}</div>
+    <div style="font-size:12px;color:var(--ink-l);margin-bottom:16px">${mants.length} mantenimiento${mants.length!==1?'s':''} registrado${mants.length!==1?'s':''}</div>
+    ${filas}
+    <div style="display:flex;justify-content:flex-end;margin-top:16px">
+      <button onclick="_cerrarModalVeh()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Cerrar</button>
+    </div>`);
 }
 
 // ── SWITCH PIE TAB ───────────────────────────────
