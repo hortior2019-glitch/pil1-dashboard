@@ -3957,13 +3957,20 @@ function normEmpresa(s) {
   let r = s.toString().trim()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   // 2. Quitar sufijos legales y puntuación
-  r = r.replace(/\b(SAS|S\.A\.S|S\.A|LTDA|SA|CV|C\.V)\b/gi, '')
+  // OJO: "CV" ya NO se elimina. Se quito de esta lista a proposito porque en la
+  // operacion forma parte del nombre real (ej. "Pomar CV" es un cliente distinto
+  // de "Pomar"). Los demas sufijos legales si se siguen quitando para que
+  // "Bavaria" y "Bavaria SAS" cuenten como un mismo proveedor.
+  r = r.replace(/\b(SAS|S\.A\.S|S\.A|LTDA|SA)\b/gi, '')
     .replace(/[.,]/g, '')
     .replace(/\s+/g, ' ').trim();
   // 3. Capitalizar cada palabra (respetando tildes)
   r = tituloBonito(r);
   // 4. Correcciones ortográficas conocidas
   r = r
+    // "CV" es una sigla, no una palabra: debe ir en mayusculas ("Pomar CV",
+    // no "Pomar Cv"). Se corrige despues del Title Case.
+    .replace(/\bCv\b/g, 'CV')
     .replace(/Prodenza/gi,   'Prodensa')
     .replace(/Softyes/gi,    'Softys')
     .replace(/\bUbaser\b/gi, 'Urbaser')
@@ -4074,8 +4081,12 @@ const CLIENT_LOGOS = {
 // Nombres de proveedor que en los INFORMES (Cortes a Proveedor / Informe Cortes)
 // se muestran distinto al valor interno usado para filtrar los registros reales
 // (ese valor interno NO cambia, solo el texto que se ve en pantalla).
+// Nombres de VISUALIZACION distintos al valor real del Sheet.
+// El caso de Alqueria salio de aqui: ahora que "CV" ya no se borra, si el Sheet
+// dice "Alqueria CV" el sistema lo muestra tal cual y no hace falta el alias.
+// Se deja el mapa por si mas adelante se necesita renombrar algo solo en
+// pantalla, sin tocar la clave con la que se agrupan los datos.
 const PROVEEDOR_NOMBRE_INFORME = {
-  'Alqueria': 'Alqueria CV',
 };
 function nombreProveedorInforme(prov) {
   if (!prov) return prov;
