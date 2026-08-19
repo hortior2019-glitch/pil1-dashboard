@@ -175,10 +175,9 @@ td.num{text-align:right}.bold{font-weight:700}
       </div>
       <div class="section-body">
         <button class="btn gold btn-full" id="btnScan" onclick="escanearAhora()" style="margin-bottom:8px">🖨️ ESCANEAR</button>
-        <div class="mini" style="margin-bottom:10px">Toma el último baucher escaneado en la carpeta, desglosa los datos y los muestra abajo para que verifiques antes de enviar.</div>
+        <div class="mini" style="margin-bottom:10px">La primera vez te pedirá la carpeta donde el escáner guarda las imágenes; luego cada ESCANEAR toma la más reciente, la desglosa y la muestra abajo para verificar.</div>
         <div class="fila" style="margin-bottom:8px">
-          <button class="btn sm" id="btnCarpeta" onclick="conectarCarpeta()">📁 Conectar carpeta del escáner</button>
-          <button class="btn sm gris" onclick="document.getElementById('fileScan').click()">🖼️ Subir imagen</button>
+          <button class="btn sm gris" onclick="document.getElementById('fileScan').click()">🖼️ Subir imagen (alternativa)</button>
           <input type="file" id="fileScan" accept="image/*,.pdf" multiple hidden onchange="procesarArchivos(this)">
         </div>
         <div id="carpetaEstado" class="mini"></div>
@@ -420,12 +419,14 @@ async function extraer(canvas,t){const w=await getWorker();const work=downscale(
 let dirHandle=null,ultimaFotoKey='';
 const IMG_RE=/\.(jpe?g|png|bmp|tiff?)$/i;
 function estCarpeta(t){document.getElementById('carpetaEstado').innerHTML=t;}
-async function conectarCarpeta(){
-  if(!window.showDirectoryPicker){estCarpeta('ℹ Tu navegador no permite conectar carpetas. Usa Chrome o Edge, o el botón «Subir imagen».');return;}
-  try{dirHandle=await window.showDirectoryPicker({id:'escaneos',mode:'read'});}catch(e){return;}
-  estCarpeta('✔ Carpeta conectada. Escanea el baucher con NAPS2 y toca ESCANEAR. <button class="btn sm gris" onclick="desconectarCarpeta()">Desconectar</button>');
+async function asegurarCarpeta(){
+  if(dirHandle)return true;
+  if(!window.showDirectoryPicker){estCarpeta('ℹ Tu navegador no permite conectar carpetas. Usa Chrome o Edge, o «Subir imagen».');return false;}
+  try{dirHandle=await window.showDirectoryPicker({id:'escaneos',mode:'read'});}catch(e){return false;}
+  estCarpeta('✔ Carpeta del escáner conectada. <button class="btn sm gris" onclick="desconectarCarpeta()">Cambiar carpeta</button>');
+  return true;
 }
-function desconectarCarpeta(){dirHandle=null;estCarpeta('Carpeta desconectada.');}
+function desconectarCarpeta(){dirHandle=null;estCarpeta('Carpeta desconectada. El próximo ESCANEAR te pedirá elegirla de nuevo.');}
 async function archivoMasReciente(){
   let best=null;
   for await(const [name,h] of dirHandle.entries()){
@@ -437,7 +438,10 @@ async function archivoMasReciente(){
 }
 async function escanearAhora(){
   const t=tplActual();if(!t){alert('Elige primero la operación (plantilla) arriba.');return;}
-  if(!dirHandle){alert('Primero conecta la carpeta del escáner (botón «Conectar carpeta»),\no usa «Subir imagen».');return;}
+  if(!dirHandle){
+    const ok=await asegurarCarpeta();
+    if(!ok){alert('Selecciona la carpeta donde el escáner guarda las imágenes (solo la primera vez), o usa «Subir imagen».');return;}
+  }
   const btn=document.getElementById('btnScan');btn.disabled=true;setStatus('Buscando el último escaneo…');
   try{
     const n=await archivoMasReciente();
