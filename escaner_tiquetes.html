@@ -79,7 +79,10 @@ td.num{text-align:right}.bold{font-weight:700}
 .peso-neto-lbl{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--blue)}
 .peso-neto-val{font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--navy)}
 .sample-wrap{border:1px solid var(--rule);background:var(--s2);padding:8px;text-align:center;margin-top:8px}
-.sample-wrap img{max-width:100%;max-height:260px;border:1px solid var(--rule)}
+.sample-wrap img{max-width:100%;max-height:480px;border:1px solid var(--rule);cursor:zoom-in}
+#lightbox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;align-items:center;justify-content:center;cursor:zoom-out}
+#lightbox img{max-width:97vw;max-height:97vh}
+.btn-full{width:100%;padding:16px;font-size:14px;letter-spacing:1.5px}
 .thumb{width:44px;height:32px;object-fit:cover;border:1px solid var(--rule);cursor:pointer}
 .estado-pend{color:var(--orange);font-weight:700}.estado-ok{color:var(--green);font-weight:700}.estado-err{color:var(--red);font-weight:700}
 @media(max-width:700px){.kpis{grid-template-columns:repeat(2,1fr)}.form-row,.form-row.three{grid-template-columns:1fr}.header-title{font-size:16px}}
@@ -115,16 +118,14 @@ td.num{text-align:right}.bold{font-weight:700}
     <button class="btn-ghost" onclick="cerrarSesion()">Salir</button>
   </div>
   <div class="wrapper">
-    <div class="fila" style="margin-bottom:12px;justify-content:space-between">
-      <div class="fila">
-        <select id="filtroRango" class="selbar" onchange="renderPlanilla()">
-          <option value="hoyayer">Hoy y ayer</option><option value="hoy">Hoy</option><option value="ayer">Ayer</option><option value="todo">Todo</option>
-        </select>
-        <select id="filtroOperacion" class="selbar" onchange="renderPlanilla()"><option value="">Todas las operaciones</option></select>
-        <select id="filtroOperario" class="selbar" onchange="renderPlanilla()"><option value="">Todos los operarios</option></select>
-        <button class="btn sm gris" onclick="cargarRegistros()">Actualizar</button>
-      </div>
-      <button class="btn verde" onclick="irEscaner()">📷 Escanear baucher</button>
+    <button class="btn verde btn-full" onclick="irEscaner()" style="margin-bottom:14px">📷 Escanear baucher</button>
+    <div class="fila" style="margin-bottom:12px">
+      <select id="filtroRango" class="selbar" onchange="renderPlanilla()">
+        <option value="hoyayer">Hoy y ayer</option><option value="hoy">Hoy</option><option value="ayer">Ayer</option><option value="todo">Todo</option>
+      </select>
+      <select id="filtroOperacion" class="selbar" onchange="renderPlanilla()"><option value="">Todas las operaciones</option></select>
+      <select id="filtroOperario" class="selbar" onchange="renderPlanilla()"><option value="">Todos los operarios</option></select>
+      <button class="btn sm gris" onclick="cargarRegistros()">Actualizar</button>
     </div>
     <div class="kpis">
       <div class="kpi-box"><div class="kpi-lbl">Registros</div><div class="kpi-val" id="kReg">—</div><div class="kpi-desc">en el período</div></div>
@@ -161,8 +162,10 @@ td.num{text-align:right}.bold{font-weight:700}
           <div class="form-group"><label>Operación / Proveedor</label><select id="selTpl" onchange="mostrarSample()"></select></div>
           <div class="form-group"><label>Bauchers por hoja</label><select id="selSplit"><option value="tpl">Según la plantilla</option><option value="no">1</option><option value="h2">2 (uno bajo otro)</option><option value="v2">2 (lado a lado)</option></select></div>
         </div>
-        <div class="mini" style="margin-bottom:4px">Muestra de referencia (sample) de esta operación:</div>
+        <div class="mini" style="margin-bottom:4px;font-weight:700">Plantilla — dónde está cada dato (toca para ampliar):</div>
         <div class="sample-wrap" id="sampleWrap"></div>
+        <div class="mini" style="margin:12px 0 4px;font-weight:700">Foto escaneada (toca para ampliar):</div>
+        <div class="sample-wrap" id="scanWrap"><span class="mini">Aún no has escaneado. La foto aparecerá aquí.</span></div>
       </div>
     </div>
 
@@ -171,9 +174,11 @@ td.num{text-align:right}.bold{font-weight:700}
         <span class="section-badge"><label style="cursor:pointer;font-weight:700">Rotar <select id="selRot" style="border:none;background:transparent;font-weight:700"><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></label></span>
       </div>
       <div class="section-body">
+        <button class="btn gold btn-full" id="btnScan" onclick="escanearAhora()" style="margin-bottom:8px">🖨️ ESCANEAR</button>
+        <div class="mini" style="margin-bottom:10px">Toma el último baucher escaneado en la carpeta, desglosa los datos y los muestra abajo para que verifiques antes de enviar.</div>
         <div class="fila" style="margin-bottom:8px">
-          <button class="btn verde" id="btnCarpeta" onclick="conectarCarpeta()">📁 Conectar carpeta del escáner</button>
-          <button class="btn gris" onclick="document.getElementById('fileScan').click()">🖼️ Subir imagen</button>
+          <button class="btn sm" id="btnCarpeta" onclick="conectarCarpeta()">📁 Conectar carpeta del escáner</button>
+          <button class="btn sm gris" onclick="document.getElementById('fileScan').click()">🖼️ Subir imagen</button>
           <input type="file" id="fileScan" accept="image/*,.pdf" multiple hidden onchange="procesarArchivos(this)">
         </div>
         <div id="carpetaEstado" class="mini"></div>
@@ -182,28 +187,24 @@ td.num{text-align:right}.bold{font-weight:700}
     </div>
 
     <div id="revSection" class="section" style="display:none">
-      <div class="section-hdr"><span class="section-title">3 · Revisar y confirmar</span><span class="section-badge" id="revContador"></span></div>
+      <div class="section-hdr"><span class="section-title">3 · Verificar datos capturados</span><span class="section-badge" id="revContador"></span></div>
       <div class="section-body">
-        <div class="mini" style="margin-bottom:8px">Corrige lo que el OCR no leyó bien. Los campos vacíos (naranja) se envían vacíos, tal cual el tiquete físico.</div>
+        <div class="mini" style="margin-bottom:8px">Revisa que el escáner haya captado bien. Corrige lo que haga falta; los campos vacíos (naranja) se envían vacíos, tal cual el tiquete físico.</div>
         <div id="revLista"></div>
+        <button class="btn verde btn-full" id="btnEnviar" onclick="enviarRevisados()" style="margin-top:12px">⬆ Enviar formulario</button>
+        <div class="mini" id="envInfo" style="margin-top:6px"></div>
       </div>
     </div>
 
     <div class="section">
-      <div class="section-hdr"><span class="section-title">Escaneos de esta sesión</span><span class="section-badge" id="diaContador">0</span></div>
-      <div class="section-body">
-        <div class="fila" style="margin-bottom:10px">
-          <button class="btn verde" id="btnEnviar" onclick="enviarPendientes()">⬆ Enviar a la base</button>
-          <button class="btn gris" onclick="limpiarDia()">🗑 Vaciar</button>
-          <span class="mini" id="envInfo"></span>
-        </div>
-        <div style="overflow:auto"><div id="diaTabla"></div></div>
-      </div>
+      <div class="section-hdr"><span class="section-title">Enviados en esta sesión</span><span class="section-badge" id="diaContador">0</span></div>
+      <div class="section-body"><div style="overflow:auto"><div id="diaTabla"></div></div></div>
     </div>
 
   </div>
 </div>
 
+<div id="lightbox" onclick="this.style.display='none'"><img alt="ampliada"></div>
 <canvas id="scratch" style="display:none"></canvas>
 <script>
 /* ============ CONFIG ============ */
@@ -369,7 +370,29 @@ async function cargarPlantillasRepo(){
 }
 function renderSelTpl(){const s=document.getElementById('selTpl'),k=Object.keys(templates);s.innerHTML=k.length?k.map(n=>`<option>${n}</option>`).join(''):'<option value="">(sin plantillas — sube plantillas_tiquetes.json al repo)</option>';mostrarSample();}
 function tplActual(){return templates[document.getElementById('selTpl').value]||null;}
-function mostrarSample(){const t=tplActual(),w=document.getElementById('sampleWrap');if(!w)return;if(t&&t.refImage)w.innerHTML=`<img src="${t.refImage}"><div class="mini" style="margin-top:4px">El tiquete físico debe verse como este sample.</div>`;else w.innerHTML='<span class="mini">Sin sample para esta plantilla.</span>';}
+function openLightbox(src){const lb=document.getElementById('lightbox');lb.querySelector('img').src=src;lb.style.display='flex';}
+const FIELD_COLORS=['#e74c3c','#e67e22','#d4a017','#27ae60','#16a085','#2980b9','#8e44ad','#d35400','#2c3e50','#c0392b','#7f8c8d','#009688'];
+function drawZone(x,r,W,H,color,label,dash){const px=r[0]*W,py=r[1]*H,pw=r[2]*W,ph=r[3]*H;x.save();x.lineWidth=2.5;x.strokeStyle=color;if(dash)x.setLineDash([7,4]);x.strokeRect(px,py,pw,ph);x.setLineDash([]);x.font='bold 13px sans-serif';const tw=x.measureText(label).width+8;x.fillStyle=color;x.fillRect(px,Math.max(0,py-16),tw,16);x.fillStyle='#fff';x.fillText(label,px+4,Math.max(12,py-4));x.restore();}
+function mostrarSample(){
+  const t=tplActual(),w=document.getElementById('sampleWrap');if(!w)return;
+  if(!t||!t.refImage){w.innerHTML='<span class="mini">Sin sample para esta plantilla.</span>';return;}
+  const im=new Image();
+  im.onload=()=>{
+    const scale=Math.min(1,1400/im.width);const c=document.createElement('canvas');c.width=im.width*scale;c.height=im.height*scale;
+    const x=c.getContext('2d');x.drawImage(im,0,0,c.width,c.height);
+    FIELDS.forEach((f,i)=>{const cc=(t.fields&&t.fields[f.key])||{};if(cc.mode==='zone'&&cc.rect)drawZone(x,cc.rect,c.width,c.height,FIELD_COLORS[i%FIELD_COLORS.length],f.label);});
+    (t.anchors||[]).forEach(a=>{if(a.rect)drawZone(x,a.rect,c.width,c.height,'#1f6dc0','⚓ '+(a.text||''),true);});
+    const url=c.toDataURL('image/jpeg',0.85);
+    w.innerHTML='';const img=new Image();img.src=url;img.onclick=()=>openLightbox(url);w.appendChild(img);
+    const cap=document.createElement('div');cap.className='mini';cap.style.marginTop='4px';cap.textContent='Recuadros = de dónde el sistema lee cada dato. Toca para pantalla completa.';w.appendChild(cap);
+  };
+  im.src=t.refImage;
+}
+function mostrarFotoEscaneada(foto){
+  const w=document.getElementById('scanWrap');if(!w)return;
+  w.innerHTML='';const img=new Image();img.src=foto;img.onclick=()=>openLightbox(foto);w.appendChild(img);
+  const cap=document.createElement('div');cap.className='mini';cap.style.marginTop='4px';cap.textContent='Última foto escaneada. Toca para pantalla completa.';w.appendChild(cap);
+}
 function irEscaner(){if(!Object.keys(templates).length){alert('No hay plantillas. Sube plantillas_tiquetes.json al repositorio.');return;}scr('pantallaEscaner');renderSelTpl();renderDia();}
 function volverPlanilla(){scr('pantallaPlanilla');cargarRegistros();}
 
@@ -393,42 +416,39 @@ function cleanVal(f,s){s=(s||'').replace(/\s+/g,' ').replace(/^[\s:;.,\-]+/,'').
 function normFecha(s){let m;if(m=String(s).match(/(\d{4})-(\d{1,2})-(\d{1,2})/))return m[1]+'-'+('0'+m[2]).slice(-2)+'-'+('0'+m[3]).slice(-2);if(m=String(s).match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/)){let d=+m[1],mo=+m[2],y=+m[3];if(y<100)y+=2000;if(mo>12&&d<=12){const t=d;d=mo;mo=t;}return y+'-'+('0'+mo).slice(-2)+'-'+('0'+d).slice(-2);}return String(s||'').trim();}
 async function extraer(canvas,t){const w=await getWorker();const work=downscale(canvas,1800);const {data}=await w.recognize(work);const W=work.width,H=work.height;const words=wordsFrom(data).filter(x=>x.text&&x.text.trim()).map(x=>({text:x.text.trim(),n:norm(x.text),x0:x.bbox.x0/W,y0:x.bbox.y0/H,x1:x.bbox.x1/W,y1:x.bbox.y1/H,cx:(x.bbox.x0+x.bbox.x1)/2/W,cy:(x.bbox.y0+x.bbox.y1)/2/H}));const tr=buildTransform(t,words);const vals={};FIELDS.forEach(f=>{const c=(t.fields&&t.fields[f.key])||{};if(c.mode==='zone'&&c.rect)vals[f.key]=cleanVal(f,textInRect(words,tr.fn(c.rect)));else if(c.mode==='fixed')vals[f.key]=c.value||'';else vals[f.key]='';});if(vals.fecha)vals.fecha=normFecha(vals.fecha);return{vals,anclas:tr.n};}
 
-/* ============ ESCÁNER (carpeta vigilada NAPS2 · File System Access API) ============ */
-let dirHandle=null,seenFiles=new Set(),watchTimer=null;
+/* ============ ESCÁNER (carpeta NAPS2 · File System Access API) ============ */
+let dirHandle=null,ultimaFotoKey='';
 const IMG_RE=/\.(jpe?g|png|bmp|tiff?)$/i;
 function estCarpeta(t){document.getElementById('carpetaEstado').innerHTML=t;}
 async function conectarCarpeta(){
   if(!window.showDirectoryPicker){estCarpeta('ℹ Tu navegador no permite conectar carpetas. Usa Chrome o Edge, o el botón «Subir imagen».');return;}
-  if(!tplActual()){alert('Elige primero la operación (plantilla) arriba.');return;}
-  try{
-    dirHandle=await window.showDirectoryPicker({id:'escaneos',mode:'read'});
-  }catch(e){return;} /* cancelado */
-  /* semilla: marca los archivos que YA están como vistos, para procesar solo los NUEVOS que llegen */
-  seenFiles=new Set();
-  for await(const [name,h] of dirHandle.entries()){if(h.kind==='file'&&IMG_RE.test(name)){try{const f=await h.getFile();seenFiles.add(name+'|'+f.size+'|'+f.lastModified);}catch(e){}}}
-  estCarpeta('✔ Carpeta conectada. Escanea con NAPS2 (a JPG/PNG en esta carpeta) y aparecerá aquí solo. <button class="btn sm gris" onclick="desconectarCarpeta()">Desconectar</button>');
-  if(watchTimer)clearInterval(watchTimer);
-  watchTimer=setInterval(revisarCarpeta,3000);
-  revisarCarpeta();
+  try{dirHandle=await window.showDirectoryPicker({id:'escaneos',mode:'read'});}catch(e){return;}
+  estCarpeta('✔ Carpeta conectada. Escanea el baucher con NAPS2 y toca ESCANEAR. <button class="btn sm gris" onclick="desconectarCarpeta()">Desconectar</button>');
 }
-function desconectarCarpeta(){if(watchTimer)clearInterval(watchTimer);watchTimer=null;dirHandle=null;estCarpeta('Carpeta desconectada.');}
-async function revisarCarpeta(){
-  if(!dirHandle)return;
+function desconectarCarpeta(){dirHandle=null;estCarpeta('Carpeta desconectada.');}
+async function archivoMasReciente(){
+  let best=null;
+  for await(const [name,h] of dirHandle.entries()){
+    if(h.kind!=='file'||!IMG_RE.test(name))continue;
+    const f=await h.getFile();
+    if(!best||f.lastModified>best.mod)best={name,f,mod:f.lastModified};
+  }
+  return best;
+}
+async function escanearAhora(){
+  const t=tplActual();if(!t){alert('Elige primero la operación (plantilla) arriba.');return;}
+  if(!dirHandle){alert('Primero conecta la carpeta del escáner (botón «Conectar carpeta»),\no usa «Subir imagen».');return;}
+  const btn=document.getElementById('btnScan');btn.disabled=true;setStatus('Buscando el último escaneo…');
   try{
-    const nuevos=[];
-    for await(const [name,h] of dirHandle.entries()){
-      if(h.kind!=='file'||!IMG_RE.test(name))continue;
-      const f=await h.getFile();const key=name+'|'+f.size+'|'+f.lastModified;
-      if(!seenFiles.has(key)){seenFiles.add(key);nuevos.push({name,f,mod:f.lastModified});}
-    }
-    nuevos.sort((a,b)=>a.mod-b.mod);
-    for(const n of nuevos){
-      estCarpeta('📥 Nuevo escaneo detectado: '+n.name+'…');
-      const cs=await fileToCanvases(n.f);
-      for(let p=0;p<cs.length;p++)await leerCanvas(cs[p],'NAPS2 · '+n.name);
-      estCarpeta('✔ Carpeta conectada · esperando nuevos escaneos. <button class="btn sm gris" onclick="desconectarCarpeta()">Desconectar</button>');
-    }
-  }catch(e){estCarpeta('⚠ Perdí acceso a la carpeta ('+e.message+'). Reconéctala.');dirHandle=null;if(watchTimer)clearInterval(watchTimer);}
+    const n=await archivoMasReciente();
+    if(!n){setStatus('No hay imágenes en la carpeta. Escanea el baucher en NAPS2 y vuelve a tocar ESCANEAR.');btn.disabled=false;return;}
+    const key=n.name+'|'+n.f.size+'|'+n.mod;
+    if(key===ultimaFotoKey&&!confirm('Es el mismo escaneo que ya procesaste ('+n.name+'). ¿Volver a leerlo?')){btn.disabled=false;setStatus('');return;}
+    ultimaFotoKey=key;
+    const cs=await fileToCanvases(n.f);
+    for(let p=0;p<cs.length;p++)await leerCanvas(cs[p],n.name);
+  }catch(e){setStatus('Error al escanear: '+(e.message||e));}
+  btn.disabled=false;
 }
 async function procesarArchivos(inp){const files=[...inp.files];inp.value='';for(const f of files){const cs=await fileToCanvases(f);for(let p=0;p<cs.length;p++)await leerCanvas(cs[p],f.name+(cs.length>1?` (pág ${p+1})`:''));}}
 function modoSplit(t){const s=document.getElementById('selSplit').value;return s==='tpl'?((t&&t.split)||'no'):s;}
@@ -436,7 +456,7 @@ async function leerCanvas(canvas,origen){
   const t=tplActual();if(!t){alert('Elige la operación (plantilla).');return;}
   const rot=+document.getElementById('selRot').value;for(let k=0;k<rot/90;k++)canvas=rotarCanvas(canvas);
   const partes=splitCanvas(canvas,modoSplit(t));
-  for(let q=0;q<partes.length;q++){setStatus(`Leyendo ${origen}${partes.length>1?' · baucher '+(q+1):''}…`);try{const r=await extraer(partes[q],t);const item={vals:{},foto:canvasToJpeg(partes[q]),origen:origen+(partes.length>1?` · baucher ${q+1}`:''),plantilla:document.getElementById('selTpl').value,anclas:r.anclas};FIELDS.forEach(f=>item.vals[f.key]=r.vals[f.key]||'');pendRev.push(item);}catch(e){setStatus('Error al leer: '+e.message);}}
+  for(let q=0;q<partes.length;q++){setStatus(`Leyendo ${origen}${partes.length>1?' · baucher '+(q+1):''}…`);try{const r=await extraer(partes[q],t);const foto=canvasToJpeg(partes[q]);mostrarFotoEscaneada(foto);const item={vals:{},foto,origen:origen+(partes.length>1?` · baucher ${q+1}`:''),plantilla:document.getElementById('selTpl').value,anclas:r.anclas};FIELDS.forEach(f=>item.vals[f.key]=r.vals[f.key]||'');pendRev.push(item);}catch(e){setStatus('Error al leer: '+e.message);}}
   setStatus('Lectura lista. Revisa abajo y confirma.');renderRev();
 }
 
@@ -444,12 +464,10 @@ async function leerCanvas(canvas,origen){
 function renderRev(){
   const sec=document.getElementById('revSection'),cont=document.getElementById('revLista');
   if(!pendRev.length){sec.style.display='none';return;}
-  sec.style.display='block';document.getElementById('revContador').textContent=pendRev.length+' por confirmar';cont.innerHTML='';
+  sec.style.display='block';document.getElementById('revContador').textContent=pendRev.length+' baucher(s)';cont.innerHTML='';
   pendRev.forEach((it,idx)=>{const card=document.createElement('div');card.className='rev-card';let campos='';FIELDS.forEach(f=>{const vac=it.vals[f.key]?'':' vacio';campos+=`<div class="form-group${vac}"><label>${f.label}</label><input type="text" value="${(it.vals[f.key]||'').replace(/"/g,'&quot;')}" oninput="pendRev[${idx}].vals['${f.key}']=this.value;this.parentNode.classList.toggle('vacio',!this.value)"></div>`;});const neto=netoDe(it.vals);card.innerHTML=`<div class="rev-hdr"><span>📄 ${it.origen} · ${it.plantilla} · anclas: ${it.anclas}</span><button class="btn sm gris" style="border-color:rgba(255,255,255,.5);color:#fff;background:transparent" onclick="pendRev.splice(${idx},1);renderRev()">✕</button></div><div class="section-body"><img src="${it.foto}" style="max-height:160px;border:1px solid var(--rule);margin-bottom:10px"><div class="form-row three">${campos}</div><div class="peso-neto-box"><span class="peso-neto-lbl">Peso neto (calculado)</span><span class="peso-neto-val">${neto!==''?neto+' kg':'—'}</span></div></div>`;cont.appendChild(card);});
-  if(!document.getElementById('btnConfirmAll')){const b=document.createElement('button');b.id='btnConfirmAll';b.className='btn verde';b.style.marginTop='12px';b.textContent='✓ Agregar a la lista para enviar';b.onclick=confirmarRev;cont.appendChild(b);}else cont.appendChild(document.getElementById('btnConfirmAll'));
 }
 function netoDe(v){const l=parseFloat(cleanNum(v.lleno||'')),va=parseFloat(cleanNum(v.vacio||''));if(isNaN(l))return'';if(isNaN(va))return String(l);return String(l-va);}
-function confirmarRev(){if(!pendRev.length)return;pendRev.forEach(it=>{dia.push({vals:{...it.vals},foto:it.foto,plantilla:it.plantilla,origen:it.origen,estado:'pendiente',id_envio:'esc_'+Date.now()+'_'+Math.random().toString(36).slice(2,8)});});pendRev=[];renderRev();saveDia();renderDia();setStatus('Agregado a la lista.');}
 
 /* ============ LISTA / ENVÍO ============ */
 function renderDia(){
@@ -466,11 +484,21 @@ function renderDia(){
 function limpiarDia(){if(!confirm('¿Vaciar la lista? (los ya enviados no se borran de la base)'))return;dia=[];saveDia();renderDia();}
 function payloadDe(r){const p={operario:sesion?sesion.nombre:'',id_envio:r.id_envio,hora_disposicion:r.vals.hora||new Date().toTimeString().slice(0,5),fecha_disposicion:r.vals.fecha||new Date().toISOString().slice(0,10),peso_salida:cleanNum(r.vals.vacio||'')||'0'};Object.keys(PAYLOAD_MAP).forEach(k=>{if(k==='hora'||k==='fecha'||k==='vacio')return;p[PAYLOAD_MAP[k]]=r.vals[k]||'';});p.peso_entrada=cleanNum(r.vals.lleno||'')||'';p.numero_tiquete=r.vals.tiquete||'';p.foto_baucher_1=r.foto||'';p.aht_segundos=0;return p;}
 async function enviarUno(r){const datos=payloadDe(r);for(let intento=1;intento<=3;intento++){try{const res=await fetch(WEBAPP_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(datos)});const j=await res.json();if(j.success)return{ok:true};if(j.posibleDuplicado)return{ok:true};if(j.ignorado)return{ok:false,msg:'sin datos'};return{ok:false,msg:j.error||'rechazado'};}catch(e){if(intento===3){try{await fetch(WEBAPP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(datos)});return{ok:true};}catch(e2){return{ok:false,msg:'sin conexión'};}}await new Promise(r=>setTimeout(r,1500*intento));}}}
-async function enviarPendientes(){
-  const pend=dia.filter(r=>r.estado!=='enviado');if(!pend.length){alert('No hay escaneos pendientes.');return;}
+async function enviarRevisados(){
+  if(!pendRev.length){alert('Primero escanea un baucher.');return;}
   const btn=document.getElementById('btnEnviar');btn.disabled=true;const info=document.getElementById('envInfo');let ok=0,err=0;
-  for(let i=0;i<dia.length;i++){if(dia[i].estado==='enviado')continue;info.textContent=`Enviando ${ok+err+1} de ${pend.length}…`;const r=await enviarUno(dia[i]);if(r.ok){dia[i].estado='enviado';ok++;}else{dia[i].estado='error';err++;}saveDia();renderDia();}
-  btn.disabled=false;info.textContent=`Listo: ${ok} enviado(s)`+(err?`, ${err} con error`:'');
+  const restantes=[];
+  for(let i=0;i<pendRev.length;i++){
+    info.textContent=`Enviando ${ok+err+1} de ${pendRev.length}…`;
+    const it=pendRev[i];
+    const reg={vals:{...it.vals},foto:it.foto,plantilla:it.plantilla,origen:it.origen,id_envio:'esc_'+Date.now()+'_'+Math.random().toString(36).slice(2,8)};
+    const r=await enviarUno(reg);
+    if(r.ok){reg.estado='enviado';dia.unshift(reg);ok++;}else{restantes.push(it);err++;}
+  }
+  pendRev=restantes;saveDia();renderDia();renderRev();
+  btn.disabled=false;
+  info.textContent=`Listo: ${ok} viaje(s) enviado(s)`+(err?`, ${err} con error (quedan en revisión para reintentar)`:'. Puedes escanear el siguiente.');
+  setStatus('');
 }
 
 /* ============ INICIO ============ */
