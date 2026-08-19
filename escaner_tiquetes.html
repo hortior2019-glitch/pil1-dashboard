@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1a5c35">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%231a5c35'/%3E%3Ctext y='68' x='50' text-anchor='middle' font-size='38' font-family='Georgia,serif' font-weight='700' fill='%238b6914'%3EEmp%3C/text%3E%3C/svg%3E">
+<title>Escáner de Tiquetes — Empathy</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Source+Sans+3:wght@300;400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<!-- Dynamsoft Web TWAIN: carga directa desde el escáner (necesita el Dynamsoft Service instalado + licencia). -->
+<script src="https://cdn.jsdelivr.net/npm/dwt@18.5.1/dist/dynamsoft.webtwain.min.js"></script>
+<style>
+:root{--bg:#f8f7f4;--white:#fff;--ink:#1a1a1a;--ink-m:#4a4a4a;--ink-l:#8a8a8a;--rule:#d8d4cc;--rule-l:#ede9e2;--s2:#f2f2f0;--navy:#1a5c35;--blue:#2d8a4e;--blue-l:#e8f5ee;--gold:#8b6914;--gold-l:#f5eed8;--green:#1a5c35;--red:#8b1a1a;--red-l:#f5e8e8;--orange:#7a3d00;--orange-l:#fdf0e0}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-serif}
+.screen{display:none}.screen.active{display:block}
+.header{background:var(--navy);color:#fff;padding:14px 20px;border-bottom:4px solid var(--gold);display:flex;justify-content:space-between;align-items:center;gap:14px}
+.brand{display:flex;align-items:center;gap:12px}
+.logo{width:44px;height:44px;flex:none;border-radius:6px;box-shadow:0 2px 6px rgba(0,0,0,.25)}
+.header-org{font-size:10px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,.55)}
+.header-title{font-family:'Playfair Display',serif;font-size:19px;font-weight:700}
+.header-sub{font-size:11px;color:rgba(255,255,255,.7);margin-top:2px}
+.btn-ghost{padding:7px 13px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid rgba(255,255,255,.4);background:transparent;color:rgba(255,255,255,.85);cursor:pointer;font-family:'Source Sans 3',sans-serif}
+.wrapper{max-width:1100px;margin:0 auto;padding:16px 12px 60px}
+.section{background:var(--white);border:1px solid var(--rule);margin-bottom:14px}
+.section-hdr{padding:12px 18px;border-bottom:1px solid var(--rule-l);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.section-title{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy)}
+.section-badge{font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:2px 8px;margin-left:auto;background:var(--blue-l);color:var(--blue)}
+.section-body{padding:16px 18px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.form-row.three{grid-template-columns:1fr 1fr 1fr}
+.form-row:last-child{margin-bottom:0}
+.form-group{display:flex;flex-direction:column;gap:4px}
+.form-group label{font-size:11px;font-weight:900;letter-spacing:1.3px;text-transform:uppercase;color:var(--ink-m)}
+.form-group input,.form-group select,.form-group textarea{padding:9px 11px;font-size:15px;font-family:'Source Sans 3',sans-serif;font-weight:700;border:2px solid #2a2a2a;background:var(--blue-l);color:var(--ink);outline:none;transition:.2s;width:100%}
+.form-group input:focus,.form-group select:focus{border-color:var(--navy);background:var(--white);box-shadow:0 0 0 2px rgba(26,92,53,.15)}
+.form-group.vacio input{background:var(--orange-l)}
+.btn{padding:11px 18px;font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;border:2px solid var(--navy);background:var(--white);color:var(--navy);cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:.2s}
+.btn:hover{background:var(--blue-l)}
+.btn.verde{background:var(--green);border-color:#0f3d22;color:#fff}.btn.verde:hover{background:#0f3d22}
+.btn.gold{background:var(--gold);border-color:#5e470d;color:#fff}
+.btn.gris{border-color:var(--rule);color:var(--ink-m)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.sm{padding:6px 10px;font-size:10px}
+.fila{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.mini{font-size:12px;color:var(--ink-l)}
+.notice{background:var(--gold-l);border-left:4px solid var(--gold);padding:10px 12px;font-size:13px;color:#5e470d;margin-bottom:12px}
+.notice.rojo{background:var(--red-l);border-color:var(--red);color:var(--red)}
+/* login */
+#pantallaLogin{background:var(--navy);min-height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:24px}
+.login-logo-img{width:70px;height:70px;border-radius:10px;margin-bottom:14px;box-shadow:0 4px 14px rgba(0,0,0,.35)}
+.login-sub{font-size:11px;color:rgba(255,255,255,.55);text-align:center;letter-spacing:2px;text-transform:uppercase;margin-bottom:24px}
+.login-box{background:var(--white);width:100%;max-width:380px;padding:34px 30px}
+.login-title{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy);margin-bottom:18px;text-align:center}
+.login-group{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.login-group label{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l)}
+.login-group input{padding:11px 13px;font-size:14px;font-family:'Source Sans 3',sans-serif;border:1px solid var(--rule);background:var(--bg);outline:none;width:100%}
+.login-group input:focus{border-color:var(--navy);background:var(--white)}
+.btn-login{width:100%;padding:13px;font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;cursor:pointer;font-family:'Source Sans 3',sans-serif;margin-top:6px}
+.btn-login:hover{background:var(--blue)}
+.login-error{display:none;margin-top:12px;padding:10px 14px;background:var(--red-l);border-left:3px solid var(--red);font-size:12px;color:var(--red);font-weight:600}
+/* KPIs */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border:1px solid var(--rule);background:var(--white);margin-bottom:14px}
+.kpi-box{padding:14px 16px;border-right:1px solid var(--rule-l)}
+.kpi-box:last-child{border-right:none}
+.kpi-lbl{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l)}
+.kpi-val{font-family:'Playfair Display',serif;font-size:26px;font-weight:700;color:var(--navy);line-height:1.1}
+.kpi-desc{font-size:10px;color:var(--ink-l)}
+.selbar{padding:5px 9px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);font-family:'Source Sans 3',sans-serif;cursor:pointer}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border:1px solid var(--rule);padding:6px 8px;text-align:left}
+th{background:#f0efe9;color:var(--ink-m);font-size:10px;letter-spacing:.5px;text-transform:uppercase;font-weight:700}
+td.num{text-align:right}.bold{font-weight:700}
+#tablaReg tr td{color:#fff}
+.rev-card{border:2px solid var(--navy);margin-top:8px}
+.rev-hdr{background:var(--navy);color:#fff;padding:8px 14px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;display:flex;justify-content:space-between;align-items:center}
+.peso-neto-box{background:var(--blue-l);border:1px solid #b5d8c2;padding:11px 14px;margin-top:6px;display:flex;justify-content:space-between;align-items:center}
+.peso-neto-lbl{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--blue)}
+.peso-neto-val{font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--navy)}
+.sample-wrap{border:1px solid var(--rule);background:var(--s2);padding:8px;text-align:center;margin-top:8px}
+.sample-wrap img{max-width:100%;max-height:260px;border:1px solid var(--rule)}
+.thumb{width:44px;height:32px;object-fit:cover;border:1px solid var(--rule);cursor:pointer}
+.estado-pend{color:var(--orange);font-weight:700}.estado-ok{color:var(--green);font-weight:700}.estado-err{color:var(--red);font-weight:700}
+#dwtContainer{width:1px;height:1px;overflow:hidden}
+@media(max-width:700px){.kpis{grid-template-columns:repeat(2,1fr)}.form-row,.form-row.three{grid-template-columns:1fr}.header-title{font-size:16px}}
+</style>
+</head>
+<body>
+
+<!-- ══════════ LOGIN ══════════ -->
+<div id="pantallaLogin" class="screen active">
+  <img class="login-logo-img" alt="Empathy" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%231a5c35'/%3E%3Ctext y='68' x='50' text-anchor='middle' font-size='38' font-family='Georgia,serif' font-weight='700' fill='%238b6914'%3EEmp%3C/text%3E%3C/svg%3E">
+  <div class="login-sub">Planta Empathy — Escáner de Tiquetes</div>
+  <div class="login-box">
+    <div class="login-title">Iniciar sesión</div>
+    <div class="login-group"><label>Usuario</label><input type="text" id="loginUsuario" autocomplete="username" placeholder="Su usuario" onkeydown="if(event.key==='Enter')document.getElementById('loginPass').focus()"></div>
+    <div class="login-group"><label>Contraseña</label><input type="password" id="loginPass" autocomplete="current-password" placeholder="Su contraseña" onkeydown="if(event.key==='Enter')intentarLogin()"></div>
+    <button class="btn-login" onclick="intentarLogin()">Ingresar</button>
+    <div class="login-error" id="loginError">Usuario o contraseña incorrectos.</div>
+    <div class="mini" id="loginEstado" style="text-align:center;margin-top:12px"></div>
+  </div>
+</div>
+
+<!-- ══════════ PLANILLA (menú principal) ══════════ -->
+<div id="pantallaPlanilla" class="screen">
+  <div class="header">
+    <div class="brand">
+      <img class="logo" alt="Empathy" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%231a5c35'/%3E%3Ctext y='68' x='50' text-anchor='middle' font-size='38' font-family='Georgia,serif' font-weight='700' fill='%238b6914'%3EEmp%3C/text%3E%3C/svg%3E">
+      <div>
+        <div class="header-org">Planta Empathy — Control de Ingreso</div>
+        <div class="header-title">Registros en tiempo real</div>
+        <div class="header-sub" id="lblUsuario"></div>
+      </div>
+    </div>
+    <button class="btn-ghost" onclick="cerrarSesion()">Salir</button>
+  </div>
+  <div class="wrapper">
+    <div class="fila" style="margin-bottom:12px;justify-content:space-between">
+      <div class="fila">
+        <select id="filtroRango" class="selbar" onchange="renderPlanilla()">
+          <option value="hoyayer">Hoy y ayer</option><option value="hoy">Hoy</option><option value="ayer">Ayer</option><option value="todo">Todo</option>
+        </select>
+        <select id="filtroOperacion" class="selbar" onchange="renderPlanilla()"><option value="">Todas las operaciones</option></select>
+        <select id="filtroOperario" class="selbar" onchange="renderPlanilla()"><option value="">Todos los operarios</option></select>
+        <button class="btn sm gris" onclick="cargarRegistros()">Actualizar</button>
+      </div>
+      <button class="btn verde" onclick="irEscaner()">📷 Escanear baucher</button>
+    </div>
+    <div class="kpis">
+      <div class="kpi-box"><div class="kpi-lbl">Registros</div><div class="kpi-val" id="kReg">—</div><div class="kpi-desc">en el período</div></div>
+      <div class="kpi-box"><div class="kpi-lbl">Peso Neto</div><div class="kpi-val" id="kPeso">—</div><div class="kpi-desc">kg acumulados</div></div>
+      <div class="kpi-box"><div class="kpi-lbl">Vehículos</div><div class="kpi-val" id="kVeh">—</div><div class="kpi-desc">placas distintas</div></div>
+      <div class="kpi-box"><div class="kpi-lbl">Operaciones</div><div class="kpi-val" id="kOps">—</div><div class="kpi-desc">proveedores distintos</div></div>
+    </div>
+    <div class="section">
+      <div class="section-hdr"><span class="section-title">Registros en tiempo real</span><span class="section-badge" id="regInfo">cargando…</span></div>
+      <div class="section-body" style="padding:0;overflow:auto"><div id="tablaReg"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ ESCÁNER ══════════ -->
+<div id="pantallaEscaner" class="screen">
+  <div class="header">
+    <div class="brand">
+      <img class="logo" alt="Empathy" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%231a5c35'/%3E%3Ctext y='68' x='50' text-anchor='middle' font-size='38' font-family='Georgia,serif' font-weight='700' fill='%238b6914'%3EEmp%3C/text%3E%3C/svg%3E">
+      <div>
+        <div class="header-org">Planta Empathy — Control de Ingreso</div>
+        <div class="header-title">Escanear baucher</div>
+        <div class="header-sub" id="lblUsuario2"></div>
+      </div>
+    </div>
+    <button class="btn-ghost" onclick="volverPlanilla()">← Planilla</button>
+  </div>
+  <div class="wrapper" style="max-width:820px">
+
+    <div class="section">
+      <div class="section-hdr"><span class="section-title">1 · Operación (tipo de baucher)</span></div>
+      <div class="section-body">
+        <div class="form-row">
+          <div class="form-group"><label>Operación / Proveedor</label><select id="selTpl" onchange="mostrarSample()"></select></div>
+          <div class="form-group"><label>Bauchers por hoja</label><select id="selSplit"><option value="tpl">Según la plantilla</option><option value="no">1</option><option value="h2">2 (uno bajo otro)</option><option value="v2">2 (lado a lado)</option></select></div>
+        </div>
+        <div class="mini" style="margin-bottom:4px">Muestra de referencia (sample) de esta operación:</div>
+        <div class="sample-wrap" id="sampleWrap"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-hdr"><span class="section-title">2 · Escanear</span>
+        <span class="section-badge"><label style="cursor:pointer;font-weight:700">Rotar <select id="selRot" style="border:none;background:transparent;font-weight:700"><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></label></span>
+      </div>
+      <div class="section-body">
+        <div class="fila" style="margin-bottom:8px">
+          <button class="btn verde" id="btnScan" onclick="escanear()">🖨️ Escanear desde el escáner</button>
+          <button class="btn gris" onclick="document.getElementById('fileScan').click()">🖼️ Subir imagen</button>
+          <input type="file" id="fileScan" accept="image/*,.pdf" multiple hidden onchange="procesarArchivos(this)">
+        </div>
+        <div id="dwtEstado" class="mini"></div>
+        <div id="status" class="mini" style="color:var(--navy)"></div>
+      </div>
+    </div>
+
+    <div id="revSection" class="section" style="display:none">
+      <div class="section-hdr"><span class="section-title">3 · Revisar y confirmar</span><span class="section-badge" id="revContador"></span></div>
+      <div class="section-body">
+        <div class="mini" style="margin-bottom:8px">Corrige lo que el OCR no leyó bien. Los campos vacíos (naranja) se envían vacíos, tal cual el tiquete físico.</div>
+        <div id="revLista"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-hdr"><span class="section-title">Escaneos de esta sesión</span><span class="section-badge" id="diaContador">0</span></div>
+      <div class="section-body">
+        <div class="fila" style="margin-bottom:10px">
+          <button class="btn verde" id="btnEnviar" onclick="enviarPendientes()">⬆ Enviar a la base</button>
+          <button class="btn gris" onclick="limpiarDia()">🗑 Vaciar</button>
+          <span class="mini" id="envInfo"></span>
+        </div>
+        <div style="overflow:auto"><div id="diaTabla"></div></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="dwtContainer"></div>
+<canvas id="scratch" style="display:none"></canvas>
+<script>
+/* ============ CONFIG ============ */
+const WEBAPP_URL='https://script.google.com/macros/s/AKfycbz1CznJcepKoBIJXwnQ6yc82n7fFX7q20kCxes5Na4OgPQUoe3xe5AllPhXUAe2JNg/exec';
+const USUARIOS_CSV='https://docs.google.com/spreadsheets/d/e/2PACX-1vSU6sHBRI35p5dMo7JlkeWW9Wn648agSah05G-mD6xqA-NUjLAgg7TBynyZaBdQ3WNNXTFINsRNhgQ-/pub?gid=0&single=true&output=csv';
+const CSV_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vQSWdFqaD1Ism7B9QLkcVpFtQa--82W9fNA7AG_ave-7ZgIrZ-_IMaxeIPdtYuNkV23pkkJUlyMT4HF/pub?gid=1262525313&single=true&output=csv';
+const OPS_MATERIALES_CSV='ops-materiales.csv';        /* colores, en el repo */
+const PLANTILLAS_URL='plantillas_tiquetes.json';      /* plantillas + samples, en el repo */
+const ADMIN_USUARIO='admin', ADMIN_CLAVE='Horti123++';
+/* Licencia Dynamsoft Web TWAIN — pon aquí tu clave (prueba gratis 30 días en dynamsoft.com). Vacío = sólo fallback de subir imagen. */
+const DWT_LICENSE='';
+const FIELDS=[
+ {key:'tiquete',label:'N° Tiquete'},{key:'fecha',label:'Fecha disposición'},{key:'hora',label:'Hora disposición'},
+ {key:'empresa',label:'Operación / Empresa'},{key:'material',label:'Residuo / Material'},{key:'placa',label:'Placa',clean:'plate'},
+ {key:'lleno',label:'Peso lleno (kg)',clean:'num'},{key:'vacio',label:'Peso vacío (kg)',clean:'num'},
+ {key:'conductor',label:'Conductor'},{key:'cedula',label:'Cédula'},{key:'seccion',label:'Sección depositar'},{key:'observacion',label:'Observación'},
+];
+const PAYLOAD_MAP={tiquete:'numero_tiquete',fecha:'fecha_disposicion',hora:'hora_disposicion',empresa:'operacion',material:'residuo',placa:'placa',lleno:'peso_entrada',vacio:'peso_salida',conductor:'conductor',cedula:'ultimos_cuatro_cedula',seccion:'seccion_depositaria',observacion:'observacion'};
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+/* ============ ESTADO ============ */
+let sesion=null,usuariosDB=[],registros=[];
+let templates={};try{templates=JSON.parse(localStorage.getItem('tq_tpls')||'{}');}catch(e){}
+let dia=[];try{dia=JSON.parse(localStorage.getItem('esc_dia')||'[]');}catch(e){}
+let pendRev=[],ocrWorker=null,DWObject=null;
+const setStatus=t=>document.getElementById('status').textContent=t;
+const saveDia=()=>localStorage.setItem('esc_dia',JSON.stringify(dia));
+function scr(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');window.scrollTo(0,0);}
+
+/* ============ PROXY CSV (evita CORS del sheet publicado) ============ */
+async function fetchCSV(url){
+  const bust='&_t='+Date.now();
+  const tries=[url+bust,'https://api.allorigins.win/raw?url='+encodeURIComponent(url+bust),'https://corsproxy.io/?'+encodeURIComponent(url+bust)];
+  for(const u of tries){try{const r=await fetch(u,{cache:'no-store'});if(r.ok){const t=await r.text();if(t&&t.length>5)return t;}}catch(e){}}
+  throw new Error('sin acceso al CSV');
+}
+function parseCSV(text){
+  const rows=[];let row=[],cur='',q=false;
+  for(let i=0;i<text.length;i++){const c=text[i];
+    if(q){if(c==='"'){if(text[i+1]==='"'){cur+='"';i++;}else q=false;}else cur+=c;}
+    else{if(c==='"')q=true;else if(c===','){row.push(cur);cur='';}else if(c==='\n'){row.push(cur);rows.push(row);row=[];cur='';}else if(c==='\r'){}else cur+=c;}
+  }
+  if(cur!==''||row.length){row.push(cur);rows.push(row);}
+  if(!rows.length)return[];
+  const head=rows[0].map(h=>h.trim());
+  return rows.slice(1).filter(r=>r.some(x=>x&&x.trim())).map(r=>{const o={};head.forEach((h,i)=>o[h]=(r[i]||'').trim());return o;});
+}
+
+/* ============ LOGIN ============ */
+async function cargarUsuarios(){
+  const est=document.getElementById('loginEstado');est.textContent='Cargando usuarios…';
+  try{
+    const t=await fetchCSV(USUARIOS_CSV);
+    const lines=t.trim().split('\n').slice(1);
+    usuariosDB=lines.map(l=>{const p=l.split(',').map(x=>x.trim().replace(/^"|"$/g,''));return{usuario:(p[0]||'').toLowerCase().trim(),contrasena:(p[1]||'').trim(),nombre:(p[2]||'').trim(),activo:(p[3]||'').toUpperCase().trim()==='SI'};}).filter(u=>u.usuario);
+    est.textContent=usuariosDB.length+' usuarios cargados.';
+  }catch(e){
+    usuariosDB=[{usuario:'alexander',contrasena:'pil2026',nombre:'Alexander Velásquez Benavides',activo:true},{usuario:'hidalgo',contrasena:'pil2026',nombre:'Idaldo Madrid Lara',activo:true},{usuario:'deivi',contrasena:'pil2026',nombre:'Deivi José Oliveros Peinado',activo:true},{usuario:'saul',contrasena:'pil2026',nombre:'Saúl García Sandoval',activo:true}];
+    est.textContent='(usuarios de respaldo — no se pudo leer el CSV)';
+  }
+}
+function intentarLogin(){
+  const u=(document.getElementById('loginUsuario').value||'').trim().toLowerCase();
+  const p=(document.getElementById('loginPass').value||'').trim();
+  const err=document.getElementById('loginError');
+  if(!u||!p){err.textContent='Ingrese usuario y contraseña.';err.style.display='block';return;}
+  let user=(u===ADMIN_USUARIO&&p===ADMIN_CLAVE)?{usuario:'admin',nombre:'Administrador',esAdmin:true}:usuariosDB.find(x=>x.usuario===u&&x.contrasena===p&&x.activo);
+  if(!user){err.textContent='Usuario o contraseña incorrectos.';err.style.display='block';document.getElementById('loginPass').value='';return;}
+  err.style.display='none';sesion=user;localStorage.setItem('esc_sesion',JSON.stringify(user));
+  entrarApp();
+}
+function cerrarSesion(){localStorage.removeItem('esc_sesion');sesion=null;location.reload();}
+function entrarApp(){
+  document.getElementById('lblUsuario').textContent='Operario: '+sesion.nombre;
+  document.getElementById('lblUsuario2').textContent='Operario: '+sesion.nombre;
+  scr('pantallaPlanilla');cargarRegistros();
+}
+
+/* ============ PLANILLA ============ */
+const getF=(r,keys)=>{for(const k of keys)if(r[k]!=null&&r[k]!=='')return r[k];return'';};
+function marcaMs(r){const s=getF(r,['Marca temporal','MARCA TEMPORAL']);let m=String(s).match(/(\d{1,2})\/(\d{1,2})\/(\d{4})[ ,T]+(\d{1,2}):(\d{2})(?::(\d{2}))?/);if(m)return new Date(+m[3],+m[2]-1,+m[1],+m[4],+m[5],+(m[6]||0)).getTime();const d=new Date(s);return isNaN(d)?0:d.getTime();}
+function inPeriodo(ms,modo){
+  if(modo==='todo'||!ms)return modo==='todo';
+  const hoy=new Date();hoy.setHours(0,0,0,0);const t0=hoy.getTime(),diaMs=86400000;
+  if(modo==='hoy')return ms>=t0&&ms<t0+diaMs;
+  if(modo==='ayer')return ms>=t0-diaMs&&ms<t0;
+  return ms>=t0-diaMs&&ms<t0+diaMs; /* hoyayer */
+}
+async function cargarRegistros(){
+  document.getElementById('regInfo').textContent='cargando…';
+  try{registros=parseCSV(await fetchCSV(CSV_URL));renderPlanilla();}
+  catch(e){document.getElementById('tablaReg').innerHTML='<div class="section-body mini">No se pudieron cargar los registros. Toca «Actualizar».</div>';document.getElementById('regInfo').textContent='error';}
+}
+const normOp=s=>(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+const fmt=n=>Math.round(n).toLocaleString('es-CO');
+function renderPlanilla(){
+  const modo=document.getElementById('filtroRango').value;
+  const fOp=document.getElementById('filtroOperacion').value,fOpr=document.getElementById('filtroOperario').value;
+  const enP=registros.filter(r=>inPeriodo(marcaMs(r),modo));
+  /* poblar selects */
+  const ops=[...new Set(enP.map(r=>getF(r,['OPERACION','operacion'])).filter(Boolean))].sort();
+  const oprs=[...new Set(enP.map(r=>getF(r,['OPERARIO registra','OPERARIO REGISTRA','OPERARIO'])).filter(Boolean))].sort();
+  const selO=document.getElementById('filtroOperacion');selO.innerHTML='<option value="">Todas las operaciones</option>'+ops.map(o=>`<option ${o===fOp?'selected':''}>${o}</option>`).join('');
+  const selP=document.getElementById('filtroOperario');selP.innerHTML='<option value="">Todos los operarios</option>'+oprs.map(o=>`<option ${o===fOpr?'selected':''}>${o}</option>`).join('');
+  let fil=enP;
+  if(fOp)fil=fil.filter(r=>getF(r,['OPERACION','operacion'])===fOp);
+  if(fOpr)fil=fil.filter(r=>getF(r,['OPERARIO registra','OPERARIO REGISTRA','OPERARIO'])===fOpr);
+  fil.sort((a,b)=>marcaMs(b)-marcaMs(a));
+  /* KPIs */
+  let peso=0;fil.forEach(r=>{let n=parseFloat(getF(r,['PESO NETO','peso neto','peso neto ']))||0;if(!n){n=(parseFloat(getF(r,['PESO LLENO','PESO ENTRADA']))||0)-(parseFloat(getF(r,['PESO VACIO','PESO SALIDA']))||0);}peso+=n;});
+  document.getElementById('kReg').textContent=fil.length;
+  document.getElementById('kPeso').textContent=fmt(peso);
+  document.getElementById('kVeh').textContent=new Set(fil.map(r=>getF(r,['PLACA'])).filter(Boolean)).size;
+  document.getElementById('kOps').textContent=new Set(fil.map(r=>getF(r,['OPERACION','operacion'])).filter(Boolean)).size;
+  document.getElementById('regInfo').textContent=fil.length+' registro(s)';
+  /* tabla */
+  const w=document.getElementById('tablaReg');
+  if(!fil.length){w.innerHTML='<div class="section-body mini">Sin registros en el período.</div>';return;}
+  let h='<table><tr style="background:#f0efe9"><th>Operación</th><th>Fecha</th><th>Hora</th><th>Operario</th><th>Tiquete</th><th>Placa</th><th>Residuo</th><th>P.Cargado</th><th>P.Vacío</th><th>Neto</th><th>Observación</th></tr>';
+  fil.slice(0,300).forEach(r=>{
+    const op=getF(r,['OPERACION','operacion']),color=opColor(op)||'#4a4a4a';
+    const e=parseFloat(getF(r,['PESO LLENO','PESO ENTRADA']))||0,s=parseFloat(getF(r,['PESO VACIO','PESO SALIDA']))||0;
+    let n=parseFloat(getF(r,['PESO NETO','peso neto']))||0;if(!n)n=e-s;
+    h+=`<tr style="background:${color}"><td class="bold">${op}</td><td>${getF(r,['FECHA DISPOSICION PLANTA','FECHA'])}</td><td>${getF(r,['HORA DISPOSICION PLANTA','HORA'])}</td><td style="font-size:11px">${getF(r,['OPERARIO registra','OPERARIO REGISTRA','OPERARIO'])}</td><td class="bold">${getF(r,['NUMERO TIQUETE','TIQUETE'])}</td><td>${getF(r,['PLACA'])}</td><td>${getF(r,['RESIDUO'])}</td><td class="num">${e?fmt(e)+' kg':'—'}</td><td class="num">${s?fmt(s)+' kg':'—'}</td><td class="num bold">${n?fmt(n)+' kg':'—'}</td><td style="font-size:11px">${getF(r,['OBSERVACION'])}</td></tr>`;
+  });
+  w.innerHTML=h+'</table>';
+}
+
+/* ============ COLORES ============ */
+let catalogo=[];
+const CSV_COLOR_DEF=`OPERACION;COLOR
+3R;#2563EB
+Alpina;#0891B2
+Alquería CV;#DC2626
+Ayura;#A16207
+Bavaria;#722F37
+Brinsa;#0B1F4D
+Emsersopo;#0F766E
+Emsertenjo;#059669
+EPC;#16A34A
+EPT;#0369A1
+EPZ;#4D7C0F
+Familia;#1D4ED8
+Frigorífico;#9D174D
+Funredcol;#065F46
+Gloria;#B45309
+HortiOrganic;#15803D
+Mc Cain;#C2410C
+Otro;#6B7280
+Peldar;#7C2D12
+Pomar;#1B3A6B
+Pomar Horti;#1B3A6B
+Recreo;#0E7490
+Samsa - Softys;#6B21A8
+Softys;#0057A8
+Ubaser;#4B5563`;
+function parseColores(text){const lines=(text||'').split(/\r?\n/).filter(l=>l.trim());if(!lines.length)return;const sep=lines[0].includes(';')?';':',';const head=lines[0].split(sep).map(norm);const iOp=head.findIndex(h=>h.includes('OPERACION')),iCol=head.findIndex(h=>h.includes('COLOR'));if(iOp<0||iCol<0)return;const nuevo=[];lines.slice(1).forEach(l=>{const c=l.split(sep);const op=(c[iOp]||'').trim();let col=(c[iCol]||'').trim();if(!col.startsWith('#'))col='#'+col;if(op&&/^#[0-9a-fA-F]{6}$/.test(col))nuevo.push({op,n:norm(op),color:col});});if(nuevo.length)catalogo=nuevo;}
+function opColor(v){if(!v)return null;const nv=norm(v);if(!nv)return null;let o=catalogo.find(x=>x.n===nv);if(!o)o=catalogo.find(x=>nv.includes(x.n)||x.n.includes(nv));return o?o.color:null;}
+async function cargarColores(){parseColores(CSV_COLOR_DEF);try{const r=await fetch(OPS_MATERIALES_CSV+'?t='+Date.now(),{cache:'no-store'});if(r.ok)parseColores(await r.text());}catch(e){}}
+
+/* ============ PLANTILLAS (repo) ============ */
+async function cargarPlantillasRepo(){
+  try{const r=await fetch(PLANTILLAS_URL+'?t='+Date.now(),{cache:'no-store'});if(r.ok){const j=await r.json();if(j&&Object.keys(j).length){templates=j;localStorage.setItem('tq_tpls',JSON.stringify(templates));}}}catch(e){}
+  renderSelTpl();
+}
+function renderSelTpl(){const s=document.getElementById('selTpl'),k=Object.keys(templates);s.innerHTML=k.length?k.map(n=>`<option>${n}</option>`).join(''):'<option value="">(sin plantillas — sube plantillas_tiquetes.json al repo)</option>';mostrarSample();}
+function tplActual(){return templates[document.getElementById('selTpl').value]||null;}
+function mostrarSample(){const t=tplActual(),w=document.getElementById('sampleWrap');if(!w)return;if(t&&t.refImage)w.innerHTML=`<img src="${t.refImage}"><div class="mini" style="margin-top:4px">El tiquete físico debe verse como este sample.</div>`;else w.innerHTML='<span class="mini">Sin sample para esta plantilla.</span>';}
+function irEscaner(){if(!Object.keys(templates).length){alert('No hay plantillas. Sube plantillas_tiquetes.json al repositorio.');return;}scr('pantallaEscaner');renderSelTpl();renderDia();}
+function volverPlanilla(){scr('pantallaPlanilla');cargarRegistros();}
+
+/* ============ IMAGEN / PDF / OCR ============ */
+const norm=s=>(s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9]/g,'');
+async function fileToCanvases(file,maxW=2000){const out=[];if(file.type==='application/pdf'||/\.pdf$/i.test(file.name)){const buf=await file.arrayBuffer();const pdf=await pdfjsLib.getDocument({data:buf}).promise;for(let p=1;p<=pdf.numPages;p++){const page=await pdf.getPage(p);let vp=page.getViewport({scale:1});const sc=Math.min(maxW/vp.width,3);vp=page.getViewport({scale:sc});const c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;await page.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;out.push(c);}}else{const url=URL.createObjectURL(file);const im=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=url;});const sc=Math.min(1,maxW/im.width);const c=document.createElement('canvas');c.width=im.width*sc;c.height=im.height*sc;c.getContext('2d').drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(url);out.push(c);}return out;}
+function dataUrlToCanvas(dataUrl){return new Promise((res,rej)=>{const i=new Image();i.onload=()=>{const c=document.createElement('canvas');c.width=i.width;c.height=i.height;c.getContext('2d').drawImage(i,0,0);res(c);};i.onerror=rej;i.src=dataUrl;});}
+function rotarCanvas(src){const c=document.createElement('canvas');c.width=src.height;c.height=src.width;const x=c.getContext('2d');x.translate(c.width/2,c.height/2);x.rotate(Math.PI/2);x.drawImage(src,-src.width/2,-src.height/2);return c;}
+function splitCanvas(c,mode){if(mode==='h2'||mode==='v2'){const out=[];for(let i=0;i<2;i++){const n=document.createElement('canvas');if(mode==='h2'){n.width=c.width;n.height=Math.floor(c.height/2);n.getContext('2d').drawImage(c,0,i*c.height/2,c.width,c.height/2,0,0,n.width,n.height);}else{n.width=Math.floor(c.width/2);n.height=c.height;n.getContext('2d').drawImage(c,i*c.width/2,0,c.width/2,c.height,0,0,n.width,n.height);}out.push(n);}return out;}return[c];}
+function canvasToJpeg(c,maxW=1400,q=0.72){const sc=Math.min(1,maxW/c.width);const n=document.createElement('canvas');n.width=c.width*sc;n.height=c.height*sc;n.getContext('2d').drawImage(c,0,0,n.width,n.height);return n.toDataURL('image/jpeg',q);}
+async function getWorker(){if(ocrWorker)return ocrWorker;setStatus('Descargando motor OCR (solo la primera vez)…');ocrWorker=await Tesseract.createWorker('spa',1,{logger:m=>{if(m.progress!=null)setStatus(`OCR: ${m.status} ${(m.progress*100).toFixed(0)}%`);}});return ocrWorker;}
+function downscale(c,max){if(c.width<=max)return c;const s=max/c.width,n=document.createElement('canvas');n.width=c.width*s;n.height=c.height*s;n.getContext('2d').drawImage(c,0,0,n.width,n.height);return n;}
+function wordsFrom(data){if(data.words&&data.words.length)return data.words;const out=[];(data.blocks||[]).forEach(b=>(b.paragraphs||[]).forEach(p=>(p.lines||[]).forEach(l=>(l.words||[]).forEach(w=>out.push(w)))));return out;}
+function findAnchor(text,words){const tokens=(text||'').trim().split(/\s+/).map(norm).filter(t=>t.length>=2);if(!tokens.length)return null;for(let i=0;i<=words.length-tokens.length;i++){let ok=true;for(let k=0;k<tokens.length;k++){const wn=words[i+k].n;if(!(wn===tokens[k]||(tokens[k].length>=4&&wn.includes(tokens[k]))||(wn.length>=4&&tokens[k].includes(wn)))){ok=false;break;}}if(ok){let x0=1,y0=1,x1=0,y1=0;for(let k=0;k<tokens.length;k++){const w=words[i+k];x0=Math.min(x0,w.x0);y0=Math.min(y0,w.y0);x1=Math.max(x1,w.x1);y1=Math.max(y1,w.y1);}return{x:(x0+x1)/2,y:(y0+y1)/2};}}return null;}
+function buildTransform(t,words){const M=[];(t.anchors||[]).forEach(a=>{if(!a.rect||!a.text)return;const f=findAnchor(a.text,words);if(f)M.push({t:{x:a.rect[0]+a.rect[2]/2,y:a.rect[1]+a.rect[3]/2},f});});if(!M.length)return{fn:r=>r,n:0};if(M.length===1){const dx=M[0].f.x-M[0].t.x,dy=M[0].f.y-M[0].t.y;return{fn:r=>[r[0]+dx,r[1]+dy,r[2],r[3]],n:1};}let A=M[0],B=M[1],bd=-1;for(let i=0;i<M.length;i++)for(let j=i+1;j<M.length;j++){const d=Math.hypot(M[i].t.x-M[j].t.x,M[i].t.y-M[j].t.y);if(d>bd){bd=d;A=M[i];B=M[j];}}let sx=(B.f.x-A.f.x)/(B.t.x-A.t.x),sy=(B.f.y-A.f.y)/(B.t.y-A.t.y);if(!isFinite(sx)||Math.abs(B.t.x-A.t.x)<0.04||sx<0.6||sx>1.7)sx=1;if(!isFinite(sy)||Math.abs(B.t.y-A.t.y)<0.04||sy<0.6||sy>1.7)sy=1;return{fn:r=>[A.f.x+(r[0]-A.t.x)*sx,A.f.y+(r[1]-A.t.y)*sy,r[2]*sx,r[3]*sy],n:M.length};}
+function textInRect(words,r){const m=0.006;const inside=words.filter(w=>w.cx>=r[0]-m&&w.cx<=r[0]+r[2]+m&&w.cy>=r[1]-m&&w.cy<=r[1]+r[3]+m);if(!inside.length)return'';const avgH=inside.reduce((s,w)=>s+(w.y1-w.y0),0)/inside.length;inside.sort((a,b)=>a.cy-b.cy);const lines=[];let cur=[inside[0]];for(let i=1;i<inside.length;i++){if(inside[i].cy-cur[cur.length-1].cy>avgH*0.7){lines.push(cur);cur=[inside[i]];}else cur.push(inside[i]);}lines.push(cur);return lines.map(l=>l.sort((a,b)=>a.x0-b.x0).map(w=>w.text).join(' ')).join(' ').trim();}
+function cleanNum(s){s=(s||'').replace(/kg[s.]?/ig,'');const m=s.match(/\d[\d.,\s]*/);if(!m)return s.trim();let t=m[0].replace(/\s/g,'').replace(/[.,]+$/,'');if(/^\d{1,3}([.,]\d{3})+$/.test(t))t=t.replace(/[.,]/g,'');else if(/^\d+,\d{1,2}$/.test(t))t=t.replace(',','.');return t;}
+const LABELS={placa:['placa','vehiculo','camion','no','nro'],conductor:['conductor','nombre'],tiquete:['tiquete','tiquet','bascula','de','no','n','nro','numero','registro'],fecha:['fecha','de','entrada','ingreso','salida','disposicion','dia'],hora:['hora','de','entrada','salida'],lleno:['peso','entrada','lleno','bruto','ing','recibido'],vacio:['peso','salida','vacio','tara','sal'],material:['material','producto','residuo','descripcion','lote'],empresa:['cliente','proveedor','razon','social','datos','operacion'],cedula:['cedula','cc','documento','ci'],seccion:['seccion','depositar','depositaria']};
+function stripLabels(key,s){const set=(LABELS[key]||[]).map(norm);if(!set.length)return s;const tk=s.split(/\s+/);while(tk.length>1){const n0=norm(tk[0]);if(!n0||set.includes(n0)){tk.shift();continue;}break;}return tk.join(' ');}
+function cleanVal(f,s){s=(s||'').replace(/\s+/g,' ').replace(/^[\s:;.,\-]+/,'').trim();s=stripLabels(f.key,s).replace(/^[\s:;.,\-]+/,'').trim();if(f.clean==='num')return cleanNum(s);if(f.clean==='plate')return s.toUpperCase().replace(/[^A-Z0-9\-]/g,'');return s;}
+function normFecha(s){let m;if(m=String(s).match(/(\d{4})-(\d{1,2})-(\d{1,2})/))return m[1]+'-'+('0'+m[2]).slice(-2)+'-'+('0'+m[3]).slice(-2);if(m=String(s).match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/)){let d=+m[1],mo=+m[2],y=+m[3];if(y<100)y+=2000;if(mo>12&&d<=12){const t=d;d=mo;mo=t;}return y+'-'+('0'+mo).slice(-2)+'-'+('0'+d).slice(-2);}return String(s||'').trim();}
+async function extraer(canvas,t){const w=await getWorker();const work=downscale(canvas,1800);const {data}=await w.recognize(work);const W=work.width,H=work.height;const words=wordsFrom(data).filter(x=>x.text&&x.text.trim()).map(x=>({text:x.text.trim(),n:norm(x.text),x0:x.bbox.x0/W,y0:x.bbox.y0/H,x1:x.bbox.x1/W,y1:x.bbox.y1/H,cx:(x.bbox.x0+x.bbox.x1)/2/W,cy:(x.bbox.y0+x.bbox.y1)/2/H}));const tr=buildTransform(t,words);const vals={};FIELDS.forEach(f=>{const c=(t.fields&&t.fields[f.key])||{};if(c.mode==='zone'&&c.rect)vals[f.key]=cleanVal(f,textInRect(words,tr.fn(c.rect)));else if(c.mode==='fixed')vals[f.key]=c.value||'';else vals[f.key]='';});if(vals.fecha)vals.fecha=normFecha(vals.fecha);return{vals,anclas:tr.n};}
+
+/* ============ ESCÁNER (Dynamsoft Web TWAIN) ============ */
+function initDWT(){
+  const est=document.getElementById('dwtEstado');
+  if(typeof Dynamsoft==='undefined'||!Dynamsoft.DWT){est.textContent='ℹ El módulo de escáner no cargó. Usa «Subir imagen» (o revisa el Dynamsoft Service).';return;}
+  try{
+    Dynamsoft.DWT.AutoLoad=false;
+    Dynamsoft.DWT.ResourcesPath='https://cdn.jsdelivr.net/npm/dwt@18.5.1/dist';
+    if(DWT_LICENSE)Dynamsoft.DWT.ProductKey=DWT_LICENSE;
+    Dynamsoft.DWT.CreateDWTObjectEx({WebTwainId:'dwtObj'},obj=>{DWObject=obj;est.textContent='✔ Escáner listo. Toca «Escanear desde el escáner».';},e=>{est.textContent='ℹ Escáner no disponible ('+(e.message||e)+'). Usa «Subir imagen».';});
+  }catch(e){est.textContent='ℹ Escáner no disponible. Usa «Subir imagen».';}
+}
+async function escanear(){
+  const t=tplActual();if(!t){alert('Elige la operación (plantilla) arriba.');return;}
+  if(!DWObject){alert('El escáner no está disponible en este equipo.\nInstala el Dynamsoft Service y pon la licencia, o usa «Subir imagen».');return;}
+  const btn=document.getElementById('btnScan');btn.disabled=true;setStatus('Abriendo el escáner…');
+  try{
+    await DWObject.SelectSourceAsync();
+    await DWObject.AcquireImageAsync({IfCloseSourceAfterAcquire:true,PixelType:Dynamsoft.DWT.EnumDWT_PixelType.TWPT_RGB,Resolution:200});
+    const idx=DWObject.CurrentImageIndexInBuffer;
+    const dataUrl=await new Promise((res,rej)=>{DWObject.ConvertToBase64([idx],Dynamsoft.DWT.EnumDWT_ImageType.IT_JPG,r=>res('data:image/jpeg;base64,'+r.getData(0,r.getLength())),(c,s)=>rej(new Error(s)));});
+    DWObject.RemoveAllImages();
+    const cv=await dataUrlToCanvas(dataUrl);
+    await leerCanvas(cv,'Escáner');
+  }catch(e){setStatus('Escaneo cancelado o con error: '+(e.message||e));}
+  btn.disabled=false;
+}
+async function procesarArchivos(inp){const files=[...inp.files];inp.value='';for(const f of files){const cs=await fileToCanvases(f);for(let p=0;p<cs.length;p++)await leerCanvas(cs[p],f.name+(cs.length>1?` (pág ${p+1})`:''));}}
+function modoSplit(t){const s=document.getElementById('selSplit').value;return s==='tpl'?((t&&t.split)||'no'):s;}
+async function leerCanvas(canvas,origen){
+  const t=tplActual();if(!t){alert('Elige la operación (plantilla).');return;}
+  const rot=+document.getElementById('selRot').value;for(let k=0;k<rot/90;k++)canvas=rotarCanvas(canvas);
+  const partes=splitCanvas(canvas,modoSplit(t));
+  for(let q=0;q<partes.length;q++){setStatus(`Leyendo ${origen}${partes.length>1?' · baucher '+(q+1):''}…`);try{const r=await extraer(partes[q],t);const item={vals:{},foto:canvasToJpeg(partes[q]),origen:origen+(partes.length>1?` · baucher ${q+1}`:''),plantilla:document.getElementById('selTpl').value,anclas:r.anclas};FIELDS.forEach(f=>item.vals[f.key]=r.vals[f.key]||'');pendRev.push(item);}catch(e){setStatus('Error al leer: '+e.message);}}
+  setStatus('Lectura lista. Revisa abajo y confirma.');renderRev();
+}
+
+/* ============ REVISIÓN ============ */
+function renderRev(){
+  const sec=document.getElementById('revSection'),cont=document.getElementById('revLista');
+  if(!pendRev.length){sec.style.display='none';return;}
+  sec.style.display='block';document.getElementById('revContador').textContent=pendRev.length+' por confirmar';cont.innerHTML='';
+  pendRev.forEach((it,idx)=>{const card=document.createElement('div');card.className='rev-card';let campos='';FIELDS.forEach(f=>{const vac=it.vals[f.key]?'':' vacio';campos+=`<div class="form-group${vac}"><label>${f.label}</label><input type="text" value="${(it.vals[f.key]||'').replace(/"/g,'&quot;')}" oninput="pendRev[${idx}].vals['${f.key}']=this.value;this.parentNode.classList.toggle('vacio',!this.value)"></div>`;});const neto=netoDe(it.vals);card.innerHTML=`<div class="rev-hdr"><span>📄 ${it.origen} · ${it.plantilla} · anclas: ${it.anclas}</span><button class="btn sm gris" style="border-color:rgba(255,255,255,.5);color:#fff;background:transparent" onclick="pendRev.splice(${idx},1);renderRev()">✕</button></div><div class="section-body"><img src="${it.foto}" style="max-height:160px;border:1px solid var(--rule);margin-bottom:10px"><div class="form-row three">${campos}</div><div class="peso-neto-box"><span class="peso-neto-lbl">Peso neto (calculado)</span><span class="peso-neto-val">${neto!==''?neto+' kg':'—'}</span></div></div>`;cont.appendChild(card);});
+  if(!document.getElementById('btnConfirmAll')){const b=document.createElement('button');b.id='btnConfirmAll';b.className='btn verde';b.style.marginTop='12px';b.textContent='✓ Agregar a la lista para enviar';b.onclick=confirmarRev;cont.appendChild(b);}else cont.appendChild(document.getElementById('btnConfirmAll'));
+}
+function netoDe(v){const l=parseFloat(cleanNum(v.lleno||'')),va=parseFloat(cleanNum(v.vacio||''));if(isNaN(l))return'';if(isNaN(va))return String(l);return String(l-va);}
+function confirmarRev(){if(!pendRev.length)return;pendRev.forEach(it=>{dia.push({vals:{...it.vals},foto:it.foto,plantilla:it.plantilla,origen:it.origen,estado:'pendiente',id_envio:'esc_'+Date.now()+'_'+Math.random().toString(36).slice(2,8)});});pendRev=[];renderRev();saveDia();renderDia();setStatus('Agregado a la lista.');}
+
+/* ============ LISTA / ENVÍO ============ */
+function renderDia(){
+  document.getElementById('diaContador').textContent=dia.length;
+  const w=document.getElementById('diaTabla');
+  if(!dia.length){w.innerHTML='<span class="mini">Aún no hay escaneos en esta sesión.</span>';return;}
+  const cols=['tiquete','fecha','hora','empresa','material','placa','lleno','vacio','conductor'];
+  const heads={tiquete:'Tiquete',fecha:'Fecha',hora:'Hora',empresa:'Operación',material:'Residuo',placa:'Placa',lleno:'P.Lleno',vacio:'P.Vacío',conductor:'Conductor'};
+  let h='<table><tr><th>#</th><th>Foto</th>'+cols.map(c=>`<th>${heads[c]}</th>`).join('')+'<th>Neto</th><th>Estado</th><th></th></tr>';
+  dia.forEach((r,i)=>{h+=`<tr><td>${i+1}</td><td><img class="thumb" src="${r.foto}" onclick="window.open().document.write('<img src=\\''+this.src+'\\' style=max-width:100%>')"></td>`+cols.map(c=>`<td contenteditable data-i="${i}" data-k="${c}">${(r.vals[c]||'')}</td>`).join('')+`<td>${netoDe(r.vals)||''}</td><td class="estado-${r.estado==='enviado'?'ok':(r.estado==='error'?'err':'pend')}">${r.estado==='enviado'?'✔ enviado':(r.estado==='error'?'✖ error':'⏳ pend')}</td><td><button class="btn sm gris" onclick="dia.splice(${i},1);saveDia();renderDia()">✕</button></td></tr>`;});
+  w.innerHTML=h+'</table>';
+  w.querySelectorAll('td[contenteditable]').forEach(td=>td.addEventListener('input',()=>{dia[+td.dataset.i].vals[td.dataset.k]=td.textContent;if(dia[+td.dataset.i].estado==='enviado')dia[+td.dataset.i].estado='pendiente';saveDia();}));
+}
+function limpiarDia(){if(!confirm('¿Vaciar la lista? (los ya enviados no se borran de la base)'))return;dia=[];saveDia();renderDia();}
+function payloadDe(r){const p={operario:sesion?sesion.nombre:'',id_envio:r.id_envio,hora_disposicion:r.vals.hora||new Date().toTimeString().slice(0,5),fecha_disposicion:r.vals.fecha||new Date().toISOString().slice(0,10),peso_salida:cleanNum(r.vals.vacio||'')||'0'};Object.keys(PAYLOAD_MAP).forEach(k=>{if(k==='hora'||k==='fecha'||k==='vacio')return;p[PAYLOAD_MAP[k]]=r.vals[k]||'';});p.peso_entrada=cleanNum(r.vals.lleno||'')||'';p.numero_tiquete=r.vals.tiquete||'';p.foto_baucher_1=r.foto||'';p.aht_segundos=0;return p;}
+async function enviarUno(r){const datos=payloadDe(r);for(let intento=1;intento<=3;intento++){try{const res=await fetch(WEBAPP_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(datos)});const j=await res.json();if(j.success)return{ok:true};if(j.posibleDuplicado)return{ok:true};if(j.ignorado)return{ok:false,msg:'sin datos'};return{ok:false,msg:j.error||'rechazado'};}catch(e){if(intento===3){try{await fetch(WEBAPP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(datos)});return{ok:true};}catch(e2){return{ok:false,msg:'sin conexión'};}}await new Promise(r=>setTimeout(r,1500*intento));}}}
+async function enviarPendientes(){
+  const pend=dia.filter(r=>r.estado!=='enviado');if(!pend.length){alert('No hay escaneos pendientes.');return;}
+  const btn=document.getElementById('btnEnviar');btn.disabled=true;const info=document.getElementById('envInfo');let ok=0,err=0;
+  for(let i=0;i<dia.length;i++){if(dia[i].estado==='enviado')continue;info.textContent=`Enviando ${ok+err+1} de ${pend.length}…`;const r=await enviarUno(dia[i]);if(r.ok){dia[i].estado='enviado';ok++;}else{dia[i].estado='error';err++;}saveDia();renderDia();}
+  btn.disabled=false;info.textContent=`Listo: ${ok} enviado(s)`+(err?`, ${err} con error`:'');
+}
+
+/* ============ INICIO ============ */
+cargarColores();cargarPlantillasRepo();
+initDWT();
+cargarUsuarios().then(()=>{
+  const s=localStorage.getItem('esc_sesion');
+  if(s){try{sesion=JSON.parse(s);entrarApp();}catch(e){}}
+});
+</script>
+</body>
+</html>
