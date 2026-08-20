@@ -663,6 +663,14 @@
     </div>
 
     <div class="field">
+      <label>Unidad de la cantidad certificada</label>
+      <select id="unidadCertificacion">
+        <option value="kg">Kilogramos (KG)</option>
+        <option value="viajes">Número de viajes</option>
+      </select>
+    </div>
+
+    <div class="field">
       <label>Materiales certificados</label>
       <div id="materialesList"></div>
       <button class="btn-list" type="button" onclick="agregarMaterialVacio()" style="width:100%;margin-top:4px;">+ Agregar material</button>
@@ -731,7 +739,7 @@
 
         <table class="cert-table">
           <thead>
-            <tr><th>ÍTEM</th><th>DESCRIPCIÓN</th><th>CANTIDAD KG</th></tr>
+            <tr><th>ÍTEM</th><th>DESCRIPCIÓN</th><th id="thCantidad">CANTIDAD KG</th></tr>
           </thead>
           <tbody id="tMaterialesBody"></tbody>
           <tfoot>
@@ -801,13 +809,15 @@
 
   function renderMateriales(){
     const cont = document.getElementById('materialesList');
+    const unidad = document.getElementById('unidadCertificacion').value;
+    const placeholderCant = unidad === 'viajes' ? 'N° viajes' : 'Kg';
     cont.innerHTML = '';
     materiales.forEach((m, i) => {
       const row = document.createElement('div');
       row.className = 'material-row';
       row.innerHTML =
         '<input class="mat-desc" placeholder="Ej: Residuos Orgánicos / nombre técnico" value="' + (m.descripcion || '').replace(/"/g,'&quot;') + '">' +
-        '<input class="mat-cant" placeholder="Kg" value="' + (m.cantidad || '') + '">' +
+        '<input class="mat-cant" placeholder="' + placeholderCant + '" value="' + (m.cantidad || '') + '">' +
         '<button type="button" class="mat-remove" title="Quitar">&times;</button>';
       const [descInput, cantInput, removeBtn] = row.children;
       // Cualquier edición manual de los materiales invalida el vínculo con los viajes de
@@ -877,6 +887,17 @@
     return decPart ? intPart + ',' + decPart : intPart;
   }
 
+  // Formatea la cantidad certificada según la unidad elegida: KG (con decimales, como
+  // formatKg) o número de viajes (entero, sin decimales, con separador de miles).
+  function formatCantidad(valor){
+    const unidad = document.getElementById('unidadCertificacion').value;
+    if (unidad === 'viajes'){
+      const num = Math.round(parseFloat(String(valor).replace(/,/g, '')) || 0);
+      return String(num).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    }
+    return formatKg(valor);
+  }
+
   function escapeHtml(s){
     return String(s == null ? '' : s)
       .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -938,6 +959,9 @@
     document.getElementById('tPeriodo').textContent = periodo;
     document.getElementById('pFecha').textContent = fecha;
 
+    const unidad = document.getElementById('unidadCertificacion').value;
+    document.getElementById('thCantidad').textContent = unidad === 'viajes' ? 'N° DE VIAJES' : 'CANTIDAD KG';
+
     // Filas de la tabla, una por material
     const tbody = document.getElementById('tMaterialesBody');
     tbody.innerHTML = '';
@@ -951,13 +975,13 @@
       const tdDesc = document.createElement('td');
       tdDesc.textContent = m.descripcion || '';
       const tdCant = document.createElement('td');
-      tdCant.textContent = formatKg(m.cantidad);
+      tdCant.textContent = formatCantidad(m.cantidad);
       tr.appendChild(tdItem);
       tr.appendChild(tdDesc);
       tr.appendChild(tdCant);
       tbody.appendChild(tr);
     });
-    document.getElementById('tCantidadTotal').textContent = formatKg(total);
+    document.getElementById('tCantidadTotal').textContent = formatCantidad(total);
   }
 
   ids.forEach(id => {
@@ -969,6 +993,18 @@
     document.getElementById('bloqueEstandar').style.display = esIntermediario ? 'none' : 'block';
     document.getElementById('bloqueIntermediario').style.display = esIntermediario ? 'block' : 'none';
     update();
+  });
+
+  document.getElementById('unidadCertificacion').addEventListener('change', () => {
+    // Si hay datos cargados desde la base de datos, se vuelven a totalizar en la nueva
+    // unidad (sumando peso en kg, o contando viajes). Si los materiales son manuales, solo
+    // se refresca el encabezado/placeholder — el número que ya escribiste no cambia.
+    if (filasOpActuales.length){
+      recalcularMaterialesConExclusiones();
+    } else {
+      renderMateriales();
+      update();
+    }
   });
 
   document.getElementById('parrafo1').value = generarParrafo1Texto();
@@ -1011,6 +1047,7 @@
     return {
       tipo: document.getElementById('tipoParrafo1').value,
       texto: document.getElementById('parrafo1').value,
+      unidad: document.getElementById('unidadCertificacion').value,
       empresaOrigen: document.getElementById('empresaOrigen').value,
       nitOrigen: document.getElementById('nitOrigen').value,
       direccionOrigen: document.getElementById('direccionOrigen').value,
@@ -1024,6 +1061,7 @@
   function aplicarDatosParrafo1(datos){
     datos = datos || {};
     document.getElementById('tipoParrafo1').value = datos.tipo || 'estandar';
+    document.getElementById('unidadCertificacion').value = datos.unidad || 'kg';
     document.getElementById('empresaOrigen').value = datos.empresaOrigen || '';
     document.getElementById('nitOrigen').value = datos.nitOrigen || '';
     document.getElementById('direccionOrigen').value = datos.direccionOrigen || '';
@@ -1585,18 +1623,21 @@
     const yaCertificadas = filasOpActuales.filter(f => f.idCertificado && !idsEnvioForzados.has(f.idEnvio));
     const filasIncluidas = filasOpActuales.filter(f => !f.idCertificado || idsEnvioForzados.has(f.idEnvio));
 
+    const unidad = document.getElementById('unidadCertificacion').value;
     const porResiduo = new Map();
     let totalPeso = 0;
     filasIncluidas.forEach(f => {
       totalPeso += f.peso;
-      porResiduo.set(f.residuo, (porResiduo.get(f.residuo) || 0) + f.peso);
+      const aporte = unidad === 'viajes' ? 1 : f.peso;
+      porResiduo.set(f.residuo, (porResiduo.get(f.residuo) || 0) + aporte);
     });
 
     // Un material (fila de la tabla) por cada tipo de residuo encontrado; el nombre queda
-    // editable para poder reemplazarlo por su nombre técnico si se requiere.
+    // editable para poder reemplazarlo por su nombre técnico si se requiere. La cantidad es
+    // el peso sumado (kg) o el número de viajes, según la unidad elegida.
     const nuevaLista = Array.from(porResiduo.entries()).map(([descripcion, cantidad]) => ({
       descripcion,
-      cantidad: cantidad.toFixed(3)
+      cantidad: unidad === 'viajes' ? String(cantidad) : cantidad.toFixed(3)
     }));
     setMateriales(nuevaLista);
 
@@ -1607,7 +1648,10 @@
     document.getElementById('periodo').value = formatearPeriodo(desdeStr, hastaStr);
     update();
 
-    let html = '<b>' + filasIncluidas.length + '</b> registros de <b>' + operacionesSeleccionadas.length + '</b> operación(es) (' + operacionesSeleccionadas.join(', ') + ') · Total: <b>' + formatKg(totalPeso) + ' kg</b> en <b>' + porResiduo.size + '</b> material(es)<br><span style="color:#888;">Revisa y ajusta "Empresa receptora" con la razón social completa, y el nombre de cada material si necesitas su nombre técnico.</span>';
+    const resumenCantidad = unidad === 'viajes'
+      ? '<b>' + filasIncluidas.length + ' viaje(s)</b>'
+      : '<b>' + formatKg(totalPeso) + ' kg</b> (' + filasIncluidas.length + ' viaje(s))';
+    let html = '<b>' + filasIncluidas.length + '</b> registros de <b>' + operacionesSeleccionadas.length + '</b> operación(es) (' + operacionesSeleccionadas.join(', ') + ') · Total: ' + resumenCantidad + ' en <b>' + porResiduo.size + '</b> material(es)<br><span style="color:#888;">Revisa y ajusta "Empresa receptora" con la razón social completa, y el nombre de cada material si necesitas su nombre técnico.</span>';
 
     if (yaCertificadas.length){
       html += '<div style="margin-top:10px;padding:8px 10px;background:#fff6e5;border:1px solid #f0d8a0;border-radius:6px;">' +
