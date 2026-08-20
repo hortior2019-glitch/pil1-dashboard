@@ -7946,12 +7946,25 @@ function baucherUrlsDeRegistro(r) {
 // y/o viaje que ya fue usado en un corte anterior. Devuelve '' si esta limpia.
 // Lo usan la tabla en pantalla y las exportaciones a Excel/CSV.
 function alertaFilaCorte(c, r) {
-  if (!c) return '';
-  const avisos = [];
+  return infoAlertaFilaCorte(c, r).texto;
+}
+
+// Devuelve { texto, tipo } donde tipo es '' | 'dup' | 'usado' | 'ambos'.
+// El tipo define el color de la fila en el Excel: morado para duplicado y rojo
+// para "ya usado en otro corte", igual que se ve en pantalla.
+function infoAlertaFilaCorte(c, r) {
+  if (!c) return { texto:'', tipo:'' };
   const marca = (r['INCLUIDO EN CORTE'] || '').toString().trim();
-  if (marca && marca !== c.marcadorCorteActual) avisos.push('YA USADO EN: ' + marca);
-  if (c.dupSet && c.dupSet.has(r)) avisos.push('VIAJE DUPLICADO EN ESTE CORTE');
-  return avisos.join(' · ');
+  const yaUsado = !!(marca && marca !== c.marcadorCorteActual);
+  const duplicado = !!(c.dupSet && c.dupSet.has(r));
+  const avisos = [];
+  if (yaUsado)   avisos.push('YA USADO EN: ' + marca);
+  if (duplicado) avisos.push('VIAJE DUPLICADO EN ESTE CORTE');
+  let tipo = '';
+  if (yaUsado && duplicado) tipo = 'ambos';
+  else if (yaUsado) tipo = 'usado';
+  else if (duplicado) tipo = 'dup';
+  return { texto: avisos.join(' · '), tipo };
 }
 
 // ── VISOR DE FOTOS DE BAUCHER ──────────────────────────────
@@ -10728,11 +10741,15 @@ function exportarCorteExcel() {
       const esEspecial = (c.resaltarFestivos !== false) && esDomingoOFestivo(fechaYMDdeRegistro(r));
       // Alerta de la fila (duplicado / ya usado en otro corte). Si la hay, TODA
       // la fila se pinta de rojo y el motivo queda en la ultima columna.
-      const _alertaFila = alertaFilaCorte(c, r);
+      const _infoAlerta = infoAlertaFilaCorte(c, r);
+      const _alertaFila = _infoAlerta.texto;
+      const _estiloAlerta = _infoAlerta.tipo === 'ambos' ? 'alertaAmbos'
+        : _infoAlerta.tipo === 'usado' ? 'alertaUsado'
+        : _infoAlerta.tipo === 'dup'   ? 'alertaDup' : '';
       // Rojo manda sobre festivo y sobre la zebra normal
-      const styleZebra = _alertaFila ? ' ss:StyleID="alerta"'
+      const styleZebra = _estiloAlerta ? ' ss:StyleID="' + _estiloAlerta + '"'
         : (esEspecial ? ' ss:StyleID="festivo"' : (idx % 2 === 1 ? ' ss:StyleID="zebra"' : ''));
-      const styleZebraNum = _alertaFila ? 'alertaNum'
+      const styleZebraNum = _estiloAlerta ? (_estiloAlerta + 'Num')
         : (esEspecial ? 'festivoNum' : (idx % 2 === 1 ? 'numZebra' : 'num'));
       let valorFilaMaterial = 0, valorFilaTransporte = 0;
       if (c.mostrarColValor) {
@@ -10807,9 +10824,16 @@ function exportarCorteExcel() {
  <Style ss:ID="zebra"><Interior ss:Color="${zebraColor}" ss:Pattern="Solid"/></Style>
  <Style ss:ID="numZebra"><Alignment ss:Horizontal="Right"/><Interior ss:Color="${zebraColor}" ss:Pattern="Solid"/></Style>
  <Style ss:ID="festivo"><Interior ss:Color="#FFF4E0" ss:Pattern="Solid"/><Font ss:Color="#B45309"/></Style>
- <!-- Filas con problema: viaje duplicado o ya usado en otro corte. Toda la fila va en rojo. -->
- <Style ss:ID="alerta"><Interior ss:Color="#F8D7DA" ss:Pattern="Solid"/><Font ss:Color="#9B1C1C" ss:Bold="1"/></Style>
- <Style ss:ID="alertaNum"><Alignment ss:Horizontal="Right"/><Interior ss:Color="#F8D7DA" ss:Pattern="Solid"/><Font ss:Color="#9B1C1C" ss:Bold="1"/></Style>
+ <!-- Filas con problema. Mismos colores que en pantalla:
+      ROJO   = el viaje ya fue usado en otro corte (riesgo de doble cobro)
+      MORADO = el viaje esta repetido dentro de este mismo corte
+      ROJO OSCURO = las dos cosas a la vez -->
+ <Style ss:ID="alertaUsado"><Interior ss:Color="#FDEAEA" ss:Pattern="Solid"/><Font ss:Color="#B91C1C" ss:Bold="1"/></Style>
+ <Style ss:ID="alertaUsadoNum"><Alignment ss:Horizontal="Right"/><Interior ss:Color="#FDEAEA" ss:Pattern="Solid"/><Font ss:Color="#B91C1C" ss:Bold="1"/></Style>
+ <Style ss:ID="alertaDup"><Interior ss:Color="#F3E8FB" ss:Pattern="Solid"/><Font ss:Color="#7A1FA2" ss:Bold="1"/></Style>
+ <Style ss:ID="alertaDupNum"><Alignment ss:Horizontal="Right"/><Interior ss:Color="#F3E8FB" ss:Pattern="Solid"/><Font ss:Color="#7A1FA2" ss:Bold="1"/></Style>
+ <Style ss:ID="alertaAmbos"><Interior ss:Color="#F8CDCD" ss:Pattern="Solid"/><Font ss:Color="#7F1010" ss:Bold="1"/></Style>
+ <Style ss:ID="alertaAmbosNum"><Alignment ss:Horizontal="Right"/><Interior ss:Color="#F8CDCD" ss:Pattern="Solid"/><Font ss:Color="#7F1010" ss:Bold="1"/></Style>
  <Style ss:ID="festivoNum"><Alignment ss:Horizontal="Right"/><Interior ss:Color="#FFF4E0" ss:Pattern="Solid"/><Font ss:Color="#B45309"/></Style>
  <Style ss:ID="total"><Font ss:Bold="1" ss:Color="${color}"/><Interior ss:Color="#f0f0ee" ss:Pattern="Solid"/><Alignment ss:Horizontal="Right"/></Style>
  <Style ss:ID="totalLbl"><Font ss:Bold="1" ss:Color="${color}"/><Interior ss:Color="#f0f0ee" ss:Pattern="Solid"/></Style>
