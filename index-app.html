@@ -5788,6 +5788,7 @@ function renderVehiculos() {
             ${_cajaDocVeh('SOAT', v.soat)}
             ${_cajaDocVeh('Tecnomecánica', v.tecno)}
           </div>
+          ${bloquePreopVehiculo(v.placa)}
           <div style="background:var(--s2);border-radius:4px;padding:8px 12px;margin-bottom:10px">
             <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">Último mantenimiento</div>
             ${ultimo
@@ -5805,6 +5806,126 @@ function renderVehiculos() {
       </div>
     </div>`;
   }).join('');
+}
+
+
+// ── PREOPERACIONALES DEL VEHICULO (union por PLACA) ─────────
+// No hay ninguna lista fija: se busca en los datos del preoperacional la
+// columna de placa (Placa / placa / PLACA) y se comparan normalizadas, asi que
+// cualquier vehiculo nuevo que aparezca en el preoperacional se une solo.
+function _placaNorm(p) {
+  return (p || '').toString().toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+// Devuelve las inspecciones de una placa, de la mas reciente a la mas antigua.
+// Une volquetas y equipo pesado, indicando de que formulario viene cada una.
+function preopDeVehiculo(placa) {
+  const objetivo = _placaNorm(placa);
+  if (!objetivo) return [];
+  const fuentes = [
+    { rows: (typeof dataPreopVol !== 'undefined' ? dataPreopVol : []) || [], secc: PREOP_SECCIONES_VOL, tipo: 'Volqueta' },
+    { rows: (typeof dataPreopCar !== 'undefined' ? dataPreopCar : []) || [], secc: PREOP_SECCIONES_CAR, tipo: 'Equipo' }
+  ];
+  const out = [];
+  fuentes.forEach(f => {
+    const items = Object.values(f.secc).flat();
+    f.rows.forEach(r => {
+      const pl = r['Placa'] || r['placa'] || r['PLACA'] || '';
+      if (_placaNorm(pl) !== objetivo) return;
+      let malos = 0, regulares = 0, buenos = 0;
+      const detMalos = [], detReg = [];
+      items.forEach(col => {
+        const v = r[col] || '';
+        const corto = col.replace(/^[A-Z]+\d+\s*-\s*/, '');
+        if (isMalo(v))         { malos++;     detMalos.push(corto); }
+        else if (isRegular(v)) { regulares++; detReg.push(corto); }
+        else if (isBueno(v))   { buenos++; }
+      });
+      const fecha = (r['Fecha'] || r['fecha'] || '').toString().trim();
+      const ts    = (r['Timestamp'] || r['timestamp'] || '').toString().trim();
+      out.push({
+        tipo: f.tipo,
+        fecha: fecha || (ts.split(' ')[0] || ''),
+        hora: (ts.split(' ')[1] || '').slice(0,5),
+        ts,
+        conductor: (r['Conductor'] || r['conductor'] || r['Operador'] || r['operador'] || '').toString().trim(),
+        km: (r['Kilometraje'] || r['km'] || r['Horometro'] || r['horometro'] || '').toString().trim(),
+        obs: (r['Observaciones'] || r['observaciones'] || '').toString().trim(),
+        malos, regulares, buenos, detMalos, detReg
+      });
+    });
+  });
+  // Mas reciente primero (por marca temporal real, con la fecha como respaldo)
+  out.sort((a,b) => {
+    const da = parseDateTime(a.ts) || parseDate(a.fecha) || 0;
+    const db = parseDateTime(b.ts) || parseDate(b.fecha) || 0;
+    return db - da;
+  });
+  return out;
+}
+
+// Abre/cierra el detalle de preoperacionales de una tarjeta
+function togglePreopVeh(placa) {
+  const cont = document.getElementById('preop-veh-' + _placaNorm(placa));
+  const btn  = document.getElementById('preop-btn-' + _placaNorm(placa));
+  if (!cont) return;
+  const oculto = cont.style.display === 'none';
+  cont.style.display = oculto ? '' : 'none';
+  if (btn) btn.textContent = (oculto ? 'Ocultar preoperacionales' : 'Ver preoperacionales') + ' (' + (cont.dataset.n || 0) + ')';
+}
+
+// Bloque HTML de preoperacionales para la tarjeta del vehiculo
+function bloquePreopVehiculo(placa) {
+  const insp = preopDeVehiculo(placa);
+  const idp = _placaNorm(placa);
+  if (!insp.length) {
+    return `<div style="background:var(--s2);border-radius:4px;padding:8px 12px;margin-bottom:10px">
+      <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">Preoperacional</div>
+      <div style="font-size:12px;color:var(--ink-l);font-style:italic">Sin inspecciones registradas para esta placa</div>
+    </div>`;
+  }
+  const u = insp[0];
+  const colorEstado = u.malos > 0 ? 'var(--red)' : u.regulares > 0 ? '#d4a017' : 'var(--green)';
+  const textoEstado = u.malos > 0 ? 'REQUIERE ATENCIÓN' : u.regulares > 0 ? 'REGULAR' : 'ÓPTIMO';
+
+  const filas = insp.slice(0, 30).map(i => {
+    const cEst = i.malos > 0 ? 'var(--red)' : i.regulares > 0 ? '#d4a017' : 'var(--green)';
+    return `<div style="border-left:3px solid ${cEst};background:var(--white);border:1px solid var(--rule-l);border-left-width:3px;border-radius:0 4px 4px 0;padding:8px 12px;margin-bottom:6px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+        <div style="font-size:12px;font-weight:700;color:var(--ink)">${i.fecha || '—'}${i.hora ? ' · ' + i.hora : ''}
+          <span style="font-size:10px;font-weight:600;color:var(--ink-l)">· ${i.tipo}${i.conductor ? ' · ' + i.conductor : ''}</span></div>
+        <div style="font-size:11px;font-weight:700">
+          <span style="color:var(--red)">${i.malos} M</span> ·
+          <span style="color:#d4a017">${i.regulares} R</span> ·
+          <span style="color:var(--green)">${i.buenos} B</span>
+          ${i.km ? `<span style="color:var(--ink-l);font-weight:600"> · ${i.km} km</span>` : ''}
+        </div>
+      </div>
+      ${i.detMalos.length ? `<div style="font-size:11px;color:var(--red);margin-top:4px"><strong>Malos:</strong> ${i.detMalos.join(', ')}</div>` : ''}
+      ${i.detReg.length   ? `<div style="font-size:11px;color:#8b6914;margin-top:2px"><strong>Regulares:</strong> ${i.detReg.join(', ')}</div>` : ''}
+      ${i.obs ? `<div style="font-size:11px;color:var(--ink-m);margin-top:4px;white-space:pre-wrap">${i.obs}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  return `<div style="background:var(--s2);border-radius:4px;padding:8px 12px;margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">Preoperacional · última inspección</div>
+        <div style="font-size:13px;font-weight:700;color:var(--ink)">${u.fecha || '—'}${u.hora ? ' · ' + u.hora : ''}
+          <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:${colorEstado};color:#fff;margin-left:6px">${textoEstado}</span></div>
+        <div style="font-size:11px;color:var(--ink-m);margin-top:3px">
+          <span style="color:var(--red);font-weight:700">${u.malos}</span> malos ·
+          <span style="color:#d4a017;font-weight:700">${u.regulares}</span> regulares ·
+          <span style="color:var(--green);font-weight:700">${u.buenos}</span> buenos
+          ${u.conductor ? ' · ' + u.conductor : ''}${u.km ? ' · ' + u.km + ' km' : ''}
+        </div>
+      </div>
+      <button id="preop-btn-${idp}" onclick="togglePreopVeh('${(placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--white);color:var(--ink-m);border:1px solid var(--rule);border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif;white-space:nowrap">Ver preoperacionales (${insp.length})</button>
+    </div>
+    <div id="preop-veh-${idp}" data-n="${insp.length}" style="display:none;margin-top:10px">${filas}
+      ${insp.length > 30 ? `<div style="font-size:11px;color:var(--ink-l);font-style:italic">Mostrando las 30 más recientes de ${insp.length}.</div>` : ''}
+    </div>
+  </div>`;
 }
 
 // ── MODAL GENERICO ──────────────────────────────────────────
