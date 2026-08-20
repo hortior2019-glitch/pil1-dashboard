@@ -3157,22 +3157,45 @@ function pesoNetoAjustado(r) {
   return _rellenoPromedioCorte > 0 ? _rellenoPromedioCorte : real;
 }
 
-function parseCSV(text) {
-  const lines = text.trim().split('\n');
-  const headersOrig = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g,''));
-  const headersUpper = headersOrig.map(h => h.toUpperCase());
-  return lines.slice(1).map(line => {
-    const vals = [];
-    let cur = '', inQ = false;
-    for (let c of line) {
-      if (c === '"') inQ = !inQ;
-      else if (c === ',' && !inQ) { vals.push(cur.trim()); cur = ''; }
-      else cur += c;
+// Lector de CSV que respeta las comillas.
+// PROBLEMA QUE RESUELVE: antes se hacia text.split('\n') y DESPUES se miraban
+// las comillas. Una celda entre comillas con salto de linea dentro (tipico en
+// "Observaciones" de los preoperacionales) se partia en varias filas basura, y
+// los registros reales quedaban incompletos o duplicados. Ahora se recorre el
+// texto caracter por caracter: un salto de linea DENTRO de comillas es parte
+// del dato, no un fin de fila. Tambien maneja "" como comilla escapada y CRLF.
+function parseCSVFilas(text) {
+  const filas = [];
+  let fila = [], cur = '', inQ = false;
+  const t = (text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (t[i+1] === '"') { cur += '"'; i++; }   // comilla escapada ("")
+        else inQ = false;                          // cierra la comilla
+      } else cur += ch;                            // incluye saltos de linea
+    } else {
+      if (ch === '"') inQ = true;
+      else if (ch === ',') { fila.push(cur); cur = ''; }
+      else if (ch === '\n') { fila.push(cur); filas.push(fila); fila = []; cur = ''; }
+      else cur += ch;
     }
-    vals.push(cur.trim());
+  }
+  // Ultima celda / fila pendiente
+  if (cur !== '' || fila.length) { fila.push(cur); filas.push(fila); }
+  return filas;
+}
+
+function parseCSV(text) {
+  const filas = parseCSVFilas(text);
+  if (!filas.length) return [];
+  const headersOrig  = filas[0].map(h => (h||'').trim());
+  const headersUpper = headersOrig.map(h => h.toUpperCase());
+  return filas.slice(1).map(vals => {
     const obj = {};
-    headersOrig.forEach((h,i) => obj[h] = (vals[i]||'').replace(/^"|"$/g,''));
-    headersUpper.forEach((h,i) => { if (!obj[h]) obj[h] = (vals[i]||'').replace(/^"|"$/g,''); });
+    headersOrig.forEach((h,i) => obj[h] = (vals[i]||'').trim());
+    headersUpper.forEach((h,i) => { if (!obj[h]) obj[h] = (vals[i]||'').trim(); });
     return obj;
   }).filter(r => Object.values(r).some(v => v));
 }
