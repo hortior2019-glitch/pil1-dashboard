@@ -5816,25 +5816,72 @@ function bloquePreopVehiculo(placa) {
   const colorEstado = u.malos > 0 ? 'var(--red)' : u.regulares > 0 ? '#d4a017' : 'var(--green)';
   const textoEstado = u.malos > 0 ? 'REQUIERE ATENCIÓN' : u.regulares > 0 ? 'REGULAR' : 'ÓPTIMO';
 
-  // Solo se muestra la ULTIMA inspeccion (con el detalle de sus items). Mostrar
-  // todo el historial hacia la tarjeta ilegible.
-  return `<div style="background:var(--s2);border-radius:4px;padding:10px 12px;margin-bottom:10px;border-left:3px solid ${colorEstado}">
-    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:4px">
-      <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">Preoperacional · última inspección</div>
-      <div style="font-size:10px;color:var(--ink-l)">${insp.length} inspección${insp.length!==1?'es':''} en total</div>
+  // Solo la ULTIMA inspeccion. Cada item va en su propia caja para que se lea
+  // bien; si son muchos, se muestran los primeros y el resto se despliega.
+  const VISIBLES = 4;   // cuantas cajas se ven sin desplegar
+
+  const chip = (txt, tipo) => {
+    const col = tipo === 'malo'
+      ? { bg:'#fdeaea', bd:'#e7b9b9', tx:'#b91c1c' }
+      : { bg:'#fdf5e0', bd:'#e8d5a3', tx:'#8b6914' };
+    return `<span style="display:inline-block;background:${col.bg};border:1px solid ${col.bd};color:${col.tx};
+      font-size:13px;font-weight:700;padding:6px 12px;border-radius:5px;line-height:1.25">${txt}</span>`;
+  };
+
+  const items = [
+    ...u.detMalos.map(t => ({ t, tipo:'malo' })),
+    ...u.detReg.map(t => ({ t, tipo:'reg' }))
+  ];
+  const visibles = items.slice(0, VISIBLES).map(x => chip(x.t, x.tipo)).join(' ');
+  const ocultos  = items.slice(VISIBLES).map(x => chip(x.t, x.tipo)).join(' ');
+  const hayMas   = items.length > VISIBLES || !!u.obs;
+
+  return `<div style="background:var(--white);border:1px solid var(--rule);border-left:4px solid ${colorEstado};border-radius:5px;padding:14px 16px;margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-l)">Preoperacional · última inspección</div>
+      <div style="font-size:11px;color:var(--ink-l)">${insp.length} inspección${insp.length!==1?'es':''} en total</div>
     </div>
-    <div style="font-size:13px;font-weight:700;color:var(--ink)">${u.fecha || '—'}${u.hora ? ' · ' + u.hora : ''}
-      <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:${colorEstado};color:#fff;margin-left:6px">${textoEstado}</span></div>
-    <div style="font-size:11px;color:var(--ink-m);margin-top:3px">
-      <span style="color:var(--red);font-weight:700">${u.malos}</span> malos ·
-      <span style="color:#d4a017;font-weight:700">${u.regulares}</span> regulares ·
-      <span style="color:var(--green);font-weight:700">${u.buenos}</span> buenos
-      ${u.conductor ? ' · ' + u.conductor : ''}${u.km ? ' · ' + u.km + ' km' : ''}
+
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <span style="font-size:17px;font-weight:800;color:var(--ink)">${u.fecha || '—'}${u.hora ? ' · ' + u.hora : ''}</span>
+      <span style="font-size:11px;font-weight:700;letter-spacing:.5px;padding:4px 12px;border-radius:20px;background:${colorEstado};color:#fff">${textoEstado}</span>
     </div>
-    ${u.detMalos.length ? `<div style="font-size:11px;color:var(--red);margin-top:5px"><strong>Malos:</strong> ${u.detMalos.join(', ')}</div>` : ''}
-    ${u.detReg.length   ? `<div style="font-size:11px;color:#8b6914;margin-top:2px"><strong>Regulares:</strong> ${u.detReg.join(', ')}</div>` : ''}
-    ${u.obs ? `<div style="font-size:11px;color:var(--ink-m);margin-top:5px;white-space:pre-wrap">${u.obs}</div>` : ''}
+
+    <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:${items.length?'12px':'0'}">
+      <div><span style="font-size:22px;font-weight:800;color:var(--red);line-height:1">${u.malos}</span>
+        <span style="font-size:12px;color:var(--ink-m);margin-left:4px">malos</span></div>
+      <div><span style="font-size:22px;font-weight:800;color:#d4a017;line-height:1">${u.regulares}</span>
+        <span style="font-size:12px;color:var(--ink-m);margin-left:4px">regulares</span></div>
+      <div><span style="font-size:22px;font-weight:800;color:var(--green);line-height:1">${u.buenos}</span>
+        <span style="font-size:12px;color:var(--ink-m);margin-left:4px">buenos</span></div>
+      ${u.conductor ? `<div style="font-size:13px;color:var(--ink-m);align-self:center">${u.conductor}</div>` : ''}
+      ${u.km ? `<div style="font-size:13px;color:var(--ink-m);align-self:center">${u.km} km</div>` : ''}
+    </div>
+
+    ${items.length ? `<div style="display:flex;gap:7px;flex-wrap:wrap">${visibles}</div>` : ''}
+
+    ${hayMas ? `
+      <div id="preop-mas-${idp}" style="display:none;margin-top:7px">
+        ${ocultos ? `<div style="display:flex;gap:7px;flex-wrap:wrap">${ocultos}</div>` : ''}
+        ${u.obs ? `<div style="font-size:13px;color:var(--ink-m);margin-top:10px;white-space:pre-wrap;background:var(--s2);padding:10px 12px;border-radius:4px"><strong style="font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Observaciones</strong>${u.obs}</div>` : ''}
+      </div>
+      <button id="preop-btn-${idp}" onclick="togglePreopVeh('${(placa||'').replace(/'/g,'')}')"
+        style="margin-top:10px;padding:7px 14px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--white);color:var(--navy);border:1px solid var(--navy);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">
+        Ver detalle completo${items.length > VISIBLES ? ' (+' + (items.length - VISIBLES) + ')' : ''}
+      </button>` : ''}
   </div>`;
+}
+
+// Despliega/oculta el detalle completo de la ultima inspeccion
+function togglePreopVeh(placa) {
+  const id = _placaNorm(placa);
+  const cont = document.getElementById('preop-mas-' + id);
+  const btn  = document.getElementById('preop-btn-' + id);
+  if (!cont) return;
+  const oculto = cont.style.display === 'none';
+  cont.style.display = oculto ? '' : 'none';
+  if (btn) btn.textContent = oculto ? 'Ocultar detalle' : btn.dataset.txt || 'Ver detalle completo';
+  if (btn && !btn.dataset.txt && !oculto) btn.dataset.txt = btn.textContent;
 }
 
 // ── MODAL GENERICO ──────────────────────────────────────────
