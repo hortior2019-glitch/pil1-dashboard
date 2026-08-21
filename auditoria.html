@@ -112,6 +112,12 @@ input[type=date].tb{width:140px}
 .pendientes{
   font-size:11.5px;color:var(--oro);font-weight:600;letter-spacing:.3px;
 }
+#pieStats{
+  display:flex;gap:14px;align-items:center;font-variant-numeric:tabular-nums;
+  color:var(--oro-claro);white-space:nowrap;overflow:hidden;
+}
+#pieStats i{font-style:normal;color:rgba(224,193,132,.65);margin-right:4px}
+#pieStats b{color:#fff;font-weight:600}
 
 /* ══════════════ GRILLA ══════════════ */
 .area{flex:1;display:flex;min-height:0}
@@ -164,6 +170,8 @@ thead th[draggable]{cursor:grab}
 .tb.alerta{border-color:#c98b8b;color:#8a1c1c}
 .tb.alerta:hover{background:#fbdada}
 .tb.alerta.activo{background:var(--rojo);color:#fff;border-color:var(--rojo)}
+table.grid td.fila-borrada{background:#e9e9e4;color:#9c9c93;font-style:italic;text-decoration:line-through}
+table.grid td.num.fila-borrada{background:#dededa;color:#8b8b83;text-decoration:none}
 table.grid td.borrada{background:#e9e9e4;color:#9c9c93;font-style:italic}
 table.grid td.borrada::before{
   content:'';position:absolute;left:0;right:0;top:50%;height:1px;background:#c9c9bf;
@@ -415,7 +423,7 @@ footer b{color:#fff;font-weight:600}
 
   <div class="divisor"></div>
 
-  <button class="tb" id="btnColumnas" title="Crear, borrar, ocultar u ordenar columnas">▦ Columnas ▾</button>
+  <button class="tb" id="btnColumnas" title="Borrar filas · crear, ocultar u ordenar columnas">▦ Filas y columnas ▾</button>
   <button class="tb alerta" id="btnDups" style="display:none" title="Viajes repetidos: mismo tiquete, placa, pesos, operación y residuo">⚠ <span id="dupsTexto"></span> ▾</button>
   <button class="tb" id="btnComent" style="display:none" title="Comentarios de hilo del archivo (los que deja otra app)">💬 <span id="comentTexto"></span></button>
   <button class="tb" id="btnComentario" title="Agregar un comentario a la celda">✎ Comentar</button>
@@ -457,8 +465,9 @@ footer b{color:#fff;font-weight:600}
   <span id="pieFilas">0 registros</span>
   <span id="pieSel"></span>
   <span class="sep"></span>
+  <span id="pieStats"></span>
   <span id="pieAtajos" style="cursor:help" title="Ctrl+C copiar · Ctrl+X cortar · Ctrl+V pegar · Ctrl+A seleccionar todo · Ctrl+I pintar el fondo · Ctrl+Shift+I color de letra · Ctrl+B negrilla · Ctrl+Espacio columna · Shift+Espacio fila · Ctrl+Z deshacer · Ctrl+S guardar · arrastre el encabezado para reordenar">Atajos ⌨</span>
-  <span id="pieVersion">Auditoría v1.5</span>
+  <span id="pieVersion">Auditoría v1.6</span>
 </footer>
 
 <!-- popup de color -->
@@ -512,12 +521,13 @@ footer b{color:#fff;font-weight:600}
 
 <!-- menú de columnas -->
 <div class="pop" id="popColumnas">
-  <h3>Columnas</h3>
+  <h3>Filas y columnas</h3>
   <div class="men">
-    <button id="colCrear">Crear una columna nueva…<small>Se agrega al final de la hoja</small></button>
+    <button id="filBorrar">Borrar la fila seleccionada<small id="filBorrarInfo">Se vacía y queda en gris, guardando lo que tenía</small></button>
+    <button id="filRestaurar">Restaurar la fila seleccionada<small>Devuelve los valores desde los comentarios</small></button>
     <div class="sep"></div>
-    <button id="colBorrar">Borrar la columna seleccionada<small id="colBorrarInfo">Se vacía y queda en gris, guardando lo que tenía</small></button>
-    <button id="colRestaurar">Restaurar la columna seleccionada<small>Devuelve los valores desde los comentarios</small></button>
+    <button id="colCrear">Crear una columna nueva…<small>Se agrega al final de la hoja</small></button>
+    <button id="colRestaurar">Restaurar la columna seleccionada<small>Solo si quedó alguna borrada de antes</small></button>
     <div class="sep"></div>
     <button id="colOcultar">Ocultar la columna seleccionada<small>Solo en el sistema: la hoja no cambia</small></button>
     <button id="colIzq">Mover una posición a la izquierda</button>
@@ -698,6 +708,7 @@ function esEditable(c){
   return c < S.colsEdit || c >= S.colsSistema;    // operativas A..U, o creadas por la auditoría
 }
 function esBorrable(c){ return c < S.colsEdit || c >= S.colsSistema; }
+function filaEditable(idx){ return !(S.filas[idx] && S.filas[idx].bo); }
 function motivoBloqueo(c){
   return S.borradas.has(c)
     ? 'La columna ' + letraCol(c+1) + ' está borrada. Restáurela antes de editarla (menú Columnas).'
@@ -837,7 +848,7 @@ async function cargar(){
     pedirComentarios();
     cargarFavoritos();
     estado('ok', 'Conectado');
-    $('pieVersion').textContent = 'Auditoría v1.5 · ' + (res.version || '');
+    $('pieVersion').textContent = 'Auditoría v1.6 · ' + (res.version || '');
     if(res.truncado) aviso('La hoja es muy grande: se trajeron las últimas ' + S.filas.length + ' filas.');
     aviso(S.filas.length + ' registros cargados de ' + res.total + ' en la hoja.');
   }catch(err){
@@ -1058,12 +1069,14 @@ function render(){
     const idxFila = S.vista[vr];
     const f = S.filas[idxFila];
     const esDup = S.resaltarDups && S.dups.has(idxFila);
-    const tds = [`<td class="num${esDup ? ' dup' : ''}" data-vr="${vr}" title="Fila ${f.r}${esDup ? ' · viaje repetido (grupo ' + S.dups.get(idxFila) + ')' : ''} · clic para seleccionar toda la fila">${f.r}</td>`];
+    const filaBo = !!f.bo;
+    const tds = [`<td class="num${esDup ? ' dup' : ''}${filaBo ? ' fila-borrada' : ''}" data-vr="${vr}" title="Fila ${f.r}${filaBo ? ' · BORRADA por auditoría' : ''}${esDup ? ' · viaje repetido (grupo ' + S.dups.get(idxFila) + ')' : ''} · clic para seleccionar toda la fila">${f.r}</td>`];
     for(let pos = 0; pos < S.colsVista.length; pos++){
       const c = S.colsVista[pos];
       const val = f.v[c] ?? '';
       let cls = 'celda';
       if(esDup) cls += ' dup';
+      if(filaBo) cls += ' fila-borrada';
       if(S.coment.has(f.r + '_' + (c+1))) cls += ' coment';
       const colBorrada = S.borradas.has(c);
       if(colBorrada) cls += ' borrada';
@@ -1158,12 +1171,47 @@ function celdasSeleccionadas(){
     }
   return out;
 }
+/* Resumen de lo seleccionado: total, cuántos son números, suma,
+   promedio, máximo y mínimo (como la barra de estado de una hoja).  */
+function resumenSeleccion(){
+  const celdas = celdasSeleccionadas();
+  if(celdas.length < 2) return '';
+  let n = 0, suma = 0, max = -Infinity, min = Infinity, conDato = 0;
+  celdas.forEach(({idx,c})=>{
+    const t = String(S.filas[idx].v[c] ?? '').trim();
+    if(t === '') return;
+    conDato++;
+    if(!esNumero(t)) return;
+    const x = aNumero(t);
+    if(x === null) return;
+    n++; suma += x;
+    if(x > max) max = x;
+    if(x < min) min = x;
+  });
+  const fmt = x => x.toLocaleString('es-CO', { maximumFractionDigits:2 });
+  const partes = [
+    `<i>Celdas</i><b>${celdas.length.toLocaleString('es-CO')}</b>`,
+    `<i>Con dato</i><b>${conDato.toLocaleString('es-CO')}</b>`
+  ];
+  if(n){
+    partes.push(
+      `<i>Números</i><b>${n.toLocaleString('es-CO')}</b>`,
+      `<i>Suma</i><b>${fmt(suma)}</b>`,
+      `<i>Prom.</i><b>${fmt(suma / n)}</b>`,
+      `<i>Máx</i><b>${fmt(max)}</b>`,
+      `<i>Mín</i><b>${fmt(min)}</b>`
+    );
+  }
+  return partes.map(x => '<span>' + x + '</span>').join('');
+}
+
 function actualizarPie(){
   $('pieFilas').textContent = S.vista.length.toLocaleString('es-CO') + ' registros' +
     (S.vista.length !== S.filas.length ? ' (de ' + S.filas.length.toLocaleString('es-CO') + ' cargados)' : '');
   const n = celdasSeleccionadas().length;
   $('pieSel').textContent = n > 1 ? n + ' celdas seleccionadas'
     : (S.foco && S.vista[S.foco.vr] !== undefined ? 'Celda ' + letraCol(focoCol()+1) + S.filas[S.vista[S.foco.vr]].r : '');
+  $('pieStats').innerHTML = resumenSeleccion();
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -1194,7 +1242,17 @@ function seleccionarTodo(){
 
 $('cuerpo').addEventListener('mousedown', ev=>{
   const num = ev.target.closest('td.num');
-  if(num){ seleccionarFila(+num.dataset.vr); return; }
+  if(num){
+    const vr = +num.dataset.vr;
+    if(ev.shiftKey && S.sel){          // Shift+clic en los números: rango de filas
+      S.sel.r2 = vr; S.sel.c1 = 0; S.sel.c2 = S.colsVista.length - 1;
+      S.foco = { vr, pos:0 };
+      render(); actualizarPie(); mostrarDetalle();
+    }else{
+      seleccionarFila(vr);
+    }
+    return;
+  }
   const td = ev.target.closest('td.celda');
   if(!td) return;
   if(ev.target.tagName === 'A') return;
@@ -1366,6 +1424,7 @@ function asegurarVisible(vr){
 function editarCelda(td, inicial){
   const vr = +td.dataset.vr, c = +td.dataset.c;
   if(!esEditable(c)){ aviso(motivoBloqueo(c), true); return; }
+  if(!filaEditable(S.vista[vr])){ aviso('La fila ' + S.filas[S.vista[vr]].r + ' está borrada. Restáurela antes de editarla (menú Filas y columnas).', true); return; }
   const idx = S.vista[vr];
   const actual = S.filas[idx].v[c] ?? '';
 
@@ -1403,6 +1462,7 @@ function cambiar(idx, c, tipo, valor, op){
   op = op || {};
   const f = S.filas[idx];
   if(tipo !== 'nota' && !esEditable(c)){ aviso(motivoBloqueo(c), true); return; }
+  if(tipo !== 'nota' && !filaEditable(idx)) return;   // fila borrada: se ignora en silencio
 
   let previo;
   if(tipo === 'valor'){
@@ -1452,7 +1512,10 @@ function cambiar(idx, c, tipo, valor, op){
 /* Aplica una operación sobre muchas celdas a la vez sin repintar la
    grilla en cada una: un solo render, un solo envío y un solo deshacer. */
 function enLote(celdas, fn, etiqueta){
-  if(!celdas.length){ aviso('Seleccione primero una o varias celdas.', true); return 0; }
+  const total = celdas.length;
+  celdas = celdas.filter(x => filaEditable(x.idx));
+  if(total !== celdas.length) aviso((total - celdas.length) + ' celdas de filas borradas se omitieron.');
+  if(!celdas.length){ aviso('Seleccione primero una o varias celdas editables.', true); return 0; }
   if(celdas.length > 800 && !confirm('Va a modificar ' + celdas.length + ' celdas' + (etiqueta ? ' (' + etiqueta + ')' : '') + '. ¿Continuar?')) return 0;
   const g = [];
   celdas.forEach(x => fn(x, g));
@@ -1731,12 +1794,17 @@ function mostrarDetalle(){
 
   const hilos = S.coment.get(f.r + '_' + (c+1));
   const bloqueHilos = hilos ? `<div class="campo"><span class="et">Comentarios del archivo (otra app)</span>${pintarHilos(hilos)}</div>` : '';
+  const avisoFila = f.bo
+    ? `<div class="campo"><div class="val" style="background:#e9e9e4;border-color:#c9c9bf;color:#6d6d64;font-family:var(--sans);font-size:12px">
+         <b>Fila borrada por auditoría.</b> Las columnas A a U se vaciaron; lo que tenían quedó en el comentario de cada celda.
+         Se devuelve con <b>Filas y columnas → Restaurar la fila</b>.
+       </div></div>` : '';
   const avisoDup = S.dups.has(S.vista[S.foco.vr])
     ? `<div class="campo"><div class="val" style="background:#fbdada;border-color:#e0b4b4;color:#8a1c1c;font-family:var(--sans);font-size:12px">
          <b>Viaje repetido.</b> Coincide con otro registro en tiquete, placa, pesos, operación y residuo (grupo ${S.dups.get(S.vista[S.foco.vr])}).
        </div></div>` : '';
 
-  $('panelCuerpo').innerHTML = avisoCol + avisoDup + bloqueHilos + `
+  $('panelCuerpo').innerHTML = avisoFila + avisoCol + avisoDup + bloqueHilos + `
     <div class="campo">
       <span class="et">${esc(S.headers[c] || letraCol(c+1))}</span>
       <div class="val">${esc(f.v[c] ?? '') || '<i style="color:var(--tinta-suave)">(vacío)</i>'}</div>
@@ -1931,20 +1999,56 @@ async function crearColumna(nombre){
   aviso('Columna ' + res.letra + ' creada: ' + res.nombre + '.');
 }
 
-async function borrarColumna(){
-  if(!S.foco){ aviso('Seleccione primero una celda de la columna.', true); return; }
-  const c = focoCol();
-  const nombre = S.headers[c] || letraCol(c+1);
-  if(S.borradas.has(c)){ aviso('La columna ' + letraCol(c+1) + ' ya está borrada.', true); return; }
-  if(!esBorrable(c)){ aviso('La columna ' + letraCol(c+1) + ' es de solo lectura: no se puede borrar.', true); return; }
-  if(!confirm('¿Borrar la columna ' + letraCol(c+1) + ' («' + nombre + '»)?\n\n' +
-              'Se vacía en TODA la hoja y queda en gris. Cada celda guarda en su comentario el valor que tenía, ' +
-              'así que se puede restaurar después.')) return;
-  const res = await opColumna({ op:'borrar', col:c + 1 }, 'Borrando la columna…');
+function filasSeleccionadas(){
+  if(!S.sel) return [];
+  const {r1,r2} = normalizar(S.sel);
+  const out = [];
+  for(let vr = r1; vr <= r2; vr++){
+    const f = S.filas[S.vista[vr]];
+    if(f) out.push(f);
+  }
+  return out;
+}
+
+async function borrarFilas(){
+  const filas = filasSeleccionadas().filter(f => !f.bo);
+  if(!filas.length){ aviso('Seleccione una o más filas (clic en el número de fila).', true); return; }
+  const n = filas.length;
+  if(!confirm('¿Borrar ' + (n === 1 ? 'la fila ' + filas[0].r : 'las ' + n + ' filas seleccionadas') + '?\n\n' +
+              'Se vacían las columnas A a U y quedan en gris. Cada celda guarda en su comentario lo que tenía, ' +
+              'y las fotos, el ID_ENVIO, el corte y el certificado no se tocan.\n\n' +
+              'La fila NO se elimina de la hoja, así que ningún registro se corre de lugar. Se puede restaurar.')) return;
+  const res = await opFila({ op:'borrar', filas: filas.map(f => f.r) }, 'Borrando…');
   if(!res) return;
   await cargar();
-  seleccionarColumna(c);
-  aviso('Columna ' + res.letra + ' borrada · ' + res.conDato + ' valores quedaron guardados en los comentarios.');
+  aviso((res.filas || []).length + (res.filas.length === 1 ? ' fila borrada.' : ' filas borradas.') +
+        (res.omitidas && res.omitidas.length ? ' ' + res.omitidas.length + ' omitidas.' : ''));
+}
+
+async function restaurarFilas(){
+  const filas = filasSeleccionadas().filter(f => f.bo);
+  if(!filas.length){ aviso('Ninguna de las filas seleccionadas está borrada.', true); return; }
+  if(!confirm('¿Restaurar ' + (filas.length === 1 ? 'la fila ' + filas[0].r : 'las ' + filas.length + ' filas') + '?\n\n' +
+              'Se devuelven los valores leyéndolos de los comentarios de cada celda.')) return;
+  const res = await opFila({ op:'restaurar', filas: filas.map(f => f.r) }, 'Restaurando…');
+  if(!res) return;
+  await cargar();
+  aviso((res.filas || []).length + ' fila(s) restaurada(s).');
+}
+
+async function opFila(payload, mensaje){
+  if(S.cola.length) await enviarCola();
+  cargando(true, mensaje);
+  try{
+    const res = await llamar(Object.assign({ accion:'auditFila', autor: CFG.autor }, payload));
+    if(!res.success) throw new Error(res.error || (res.omitidas && res.omitidas[0] ? res.omitidas[0].motivo : 'No se pudo completar.'));
+    return res;
+  }catch(err){
+    aviso(err.message, true);
+    return null;
+  }finally{
+    cargando(false);
+  }
 }
 
 async function restaurarColumna(){
@@ -1964,9 +2068,15 @@ function abrirMenuColumnas(){
   const pop = $('popColumnas');
   const c = S.foco ? focoCol() : null;
   const nombre = c !== null ? (letraCol(c+1) + ' · ' + (S.headers[c] || '')) : 'ninguna columna seleccionada';
-  $('colBorrarInfo').textContent = c === null ? 'Seleccione primero una celda de la columna'
-                                              : 'Columna ' + nombre;
-  $('colBorrar').disabled    = c === null || !esBorrable(c) || S.borradas.has(c);
+  const filasSel = filasSeleccionadas();
+  const porBorrar = filasSel.filter(f => !f.bo).length;
+  const porRestaurar = filasSel.filter(f => f.bo).length;
+  $('filBorrar').disabled    = porBorrar === 0;
+  $('filRestaurar').disabled = porRestaurar === 0;
+  $('filBorrar').firstChild.textContent = porBorrar > 1 ? 'Borrar las ' + porBorrar + ' filas seleccionadas' : 'Borrar la fila seleccionada';
+  $('filBorrarInfo').textContent = filasSel.length
+    ? 'Fila' + (porBorrar > 1 ? 's ' : ' ') + filasSel.filter(f=>!f.bo).map(f=>f.r).slice(0,6).join(', ') + (porBorrar > 6 ? '…' : '')
+    : 'Seleccione una fila (clic en su número)';
   $('colRestaurar').disabled = c === null || !S.borradas.has(c);
   $('colOcultar').disabled   = c === null;
   $('colIzq').disabled       = c === null || posDe(c) <= 0;
@@ -2042,7 +2152,8 @@ $('colCrear').addEventListener('click', ()=>{
   $('veloColumna').classList.add('abierto');
   setTimeout(()=>$('colNombre').focus(), 40);
 });
-$('colBorrar').addEventListener('click', ()=>{ cerrarPop('popColumnas'); borrarColumna(); });
+$('filBorrar').addEventListener('click', ()=>{ cerrarPop('popColumnas'); borrarFilas(); });
+$('filRestaurar').addEventListener('click', ()=>{ cerrarPop('popColumnas'); restaurarFilas(); });
 $('colRestaurar').addEventListener('click', ()=>{ cerrarPop('popColumnas'); restaurarColumna(); });
 $('colOcultar').addEventListener('click', ()=>{ cerrarPop('popColumnas'); if(S.foco) ocultarColumna(focoCol()); });
 $('colIzq').addEventListener('click', ()=>{
