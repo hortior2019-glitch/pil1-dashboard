@@ -273,7 +273,27 @@ footer b{color:#fff;font-weight:600}
   margin:0 0 8px;font-size:10px;letter-spacing:1.6px;text-transform:uppercase;color:var(--tinta-suave);
   font-weight:600;
 }
+.pop .sub{
+  font-size:9.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--tinta-suave);
+  margin:9px 0 5px;display:flex;align-items:center;gap:6px;
+}
+.pop .sub:first-of-type{margin-top:2px}
+.pop .sub span{text-transform:none;letter-spacing:0;font-size:10.5px;color:var(--linea-fuerte)}
+.favs{display:flex;flex-wrap:wrap;gap:5px;min-height:22px}
+.fav{position:relative;width:22px;height:22px}
+.fav button{
+  width:22px;height:22px;border:1px solid rgba(0,0,0,.28);border-radius:3px;padding:0;
+  box-shadow:0 0 0 1px var(--oro-claro);
+}
+.fav button:hover{outline:2px solid var(--verde);outline-offset:1px}
+.fav .fav-x{
+  position:absolute;top:-6px;right:-6px;width:14px;height:14px;border-radius:50%;
+  background:var(--rojo);color:#fff;font-size:10px;line-height:14px;text-align:center;
+  cursor:pointer;display:none;
+}
+.fav:hover .fav-x{display:block}
 .swatches{display:grid;grid-template-columns:repeat(10,20px);gap:4px}
+.swatches.casa{grid-template-columns:repeat(8,20px)}
 .swatches button{width:20px;height:20px;border:1px solid rgba(0,0,0,.22);border-radius:2px;padding:0}
 .swatches button:hover{outline:2px solid var(--verde);outline-offset:1px}
 .pop-pie{display:flex;align-items:center;gap:8px;margin-top:10px;border-top:1px solid var(--linea);padding-top:9px}
@@ -383,11 +403,11 @@ footer b{color:#fff;font-weight:600}
   <div class="grupo">
     <button class="tb" id="btnLetra" title="Color de la letra">
       <span class="glifo" style="font-weight:700">A</span>
-      <span class="muestra-color" id="muestraLetra" style="background:#c1121f"></span> ▾
+      <span class="muestra-color" id="muestraLetra" style="background:#cc0000"></span> ▾
     </button>
     <button class="tb" id="btnFondo" title="Color de fondo de la celda">
       <span class="glifo">▩</span>
-      <span class="muestra-color" id="muestraFondo" style="background:#fff3b0"></span> ▾
+      <span class="muestra-color" id="muestraFondo" style="background:#ffe599"></span> ▾
     </button>
     <button class="tb" id="btnNegrilla" title="Negrilla (Ctrl+B)"><b style="font-family:var(--serif);font-size:14px">N</b></button>
     <button class="tb" id="btnQuitarFormato" title="Volver al formato original (color y negrilla)">Sin formato</button>
@@ -396,7 +416,7 @@ footer b{color:#fff;font-weight:600}
   <div class="divisor"></div>
 
   <button class="tb" id="btnColumnas" title="Crear, borrar, ocultar u ordenar columnas">▦ Columnas ▾</button>
-  <button class="tb alerta" id="btnDups" style="display:none" title="Viajes repetidos: misma placa, pesos, operación y residuo">⚠ <span id="dupsTexto"></span> ▾</button>
+  <button class="tb alerta" id="btnDups" style="display:none" title="Viajes repetidos: mismo tiquete, placa, pesos, operación y residuo">⚠ <span id="dupsTexto"></span> ▾</button>
   <button class="tb" id="btnComent" style="display:none" title="Comentarios de hilo del archivo (los que deja otra app)">💬 <span id="comentTexto"></span></button>
   <button class="tb" id="btnComentario" title="Agregar un comentario a la celda">✎ Comentar</button>
   <button class="tb" id="btnDeshacer" title="Deshacer el último cambio (Ctrl+Z)">↶ Deshacer</button>
@@ -438,16 +458,24 @@ footer b{color:#fff;font-weight:600}
   <span id="pieSel"></span>
   <span class="sep"></span>
   <span id="pieAtajos" style="cursor:help" title="Ctrl+C copiar · Ctrl+X cortar · Ctrl+V pegar · Ctrl+A seleccionar todo · Ctrl+I pintar el fondo · Ctrl+Shift+I color de letra · Ctrl+B negrilla · Ctrl+Espacio columna · Shift+Espacio fila · Ctrl+Z deshacer · Ctrl+S guardar · arrastre el encabezado para reordenar">Atajos ⌨</span>
-  <span id="pieVersion">Auditoría v1.3</span>
+  <span id="pieVersion">Auditoría v1.5</span>
 </footer>
 
 <!-- popup de color -->
 <div class="pop" id="popColor">
   <h3 id="popColorTit">Color</h3>
+  <div id="favBloque" style="display:none">
+    <div class="sub">Favoritos <span>del equipo</span></div>
+    <div class="favs" id="favs"></div>
+  </div>
+  <div class="sub">De la casa</div>
+  <div class="swatches casa" id="swatchesCasa"></div>
+  <div class="sub">Paleta</div>
   <div class="swatches" id="swatches"></div>
   <div class="pop-pie">
     <input type="color" id="colorLibre" value="#1c5636">
-    <button class="mini" id="usarLibre">Usar este</button>
+    <button class="mini" id="usarLibre">Usar</button>
+    <button class="mini" id="favAgregar" title="Guardar este color en los favoritos del equipo">☆ Favorito</button>
     <button class="mini" id="colorNinguno">Sin color</button>
   </div>
 </div>
@@ -608,6 +636,7 @@ const S = {
   dups:      new Map(),   // índice de fila → número de grupo de viaje repetido
   dupGrupos: 0,
   resaltarDups: true,
+  favoritos: [],          // colores favoritos (viven en la pestaña AUDITORIA_COLORES)
   soloDups:  false,
   filtros:   {},          // colIdx -> Set de valores permitidos
   orden:     null,        // {col, dir}
@@ -806,8 +835,9 @@ async function cargar(){
     construirCabecera();
     recalcularVista();
     pedirComentarios();
+    cargarFavoritos();
     estado('ok', 'Conectado');
-    $('pieVersion').textContent = 'Auditoría v1.3 · ' + (res.version || '');
+    $('pieVersion').textContent = 'Auditoría v1.5 · ' + (res.version || '');
     if(res.truncado) aviso('La hoja es muy grande: se trajeron las últimas ' + S.filas.length + ' filas.');
     aviso(S.filas.length + ' registros cargados de ' + res.total + ' en la hoja.');
   }catch(err){
@@ -1541,17 +1571,77 @@ function deshacer(){
 /* ══════════════════════════════════════════════════════════════
    12. COLORES
    ══════════════════════════════════════════════════════════════ */
+// 7 filas x 10 tonos: grises + 10 colores en 6 intensidades cada uno
 const PALETA = [
   '#000000','#434343','#666666','#999999','#b7b7b7','#cccccc','#d9d9d9','#efefef','#f3f3f3','#ffffff',
-  '#980000','#c1121f','#e06666','#f4a261','#f6bd60','#ffd166','#fff3b0','#e9f5db','#d8f3dc','#e7f0fd',
-  '#5c0b0b','#9b2226','#bc4749','#bb6b1b','#c08a2e','#e0c184','#f3e7cd','#a7c957','#52b788','#7fa1d8',
-  '#123c25','#1c5636','#2a7049','#386641','#4a7c59','#0b525b','#1b4965','#274690','#3d348b','#5a189a'
+  '#f4cccc','#fce5cd','#fff2cc','#eaf5cd','#d9ead3','#d0e0e3','#cfe2f3','#d9d2e9','#ead1dc','#f8d7e3',
+  '#ea9999','#f9cb9c','#ffe599','#d5eb9c','#b6d7a8','#a2c4c9','#9fc5e8','#b4a7d6','#d5a6bd','#f1aec9',
+  '#e06666','#f6b26b','#ffd966','#bfe06b','#93c47d','#76a5af','#6fa8dc','#8e7cc3','#c27ba0','#e87faf',
+  '#cc0000','#e69138','#f1c232','#a2c93a','#6aa84f','#45818e','#3d85c6','#674ea7','#a64d79','#d94f8c',
+  '#990000','#b45f06','#bf9000','#6f8f1f','#38761d','#134f5c','#0b5394','#351c75','#741b47','#a81f5e',
+  '#660000','#783f04','#7f6000','#47600f','#274e13','#0c343d','#073763','#20124d','#4c1130','#6d1140'
 ];
+// tonos institucionales del sistema, siempre a mano
+const PALETA_CASA = ['#1c5636','#2a7049','#c08a2e','#e0c184','#f3e7cd','#9b2226','#fbdada','#efefef'];
 let colorObjetivo = 'fuente';
-let ultimo = { fuente:'#c1121f', fondo:'#fff3b0' };
+let ultimo = { fuente:'#cc0000', fondo:'#ffe599' };
 
 function pintarSwatches(){
   $('swatches').innerHTML = PALETA.map(c=>`<button data-color="${c}" style="background:${c}" title="${c}"></button>`).join('');
+  $('swatchesCasa').innerHTML = PALETA_CASA.map(c=>`<button data-color="${c}" style="background:${c}" title="${c}"></button>`).join('');
+}
+
+/* ── Favoritos: viven en la pestaña AUDITORIA_COLORES del Sheet,
+   así los comparte todo el equipo y no dependen del navegador.  */
+function pintarFavoritos(){
+  const caja = $('favs');
+  $('favBloque').style.display = S.favoritos.length ? '' : 'none';
+  caja.innerHTML = S.favoritos.map(f=>{
+    const rotulo = (f.nombre || f.color) + (f.autor ? ' · ' + f.autor : '');
+    return `<div class="fav">
+      <button data-color="${esc(f.color)}" style="background:${esc(f.color)}" title="${esc(rotulo)}"></button>
+      <span class="fav-x" data-quitar="${esc(f.color)}" title="Quitar de favoritos">×</span>
+    </div>`;
+  }).join('');
+  caja.querySelectorAll('button[data-color]').forEach(b=>{
+    b.addEventListener('click', ()=>aplicarColor(b.dataset.color));
+  });
+  caja.querySelectorAll('.fav-x').forEach(x=>{
+    x.addEventListener('click', ev=>{ ev.stopPropagation(); quitarFavorito(x.dataset.quitar); });
+  });
+}
+
+async function cargarFavoritos(){
+  try{
+    const res = await llamar({ accion:'auditColores', op:'listar' });
+    if(res.success){ S.favoritos = res.favoritos || []; pintarFavoritos(); }
+  }catch(e){ /* los favoritos son un extra: si fallan, la paleta funciona igual */ }
+}
+
+async function agregarFavorito(){
+  const color = ($('colorLibre').value || '').toLowerCase();
+  if(!/^#[0-9a-f]{6}$/.test(color)){ aviso('Elija primero un color.', true); return; }
+  if(S.favoritos.some(f => f.color === color)){ aviso('Ese color ya está en favoritos.'); return; }
+  const nombre = prompt('Nombre para este color (opcional):\n' + color, '');
+  if(nombre === null) return;
+  try{
+    const res = await llamar({ accion:'auditColores', op:'agregar', color, nombre, autor: CFG.autor });
+    if(!res.success) throw new Error(res.error || 'No se pudo guardar.');
+    if(!res.ya) S.favoritos.push({ color, nombre: nombre.trim(), autor: CFG.autor, fecha: '' });
+    pintarFavoritos();
+    aviso(res.ya ? 'Ese color ya estaba en favoritos.' : 'Color guardado en los favoritos del equipo.');
+  }catch(err){ aviso(err.message, true); }
+}
+
+async function quitarFavorito(color){
+  if(!confirm('¿Quitar ' + color + ' de los favoritos del equipo?')) return;
+  try{
+    const res = await llamar({ accion:'auditColores', op:'borrar', color });
+    if(!res.success) throw new Error(res.error || 'No se pudo quitar.');
+    S.favoritos = S.favoritos.filter(f => f.color !== color);
+    pintarFavoritos();
+    aviso('Color quitado de favoritos.');
+  }catch(err){ aviso(err.message, true); }
 }
 function abrirColor(tipo, btn){
   colorObjetivo = tipo;
@@ -1566,6 +1656,7 @@ function abrirColor(tipo, btn){
 }
 function aplicarColor(color, tipo){
   const objetivo = tipo || colorObjetivo;
+  if(/^#[0-9a-f]{6}$/i.test(color)) $('colorLibre').value = color.toLowerCase();
   const celdas = celdasSeleccionadas();
   if(!celdas.length){ aviso('Seleccione primero una o varias celdas.', true); cerrarPop('popColor'); return; }
   const editables = celdas.filter(x => esEditable(x.c));
@@ -1642,7 +1733,7 @@ function mostrarDetalle(){
   const bloqueHilos = hilos ? `<div class="campo"><span class="et">Comentarios del archivo (otra app)</span>${pintarHilos(hilos)}</div>` : '';
   const avisoDup = S.dups.has(S.vista[S.foco.vr])
     ? `<div class="campo"><div class="val" style="background:#fbdada;border-color:#e0b4b4;color:#8a1c1c;font-family:var(--sans);font-size:12px">
-         <b>Viaje repetido.</b> Coincide con otro registro en placa, pesos, operación y residuo (grupo ${S.dups.get(S.vista[S.foco.vr])}).
+         <b>Viaje repetido.</b> Coincide con otro registro en tiquete, placa, pesos, operación y residuo (grupo ${S.dups.get(S.vista[S.foco.vr])}).
        </div></div>` : '';
 
   $('panelCuerpo').innerHTML = avisoCol + avisoDup + bloqueHilos + `
@@ -1698,15 +1789,17 @@ function exportarCSV(){
 /* ══════════════════════════════════════════════════════════════
    14a. VIAJES REPETIDOS  (placa + pesos + operación + residuo)
    ══════════════════════════════════════════════════════════════ */
-const COLS_VIAJE = [4, 5, 6, 7, 8, 9];   // PLACA, PESO LLENO, PESO VACIO, PESO NETO, OPERACION, RESIDUO
+// NUMERO TIQUETE, PLACA, PESO LLENO, PESO VACIO, PESO NETO, OPERACION, RESIDUO
+const COLS_VIAJE = [1, 4, 5, 6, 7, 8, 9];
 
 function claveViaje(f){
-  const txt = v => String(v ?? '').trim().toUpperCase();
+  const txt = v => String(v ?? '').trim().toUpperCase().replace(/['"]/g, '');
   const num = v => { const n = aNumero(v); return n === null ? txt(v) : String(n); };
-  const placa = txt(f.v[4]);
-  const pesos = num(f.v[5]) + num(f.v[6]) + num(f.v[7]);
+  const placa   = txt(f.v[4]);
+  const tiquete = txt(f.v[1]);
+  const pesos   = num(f.v[5]) + num(f.v[6]) + num(f.v[7]);
   if(!placa || pesos === '000') return '';       // filas sin datos no cuentan
-  return [placa, num(f.v[5]), num(f.v[6]), num(f.v[7]), txt(f.v[8]), txt(f.v[9])].join('|');
+  return [tiquete, placa, num(f.v[5]), num(f.v[6]), num(f.v[7]), txt(f.v[8]), txt(f.v[9])].join('|');
 }
 
 function detectarDuplicados(){
@@ -1735,7 +1828,7 @@ function actualizarChipDups(){
   if(!S.dups.size){ b.style.display = 'none'; S.soloDups = false; return; }
   b.style.display = '';
   b.classList.toggle('activo', S.soloDups);
-  b.title = 'Viajes repetidos: misma placa, pesos, operación y residuo · ' + S.dupGrupos + (S.dupGrupos===1?' grupo':' grupos');
+  b.title = 'Viajes repetidos: mismo tiquete, placa, pesos, operación y residuo · ' + S.dupGrupos + (S.dupGrupos===1?' grupo':' grupos');
   $('dupsTexto').textContent = S.dups.size + ' repetidos';
 }
 
@@ -2016,6 +2109,11 @@ $('swatches').addEventListener('click', ev=>{
   const b = ev.target.closest('button[data-color]');
   if(b) aplicarColor(b.dataset.color);
 });
+$('swatchesCasa').addEventListener('click', ev=>{
+  const b = ev.target.closest('button[data-color]');
+  if(b) aplicarColor(b.dataset.color);
+});
+$('favAgregar').addEventListener('click', agregarFavorito);
 $('usarLibre').addEventListener('click', ()=>aplicarColor($('colorLibre').value));
 $('colorNinguno').addEventListener('click', ()=>aplicarColor(colorObjetivo === 'fuente' ? '#000000' : '#ffffff'));
 
