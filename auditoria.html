@@ -1,0 +1,1754 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sistema de Auditoría · Ingreso de Material</title>
+<style>
+/* ══════════════════════════════════════════════════════════════
+   PALETA OXFORD
+   ══════════════════════════════════════════════════════════════ */
+:root{
+  --verde:#1c5636;
+  --verde-osc:#123c25;
+  --verde-claro:#2a7049;
+  --oro:#c08a2e;
+  --oro-claro:#e0c184;
+  --oro-tenue:#f3e7cd;
+  --crema:#faf7f0;
+  --papel:#ffffff;
+  --tinta:#1b1b1a;
+  --tinta-suave:#5c5c55;
+  --linea:#ddd8cc;
+  --linea-fuerte:#c5bfae;
+  --rojo:#9b2226;
+  --serif:Georgia,"Times New Roman",Times,serif;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --fila-h:30px;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;font-family:var(--sans);color:var(--tinta);background:var(--crema);
+  font-size:13px;display:flex;flex-direction:column;overflow:hidden;
+}
+button{font-family:inherit;font-size:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
+
+/* ══════════════ ENCABEZADO ══════════════ */
+header{
+  background:var(--verde);color:#fff;border-bottom:4px solid var(--oro);
+  padding:10px 18px;display:flex;align-items:center;gap:18px;flex:0 0 auto;
+}
+.escudo{
+  width:34px;height:38px;flex:0 0 auto;
+  background:var(--oro);color:var(--verde-osc);
+  clip-path:polygon(0 0,100% 0,100% 72%,50% 100%,0 72%);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--serif);font-weight:700;font-size:15px;letter-spacing:.5px;
+  padding-bottom:6px;
+}
+.marca h1{
+  margin:0;font-family:var(--serif);font-size:19px;font-weight:400;letter-spacing:.4px;
+}
+.marca p{
+  margin:2px 0 0;font-size:10.5px;letter-spacing:2.2px;text-transform:uppercase;
+  color:var(--oro-claro);
+}
+.header-sep{flex:1}
+.hbox{display:flex;align-items:center;gap:8px}
+.hbox label{font-size:10.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--oro-claro)}
+.hinput{
+  background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.28);
+  color:#fff;border-radius:3px;padding:5px 9px;width:150px;outline:none;
+}
+.hinput::placeholder{color:rgba(255,255,255,.5)}
+.hinput:focus{border-color:var(--oro-claro);background:rgba(255,255,255,.16)}
+.hbtn{
+  background:transparent;border:1px solid rgba(255,255,255,.35);color:#fff;
+  border-radius:3px;padding:6px 11px;letter-spacing:.3px;
+}
+.hbtn:hover{background:rgba(255,255,255,.12);border-color:var(--oro-claro)}
+
+.estado{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--oro-claro);white-space:nowrap}
+.punto{width:8px;height:8px;border-radius:50%;background:#8ea79a;flex:0 0 auto}
+.punto.ok{background:#6ec48a;box-shadow:0 0 0 3px rgba(110,196,138,.22)}
+.punto.busy{background:var(--oro-claro);animation:late 1s infinite}
+.punto.err{background:#e07a7a;box-shadow:0 0 0 3px rgba(224,122,122,.22)}
+@keyframes late{50%{opacity:.25}}
+
+/* ══════════════ BARRA DE HERRAMIENTAS ══════════════ */
+.toolbar{
+  background:var(--papel);border-bottom:1px solid var(--linea);
+  padding:7px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:0 0 auto;
+  box-shadow:0 1px 2px rgba(0,0,0,.03);
+}
+.grupo{display:flex;align-items:center;gap:6px}
+.divisor{width:1px;height:22px;background:var(--linea);margin:0 2px}
+.tb{
+  background:var(--papel);border:1px solid var(--linea-fuerte);border-radius:3px;
+  padding:5px 9px;color:var(--tinta);display:inline-flex;align-items:center;gap:5px;
+  white-space:nowrap;
+}
+.tb:hover{background:var(--crema);border-color:var(--verde)}
+.tb:disabled{opacity:.4;cursor:default}
+.tb.primario{background:var(--verde);border-color:var(--verde);color:#fff;font-weight:600}
+.tb.primario:hover{background:var(--verde-claro)}
+.tb.primario:disabled{background:#9fb3a7;border-color:#9fb3a7}
+.tb .glifo{font-family:var(--serif);font-size:14px;line-height:1}
+select.tb,input.tb{padding:6px 8px}
+input[type=date].tb{width:140px}
+.buscar{position:relative}
+.buscar input{
+  border:1px solid var(--linea-fuerte);border-radius:3px;padding:5px 9px 5px 25px;width:180px;outline:none;background:var(--papel);
+}
+.buscar input:focus{border-color:var(--verde)}
+.buscar span{position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--tinta-suave);font-size:12px}
+
+.muestra-color{
+  width:15px;height:15px;border:1px solid rgba(0,0,0,.28);border-radius:2px;display:inline-block;
+}
+.pendientes{
+  font-size:11.5px;color:var(--oro);font-weight:600;letter-spacing:.3px;
+}
+
+/* ══════════════ GRILLA ══════════════ */
+.area{flex:1;display:flex;min-height:0}
+.grid-wrap{
+  flex:1;overflow:auto;background:var(--papel);position:relative;min-width:0;
+}
+table.grid{border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:12.5px}
+table.grid thead th{
+  position:sticky;top:0;z-index:5;background:var(--verde);color:#fff;
+  border-right:1px solid rgba(255,255,255,.16);border-bottom:2px solid var(--oro);
+  padding:0;text-align:left;font-weight:600;height:44px;user-select:none;
+}
+.th-in{display:flex;align-items:center;gap:5px;padding:5px 7px;height:44px;overflow:hidden;position:relative}
+.th-txt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.15;font-size:11px;letter-spacing:.3px}
+.th-letra{
+  font-family:var(--serif);font-size:10px;color:var(--oro-claro);letter-spacing:1px;display:block;
+}
+.th-filtro{
+  background:transparent;border:0;color:var(--oro-claro);padding:2px 3px;border-radius:2px;font-size:10px;line-height:1;
+}
+.th-filtro:hover{background:rgba(255,255,255,.16);color:#fff}
+.th-filtro.activo{color:var(--verde-osc);background:var(--oro-claro)}
+.th-resize{position:absolute;right:0;top:0;width:6px;height:100%;cursor:col-resize;z-index:6}
+thead th.esquina{z-index:7;left:0;width:56px;background:var(--verde-osc);text-align:center}
+thead th.solo-lectura{background:var(--verde-osc)}
+
+table.grid td{
+  border-right:1px solid var(--linea);border-bottom:1px solid var(--linea);
+  padding:0 7px;height:var(--fila-h);max-height:var(--fila-h);overflow:hidden;
+  white-space:nowrap;text-overflow:ellipsis;background:var(--papel);position:relative;
+  cursor:cell;
+}
+table.grid td.num{
+  position:sticky;left:0;z-index:3;background:var(--crema);color:var(--tinta-suave);
+  text-align:center;font-family:var(--serif);font-size:11px;width:56px;
+  border-right:1px solid var(--linea-fuerte);cursor:default;
+}
+table.grid tr:hover td.num{background:var(--oro-tenue);color:var(--verde-osc)}
+table.grid td.ro{background:#f5f2ea;color:var(--tinta-suave)}
+table.grid td.borrada{background:#e9e9e4;color:#9c9c93;font-style:italic}
+table.grid td.borrada::before{
+  content:'';position:absolute;left:0;right:0;top:50%;height:1px;background:#c9c9bf;
+}
+thead th.borrada{background:#6d746f;color:#dcdcd4}
+thead th.creada{background:var(--verde-claro);box-shadow:inset 3px 0 0 var(--oro)}
+.men{display:flex;flex-direction:column;gap:2px;min-width:230px}
+.men button{
+  text-align:left;background:transparent;border:0;border-radius:3px;padding:8px 10px;font-size:12.5px;color:var(--tinta);
+}
+.men button:hover{background:var(--oro-tenue)}
+.men button:disabled{opacity:.4;background:transparent}
+.men .sep{height:1px;background:var(--linea);margin:4px 0}
+.men small{display:block;color:var(--tinta-suave);font-size:11px;margin-top:1px}
+table.grid td.sel{box-shadow:inset 0 0 0 1px var(--verde)}
+table.grid td.foco{box-shadow:inset 0 0 0 2px var(--verde);z-index:2}
+table.grid td.rango{background-image:linear-gradient(rgba(28,86,54,.10),rgba(28,86,54,.10))}
+table.grid td.pendiente::before{
+  content:'';position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--oro);
+}
+table.grid td.guardado{animation:flash 1.4s ease-out}
+@keyframes flash{
+  0%{box-shadow:inset 0 0 0 2px rgba(74,163,110,.95)}
+  100%{box-shadow:inset 0 0 0 2px rgba(74,163,110,0)}
+}
+table.grid td.nota::after{
+  content:'';position:absolute;top:0;right:0;border-width:0 6px 6px 0;border-style:solid;
+  border-color:transparent var(--oro) transparent transparent;
+}
+td .link{color:var(--verde);text-decoration:underline}
+.editor{
+  position:absolute;inset:-1px;width:calc(100% + 2px);border:2px solid var(--verde);
+  padding:0 5px;outline:none;font:inherit;background:#fff;z-index:9;color:var(--tinta);
+}
+.vacio{
+  padding:60px 20px;text-align:center;color:var(--tinta-suave);font-family:var(--serif);font-size:15px;
+}
+
+/* ══════════════ PANEL LATERAL ══════════════ */
+.panel{
+  width:330px;flex:0 0 auto;background:var(--crema);border-left:1px solid var(--linea);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.panel.oculto{display:none}
+.panel-cab{
+  background:var(--verde-osc);color:#fff;padding:11px 14px;display:flex;align-items:center;gap:8px;
+  border-bottom:3px solid var(--oro);
+}
+.panel-cab h2{margin:0;font-family:var(--serif);font-size:14px;font-weight:400;flex:1;letter-spacing:.3px}
+.panel-cab button{background:transparent;border:0;color:var(--oro-claro);font-size:16px;line-height:1}
+.panel-cuerpo{flex:1;overflow:auto;padding:14px}
+.campo{margin-bottom:14px}
+.campo .et{
+  font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--tinta-suave);
+  margin-bottom:4px;display:block;
+}
+.campo .val{
+  background:var(--papel);border:1px solid var(--linea);border-radius:3px;padding:7px 9px;
+  font-family:var(--serif);font-size:14px;word-break:break-word;
+}
+.historial{list-style:none;margin:0;padding:0}
+.historial li{
+  background:var(--papel);border-left:3px solid var(--oro);border-radius:0 3px 3px 0;
+  padding:7px 9px;margin-bottom:7px;font-size:12px;line-height:1.45;
+  box-shadow:0 1px 1px rgba(0,0,0,.04);
+}
+.historial li .sello{display:block;font-size:10.5px;color:var(--tinta-suave);margin-bottom:2px}
+.sin-historial{color:var(--tinta-suave);font-style:italic;font-size:12px}
+.panel textarea{
+  width:100%;border:1px solid var(--linea-fuerte);border-radius:3px;padding:8px;resize:vertical;
+  min-height:64px;outline:none;background:var(--papel);
+}
+.panel textarea:focus{border-color:var(--verde)}
+.fotos{display:flex;flex-direction:column;gap:9px}
+.foto{
+  display:flex;gap:9px;background:var(--papel);border:1px solid var(--linea);border-radius:3px;padding:7px;
+}
+.foto img{
+  width:74px;height:74px;object-fit:cover;border-radius:2px;border:1px solid var(--linea);display:block;background:var(--crema);
+}
+.foto.sin-mini img{display:none}
+.foto-txt{display:flex;flex-direction:column;gap:2px;min-width:0;font-size:11.5px}
+.foto-txt b{font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--verde)}
+.foto-nombre{word-break:break-all;line-height:1.35;color:var(--tinta)}
+.foto-dato{color:var(--tinta-suave)}
+.foto-txt a{color:var(--verde);text-decoration:none;font-weight:600;margin-top:2px}
+.foto-txt a:hover{text-decoration:underline}
+.fila-mini{display:grid;grid-template-columns:auto 1fr;gap:3px 9px;font-size:12px}
+.fila-mini dt{color:var(--tinta-suave);white-space:nowrap}
+.fila-mini dd{margin:0;font-weight:500;word-break:break-word}
+
+/* ══════════════ PIE ══════════════ */
+footer{
+  background:var(--verde-osc);color:var(--oro-claro);padding:6px 16px;font-size:11.5px;
+  display:flex;align-items:center;gap:16px;flex:0 0 auto;border-top:3px solid var(--oro);
+}
+footer .sep{flex:1}
+footer b{color:#fff;font-weight:600}
+
+/* ══════════════ POPUPS ══════════════ */
+.pop{
+  position:fixed;z-index:60;background:var(--papel);border:1px solid var(--linea-fuerte);
+  border-radius:4px;box-shadow:0 8px 26px rgba(0,0,0,.20);padding:10px;display:none;
+}
+.pop.abierto{display:block}
+.pop h3{
+  margin:0 0 8px;font-size:10px;letter-spacing:1.6px;text-transform:uppercase;color:var(--tinta-suave);
+  font-weight:600;
+}
+.swatches{display:grid;grid-template-columns:repeat(10,20px);gap:4px}
+.swatches button{width:20px;height:20px;border:1px solid rgba(0,0,0,.22);border-radius:2px;padding:0}
+.swatches button:hover{outline:2px solid var(--verde);outline-offset:1px}
+.pop-pie{display:flex;align-items:center;gap:8px;margin-top:10px;border-top:1px solid var(--linea);padding-top:9px}
+.pop-pie input[type=color]{width:30px;height:26px;border:1px solid var(--linea-fuerte);padding:0;background:none;border-radius:2px}
+.pop .mini{
+  background:var(--papel);border:1px solid var(--linea-fuerte);border-radius:3px;padding:5px 9px;font-size:12px;
+}
+.pop .mini:hover{background:var(--crema);border-color:var(--verde)}
+
+#popFiltro{width:260px}
+#popFiltro .orden{display:flex;gap:6px;margin-bottom:9px}
+#popFiltro .orden button{flex:1}
+#popFiltro .busca-val{
+  width:100%;border:1px solid var(--linea-fuerte);border-radius:3px;padding:6px 8px;margin-bottom:7px;outline:none;
+}
+.lista-val{max-height:210px;overflow:auto;border:1px solid var(--linea);border-radius:3px;background:var(--crema)}
+.lista-val label{
+  display:flex;align-items:center;gap:7px;padding:4px 8px;font-size:12px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.04);
+}
+.lista-val label:hover{background:var(--oro-tenue)}
+.lista-val input{margin:0}
+.lista-val .txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ══════════════ MODAL ══════════════ */
+.velo{
+  position:fixed;inset:0;background:rgba(18,60,37,.55);z-index:80;
+  display:none;align-items:center;justify-content:center;padding:20px;
+}
+.velo.abierto{display:flex}
+.modal{
+  background:var(--papel);border-radius:5px;max-width:520px;width:100%;overflow:hidden;
+  box-shadow:0 18px 50px rgba(0,0,0,.3);border-top:5px solid var(--oro);
+}
+.modal-cab{background:var(--verde);color:#fff;padding:14px 18px}
+.modal-cab h2{margin:0;font-family:var(--serif);font-weight:400;font-size:17px}
+.modal-cuerpo{padding:18px}
+.modal-cuerpo label{display:block;margin-bottom:14px}
+.modal-cuerpo .et{
+  font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--tinta-suave);margin-bottom:5px;display:block;
+}
+.modal-cuerpo input[type=text],.modal-cuerpo input[type=url]{
+  width:100%;border:1px solid var(--linea-fuerte);border-radius:3px;padding:8px 10px;outline:none;
+}
+.modal-cuerpo input:focus{border-color:var(--verde)}
+.modal-pie{padding:0 18px 18px;display:flex;gap:9px;justify-content:flex-end}
+.ayuda{font-size:11.5px;color:var(--tinta-suave);line-height:1.5;margin:-8px 0 14px}
+.chk{display:flex!important;align-items:center;gap:8px}
+.chk input{width:auto}
+
+/* ══════════════ AVISOS ══════════════ */
+#avisos{position:fixed;right:16px;bottom:44px;z-index:90;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.aviso{
+  background:var(--verde-osc);color:#fff;border-left:4px solid var(--oro);border-radius:3px;
+  padding:10px 14px;font-size:12.5px;max-width:340px;box-shadow:0 6px 18px rgba(0,0,0,.25);
+  animation:entra .18s ease-out;
+}
+.aviso.malo{background:var(--rojo);border-left-color:#f2c14e}
+@keyframes entra{from{opacity:0;transform:translateX(14px)}}
+.cargando{
+  position:absolute;inset:0;background:rgba(255,255,255,.82);z-index:20;
+  display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;
+}
+.cargando.visible{display:flex}
+.rueda{width:34px;height:34px;border:3px solid var(--linea);border-top-color:var(--verde);border-radius:50%;animation:gira .8s linear infinite}
+@keyframes gira{to{transform:rotate(360deg)}}
+.cargando p{font-family:var(--serif);color:var(--verde);margin:0}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="escudo">A</div>
+  <div class="marca">
+    <h1>Sistema de Auditoría</h1>
+    <p>Ingreso de Material · Registro Maestro</p>
+  </div>
+  <div class="header-sep"></div>
+  <div class="hbox">
+    <label for="autor">Auditor</label>
+    <input id="autor" class="hinput" placeholder="Su nombre" autocomplete="off">
+  </div>
+  <div class="estado"><span class="punto" id="punto"></span><span id="estadoTxt">Sin conectar</span></div>
+  <button class="hbtn" id="btnConfig">Configuración</button>
+</header>
+
+<div class="toolbar">
+  <div class="grupo">
+    <select class="tb" id="modo" title="Cuántos registros traer">
+      <option value="300">Últimos 300</option>
+      <option value="1000">Últimos 1.000</option>
+      <option value="3000">Últimos 3.000</option>
+      <option value="rango">Rango de fechas…</option>
+      <option value="todo">Todo el historial</option>
+    </select>
+    <input type="date" class="tb" id="desde" style="display:none" title="Desde">
+    <input type="date" class="tb" id="hasta" style="display:none" title="Hasta">
+    <button class="tb" id="btnCargar"><span class="glifo">↻</span> Cargar</button>
+  </div>
+
+  <div class="divisor"></div>
+
+  <div class="buscar"><span>⌕</span><input id="buscar" placeholder="Buscar en todo…" autocomplete="off"></div>
+  <button class="tb" id="btnLimpiarFiltros" title="Quitar todos los filtros y el orden">Limpiar filtros</button>
+
+  <div class="divisor"></div>
+
+  <div class="grupo">
+    <button class="tb" id="btnLetra" title="Color de la letra">
+      <span class="glifo" style="font-weight:700">A</span>
+      <span class="muestra-color" id="muestraLetra" style="background:#c1121f"></span> ▾
+    </button>
+    <button class="tb" id="btnFondo" title="Color de fondo de la celda">
+      <span class="glifo">▩</span>
+      <span class="muestra-color" id="muestraFondo" style="background:#fff3b0"></span> ▾
+    </button>
+    <button class="tb" id="btnNegrilla" title="Negrilla (Ctrl+B)"><b style="font-family:var(--serif);font-size:14px">N</b></button>
+    <button class="tb" id="btnQuitarFormato" title="Volver al formato original">Quitar formato</button>
+  </div>
+
+  <div class="divisor"></div>
+
+  <button class="tb" id="btnColumnas" title="Crear, borrar o restaurar columnas">▦ Columnas ▾</button>
+  <button class="tb" id="btnComentario" title="Agregar un comentario a la celda">✎ Comentar</button>
+  <button class="tb" id="btnDeshacer" title="Deshacer el último cambio (Ctrl+Z)">↶ Deshacer</button>
+
+  <div class="divisor"></div>
+
+  <button class="tb primario" id="btnGuardar" disabled>Guardar cambios</button>
+  <span class="pendientes" id="pendientes"></span>
+
+  <div class="header-sep"></div>
+  <button class="tb" id="btnCSV" title="Descargar lo que se ve como CSV">↓ CSV</button>
+  <button class="tb" id="btnPanel" title="Mostrar u ocultar el panel de detalle">Panel</button>
+</div>
+
+<div class="area">
+  <div class="grid-wrap" id="gridWrap">
+    <table class="grid" id="grid">
+      <colgroup id="cols"></colgroup>
+      <thead><tr id="filaCab"></tr></thead>
+      <tbody id="cuerpo"></tbody>
+    </table>
+    <div class="vacio" id="vacio">Configure la URL del servicio y presione <b>Cargar</b>.</div>
+    <div class="cargando" id="cargando"><div class="rueda"></div><p id="cargandoTxt">Consultando el registro…</p></div>
+  </div>
+
+  <aside class="panel" id="panel">
+    <div class="panel-cab">
+      <h2 id="panelTitulo">Detalle</h2>
+      <button id="cerrarPanel" title="Ocultar panel">×</button>
+    </div>
+    <div class="panel-cuerpo" id="panelCuerpo">
+      <p class="sin-historial">Seleccione una celda para ver su valor, su historial de cambios y las fotos del viaje.</p>
+    </div>
+  </aside>
+</div>
+
+<footer>
+  <span id="pieFilas">0 registros</span>
+  <span id="pieSel"></span>
+  <span class="sep"></span>
+  <span id="pieAtajos" style="cursor:help" title="Ctrl+C copiar · Ctrl+X cortar · Ctrl+V pegar · Ctrl+A seleccionar todo · Ctrl+I pintar el fondo · Ctrl+Shift+I color de letra · Ctrl+B negrilla · Ctrl+Espacio columna · Shift+Espacio fila · Ctrl+Z deshacer · Ctrl+S guardar">Atajos ⌨</span>
+  <span id="pieVersion">Auditoría v1.2</span>
+</footer>
+
+<!-- popup de color -->
+<div class="pop" id="popColor">
+  <h3 id="popColorTit">Color</h3>
+  <div class="swatches" id="swatches"></div>
+  <div class="pop-pie">
+    <input type="color" id="colorLibre" value="#1c5636">
+    <button class="mini" id="usarLibre">Usar este</button>
+    <button class="mini" id="colorNinguno">Sin color</button>
+  </div>
+</div>
+
+<!-- popup de filtro -->
+<div class="pop" id="popFiltro">
+  <h3 id="popFiltroTit">Filtrar</h3>
+  <div class="orden">
+    <button class="mini" data-orden="asc">↑ A – Z</button>
+    <button class="mini" data-orden="desc">↓ Z – A</button>
+    <button class="mini" data-orden="no">Sin orden</button>
+  </div>
+  <input class="busca-val" id="filtroBusca" placeholder="Buscar valor…" autocomplete="off">
+  <div class="lista-val" id="filtroLista"></div>
+  <div class="pop-pie">
+    <button class="mini" id="filtroTodo">Todos</button>
+    <button class="mini" id="filtroNada">Ninguno</button>
+    <span style="flex:1"></span>
+    <button class="mini" id="filtroAplicar" style="background:var(--verde);color:#fff;border-color:var(--verde)">Aplicar</button>
+  </div>
+</div>
+
+<!-- menú de columnas -->
+<div class="pop" id="popColumnas">
+  <h3>Columnas</h3>
+  <div class="men">
+    <button id="colCrear">Crear una columna nueva…<small>Se agrega al final de la hoja</small></button>
+    <div class="sep"></div>
+    <button id="colBorrar">Borrar la columna seleccionada<small id="colBorrarInfo">Se vacía y queda en gris, guardando lo que tenía</small></button>
+    <button id="colRestaurar">Restaurar la columna seleccionada<small>Devuelve los valores desde los comentarios</small></button>
+  </div>
+</div>
+
+<!-- modal nueva columna -->
+<div class="velo" id="veloColumna">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-cab"><h2>Nueva columna</h2></div>
+    <div class="modal-cuerpo">
+      <label>
+        <span class="et">Nombre del encabezado</span>
+        <input type="text" id="colNombre" maxlength="60" placeholder="Ej.: OBSERVACION AUDITORIA">
+      </label>
+      <p class="ayuda">La columna se agrega <b>al final de la hoja</b>, después de <b>ID CERTIFICADO</b>. No se pueden insertar columnas en medio: correrían <b>ID_ENVIO</b>, <b>INCLUIDO EN CORTE</b> e <b>ID CERTIFICADO</b>, que el ingreso y los cortes ubican por número de columna.</p>
+    </div>
+    <div class="modal-pie">
+      <button class="tb" id="colCancelar">Cancelar</button>
+      <button class="tb primario" id="colConfirmar">Crear columna</button>
+    </div>
+  </div>
+</div>
+
+<!-- modal configuración -->
+<div class="velo" id="veloConfig">
+  <div class="modal">
+    <div class="modal-cab"><h2>Configuración del servicio</h2></div>
+    <div class="modal-cuerpo">
+      <label>
+        <span class="et">URL del Web App (Apps Script)</span>
+        <input type="url" id="cfgUrl" placeholder="https://script.google.com/macros/s/…/exec">
+      </label>
+      <p class="ayuda">Debe terminar en <b>/exec</b> y corresponder a una implementación con acceso <b>“Cualquier usuario”</b>. Se guarda solo en este navegador.</p>
+      <label class="chk"><input type="checkbox" id="cfgAuto" checked><span>Guardar automáticamente cada cambio</span></label>
+      <p class="ayuda">Si lo desactiva, los cambios quedan pendientes hasta que presione <b>Guardar cambios</b>.</p>
+    </div>
+    <div class="modal-pie">
+      <button class="tb" id="cfgProbar">Probar conexión</button>
+      <button class="tb" id="cfgCancelar">Cerrar</button>
+      <button class="tb primario" id="cfgGuardar">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- modal comentario -->
+<div class="velo" id="veloNota">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-cab"><h2>Agregar comentario</h2></div>
+    <div class="modal-cuerpo">
+      <p class="ayuda" id="notaDestino" style="margin-top:0"></p>
+      <textarea id="notaTexto" style="width:100%;min-height:90px;border:1px solid var(--linea-fuerte);border-radius:3px;padding:9px" placeholder="Observación de auditoría…"></textarea>
+    </div>
+    <div class="modal-pie">
+      <button class="tb" id="notaCancelar">Cancelar</button>
+      <button class="tb primario" id="notaGuardar">Agregar</button>
+    </div>
+  </div>
+</div>
+
+<div id="avisos"></div>
+
+<script>
+'use strict';
+
+/* ══════════════════════════════════════════════════════════════
+   1. CONFIGURACIÓN
+   ══════════════════════════════════════════════════════════════ */
+const URL_POR_DEFECTO = 'https://script.google.com/macros/s/AKfycbz1CznJcepKoBIJXwnQ6yc82n7fFX7q20kCxes5Na4OgPQUoe3xe5AllPhXUAe2JNg/exec';
+
+const CFG = { url: URL_POR_DEFECTO, autor: '', auto: true };
+
+function leerCfg(){
+  try{
+    const g = localStorage.getItem('auditoria_cfg');
+    if(g) Object.assign(CFG, JSON.parse(g));
+  }catch(e){ /* navegador sin almacenamiento: se usa lo de por defecto */ }
+}
+function grabarCfg(){
+  try{ localStorage.setItem('auditoria_cfg', JSON.stringify(CFG)); }catch(e){}
+}
+
+/* ══════════════════════════════════════════════════════════════
+   2. ESTADO
+   ══════════════════════════════════════════════════════════════ */
+const ALTO_FILA = 30;
+const COL_FOTOS = { 21:'Baucher I', 22:'Baucher II', 23:'Baucher III', 24:'Vehículo', 25:'Vehículo 2' };
+
+const S = {
+  headers:   [],
+  filas:     [],          // {r, v:[], f:{}, b:{}, n:{}}
+  vista:     [],          // índices de S.filas visibles
+  colsEdit:  21,          // columnas editables del sistema (1..21 → índices 0..20)
+  colsSistema: 33,        // A..AG: lo que maneja el ingreso; de ahí en adelante son de auditoría
+  borradas:  new Set(),   // columnas borradas (índice 0-based)
+  creadas:   new Set(),   // columnas creadas por la auditoría
+  notaCol:   {},          // nota del encabezado de cada columna
+  anchos:    [],
+  filtros:   {},          // colIdx -> Set de valores permitidos
+  orden:     null,        // {col, dir}
+  busqueda:  '',
+  sel:       null,        // {r1,c1,r2,c2}  (coordenadas de vista)
+  foco:      null,        // {vr, c}
+  cola:      [],          // cambios pendientes de enviar
+  deshacer: [],
+  editando:  false,
+  cargado:   false,
+  colFiltro: null
+};
+
+const $ = id => document.getElementById(id);
+
+/* ══════════════════════════════════════════════════════════════
+   3. UTILIDADES
+   ══════════════════════════════════════════════════════════════ */
+function letraCol(n){           // 1 -> A
+  let s = '';
+  while(n > 0){ const m = (n-1) % 26; s = String.fromCharCode(65+m) + s; n = Math.floor((n-m-1)/26); }
+  return s;
+}
+function esc(t){
+  return (t == null ? '' : String(t))
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function aviso(msg, malo){
+  const d = document.createElement('div');
+  d.className = 'aviso' + (malo ? ' malo' : '');
+  d.textContent = msg;
+  $('avisos').appendChild(d);
+  setTimeout(() => { d.style.opacity = '0'; d.style.transition = 'opacity .3s'; setTimeout(()=>d.remove(),320); }, malo ? 6000 : 3200);
+}
+function estado(clase, texto){
+  $('punto').className = 'punto ' + (clase||'');
+  $('estadoTxt').textContent = texto;
+}
+function cargando(on, txt){
+  $('cargando').classList.toggle('visible', !!on);
+  if(txt) $('cargandoTxt').textContent = txt;
+}
+function esNumero(t){
+  const s = String(t||'').trim().replace(/\s/g,'');
+  return s !== '' && /^-?[\d.,]+$/.test(s);
+}
+function aNumero(t){
+  let s = String(t||'').trim().replace(/\s/g,'');
+  if(s.indexOf('.')>-1 && s.indexOf(',')>-1){
+    s = s.lastIndexOf(',') > s.lastIndexOf('.') ? s.replace(/\./g,'').replace(',','.') : s.replace(/,/g,'');
+  }else if(s.indexOf(',')>-1){
+    s = /,\d{1,2}$/.test(s) ? s.replace(',','.') : s.replace(/,/g,'');
+  }
+  const n = Number(s);
+  return isNaN(n) ? null : n;
+}
+function esEditable(c){
+  if(S.borradas.has(c)) return false;             // columna borrada: primero hay que restaurarla
+  return c < S.colsEdit || c >= S.colsSistema;    // operativas A..U, o creadas por la auditoría
+}
+function esBorrable(c){ return c < S.colsEdit || c >= S.colsSistema; }
+function motivoBloqueo(c){
+  return S.borradas.has(c)
+    ? 'La columna ' + letraCol(c+1) + ' está borrada. Restáurela antes de editarla (menú Columnas).'
+    : 'La columna ' + letraCol(c+1) + ' es de solo lectura.';
+}
+function esFoto(c){ return !!COL_FOTOS[c]; }
+
+/* ══════════════════════════════════════════════════════════════
+   4. TRANSPORTE (Apps Script)
+   ══════════════════════════════════════════════════════════════ */
+async function llamar(payload){
+  if(!CFG.url || CFG.url.indexOf('/exec') === -1){
+    throw new Error('Falta configurar la URL del Web App (termina en /exec).');
+  }
+  const r = await fetch(CFG.url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // evita el preflight de CORS
+    body: JSON.stringify(payload),
+    redirect: 'follow'
+  });
+  const txt = await r.text();
+  let json;
+  try{ json = JSON.parse(txt); }
+  catch(e){ throw new Error('El servicio respondió algo que no es JSON. Revise que la implementación esté publicada para "Cualquier usuario".'); }
+  return json;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   5. CARGA DE DATOS
+   ══════════════════════════════════════════════════════════════ */
+async function cargar(){
+  const modo = $('modo').value;
+  const pl = { accion:'auditListar' };
+  if(modo === 'todo')       pl.modo = 'todo';
+  else if(modo === 'rango'){ pl.modo = 'rango'; pl.desde = $('desde').value; pl.hasta = $('hasta').value; }
+  else                     { pl.modo = 'ultimos'; pl.limite = parseInt(modo,10); }
+
+  cargando(true, 'Consultando el registro…');
+  estado('busy', 'Consultando…');
+  try{
+    const res = await llamar(pl);
+    if(!res.success) throw new Error(res.error || 'El servicio devolvió un error.');
+
+    S.headers  = res.headers || [];
+    S.filas    = res.filas || [];
+    S.filas.forEach(f => { f.f = f.f || {}; f.b = f.b || {}; f.n = f.n || {}; f.w = f.w || {}; });
+    S.colsEdit    = res.columnasEditables || 21;
+    S.colsSistema = res.columnasSistema || 33;
+    S.borradas = new Set(); S.creadas = new Set(); S.notaCol = {};
+    (res.columnas || []).forEach(col=>{
+      if(col.borrada) S.borradas.add(col.c);
+      if(col.creada)  S.creadas.add(col.c);
+      if(col.nota)    S.notaCol[col.c] = col.nota.replace(/<<AUDITORIA:[A-Z]+>>/g,'').trim();
+    });
+    S.filtros  = {};
+    S.orden    = null;
+    S.sel = null; S.foco = null;
+    S.cargado  = true;
+
+    if(!S.anchos.length || S.anchos.length !== S.headers.length) definirAnchos();
+    construirCabecera();
+    recalcularVista();
+    estado('ok', 'Conectado');
+    $('pieVersion').textContent = 'Auditoría v1.2 · ' + (res.version || '');
+    if(res.truncado) aviso('La hoja es muy grande: se trajeron las últimas ' + S.filas.length + ' filas.');
+    aviso(S.filas.length + ' registros cargados de ' + res.total + ' en la hoja.');
+  }catch(err){
+    estado('err', 'Sin conexión');
+    aviso(err.message, true);
+  }finally{
+    cargando(false);
+  }
+}
+
+function definirAnchos(){
+  S.anchos = S.headers.map((h,i) => {
+    if(i === 0) return 140;                       // marca temporal
+    if(esFoto(i)) return 110;
+    const t = String(h||'').length;
+    if(t > 26) return 190;
+    if(t > 16) return 155;
+    return Math.max(92, Math.min(150, t*9 + 34));
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════
+   6. CABECERA + ANCHOS
+   ══════════════════════════════════════════════════════════════ */
+function construirCabecera(){
+  const cols = $('cols');
+  cols.innerHTML = '<col style="width:56px">' + S.headers.map((_,i)=>`<col style="width:${S.anchos[i]}px">`).join('');
+
+  const tr = $('filaCab');
+  tr.innerHTML = '<th class="esquina"><span class="th-letra">Fila</span></th>' + S.headers.map((h,i)=>{
+    const borrada = S.borradas.has(i);
+    const creada  = S.creadas.has(i);
+    const ro      = !borrada && !esEditable(i);
+    let clases = '', marca = '';
+    if(borrada){ clases = 'borrada'; marca = ' · borrada'; }
+    else if(creada){ clases = 'creada'; marca = ' · de auditoría'; }
+    else if(ro){ clases = 'solo-lectura'; marca = ' · sólo lectura'; }
+    const detalle = S.notaCol[i] ? '\n' + S.notaCol[i] : '';
+    return `<th class="${clases}" data-c="${i}" title="${esc(h + marca + detalle)}">
+      <div class="th-in">
+        <div class="th-txt"><span class="th-letra">${letraCol(i+1)}${marca}</span>${esc(h)}</div>
+        <button class="th-filtro" data-c="${i}" title="Filtrar y ordenar">▼</button>
+        <div class="th-resize" data-c="${i}"></div>
+      </div></th>`;
+  }).join('');
+
+  tr.querySelectorAll('th[data-c]').forEach(th=>{
+    th.addEventListener('click', ev=>{
+      if(ev.target.closest('.th-filtro') || ev.target.closest('.th-resize')) return;
+      seleccionarColumna(+th.dataset.c);
+    });
+  });
+  tr.querySelectorAll('.th-filtro').forEach(b=>{
+    b.addEventListener('click', ev=>{ ev.stopPropagation(); abrirFiltro(+b.dataset.c, b); });
+  });
+  tr.querySelectorAll('.th-resize').forEach(h=>{
+    h.addEventListener('mousedown', iniciarResize);
+  });
+  marcarFiltrosActivos();
+}
+
+let resize = null;
+function iniciarResize(ev){
+  ev.preventDefault(); ev.stopPropagation();
+  resize = { c:+ev.target.dataset.c, x:ev.clientX, w:S.anchos[+ev.target.dataset.c] };
+  document.addEventListener('mousemove', moverResize);
+  document.addEventListener('mouseup', finResize);
+}
+function moverResize(ev){
+  if(!resize) return;
+  const w = Math.max(60, resize.w + (ev.clientX - resize.x));
+  S.anchos[resize.c] = w;
+  const col = $('cols').children[resize.c + 1];
+  if(col) col.style.width = w + 'px';
+}
+function finResize(){
+  resize = null;
+  document.removeEventListener('mousemove', moverResize);
+  document.removeEventListener('mouseup', finResize);
+}
+function marcarFiltrosActivos(){
+  document.querySelectorAll('.th-filtro').forEach(b=>{
+    const c = +b.dataset.c;
+    b.classList.toggle('activo', !!S.filtros[c] || (S.orden && S.orden.col === c));
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════
+   7. FILTRO / ORDEN / BÚSQUEDA
+   ══════════════════════════════════════════════════════════════ */
+function recalcularVista(){
+  const q = S.busqueda.trim().toLowerCase();
+  const cols = Object.keys(S.filtros).map(Number);
+
+  S.vista = [];
+  for(let i=0;i<S.filas.length;i++){
+    const v = S.filas[i].v;
+    let ok = true;
+    for(const c of cols){
+      if(!S.filtros[c].has(String(v[c] ?? ''))){ ok = false; break; }
+    }
+    if(ok && q){
+      ok = v.some(x => String(x||'').toLowerCase().indexOf(q) > -1);
+    }
+    if(ok) S.vista.push(i);
+  }
+
+  if(S.orden){
+    const c = S.orden.col, dir = S.orden.dir === 'desc' ? -1 : 1;
+    S.vista.sort((a,b)=>{
+      const x = S.filas[a].v[c] ?? '', y = S.filas[b].v[c] ?? '';
+      const nx = aNumero(x), ny = aNumero(y);
+      if(nx !== null && ny !== null) return (nx - ny) * dir;
+      return String(x).localeCompare(String(y), 'es', {numeric:true}) * dir;
+    });
+  }
+
+  S.sel = null; S.foco = null;
+  render();
+  actualizarPie();
+  marcarFiltrosActivos();
+}
+
+function abrirFiltro(c, btn){
+  S.colFiltro = c;
+  const pop = $('popFiltro');
+  $('popFiltroTit').textContent = (S.headers[c] || letraCol(c+1)).substring(0,34);
+
+  const cuenta = new Map();
+  const otros = Object.keys(S.filtros).map(Number).filter(x => x !== c);
+  S.filas.forEach(f=>{
+    for(const o of otros){ if(!S.filtros[o].has(String(f.v[o] ?? ''))) return; }
+    const val = String(f.v[c] ?? '');
+    cuenta.set(val, (cuenta.get(val)||0) + 1);
+  });
+
+  const activos = S.filtros[c];
+  const vals = Array.from(cuenta.keys()).sort((a,b)=>{
+    const na = aNumero(a), nb = aNumero(b);
+    if(na !== null && nb !== null) return na - nb;
+    return a.localeCompare(b,'es',{numeric:true});
+  });
+
+  $('filtroLista').innerHTML = vals.slice(0,1200).map(v=>`
+    <label><input type="checkbox" value="${esc(v)}" ${(!activos || activos.has(v)) ? 'checked':''}>
+    <span class="txt">${v === '' ? '<i>(vacías)</i>' : esc(v)}</span>
+    <span style="margin-left:auto;color:var(--tinta-suave);font-size:11px">${cuenta.get(v)}</span></label>`).join('');
+  $('filtroBusca').value = '';
+
+  const r = btn.getBoundingClientRect();
+  pop.style.left = Math.min(r.left, window.innerWidth - 280) + 'px';
+  pop.style.top  = (r.bottom + 4) + 'px';
+  pop.classList.add('abierto');
+  cerrarPop('popColor');
+  setTimeout(()=>$('filtroBusca').focus(), 30);
+}
+
+function aplicarFiltro(){
+  const c = S.colFiltro;
+  const cajas = Array.from($('filtroLista').querySelectorAll('input'));
+  const marcados = cajas.filter(x=>x.checked).map(x=>x.value);
+  if(marcados.length === cajas.length) delete S.filtros[c];
+  else S.filtros[c] = new Set(marcados);
+  cerrarPop('popFiltro');
+  recalcularVista();
+}
+
+function cerrarPop(id){ $(id).classList.remove('abierto'); }
+
+/* ══════════════════════════════════════════════════════════════
+   8. RENDER DE LA GRILLA (con ventana virtual)
+   ══════════════════════════════════════════════════════════════ */
+function render(){
+  const wrap = $('gridWrap'), cuerpo = $('cuerpo');
+  $('vacio').style.display = S.vista.length ? 'none' : (S.cargado ? 'block' : 'block');
+  if(S.cargado && !S.vista.length) $('vacio').innerHTML = 'Ningún registro coincide con los filtros aplicados.';
+
+  const total = S.vista.length;
+  const alto  = wrap.clientHeight || 500;
+  const visibles = Math.ceil(alto / ALTO_FILA) + 6;
+  let ini = Math.max(0, Math.floor(wrap.scrollTop / ALTO_FILA) - 3);
+  if(ini + visibles > total) ini = Math.max(0, total - visibles);
+  const fin = Math.min(total, ini + visibles);
+
+  const arriba = ini * ALTO_FILA;
+  const abajo  = Math.max(0, (total - fin) * ALTO_FILA);
+  const partes = [];
+  const porResolver = new Set();
+
+  if(arriba) partes.push(`<tr style="height:${arriba}px"><td colspan="${S.headers.length+1}" style="padding:0;border:0"></td></tr>`);
+
+  for(let vr = ini; vr < fin; vr++){
+    const f = S.filas[S.vista[vr]];
+    const tds = [`<td class="num" data-vr="${vr}" title="Fila ${f.r} · clic para seleccionar toda la fila">${f.r}</td>`];
+    for(let c = 0; c < S.headers.length; c++){
+      const val = f.v[c] ?? '';
+      let cls = 'celda';
+      const colBorrada = S.borradas.has(c);
+      if(colBorrada) cls += ' borrada';
+      else if(!esEditable(c)) cls += ' ro';
+      if(f.n[c]) cls += ' nota';
+      if(f._p && f._p[c]) cls += ' pendiente';
+      if(f._ok && f._ok[c]) cls += ' guardado';
+      let st = '';
+      if(f.f[c]) st += 'color:' + f.f[c] + ';';
+      if(f.b[c]) st += 'background:' + f.b[c] + ';';
+      if(f.w[c]) st += 'font-weight:700;';
+      let contenido, titulo = esc(String(val).substring(0,180));
+      if(esFoto(c) && String(val).indexOf('http') === 0){
+        const id = idDrive(val);
+        const meta = id ? FOTOS.get(id) : null;
+        if(!meta && id) porResolver.add(id);
+        const texto = (meta && meta.nombre) ? meta.nombre : (meta && meta.error ? '⚠ archivo no disponible' : 'Ver foto ↗');
+        titulo = esc((meta && meta.nombre ? meta.nombre + ' · ' : '') + val);
+        contenido = `<a class="link" href="${esc(val)}" target="_blank" rel="noopener">${esc(texto)}</a>`;
+      }else{
+        contenido = esc(val);
+      }
+      if(colBorrada) titulo = esc('Columna borrada. ' + (S.notaCol[c] || '') + (f.n[c] ? '\n' + f.n[c] : ''));
+      tds.push(`<td class="${cls}" data-vr="${vr}" data-c="${c}" style="${st}" title="${titulo}">${contenido}</td>`);
+    }
+    partes.push('<tr>' + tds.join('') + '</tr>');
+  }
+
+  if(abajo) partes.push(`<tr style="height:${abajo}px"><td colspan="${S.headers.length+1}" style="padding:0;border:0"></td></tr>`);
+
+  cuerpo.innerHTML = partes.join('');
+  pintarSeleccion();
+  if(porResolver.size) pedirNombresFotos(porResolver);
+}
+
+/* ── Nombres reales de las fotos guardadas en Drive ──────────────
+   La hoja solo guarda el enlace; el nombre del archivo se pide al
+   servicio y se recuerda en memoria mientras dure la sesión.       */
+const FOTOS = new Map();
+let colaFotos = new Set();
+let tmpFotos = null;
+
+function idDrive(url){
+  const s = String(url || '');
+  let m = s.match(/\/d\/([-\w]{20,})/) || s.match(/[?&]id=([-\w]{20,})/) || s.match(/\/file\/d\/([-\w]{20,})/);
+  return m ? m[1] : '';
+}
+function pedirNombresFotos(ids){
+  ids.forEach(id => { if(!FOTOS.has(id)) colaFotos.add(id); });
+  if(!colaFotos.size) return;
+  clearTimeout(tmpFotos);
+  tmpFotos = setTimeout(async ()=>{
+    const lote = Array.from(colaFotos).slice(0, 80);
+    lote.forEach(id => { colaFotos.delete(id); FOTOS.set(id, { pendiente:true }); });
+    try{
+      const res = await llamar({ accion:'auditFotos', ids: lote });
+      if(res.success && res.fotos){
+        Object.keys(res.fotos).forEach(id => FOTOS.set(id, res.fotos[id]));
+        render(); mostrarDetalle();
+      }
+    }catch(e){
+      lote.forEach(id => FOTOS.set(id, { error:'sin conexión' }));
+    }
+    if(colaFotos.size) pedirNombresFotos(new Set());
+  }, 350);
+}
+
+function pintarSeleccion(){
+  if(!S.sel) return;
+  const {r1,c1,r2,c2} = normalizar(S.sel);
+  document.querySelectorAll('#cuerpo td.celda').forEach(td=>{
+    const vr = +td.dataset.vr, c = +td.dataset.c;
+    const dentro = vr>=r1 && vr<=r2 && c>=c1 && c<=c2;
+    td.classList.toggle('rango', dentro && !(r1===r2 && c1===c2));
+    td.classList.toggle('sel', dentro);
+    td.classList.toggle('foco', !!S.foco && S.foco.vr===vr && S.foco.c===c);
+  });
+}
+function normalizar(s){
+  return { r1:Math.min(s.r1,s.r2), r2:Math.max(s.r1,s.r2), c1:Math.min(s.c1,s.c2), c2:Math.max(s.c1,s.c2) };
+}
+function celdasSeleccionadas(){
+  if(!S.sel) return [];
+  const {r1,r2,c1,c2} = normalizar(S.sel);
+  const out = [];
+  for(let vr=r1; vr<=r2; vr++)
+    for(let c=c1; c<=c2; c++)
+      out.push({ idx:S.vista[vr], c });
+  return out;
+}
+function actualizarPie(){
+  $('pieFilas').textContent = S.vista.length.toLocaleString('es-CO') + ' registros' +
+    (S.vista.length !== S.filas.length ? ' (de ' + S.filas.length.toLocaleString('es-CO') + ' cargados)' : '');
+  const n = celdasSeleccionadas().length;
+  $('pieSel').textContent = n > 1 ? n + ' celdas seleccionadas' : (S.foco ? 'Celda ' + letraCol(S.foco.c+1) + S.filas[S.vista[S.foco.vr]].r : '');
+}
+
+/* ══════════════════════════════════════════════════════════════
+   9. SELECCIÓN Y NAVEGACIÓN
+   ══════════════════════════════════════════════════════════════ */
+let arrastrando = false;
+
+function seleccionarColumna(c){
+  if(!S.vista.length) return;
+  S.sel  = { r1:0, c1:c, r2:S.vista.length-1, c2:c };
+  S.foco = { vr: S.foco ? Math.min(S.foco.vr, S.vista.length-1) : 0, c };
+  render(); actualizarPie(); mostrarDetalle();
+}
+function seleccionarFila(vr){
+  if(!S.vista.length) return;
+  S.sel  = { r1:vr, c1:0, r2:vr, c2:S.headers.length-1 };
+  S.foco = { vr, c:0 };
+  render(); actualizarPie(); mostrarDetalle();
+}
+function seleccionarTodo(){
+  if(!S.vista.length) return;
+  S.sel  = { r1:0, c1:0, r2:S.vista.length-1, c2:S.headers.length-1 };
+  if(!S.foco) S.foco = { vr:0, c:0 };
+  render(); actualizarPie();
+}
+
+$('cuerpo').addEventListener('mousedown', ev=>{
+  const num = ev.target.closest('td.num');
+  if(num){ seleccionarFila(+num.dataset.vr); return; }
+  const td = ev.target.closest('td.celda');
+  if(!td) return;
+  if(ev.target.tagName === 'A') return;
+  const vr = +td.dataset.vr, c = +td.dataset.c;
+  if(ev.shiftKey && S.sel){ S.sel.r2 = vr; S.sel.c2 = c; }
+  else { S.sel = {r1:vr,c1:c,r2:vr,c2:c}; S.foco = {vr,c}; arrastrando = true; }
+  pintarSeleccion(); actualizarPie(); mostrarDetalle();
+});
+$('cuerpo').addEventListener('mouseover', ev=>{
+  if(!arrastrando) return;
+  const td = ev.target.closest('td.celda');
+  if(!td) return;
+  S.sel.r2 = +td.dataset.vr; S.sel.c2 = +td.dataset.c;
+  pintarSeleccion(); actualizarPie();
+});
+document.addEventListener('mouseup', ()=>{ arrastrando = false; });
+$('cuerpo').addEventListener('dblclick', ev=>{
+  const td = ev.target.closest('td.celda');
+  if(td) editarCelda(td);
+});
+$('gridWrap').addEventListener('scroll', ()=>{ if(!S.editando) render(); });
+window.addEventListener('resize', ()=>{ if(S.cargado) render(); });
+
+function enCampoDeTexto(){
+  const a = document.activeElement;
+  return !!a && ['INPUT','TEXTAREA','SELECT'].indexOf(a.tagName) > -1;
+}
+
+document.addEventListener('keydown', ev=>{
+  if(S.editando) return;
+  if(['INPUT','TEXTAREA','SELECT'].indexOf(ev.target.tagName) > -1) return;  // dentro de un campo mandan los atajos del navegador
+
+  if(ev.ctrlKey || ev.metaKey){
+    const k = ev.key.toLowerCase();
+    if(k === 'z'){ ev.preventDefault(); deshacer(); return; }
+    if(k === 's'){ ev.preventDefault(); enviarCola(); return; }
+    if(k === 'a'){ ev.preventDefault(); seleccionarTodo(); return; }
+    if(k === 'b'){ ev.preventDefault(); alternarNegrilla(); return; }
+    if(k === 'i'){
+      ev.preventDefault();
+      if(ev.shiftKey) aplicarColor(ultimo.fuente, 'fuente');
+      else            aplicarColor(ultimo.fondo,  'fondo');
+      return;
+    }
+    if(ev.code === 'Space'){ ev.preventDefault(); if(S.foco) seleccionarColumna(S.foco.c); return; }
+    return;   // Ctrl+C, Ctrl+X y Ctrl+V los atienden los eventos copy/cut/paste
+  }
+  if(ev.shiftKey && ev.code === 'Space'){ ev.preventDefault(); if(S.foco) seleccionarFila(S.foco.vr); return; }
+  if(!S.foco) return;
+
+  const nav = {ArrowUp:[-1,0],ArrowDown:[1,0],ArrowLeft:[0,-1],ArrowRight:[0,1]}[ev.key];
+  if(nav){
+    ev.preventDefault();
+    mover(nav[0], nav[1], ev.shiftKey);
+    return;
+  }
+  if(ev.key === 'Enter'){ ev.preventDefault(); const td = tdDe(S.foco); if(td) editarCelda(td); return; }
+  if(ev.key === 'F2'){ ev.preventDefault(); const td = tdDe(S.foco); if(td) editarCelda(td); return; }
+  if(ev.key === 'Tab'){ ev.preventDefault(); mover(0, ev.shiftKey ? -1 : 1, false); return; }
+  if(ev.key === 'Delete' || ev.key === 'Backspace'){
+    ev.preventDefault();
+    borrarSeleccion();
+    return;
+  }
+  if(ev.key.length === 1 && !ev.ctrlKey && !ev.metaKey && !ev.altKey){
+    const td = tdDe(S.foco);
+    if(td){ editarCelda(td, ev.key); ev.preventDefault(); }
+  }
+});
+
+/* ══════════════ PORTAPAPELES: Ctrl+C / Ctrl+X / Ctrl+V ══════════════ */
+function textoSeleccion(){
+  if(!S.sel) return '';
+  const {r1,r2,c1,c2} = normalizar(S.sel);
+  const lineas = [];
+  for(let vr = r1; vr <= r2; vr++){
+    const f = S.filas[S.vista[vr]];
+    if(!f) continue;
+    const cols = [];
+    for(let c = c1; c <= c2; c++) cols.push(String(f.v[c] ?? ''));
+    lineas.push(cols.join('\t'));
+  }
+  return lineas.join('\n');
+}
+
+function borrarSeleccion(){
+  const celdas = celdasSeleccionadas().filter(x => esEditable(x.c));
+  if(!celdas.length){ aviso('No hay celdas editables seleccionadas.', true); return 0; }
+  return enLote(celdas, ({idx,c}, g) => cambiar(idx, c, 'valor', '', { grupo:g, diferido:true }), 'borrar contenido');
+}
+
+function pegarTexto(txt){
+  if(!S.sel || !S.foco){ aviso('Seleccione la celda donde empezar a pegar.', true); return; }
+  const matriz = txt.replace(/\r/g,'').replace(/\n+$/,'').split('\n').map(l => l.split('\t'));
+  const {r1,r2,c1,c2} = normalizar(S.sel);
+  const destino = [];
+
+  if(matriz.length === 1 && matriz[0].length === 1){
+    // un solo valor → llena toda la selección
+    for(let vr = r1; vr <= r2; vr++)
+      for(let c = c1; c <= c2; c++) destino.push({ vr, c, v: matriz[0][0] });
+  }else{
+    for(let i = 0; i < matriz.length; i++)
+      for(let j = 0; j < matriz[i].length; j++){
+        const vr = r1 + i, c = c1 + j;
+        if(vr >= S.vista.length || c >= S.headers.length) continue;
+        destino.push({ vr, c, v: matriz[i][j] });
+      }
+  }
+
+  const validas   = destino.filter(x => esEditable(x.c));
+  const bloqueadas = destino.length - validas.length;
+  if(!validas.length){ aviso('El destino es de solo lectura (columnas V en adelante).', true); return; }
+
+  enLote(validas, (x, g) => cambiar(S.vista[x.vr], x.c, 'valor', x.v, { grupo:g, diferido:true }), 'pegar');
+  if(bloqueadas) aviso(bloqueadas + ' celda(s) no se pegaron por ser de solo lectura.');
+}
+
+document.addEventListener('copy', ev=>{
+  if(S.editando || enCampoDeTexto()) return;
+  const t = textoSeleccion();
+  if(!t) return;
+  ev.preventDefault();
+  ev.clipboardData.setData('text/plain', t);
+  const n = celdasSeleccionadas().length;
+  aviso(n === 1 ? 'Celda copiada.' : n + ' celdas copiadas.');
+});
+
+document.addEventListener('cut', ev=>{
+  if(S.editando || enCampoDeTexto()) return;
+  const t = textoSeleccion();
+  if(!t) return;
+  ev.preventDefault();
+  ev.clipboardData.setData('text/plain', t);
+  borrarSeleccion();
+});
+
+document.addEventListener('paste', ev=>{
+  if(S.editando || enCampoDeTexto()) return;
+  const t = (ev.clipboardData || window.clipboardData).getData('text');
+  if(!t) return;
+  ev.preventDefault();
+  pegarTexto(t);
+});
+
+function tdDe(f){
+  return document.querySelector(`#cuerpo td.celda[data-vr="${f.vr}"][data-c="${f.c}"]`);
+}
+function mover(dr, dc, extender){
+  const vr = Math.max(0, Math.min(S.vista.length-1, S.foco.vr + dr));
+  const c  = Math.max(0, Math.min(S.headers.length-1, S.foco.c + dc));
+  S.foco = {vr,c};
+  if(extender){ S.sel.r2 = vr; S.sel.c2 = c; }
+  else S.sel = {r1:vr,c1:c,r2:vr,c2:c};
+  asegurarVisible(vr);
+  render(); actualizarPie(); mostrarDetalle();
+}
+function asegurarVisible(vr){
+  const wrap = $('gridWrap');
+  const y = vr * ALTO_FILA;
+  const cab = 44;
+  if(y < wrap.scrollTop) wrap.scrollTop = y;
+  else if(y + ALTO_FILA > wrap.scrollTop + wrap.clientHeight - cab) wrap.scrollTop = y + ALTO_FILA - wrap.clientHeight + cab;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   10. EDICIÓN DE VALOR
+   ══════════════════════════════════════════════════════════════ */
+function editarCelda(td, inicial){
+  const vr = +td.dataset.vr, c = +td.dataset.c;
+  if(!esEditable(c)){ aviso(motivoBloqueo(c), true); return; }
+  const idx = S.vista[vr];
+  const actual = S.filas[idx].v[c] ?? '';
+
+  S.editando = true;
+  const input = document.createElement('input');
+  input.className = 'editor';
+  input.value = inicial !== undefined ? inicial : actual;
+  td.appendChild(input);
+  input.focus();
+  if(inicial === undefined) input.select();
+
+  let cerrado = false;
+  const cerrar = (guardar) => {
+    if(cerrado) return;
+    cerrado = true;
+    const nuevo = input.value;
+    S.editando = false;
+    input.remove();
+    if(guardar && nuevo !== String(actual)) cambiar(idx, c, 'valor', nuevo);
+    else render();
+  };
+  input.addEventListener('keydown', e=>{
+    e.stopPropagation();
+    if(e.key === 'Enter'){ e.preventDefault(); cerrar(true); mover(1,0,false); }
+    else if(e.key === 'Escape'){ e.preventDefault(); cerrar(false); }
+    else if(e.key === 'Tab'){ e.preventDefault(); cerrar(true); mover(0, e.shiftKey?-1:1, false); }
+  });
+  input.addEventListener('blur', ()=>cerrar(true));
+}
+
+/* ══════════════════════════════════════════════════════════════
+   11. CAMBIOS: cola, envío y reversión
+   ══════════════════════════════════════════════════════════════ */
+function cambiar(idx, c, tipo, valor, op){
+  op = op || {};
+  const f = S.filas[idx];
+  if(tipo !== 'nota' && !esEditable(c)){ aviso(motivoBloqueo(c), true); return; }
+
+  let previo;
+  if(tipo === 'valor'){
+    previo = f.v[c] ?? '';
+    if(String(previo) === String(valor)) return;
+    f.v[c] = valor;
+    if(c === 5 || c === 6){                       // F o G: el neto se recalcula en el servidor
+      const lleno = aNumero(f.v[5]) || 0, vacio = aNumero(f.v[6]) || 0;
+      f.v[7] = String(lleno - vacio);
+    }
+  }else if(tipo === 'fuente'){
+    previo = f.f[c] || '';
+    if(previo === (valor||'')) return;
+    if(valor) f.f[c] = valor; else delete f.f[c];
+  }else if(tipo === 'fondo'){
+    previo = f.b[c] || '';
+    if(previo === (valor||'')) return;
+    if(valor) f.b[c] = valor; else delete f.b[c];
+  }else if(tipo === 'negrilla'){
+    previo = f.w[c] ? 'bold' : 'normal';
+    const nuevo = valor === 'bold' ? 'bold' : 'normal';
+    if(previo === nuevo) return;
+    if(nuevo === 'bold') f.w[c] = 'bold'; else delete f.w[c];
+    valor = nuevo;
+  }else if(tipo === 'nota'){
+    previo = null;
+  }
+
+  if(!f._p) f._p = {};
+  f._p[c] = true;
+  if(f._ok) delete f._ok[c];
+
+  S.cola.push({ idx, fila:f.r, col:c+1, c, tipo, valor: valor === undefined ? '' : valor, previo });
+
+  if(tipo !== 'nota'){
+    const reverso = { idx, c, tipo, valor: previo };
+    if(op.grupo) op.grupo.push(reverso);
+    else if(!op.sinDeshacer) S.deshacer.push([reverso]);
+  }
+
+  if(op.diferido) return;
+  render(); refrescarPendientes(); mostrarDetalle();
+  if(CFG.auto) programarEnvio();
+}
+
+/* Aplica una operación sobre muchas celdas a la vez sin repintar la
+   grilla en cada una: un solo render, un solo envío y un solo deshacer. */
+function enLote(celdas, fn, etiqueta){
+  if(!celdas.length){ aviso('Seleccione primero una o varias celdas.', true); return 0; }
+  if(celdas.length > 800 && !confirm('Va a modificar ' + celdas.length + ' celdas' + (etiqueta ? ' (' + etiqueta + ')' : '') + '. ¿Continuar?')) return 0;
+  const g = [];
+  celdas.forEach(x => fn(x, g));
+  if(g.length) S.deshacer.push(g);
+  render(); refrescarPendientes(); mostrarDetalle();
+  if(CFG.auto) programarEnvio();
+  return g.length;
+}
+
+let temporizador = null;
+function programarEnvio(){
+  clearTimeout(temporizador);
+  temporizador = setTimeout(enviarCola, 700);
+}
+function refrescarPendientes(){
+  const n = S.cola.length;
+  $('pendientes').textContent = n ? n + (n === 1 ? ' cambio pendiente' : ' cambios pendientes') : '';
+  $('btnGuardar').disabled = n === 0;
+  $('btnDeshacer').disabled = S.deshacer.length === 0;
+}
+
+let enviando = false;
+const TAM_LOTE = 1200;   // los envíos grandes (una columna entera) se parten en tandas
+
+async function enviarCola(){
+  if(!S.cola.length) return;
+  if(enviando){ programarEnvio(); return; }
+  enviando = true;
+
+  const lote = S.cola.splice(0, S.cola.length);
+  refrescarPendientes();
+  estado('busy', 'Guardando…');
+
+  let i = 0;
+  try{
+    for(; i < lote.length; i += TAM_LOTE){
+      const parte = lote.slice(i, i + TAM_LOTE);
+      const res = await llamar({
+        accion: 'auditGuardar',
+        autor: CFG.autor,
+        cambios: parte.map(x => ({ fila:x.fila, col:x.col, tipo:x.tipo, valor:x.valor }))
+      });
+      if(!res.resultados && res.error) throw new Error(res.error);
+
+      (res.resultados || []).forEach(r=>{
+        const f = S.filas.find(x => x.r === r.fila);
+        if(!f) return;
+        const c = r.col - 1;
+        if(r.nota) f.n[c] = r.nota;
+        if(r.tipo === 'valor' && r.display !== undefined) f.v[c] = r.display;
+        if(r.tipo === 'fuente' && r.color) f.f[c] = r.color;
+        if(r.tipo === 'fondo'  && r.color){ if(r.color === '#ffffff') delete f.b[c]; else f.b[c] = r.color; }
+        if(r.tipo === 'negrilla' && r.peso){ if(r.peso === 'bold') f.w[c] = 'bold'; else delete f.w[c]; }
+        if(f._p) delete f._p[c];
+        if(!f._ok) f._ok = {};
+        f._ok[c] = true;
+      });
+
+      if(res.errores && res.errores.length){
+        res.errores.forEach(e=>{
+          const orig = parte.find(x => x.fila === e.fila && x.col === e.col && x.tipo === e.tipo);
+          if(orig) revertir(orig);
+          aviso('Fila ' + e.fila + ', columna ' + letraCol(e.col) + ': ' + e.error, true);
+        });
+      }
+
+      parte.forEach(x=>{
+        const f = S.filas[x.idx];
+        if(f && f._p) delete f._p[x.c];
+      });
+
+      if(lote.length > TAM_LOTE){
+        estado('busy', 'Guardando ' + Math.min(i + TAM_LOTE, lote.length) + ' de ' + lote.length + '…');
+        render();
+      }
+    }
+
+    estado('ok', 'Guardado en la hoja');
+    render(); refrescarPendientes(); mostrarDetalle();
+    clearTimeout(window._ok);
+    window._ok = setTimeout(()=>{ S.filas.forEach(f => { delete f._ok; }); render(); }, 1500);
+
+  }catch(err){
+    const sinGuardar = lote.slice(i);
+    sinGuardar.forEach(revertir);
+    estado('err', 'Error al guardar');
+    aviso('No se pudo guardar: ' + err.message +
+      (i > 0 ? ' · ' + i + ' cambios sí quedaron guardados; los ' + sinGuardar.length + ' restantes se revirtieron en pantalla.'
+             : ' — los cambios se revirtieron en pantalla.'), true);
+    render(); refrescarPendientes();
+  }finally{
+    enviando = false;
+    if(S.cola.length) programarEnvio();
+  }
+}
+
+function revertir(c){
+  const f = S.filas[c.idx];
+  if(!f) return;
+  if(c.tipo === 'valor') f.v[c.c] = c.previo;
+  else if(c.tipo === 'fuente'){ if(c.previo) f.f[c.c] = c.previo; else delete f.f[c.c]; }
+  else if(c.tipo === 'fondo'){ if(c.previo) f.b[c.c] = c.previo; else delete f.b[c.c]; }
+  else if(c.tipo === 'negrilla'){ if(c.previo === 'bold') f.w[c.c] = 'bold'; else delete f.w[c.c]; }
+  if(f._p) delete f._p[c.c];
+}
+
+function deshacer(){
+  const g = S.deshacer.pop();
+  if(!g || !g.length){ aviso('No hay nada que deshacer.'); return; }
+  g.forEach(u => cambiar(u.idx, u.c, u.tipo, u.valor, { sinDeshacer:true }));
+  aviso(g.length === 1
+    ? 'Cambio revertido. La reversión también queda en el historial de la celda.'
+    : g.length + ' cambios revertidos. La reversión queda en el historial de cada celda.');
+}
+
+/* ══════════════════════════════════════════════════════════════
+   12. COLORES
+   ══════════════════════════════════════════════════════════════ */
+const PALETA = [
+  '#000000','#434343','#666666','#999999','#b7b7b7','#cccccc','#d9d9d9','#efefef','#f3f3f3','#ffffff',
+  '#980000','#c1121f','#e06666','#f4a261','#f6bd60','#ffd166','#fff3b0','#e9f5db','#d8f3dc','#e7f0fd',
+  '#5c0b0b','#9b2226','#bc4749','#bb6b1b','#c08a2e','#e0c184','#f3e7cd','#a7c957','#52b788','#7fa1d8',
+  '#123c25','#1c5636','#2a7049','#386641','#4a7c59','#0b525b','#1b4965','#274690','#3d348b','#5a189a'
+];
+let colorObjetivo = 'fuente';
+let ultimo = { fuente:'#c1121f', fondo:'#fff3b0' };
+
+function pintarSwatches(){
+  $('swatches').innerHTML = PALETA.map(c=>`<button data-color="${c}" style="background:${c}" title="${c}"></button>`).join('');
+}
+function abrirColor(tipo, btn){
+  colorObjetivo = tipo;
+  $('popColorTit').textContent = tipo === 'fuente' ? 'Color de la letra' : 'Color de fondo';
+  $('colorLibre').value = ultimo[tipo];
+  const r = btn.getBoundingClientRect();
+  const pop = $('popColor');
+  pop.style.left = Math.min(r.left, window.innerWidth - 260) + 'px';
+  pop.style.top  = (r.bottom + 4) + 'px';
+  pop.classList.add('abierto');
+  cerrarPop('popFiltro');
+}
+function aplicarColor(color, tipo){
+  const objetivo = tipo || colorObjetivo;
+  const celdas = celdasSeleccionadas();
+  if(!celdas.length){ aviso('Seleccione primero una o varias celdas.', true); cerrarPop('popColor'); return; }
+  const editables = celdas.filter(x => esEditable(x.c));
+  if(!editables.length){ aviso('Las celdas seleccionadas son de solo lectura.', true); cerrarPop('popColor'); return; }
+  const n = enLote(editables, ({idx,c}, g) => cambiar(idx, c, objetivo, color, { grupo:g, diferido:true }),
+                   objetivo === 'fuente' ? 'color de letra' : 'color de fondo');
+  ultimo[objetivo] = color || (objetivo === 'fuente' ? '#000000' : '#ffffff');
+  $(objetivo === 'fuente' ? 'muestraLetra' : 'muestraFondo').style.background = ultimo[objetivo];
+  cerrarPop('popColor');
+  if(n > 50) aviso(n + ' celdas pintadas.');
+}
+
+// Negrilla: si todo lo seleccionado ya está en negrilla, la quita.
+function alternarNegrilla(){
+  const celdas = celdasSeleccionadas().filter(x => esEditable(x.c));
+  if(!celdas.length){ aviso('Seleccione celdas editables.', true); return; }
+  const todasNegrilla = celdas.every(({idx,c}) => !!S.filas[idx].w[c]);
+  const nuevo = todasNegrilla ? 'normal' : 'bold';
+  const n = enLote(celdas, ({idx,c}, g) => cambiar(idx, c, 'negrilla', nuevo, { grupo:g, diferido:true }), 'negrilla');
+  if(n > 50) aviso(n + ' celdas ' + (nuevo === 'bold' ? 'en negrilla.' : 'sin negrilla.'));
+}
+
+/* ══════════════════════════════════════════════════════════════
+   13. PANEL DE DETALLE
+   ══════════════════════════════════════════════════════════════ */
+function mostrarDetalle(){
+  if($('panel').classList.contains('oculto') || !S.foco) return;
+  const f = S.filas[S.vista[S.foco.vr]];
+  if(!f) return;
+  const c = S.foco.c;
+
+  $('panelTitulo').textContent = 'Celda ' + letraCol(c+1) + f.r;
+
+  const nota = f.n[c] || '';
+  const lineas = nota ? nota.split('\n').filter(x=>x.trim()) : [];
+  const hist = lineas.length
+    ? '<ul class="historial">' + lineas.map(l=>{
+        const m = l.match(/^\[(.*?)\]\s*(.*)$/);
+        return m ? `<li><span class="sello">${esc(m[1])}</span>${esc(m[2])}</li>`
+                 : `<li>${esc(l)}</li>`;
+      }).reverse().join('') + '</ul>'
+    : '<p class="sin-historial">Esta celda no tiene comentarios todavía.</p>';
+
+  const pendientes = new Set();
+  const fotos = Object.keys(COL_FOTOS).map(k=>{
+    const v = f.v[k] || '';
+    if(String(v).indexOf('http') !== 0) return '';
+    const id = idDrive(v);
+    const meta = id ? FOTOS.get(id) : null;
+    if(id && !meta) pendientes.add(id);
+    const nombre  = meta && meta.nombre ? meta.nombre : (meta && meta.error ? meta.error : 'Consultando el nombre…');
+    const detalle = meta && meta.nombre ? (meta.tam + ' KB · ' + meta.fecha) : '';
+    const mini    = id ? 'https://drive.google.com/thumbnail?id=' + id + '&sz=w400' : '';
+    return `<div class="foto">
+      ${mini ? `<a href="${esc(v)}" target="_blank" rel="noopener"><img src="${mini}" alt="${esc(COL_FOTOS[k])}" loading="lazy" onerror="this.closest('.foto').classList.add('sin-mini')"></a>` : ''}
+      <div class="foto-txt">
+        <b>${COL_FOTOS[k]}</b>
+        <span class="foto-nombre" title="${esc(nombre)}">${esc(nombre)}</span>
+        ${detalle ? `<span class="foto-dato">${esc(detalle)}</span>` : ''}
+        <a href="${esc(v)}" target="_blank" rel="noopener">Abrir en Drive ↗</a>
+      </div></div>`;
+  }).filter(Boolean).join('');
+  if(pendientes.size) pedirNombresFotos(pendientes);
+
+  const resumen = [[1,'Tiquete'],[2,'Fecha'],[4,'Placa'],[5,'Peso lleno'],[6,'Peso vacío'],[7,'Peso neto'],[8,'Operación'],[9,'Residuo']]
+    .map(([i,et]) => `<dt>${et}</dt><dd>${esc(f.v[i] ?? '')}</dd>`).join('');
+
+  const avisoCol = S.borradas.has(c)
+    ? `<div class="campo"><div class="val" style="background:#e9e9e4;border-color:#c9c9bf;color:#6d6d64;font-family:var(--sans);font-size:12px">
+         <b>Columna borrada.</b> ${esc(S.notaCol[c] || '')}<br>Los valores se pueden devolver con <b>Columnas → Restaurar</b>.
+       </div></div>` : '';
+
+  $('panelCuerpo').innerHTML = avisoCol + `
+    <div class="campo">
+      <span class="et">${esc(S.headers[c] || letraCol(c+1))}</span>
+      <div class="val">${esc(f.v[c] ?? '') || '<i style="color:var(--tinta-suave)">(vacío)</i>'}</div>
+    </div>
+    <div class="campo">
+      <span class="et">Historial de la celda</span>
+      ${hist}
+    </div>
+    <div class="campo">
+      <span class="et">Agregar comentario</span>
+      <textarea id="panelNota" placeholder="Observación de auditoría…"></textarea>
+      <button class="tb primario" id="panelNotaBtn" style="margin-top:7px;width:100%">Agregar comentario</button>
+    </div>
+    <div class="campo">
+      <span class="et">Registro (fila ${f.r})</span>
+      <dl class="fila-mini">${resumen}</dl>
+    </div>
+    ${fotos ? `<div class="campo"><span class="et">Soportes fotográficos</span><div class="fotos">${fotos}</div></div>` : ''}
+  `;
+  $('panelNotaBtn').addEventListener('click', ()=>{
+    const t = $('panelNota').value.trim();
+    if(!t){ aviso('Escriba el comentario.', true); return; }
+    cambiar(S.vista[S.foco.vr], c, 'nota', t);
+    if(!CFG.auto) enviarCola();
+    aviso('Comentario agregado a ' + letraCol(c+1) + f.r + '.');
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════
+   14. CSV
+   ══════════════════════════════════════════════════════════════ */
+function exportarCSV(){
+  if(!S.vista.length){ aviso('No hay nada que exportar.', true); return; }
+  const filas = [['FILA'].concat(S.headers)];
+  S.vista.forEach(i=>{
+    const f = S.filas[i];
+    filas.push([f.r].concat(S.headers.map((_,c)=> f.v[c] ?? '')));
+  });
+  const csv = '﻿' + filas.map(r => r.map(x=>{
+    const s = String(x ?? '');
+    return /[",;\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+  }).join(';')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
+  a.download = 'auditoria_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1500);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   14b. COLUMNAS: crear · borrar · restaurar
+   ══════════════════════════════════════════════════════════════ */
+async function opColumna(payload, mensaje){
+  if(S.cola.length) await enviarCola();
+  cargando(true, mensaje);
+  try{
+    const res = await llamar(Object.assign({ accion:'auditColumna', autor: CFG.autor }, payload));
+    if(!res.success) throw new Error(res.error || 'No se pudo completar la operación.');
+    return res;
+  }catch(err){
+    aviso(err.message, true);
+    return null;
+  }finally{
+    cargando(false);
+  }
+}
+
+async function crearColumna(nombre){
+  const res = await opColumna({ op:'crear', nombre }, 'Creando la columna…');
+  if(!res) return;
+  await cargar();
+  seleccionarColumna(res.col - 1);
+  $('gridWrap').scrollLeft = $('gridWrap').scrollWidth;
+  aviso('Columna ' + res.letra + ' creada: ' + res.nombre + '.');
+}
+
+async function borrarColumna(){
+  if(!S.foco){ aviso('Seleccione primero una celda de la columna.', true); return; }
+  const c = S.foco.c;
+  const nombre = S.headers[c] || letraCol(c+1);
+  if(S.borradas.has(c)){ aviso('La columna ' + letraCol(c+1) + ' ya está borrada.', true); return; }
+  if(!esBorrable(c)){ aviso('La columna ' + letraCol(c+1) + ' es de solo lectura: no se puede borrar.', true); return; }
+  if(!confirm('¿Borrar la columna ' + letraCol(c+1) + ' («' + nombre + '»)?\n\n' +
+              'Se vacía en TODA la hoja y queda en gris. Cada celda guarda en su comentario el valor que tenía, ' +
+              'así que se puede restaurar después.')) return;
+  const res = await opColumna({ op:'borrar', col:c + 1 }, 'Borrando la columna…');
+  if(!res) return;
+  await cargar();
+  seleccionarColumna(c);
+  aviso('Columna ' + res.letra + ' borrada · ' + res.conDato + ' valores quedaron guardados en los comentarios.');
+}
+
+async function restaurarColumna(){
+  if(!S.foco){ aviso('Seleccione primero una celda de la columna.', true); return; }
+  const c = S.foco.c;
+  if(!S.borradas.has(c)){ aviso('La columna ' + letraCol(c+1) + ' no está borrada.', true); return; }
+  if(!confirm('¿Restaurar la columna ' + letraCol(c+1) + ' («' + (S.headers[c]||'') + '»)?\n\n' +
+              'Se devuelven los valores leyéndolos de los comentarios de cada celda.')) return;
+  const res = await opColumna({ op:'restaurar', col:c + 1 }, 'Restaurando la columna…');
+  if(!res) return;
+  await cargar();
+  seleccionarColumna(c);
+  aviso('Columna ' + res.letra + ' restaurada · ' + res.recuperadas + ' valores recuperados.');
+}
+
+function abrirMenuColumnas(){
+  const pop = $('popColumnas');
+  const c = S.foco ? S.foco.c : null;
+  const nombre = c !== null ? (letraCol(c+1) + ' · ' + (S.headers[c] || '')) : 'ninguna columna seleccionada';
+  $('colBorrarInfo').textContent = c === null ? 'Seleccione primero una celda de la columna'
+                                              : 'Columna ' + nombre;
+  $('colBorrar').disabled    = c === null || !esBorrable(c) || S.borradas.has(c);
+  $('colRestaurar').disabled = c === null || !S.borradas.has(c);
+  const r = $('btnColumnas').getBoundingClientRect();
+  pop.style.left = Math.min(r.left, window.innerWidth - 260) + 'px';
+  pop.style.top  = (r.bottom + 4) + 'px';
+  pop.classList.toggle('abierto');
+  cerrarPop('popColor'); cerrarPop('popFiltro');
+}
+
+/* ══════════════════════════════════════════════════════════════
+   15. EVENTOS DE LA INTERFAZ
+   ══════════════════════════════════════════════════════════════ */
+$('modo').addEventListener('change', ()=>{
+  const r = $('modo').value === 'rango';
+  $('desde').style.display = r ? '' : 'none';
+  $('hasta').style.display = r ? '' : 'none';
+});
+$('btnCargar').addEventListener('click', ()=>{
+  if(S.cola.length){ aviso('Hay cambios sin guardar. Guárdelos antes de recargar.', true); return; }
+  cargar();
+});
+$('buscar').addEventListener('input', ()=>{
+  S.busqueda = $('buscar').value;
+  clearTimeout(window._b);
+  window._b = setTimeout(recalcularVista, 220);
+});
+$('btnLimpiarFiltros').addEventListener('click', ()=>{
+  S.filtros = {}; S.orden = null; S.busqueda = ''; $('buscar').value = '';
+  recalcularVista();
+});
+$('btnLetra').addEventListener('click', e=>abrirColor('fuente', e.currentTarget));
+$('btnFondo').addEventListener('click', e=>abrirColor('fondo', e.currentTarget));
+$('btnNegrilla').addEventListener('click', alternarNegrilla);
+$('btnQuitarFormato').addEventListener('click', ()=>{
+  const celdas = celdasSeleccionadas().filter(x=>esEditable(x.c));
+  if(!celdas.length){ aviso('Seleccione celdas editables.', true); return; }
+  enLote(celdas, ({idx,c}, g)=>{
+    cambiar(idx, c, 'fuente',   '#000000', { grupo:g, diferido:true });
+    cambiar(idx, c, 'fondo',    '#ffffff', { grupo:g, diferido:true });
+    cambiar(idx, c, 'negrilla', 'normal',  { grupo:g, diferido:true });
+  }, 'quitar formato');
+});
+$('btnComentario').addEventListener('click', ()=>{
+  if(!S.foco){ aviso('Seleccione una celda.', true); return; }
+  const f = S.filas[S.vista[S.foco.vr]];
+  $('notaDestino').textContent = 'Celda ' + letraCol(S.foco.c+1) + f.r + ' · ' + (S.headers[S.foco.c] || '');
+  $('notaTexto').value = '';
+  $('veloNota').classList.add('abierto');
+  setTimeout(()=>$('notaTexto').focus(), 40);
+});
+$('notaCancelar').addEventListener('click', ()=>$('veloNota').classList.remove('abierto'));
+$('notaGuardar').addEventListener('click', ()=>{
+  const t = $('notaTexto').value.trim();
+  if(!t){ aviso('Escriba el comentario.', true); return; }
+  cambiar(S.vista[S.foco.vr], S.foco.c, 'nota', t);
+  if(!CFG.auto) enviarCola();
+  $('veloNota').classList.remove('abierto');
+});
+$('btnColumnas').addEventListener('click', ev=>{ ev.stopPropagation(); abrirMenuColumnas(); });
+$('colCrear').addEventListener('click', ()=>{
+  cerrarPop('popColumnas');
+  $('colNombre').value = '';
+  $('veloColumna').classList.add('abierto');
+  setTimeout(()=>$('colNombre').focus(), 40);
+});
+$('colBorrar').addEventListener('click', ()=>{ cerrarPop('popColumnas'); borrarColumna(); });
+$('colRestaurar').addEventListener('click', ()=>{ cerrarPop('popColumnas'); restaurarColumna(); });
+$('colCancelar').addEventListener('click', ()=>$('veloColumna').classList.remove('abierto'));
+$('colConfirmar').addEventListener('click', ()=>{
+  const n = $('colNombre').value.trim();
+  if(!n){ aviso('Escriba el nombre de la columna.', true); return; }
+  $('veloColumna').classList.remove('abierto');
+  crearColumna(n);
+});
+$('colNombre').addEventListener('keydown', e=>{ if(e.key === 'Enter') $('colConfirmar').click(); });
+
+$('btnDeshacer').addEventListener('click', deshacer);
+$('btnGuardar').addEventListener('click', enviarCola);
+$('btnCSV').addEventListener('click', exportarCSV);
+$('btnPanel').addEventListener('click', ()=>{
+  $('panel').classList.toggle('oculto');
+  mostrarDetalle();
+});
+$('cerrarPanel').addEventListener('click', ()=>$('panel').classList.add('oculto'));
+
+$('autor').addEventListener('change', ()=>{ CFG.autor = $('autor').value.trim(); grabarCfg(); });
+
+// popup de color
+$('swatches').addEventListener('click', ev=>{
+  const b = ev.target.closest('button[data-color]');
+  if(b) aplicarColor(b.dataset.color);
+});
+$('usarLibre').addEventListener('click', ()=>aplicarColor($('colorLibre').value));
+$('colorNinguno').addEventListener('click', ()=>aplicarColor(colorObjetivo === 'fuente' ? '#000000' : '#ffffff'));
+
+// popup de filtro
+$('filtroBusca').addEventListener('input', ()=>{
+  const q = $('filtroBusca').value.toLowerCase();
+  $('filtroLista').querySelectorAll('label').forEach(l=>{
+    l.style.display = l.textContent.toLowerCase().indexOf(q) > -1 ? '' : 'none';
+  });
+});
+$('filtroTodo').addEventListener('click', ()=>{
+  $('filtroLista').querySelectorAll('label').forEach(l=>{ if(l.style.display !== 'none') l.querySelector('input').checked = true; });
+});
+$('filtroNada').addEventListener('click', ()=>{
+  $('filtroLista').querySelectorAll('label').forEach(l=>{ if(l.style.display !== 'none') l.querySelector('input').checked = false; });
+});
+$('filtroAplicar').addEventListener('click', aplicarFiltro);
+$('popFiltro').querySelectorAll('[data-orden]').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    const d = b.dataset.orden;
+    S.orden = d === 'no' ? null : { col:S.colFiltro, dir:d };
+    cerrarPop('popFiltro');
+    recalcularVista();
+  });
+});
+document.addEventListener('mousedown', ev=>{
+  if(!ev.target.closest('#popFiltro') && !ev.target.closest('.th-filtro')) cerrarPop('popFiltro');
+  if(!ev.target.closest('#popColor') && !ev.target.closest('#btnLetra') && !ev.target.closest('#btnFondo')) cerrarPop('popColor');
+  if(!ev.target.closest('#popColumnas') && !ev.target.closest('#btnColumnas')) cerrarPop('popColumnas');
+});
+
+// configuración
+$('btnConfig').addEventListener('click', ()=>{
+  $('cfgUrl').value = CFG.url;
+  $('cfgAuto').checked = CFG.auto;
+  $('veloConfig').classList.add('abierto');
+});
+$('cfgCancelar').addEventListener('click', ()=>$('veloConfig').classList.remove('abierto'));
+$('cfgGuardar').addEventListener('click', ()=>{
+  CFG.url  = $('cfgUrl').value.trim();
+  CFG.auto = $('cfgAuto').checked;
+  grabarCfg();
+  $('veloConfig').classList.remove('abierto');
+  aviso('Configuración guardada.');
+});
+$('cfgProbar').addEventListener('click', async ()=>{
+  const guardada = CFG.url;
+  CFG.url = $('cfgUrl').value.trim();
+  try{
+    const r = await llamar({ accion:'auditPing' });
+    if(r.success) aviso('Conexión correcta · ' + (r.version || ''));
+    else aviso('El servicio respondió: ' + (r.error || 'error desconocido'), true);
+  }catch(e){
+    aviso(e.message, true);
+    CFG.url = guardada;
+  }
+});
+
+window.addEventListener('beforeunload', ev=>{
+  if(S.cola.length){ ev.preventDefault(); ev.returnValue = ''; }
+});
+
+/* ══════════════════════════════════════════════════════════════
+   16. ARRANQUE
+   ══════════════════════════════════════════════════════════════ */
+leerCfg();
+$('autor').value = CFG.autor || '';
+pintarSwatches();
+refrescarPendientes();
+if(CFG.url && CFG.url.indexOf('/exec') > -1) cargar();
+else $('veloConfig').classList.add('abierto');
+</script>
+</body>
+</html>
