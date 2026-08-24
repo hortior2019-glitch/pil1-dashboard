@@ -2351,6 +2351,8 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button onclick="abrirFormVehiculo()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">+ Agregar vehículo</button>
+      <button onclick="abrirCatalogoVeh('conductores')" style="padding:9px 16px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--white);color:var(--navy);border:1px solid var(--navy);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Conductores</button>
+      <button onclick="abrirCatalogoVeh('operaciones')" style="padding:9px 16px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--white);color:var(--navy);border:1px solid var(--navy);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Operaciones</button>
       <button onclick="cargarVehiculos(true)" style="padding:9px 16px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Actualizar</button>
     </div>
   </div>
@@ -3657,6 +3659,10 @@ async function loadAllData() {
     renderProduccionHumus(dataProduccionHumus);
     ok++;
   } catch(e) { errors.push('Producción Humus'); console.error('Producción Humus:', e); }
+
+  // Precarga silenciosa del detalle por referencia (Apps Script de planta):
+  // arranca aqui sin bloquear, para que la pestaña ya este lista al abrirla.
+  try { cargarHumusDetalle(true); } catch(e) { console.error('prefetch humus:', e); }
 
   const now = new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   document.getElementById('last-update').textContent = 'Ultima actualizacion: '+now;
@@ -5484,6 +5490,11 @@ const VEHICULOS_API = "https://script.google.com/macros/s/AKfycbwf1gu_r2HhyzrtFh
 let _vehiculos = [];
 let _mantenimientos = [];
 let _vehiculosCargados = false;
+// Catalogos y registros nuevos (backend v2 de Vehiculos Carga)
+let _vehConductores  = [];   // catalogo de conductores, con foto opcional
+let _vehOperaciones  = [];   // catalogo propio de operaciones de esta pestaña
+let _vehProgramacion = [];   // fecha + conductor + operacion + observaciones, por placa
+let _vehDocumentos   = [];   // PDFs con titulo, por placa
 
 // Dias de anticipacion con los que se avisa un vencimiento (en rojo)
 const VEH_DIAS_ALERTA = 7;
@@ -5559,6 +5570,12 @@ async function cargarVehiculos(forzar) {
   if (d && Array.isArray(d.vehiculos)) {
     _vehiculos = d.vehiculos;
     _mantenimientos = Array.isArray(d.mantenimientos) ? d.mantenimientos : [];
+    // Backend v2. Si el Apps Script todavia es v1 estas listas llegan vacias y
+    // la pestaña sigue funcionando igual que antes, solo sin programacion.
+    _vehConductores  = Array.isArray(d.conductores)    ? d.conductores    : [];
+    _vehOperaciones  = Array.isArray(d.operaciones)    ? d.operaciones    : [];
+    _vehProgramacion = Array.isArray(d.programaciones) ? d.programaciones : [];
+    _vehDocumentos   = Array.isArray(d.documentos)     ? d.documentos     : [];
     _vehiculosCargados = true;
   } else if (cont) {
     cont.innerHTML = '<div class="empty" style="padding:30px;color:var(--red)">No se pudo cargar la lista. Verifica que el Apps Script tenga la acción "listarVehiculos" y vuelve a intentar.</div>';
@@ -5608,6 +5625,7 @@ function renderVehiculos() {
             ${_cajaDocVeh('SOAT', v.soat)}
             ${_cajaDocVeh('Tecnomecánica', v.tecno)}
           </div>
+          ${bloqueProgramacionVehiculo(v.placa)}
           ${bloquePreopVehiculo(v.placa)}
           <div style="background:var(--s2);border-radius:4px;padding:8px 12px;margin-bottom:10px">
             <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">Último mantenimiento</div>
@@ -5617,6 +5635,8 @@ function renderVehiculos() {
               : '<div style="font-size:12px;color:var(--ink-l);font-style:italic">Sin mantenimientos registrados</div>'}
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button onclick="abrirFormProgramacion('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:#1a5c35;color:#fff;border:none;border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">+ Programar</button>
+            <button onclick="verDocumentosVehiculo('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--white);color:var(--gold);border:1px solid var(--gold);border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Documentos (${_docsDeVehiculo(v.placa).length})</button>
             <button onclick="abrirFormKm('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--white);color:var(--navy);border:1px solid var(--navy);border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Actualizar km</button>
             <button onclick="abrirFormMantenimiento('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">+ Mantenimiento</button>
             <button onclick="verHistorialVehiculo('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Historial (${mantsV.length})</button>
@@ -5626,6 +5646,507 @@ function renderVehiculos() {
       </div>
     </div>`;
   }).join('');
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PROGRAMACION, CATALOGOS Y DOCUMENTOS DE VEHICULOS (backend v2)
+   ───────────────────────────────────────────────────────────────────────
+   · Programacion: por vehiculo se agenda fecha + conductor + operacion +
+     observaciones. Un mismo vehiculo puede tener varias operaciones, incluso
+     el mismo dia; la hora o los puntos especificos van en observaciones.
+   · Conductores y operaciones son catalogos propios de esta pestaña. Se
+     pueden crear sin foto y adjuntarsela despues editandolos.
+   · Documentos: PDFs con titulo, para seguimiento documental del vehiculo.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function _hoyISOVeh() {
+  const h = new Date();
+  return h.getFullYear() + '-' + String(h.getMonth()+1).padStart(2,'0') + '-' + String(h.getDate()).padStart(2,'0');
+}
+function _escVeh(s) {
+  return (s == null ? '' : s.toString())
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function _escAttrVeh(s) { return (s == null ? '' : s.toString()).replace(/'/g, ''); }
+
+function _progDeVehiculo(placa) {
+  const obj = _placaNorm(placa);
+  return _vehProgramacion
+    .filter(p => _placaNorm(p.placa) === obj)
+    .sort((a,b) => (a.fecha||'').localeCompare(b.fecha||''));
+}
+function _docsDeVehiculo(placa) {
+  const obj = _placaNorm(placa);
+  return _vehDocumentos
+    .filter(d => _placaNorm(d.placa) === obj)
+    .sort((a,b) => (b.creado||'').localeCompare(a.creado||''));
+}
+
+// Bloque de programacion dentro de la tarjeta del vehiculo.
+// Muestra lo que viene (de hoy en adelante); lo ya pasado se consulta aparte.
+function bloqueProgramacionVehiculo(placa) {
+  const hoy = _hoyISOVeh();
+  const todas = _progDeVehiculo(placa);
+  const futuras = todas.filter(p => (p.fecha||'') >= hoy);
+  const pasadas = todas.length - futuras.length;
+
+  if (!todas.length) {
+    return `<div style="background:var(--s2);border-radius:4px;padding:8px 12px;margin-bottom:10px">
+      <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">Programación</div>
+      <div style="font-size:12px;color:var(--ink-l);font-style:italic">Sin operaciones programadas</div>
+    </div>`;
+  }
+
+  const VISIBLES = 3;
+  const idp = _placaNorm(placa);
+  const lista = futuras;
+
+  const tarjeta = (p, i) => {
+    const oculto = i >= VISIBLES ? 'display:none' : '';
+    const esHoy = (p.fecha||'') === hoy;
+    return `<div class="prog-item-${idp}" style="${oculto};background:var(--white);border:1px solid var(--rule);
+        border-left:4px solid ${esHoy ? 'var(--gold)' : '#1a5c35'};border-radius:5px;padding:9px 12px;margin-bottom:7px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+        <span style="font-size:15px;font-weight:800;color:var(--ink)">${_escVeh(p.operacion) || '—'}</span>
+        <span style="font-size:12px;font-weight:700;color:${esHoy ? 'var(--gold)' : 'var(--ink-m)'};white-space:nowrap">
+          ${_fmtFechaVeh(p.fecha)}${esHoy ? ' · HOY' : ''}</span>
+      </div>
+      <div style="font-size:13px;color:var(--ink-m);margin-bottom:${p.observaciones ? '4px' : '0'}">
+        Conductor: <strong style="color:var(--ink)">${_escVeh(p.conductor) || 'sin asignar'}</strong></div>
+      ${p.observaciones ? `<div style="font-size:13px;color:var(--ink-m);background:var(--s2);border-radius:3px;padding:5px 8px;line-height:1.4">${_escVeh(p.observaciones)}</div>` : ''}
+      <div style="margin-top:6px"><button onclick="eliminarProgramacion('${_escAttrVeh(p.id)}')"
+        style="background:none;border:none;color:var(--red);font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;cursor:pointer;padding:0">Quitar</button></div>
+    </div>`;
+  };
+
+  const cuerpo = lista.length
+    ? lista.map(tarjeta).join('')
+    : '<div style="font-size:12px;color:var(--ink-l);font-style:italic;margin-bottom:6px">Nada programado hacia adelante</div>';
+
+  const hayMas = lista.length > VISIBLES;
+
+  return `<div style="background:var(--s2);border-radius:4px;padding:10px 12px;margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:7px">
+      <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">
+        Programación${lista.length ? ' · ' + lista.length + ' pendiente' + (lista.length !== 1 ? 's' : '') : ''}</div>
+      <div style="display:flex;gap:10px">
+        ${hayMas ? `<button id="prog-mas-${idp}" onclick="toggleProgVeh('${idp}')" style="background:none;border:none;color:var(--navy);font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;cursor:pointer;padding:0">Ver ${lista.length - VISIBLES} más</button>` : ''}
+        ${pasadas ? `<button onclick="verHistorialProgramacion('${_escAttrVeh(placa)}')" style="background:none;border:none;color:var(--ink-l);font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;cursor:pointer;padding:0">Historial (${pasadas})</button>` : ''}
+      </div>
+    </div>
+    ${cuerpo}
+  </div>`;
+}
+
+function toggleProgVeh(idp) {
+  const items = document.querySelectorAll('.prog-item-' + idp);
+  const btn = document.getElementById('prog-mas-' + idp);
+  const abriendo = btn && btn.textContent.indexOf('más') !== -1;
+  items.forEach((el, i) => { if (i >= 3) el.style.display = abriendo ? '' : 'none'; });
+  if (btn) btn.textContent = abriendo ? 'Ver menos' : 'Ver ' + (items.length - 3) + ' más';
+}
+
+function verHistorialProgramacion(placa) {
+  const hoy = _hoyISOVeh();
+  const pasadas = _progDeVehiculo(placa).filter(p => (p.fecha||'') < hoy).reverse();
+  _modalVeh(`
+    <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">Programación pasada · ${_escVeh(placa)}</div>
+    <div style="font-size:12px;color:var(--ink-l);margin-bottom:16px">${pasadas.length} registro${pasadas.length !== 1 ? 's' : ''} anterior${pasadas.length !== 1 ? 'es' : ''} a hoy.</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${pasadas.length ? pasadas.map(p => `
+        <div style="border:1px solid var(--rule);border-left:4px solid var(--rule);border-radius:5px;padding:9px 12px">
+          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+            <span style="font-size:14px;font-weight:800;color:var(--ink)">${_escVeh(p.operacion)||'—'}</span>
+            <span style="font-size:12px;color:var(--ink-l)">${_fmtFechaVeh(p.fecha)}</span>
+          </div>
+          <div style="font-size:12px;color:var(--ink-m);margin-top:3px">Conductor: ${_escVeh(p.conductor)||'sin asignar'}</div>
+          ${p.observaciones ? `<div style="font-size:12px;color:var(--ink-m);margin-top:3px;font-style:italic">${_escVeh(p.observaciones)}</div>` : ''}
+        </div>`).join('')
+      : '<div class="empty" style="padding:20px">Sin programación anterior.</div>'}
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:18px">
+      <button onclick="_cerrarModalVeh()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Cerrar</button>
+    </div>`);
+}
+
+/* ── FORMULARIO DE PROGRAMACION ──────────────────────────────
+   Una fecha compartida y tantas lineas de operacion como haga falta. */
+let _progLineas = 0;
+
+function _opcionesConductor(sel) {
+  const act = _vehConductores.filter(c => c.activo !== false);
+  return '<option value="">— Sin asignar —</option>' + act.map(c =>
+    `<option value="${_escVeh(c.id)}"${sel === c.id ? ' selected' : ''}>${_escVeh(c.nombre)}</option>`).join('');
+}
+function _opcionesOperacion(sel) {
+  const act = _vehOperaciones.filter(o => o.activo !== false);
+  return '<option value="">— Selecciona —</option>' + act.map(o =>
+    `<option value="${_escVeh(o.id)}"${sel === o.id ? ' selected' : ''}>${_escVeh(o.nombre)}</option>`).join('');
+}
+
+function _lineaProgramacionHTML(n) {
+  return `<div class="prog-linea" data-n="${n}" style="border:1px solid var(--rule);border-radius:5px;padding:12px;background:var(--s2)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">Operación ${n}</div>
+      ${n > 1 ? `<button onclick="this.closest('.prog-linea').remove()" style="background:none;border:none;color:var(--red);font-size:10px;font-weight:700;text-transform:uppercase;cursor:pointer;padding:0">Quitar</button>` : ''}
+    </div>
+    <div style="display:flex;flex-direction:column;gap:9px">
+      <div>
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Operación *</label>
+        <div style="display:flex;gap:6px">
+          <select class="pg-op" style="flex:1;padding:8px 10px;font-size:14px;border:1px solid var(--rule);border-radius:4px;background:var(--white);font-family:'Source Sans 3',sans-serif">${_opcionesOperacion('')}</select>
+          <button onclick="abrirFormOperacionVeh()" title="Crear operación nueva" style="padding:8px 12px;font-size:16px;font-weight:700;background:var(--white);color:var(--navy);border:1px solid var(--navy);border-radius:4px;cursor:pointer;line-height:1">+</button>
+        </div>
+      </div>
+      <div>
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Conductor</label>
+        <div style="display:flex;gap:6px">
+          <select class="pg-cond" style="flex:1;padding:8px 10px;font-size:14px;border:1px solid var(--rule);border-radius:4px;background:var(--white);font-family:'Source Sans 3',sans-serif">${_opcionesConductor('')}</select>
+          <button onclick="abrirFormConductor()" title="Crear conductor nuevo" style="padding:8px 12px;font-size:16px;font-weight:700;background:var(--white);color:var(--navy);border:1px solid var(--navy);border-radius:4px;cursor:pointer;line-height:1">+</button>
+        </div>
+      </div>
+      <div>
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Observaciones</label>
+        <textarea class="pg-obs" rows="2" placeholder="Hora de salida, punto de cargue, contacto, indicaciones..." style="width:100%;box-sizing:border-box;padding:8px 10px;font-size:14px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif;resize:vertical"></textarea>
+      </div>
+    </div>
+  </div>`;
+}
+
+function abrirFormProgramacion(placa) {
+  _progLineas = 1;
+  _modalVeh(`
+    <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">Programar · ${_escVeh(placa)}</div>
+    <div style="font-size:12px;color:var(--ink-l);margin-bottom:16px">Puedes agendar varias operaciones para la misma fecha. La hora y los puntos específicos van en observaciones.</div>
+    <div style="margin-bottom:14px">
+      <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Fecha *</label>
+      <input id="pg-fecha" type="date" value="${_hoyISOVeh()}" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px">
+    </div>
+    <div id="pg-lineas" style="display:flex;flex-direction:column;gap:12px">${_lineaProgramacionHTML(1)}</div>
+    <button onclick="agregarLineaProgramacion()" style="margin-top:12px;width:100%;padding:9px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--white);color:var(--navy);border:1px dashed var(--navy);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">+ Agregar otra operación</button>
+    <div id="pg-error" style="display:none;font-size:12px;color:var(--red);font-weight:600;margin-top:10px"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+      <button onclick="_cerrarModalVeh()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Cancelar</button>
+      <button id="pg-guardar" onclick="guardarProgramacion('${_escAttrVeh(placa)}')" style="padding:9px 20px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:#1a5c35;color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Guardar</button>
+    </div>`);
+}
+
+function agregarLineaProgramacion() {
+  const cont = document.getElementById('pg-lineas');
+  if (!cont) return;
+  _progLineas++;
+  cont.insertAdjacentHTML('beforeend', _lineaProgramacionHTML(_progLineas));
+}
+
+async function guardarProgramacion(placa) {
+  const fecha = (document.getElementById('pg-fecha')||{}).value || '';
+  const err = document.getElementById('pg-error');
+  const btn = document.getElementById('pg-guardar');
+  const mostrar = m => { if (err) { err.textContent = m; err.style.display = 'block'; } };
+
+  if (!fecha) { mostrar('La fecha es obligatoria.'); return; }
+
+  const items = [];
+  let faltaOp = false;
+  document.querySelectorAll('#pg-lineas .prog-linea').forEach(div => {
+    const selOp = div.querySelector('.pg-op');
+    const selCd = div.querySelector('.pg-cond');
+    const obs   = div.querySelector('.pg-obs');
+    const opId  = selOp ? selOp.value : '';
+    if (!opId) { faltaOp = true; return; }
+    const op = _vehOperaciones.find(o => o.id === opId);
+    const cdId = selCd ? selCd.value : '';
+    const cd = _vehConductores.find(x => x.id === cdId);
+    items.push({
+      fecha,
+      operacionId: opId,
+      operacion: op ? op.nombre : '',
+      conductorId: cdId,
+      conductor: cd ? cd.nombre : '',
+      observaciones: obs ? obs.value.trim() : ''
+    });
+  });
+
+  if (faltaOp) { mostrar('Selecciona la operación en todas las líneas (o quita las que sobren).'); return; }
+  if (!items.length) { mostrar('Agrega al menos una operación.'); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+  const autor = (window._usuarioActual && _usuarioActual.nombre) || '';
+  const d = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({ accion:'guardarProgramacion', placa, fecha, items, autor }) });
+
+  if (!d || !d.success) {
+    mostrar((d && d.error) ? d.error : 'No se pudo guardar. Verifica que el Apps Script esté en la versión v2.');
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+    return;
+  }
+  _cerrarModalVeh();
+  await cargarVehiculos(true);
+}
+
+async function eliminarProgramacion(id) {
+  if (!confirm('¿Quitar esta operación programada?')) return;
+  const d = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({ accion:'eliminarProgramacion', id }) });
+  if (!d || !d.success) { alert('No se pudo quitar la programación.'); return; }
+  await cargarVehiculos(true);
+}
+
+/* ── CATALOGOS: CONDUCTORES Y OPERACIONES ───────────────────
+   La foto es opcional al crear y se puede adjuntar despues con "Editar". */
+let _catFotoTmp = '';
+
+async function _previewFotoCat(input) {
+  const f = input.files && input.files[0];
+  _catFotoTmp = await _comprimirImagenVeh(f);
+  const prev = document.getElementById('cat-foto-prev');
+  if (prev) prev.innerHTML = _catFotoTmp ? `<img src="${_catFotoTmp}" style="width:100px;height:80px;object-fit:cover;border-radius:4px;border:1px solid var(--rule)">` : '';
+}
+
+function _miniFotoCat(url, nombre) {
+  return url
+    ? `<img src="${urlFotoDrive(url)}" data-alt="${urlFotoDriveAlt(url)}" onclick="abrirFotoBaucher('${_escAttrVeh(url)}','${_escAttrVeh(nombre)}')"
+         onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src=this.dataset.alt;}else{this.style.display='none';}"
+         style="width:46px;height:46px;object-fit:cover;border-radius:50%;border:1px solid var(--rule);cursor:zoom-in;flex-shrink:0">`
+    : `<div style="width:46px;height:46px;border:1px dashed var(--rule);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;color:var(--ink-l);flex-shrink:0;text-align:center">Sin<br>foto</div>`;
+}
+
+function abrirCatalogoVeh(cual) {
+  const esCond = cual === 'conductores';
+  const lista = esCond ? _vehConductores : _vehOperaciones;
+  const titulo = esCond ? 'Conductores' : 'Operaciones';
+  _modalVeh(`
+    <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">${titulo}</div>
+    <div style="font-size:12px;color:var(--ink-l);margin-bottom:16px">Se usan al programar un vehículo. La foto es opcional: puedes agregarla después con "Editar".</div>
+    <button onclick="${esCond ? 'abrirFormConductor()' : 'abrirFormOperacionVeh()'}" style="width:100%;padding:10px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif;margin-bottom:14px">+ ${esCond ? 'Nuevo conductor' : 'Nueva operación'}</button>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${lista.length ? lista.map(x => `
+        <div style="display:flex;align-items:center;gap:12px;border:1px solid var(--rule);border-radius:5px;padding:10px 12px">
+          ${_miniFotoCat(x.foto, x.nombre)}
+          <div style="flex:1;min-width:0">
+            <div style="font-size:15px;font-weight:800;color:var(--ink)">${_escVeh(x.nombre)}</div>
+            <div style="font-size:12px;color:var(--ink-l)">${esCond
+              ? ([_escVeh(x.documento), _escVeh(x.telefono)].filter(Boolean).join(' · ') || 'sin datos adicionales')
+              : (_escVeh(x.descripcion) || 'sin descripción')}</div>
+          </div>
+          <button onclick="${esCond ? `abrirFormConductor('${_escAttrVeh(x.id)}')` : `abrirFormOperacionVeh('${_escAttrVeh(x.id)}')`}"
+            style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--white);color:var(--navy);border:1px solid var(--navy);border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif;flex-shrink:0">Editar</button>
+        </div>`).join('')
+      : `<div class="empty" style="padding:24px">Todavía no hay ${esCond ? 'conductores' : 'operaciones'}.</div>`}
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:18px">
+      <button onclick="_cerrarModalVeh()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Cerrar</button>
+    </div>`);
+}
+
+function abrirFormConductor(id) {
+  _catFotoTmp = '';
+  const c = id ? _vehConductores.find(x => x.id === id) : null;
+  _modalVeh(`
+    <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">${c ? 'Editar conductor' : 'Nuevo conductor'}</div>
+    <div style="font-size:12px;color:var(--ink-l);margin-bottom:16px">Solo el nombre es obligatorio. La foto puede adjuntarse después.</div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Nombre *</label>
+        <input id="cd-nombre" value="${c ? _escVeh(c.nombre) : ''}" placeholder="Nombre completo" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif">
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div style="flex:1;min-width:140px">
+          <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Documento</label>
+          <input id="cd-doc" value="${c ? _escVeh(c.documento) : ''}" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif">
+        </div>
+        <div style="flex:1;min-width:140px">
+          <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Teléfono</label>
+          <input id="cd-tel" value="${c ? _escVeh(c.telefono) : ''}" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif">
+        </div>
+      </div>
+      <div>
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Foto ${c && c.foto ? '(ya tiene una; sube otra solo si quieres reemplazarla)' : '(opcional)'}</label>
+        <input type="file" accept="image/*" onchange="_previewFotoCat(this)" style="font-size:12px">
+        <div id="cat-foto-prev" style="margin-top:8px">${c && c.foto ? _miniFotoCat(c.foto, c.nombre) : ''}</div>
+      </div>
+      <div id="cd-error" style="display:none;font-size:12px;color:var(--red);font-weight:600"></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+      <button onclick="abrirCatalogoVeh('conductores')" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Volver</button>
+      <button id="cd-guardar" onclick="guardarConductor('${_escAttrVeh(id||'')}')" style="padding:9px 20px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Guardar</button>
+    </div>`);
+}
+
+async function guardarConductor(id) {
+  const nombre = ((document.getElementById('cd-nombre')||{}).value||'').trim();
+  const err = document.getElementById('cd-error');
+  const btn = document.getElementById('cd-guardar');
+  if (!nombre) { if (err) { err.textContent = 'El nombre es obligatorio.'; err.style.display='block'; } return; }
+  if (btn) { btn.disabled = true; btn.textContent = _catFotoTmp ? 'Subiendo foto...' : 'Guardando...'; }
+  const d = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({ accion:'guardarConductor', id: id||'', nombre,
+      documento: ((document.getElementById('cd-doc')||{}).value||'').trim(),
+      telefono:  ((document.getElementById('cd-tel')||{}).value||'').trim(),
+      foto: _catFotoTmp || '' }) });
+  if (!d || !d.success) {
+    if (err) { err.textContent = (d && d.error) ? d.error : 'No se pudo guardar. Verifica que el Apps Script esté en la versión v2.'; err.style.display='block'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+    return;
+  }
+  await cargarVehiculos(true);
+  abrirCatalogoVeh('conductores');
+}
+
+function abrirFormOperacionVeh(id) {
+  _catFotoTmp = '';
+  const o = id ? _vehOperaciones.find(x => x.id === id) : null;
+  _modalVeh(`
+    <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">${o ? 'Editar operación' : 'Nueva operación'}</div>
+    <div style="font-size:12px;color:var(--ink-l);margin-bottom:16px">Catálogo propio de Vehículos Carga. La foto puede adjuntarse después.</div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Nombre *</label>
+        <input id="ov-nombre" value="${o ? _escVeh(o.nombre) : ''}" placeholder="Ej. Brinsa · Captación húmedos" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif">
+      </div>
+      <div>
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Descripción</label>
+        <textarea id="ov-desc" rows="2" placeholder="Ruta habitual, contacto, condiciones..." style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif;resize:vertical">${o ? _escVeh(o.descripcion) : ''}</textarea>
+      </div>
+      <div>
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Foto ${o && o.foto ? '(ya tiene una; sube otra solo si quieres reemplazarla)' : '(opcional)'}</label>
+        <input type="file" accept="image/*" onchange="_previewFotoCat(this)" style="font-size:12px">
+        <div id="cat-foto-prev" style="margin-top:8px">${o && o.foto ? _miniFotoCat(o.foto, o.nombre) : ''}</div>
+      </div>
+      <div id="ov-error" style="display:none;font-size:12px;color:var(--red);font-weight:600"></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+      <button onclick="abrirCatalogoVeh('operaciones')" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Volver</button>
+      <button id="ov-guardar" onclick="guardarOperacionVeh('${_escAttrVeh(id||'')}')" style="padding:9px 20px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Guardar</button>
+    </div>`);
+}
+
+async function guardarOperacionVeh(id) {
+  const nombre = ((document.getElementById('ov-nombre')||{}).value||'').trim();
+  const err = document.getElementById('ov-error');
+  const btn = document.getElementById('ov-guardar');
+  if (!nombre) { if (err) { err.textContent = 'El nombre es obligatorio.'; err.style.display='block'; } return; }
+  if (btn) { btn.disabled = true; btn.textContent = _catFotoTmp ? 'Subiendo foto...' : 'Guardando...'; }
+  const d = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({ accion:'guardarOperacionVeh', id: id||'', nombre,
+      descripcion: ((document.getElementById('ov-desc')||{}).value||'').trim(),
+      foto: _catFotoTmp || '' }) });
+  if (!d || !d.success) {
+    if (err) { err.textContent = (d && d.error) ? d.error : 'No se pudo guardar. Verifica que el Apps Script esté en la versión v2.'; err.style.display='block'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+    return;
+  }
+  await cargarVehiculos(true);
+  abrirCatalogoVeh('operaciones');
+}
+
+/* ── DOCUMENTOS PDF POR VEHICULO ─────────────────────────────
+   El PDF viaja en base64 al Apps Script y queda en una carpeta de Drive.
+   Google Apps Script no acepta cargas enormes, asi que se avisa arriba de 9 MB. */
+let _docPdfTmp = '';
+let _docPdfNombre = '';
+const DOC_PDF_MAX_MB = 9;
+
+function _leerPdfVeh(input) {
+  const f = input.files && input.files[0];
+  const prev = document.getElementById('dv-archivo-prev');
+  _docPdfTmp = ''; _docPdfNombre = '';
+  if (!f) { if (prev) prev.innerHTML = ''; return; }
+  const mb = f.size / (1024 * 1024);
+  if (mb > DOC_PDF_MAX_MB) {
+    if (prev) prev.innerHTML = `<div style="font-size:12px;color:var(--red);font-weight:600">El archivo pesa ${mb.toFixed(1)} MB. El máximo es ${DOC_PDF_MAX_MB} MB.</div>`;
+    input.value = '';
+    return;
+  }
+  if (prev) prev.innerHTML = '<div style="font-size:12px;color:var(--ink-l)">Leyendo archivo…</div>';
+  const rd = new FileReader();
+  rd.onload = () => {
+    _docPdfTmp = rd.result;
+    _docPdfNombre = f.name;
+    if (prev) prev.innerHTML = `<div style="font-size:12px;color:var(--ink-m);font-weight:600">${_escVeh(f.name)} · ${mb.toFixed(2)} MB</div>`;
+  };
+  rd.onerror = () => { if (prev) prev.innerHTML = '<div style="font-size:12px;color:var(--red)">No se pudo leer el archivo.</div>'; };
+  rd.readAsDataURL(f);
+}
+
+function verDocumentosVehiculo(placa) {
+  const docs = _docsDeVehiculo(placa);
+  _modalVeh(`
+    <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">Documentos · ${_escVeh(placa)}</div>
+    <div style="font-size:12px;color:var(--ink-l);margin-bottom:16px">Seguimiento documental del vehículo. Los PDF quedan guardados en Drive.</div>
+    <button onclick="abrirFormDocumentoVeh('${_escAttrVeh(placa)}')" style="width:100%;padding:10px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--gold);color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif;margin-bottom:14px">+ Agregar documento PDF</button>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${docs.length ? docs.map(x => `
+        <div style="display:flex;align-items:center;gap:12px;border:1px solid var(--rule);border-left:4px solid var(--gold);border-radius:5px;padding:10px 12px">
+          <div style="font-size:22px;flex-shrink:0">&#128196;</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:15px;font-weight:800;color:var(--ink)">${_escVeh(x.titulo)}</div>
+            <div style="font-size:11px;color:var(--ink-l)">${_fmtFechaVeh(x.creado)}${x.autor ? ' · ' + _escVeh(x.autor) : ''}${x.nombreOriginal ? ' · ' + _escVeh(x.nombreOriginal) : ''}</div>
+          </div>
+          <a href="${_escVeh(x.archivo)}" target="_blank" rel="noopener" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--navy);color:#fff;border-radius:3px;text-decoration:none;flex-shrink:0">Abrir</a>
+          <button onclick="eliminarDocumentoVeh('${_escAttrVeh(x.id)}','${_escAttrVeh(placa)}')" style="background:none;border:none;color:var(--red);font-size:10px;font-weight:700;text-transform:uppercase;cursor:pointer;padding:0;flex-shrink:0">Quitar</button>
+        </div>`).join('')
+      : '<div class="empty" style="padding:24px">Este vehículo aún no tiene documentos.</div>'}
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:18px">
+      <button onclick="_cerrarModalVeh()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Cerrar</button>
+    </div>`);
+}
+
+function abrirFormDocumentoVeh(placa) {
+  _docPdfTmp = ''; _docPdfNombre = '';
+  _modalVeh(`
+    <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">Nuevo documento · ${_escVeh(placa)}</div>
+    <div style="font-size:12px;color:var(--ink-l);margin-bottom:16px">El título es el que verás en la lista. Máximo ${DOC_PDF_MAX_MB} MB por archivo.</div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Título *</label>
+        <input id="dv-titulo" placeholder="Ej. Tarjeta de propiedad, Póliza RCE, Contrato" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif">
+      </div>
+      <div>
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Archivo PDF *</label>
+        <input id="dv-archivo" type="file" accept="application/pdf,.pdf" onchange="_leerPdfVeh(this)" style="font-size:12px">
+        <div id="dv-archivo-prev" style="margin-top:8px"></div>
+      </div>
+      <div id="dv-error" style="display:none;font-size:12px;color:var(--red);font-weight:600"></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+      <button onclick="verDocumentosVehiculo('${_escAttrVeh(placa)}')" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Volver</button>
+      <button id="dv-guardar" onclick="guardarDocumentoVeh('${_escAttrVeh(placa)}')" style="padding:9px 20px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--gold);color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Subir</button>
+    </div>`);
+}
+
+async function guardarDocumentoVeh(placa) {
+  const titulo = ((document.getElementById('dv-titulo')||{}).value||'').trim();
+  const err = document.getElementById('dv-error');
+  const btn = document.getElementById('dv-guardar');
+  const mostrar = m => { if (err) { err.textContent = m; err.style.display='block'; } };
+  if (!titulo)     { mostrar('El título es obligatorio.'); return; }
+  if (!_docPdfTmp) { mostrar('Selecciona un archivo PDF.'); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Subiendo...'; }
+  const autor = (window._usuarioActual && _usuarioActual.nombre) || '';
+  const d = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({ accion:'guardarDocumentoVeh', placa, titulo, archivo: _docPdfTmp, nombreOriginal: _docPdfNombre, autor }) });
+
+  if (!d || !d.success) {
+    mostrar((d && d.error) ? d.error : 'No se pudo subir. Verifica que el Apps Script esté en la versión v2 y que hayas autorizado Drive.');
+    if (btn) { btn.disabled = false; btn.textContent = 'Subir'; }
+    return;
+  }
+  _docPdfTmp = ''; _docPdfNombre = '';
+  await cargarVehiculos(true);
+  verDocumentosVehiculo(placa);
+}
+
+async function eliminarDocumentoVeh(id, placa) {
+  if (!confirm('¿Quitar este documento de la lista? El PDF seguirá guardado en Drive.')) return;
+  const d = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({ accion:'eliminarDocumentoVeh', id }) });
+  if (!d || !d.success) { alert('No se pudo quitar el documento.'); return; }
+  await cargarVehiculos(true);
+  verDocumentosVehiculo(placa);
 }
 
 
@@ -6034,16 +6555,64 @@ function _humFecha(reg) {
   return m ? m[0] : '';
 }
 
+// Clave y vigencia del cache local del detalle por referencia.
+// El Apps Script de la app de planta tarda varios segundos en despertar, asi que
+// guardamos la ultima respuesta y la pintamos de inmediato (stale-while-revalidate):
+// el usuario ve los datos al instante y el refresco ocurre en segundo plano.
+const HUM_CACHE_KEY = 'horti_humus_detalle_v1';
+const HUM_CACHE_MAX_MS = 12 * 60 * 60 * 1000;   // se descarta si tiene mas de 12 h
+
+function _humCacheLeer() {
+  try {
+    const crudo = localStorage.getItem(HUM_CACHE_KEY);
+    if (!crudo) return null;
+    const obj = JSON.parse(crudo);
+    if (!obj || !obj.ts || !obj.d) return null;
+    if (Date.now() - obj.ts > HUM_CACHE_MAX_MS) return null;
+    return obj;
+  } catch(e) { return null; }
+}
+function _humCacheGuardar(d) {
+  try { localStorage.setItem(HUM_CACHE_KEY, JSON.stringify({ ts: Date.now(), d: d })); } catch(e) {}
+}
+function _humMensajeEstado(html) {
+  ['hum-barras-prod','hum-barras-sal'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = html;
+  });
+}
+
+let _humEnVuelo = null;   // evita disparar dos consultas simultaneas
+
 async function cargarHumusDetalle(forzar) {
   if (_humCargado && !forzar) { renderHumusDetalle(); return; }
-  const cont = document.getElementById('hum-barras');
-  if (cont && !_humDatos) cont.innerHTML = '<div class="empty" style="padding:24px">Cargando referencias…</div>';
-  const d = await fetchJSONTolerante(HUMUS_API + '?accion=resumen', { redirect:'follow' });
+
+  // Pinta ya mismo lo ultimo conocido (cache local) mientras llega la respuesta
+  if (!_humDatos) {
+    const cache = _humCacheLeer();
+    if (cache) {
+      _humDatos = cache.d;
+      try { renderHumusDetalle(); } catch(e) {}
+      const info = document.getElementById('hum-periodo-info');
+      if (info) info.textContent += ' · actualizando…';
+    } else {
+      _humMensajeEstado('<div class="empty" style="padding:24px">Consultando la app de planta…</div>');
+    }
+  }
+
+  // Si ya hay una consulta en curso, se reutiliza en vez de lanzar otra
+  if (!_humEnVuelo) {
+    _humEnVuelo = fetchJSONTolerante(HUMUS_API + '?accion=resumen', { redirect:'follow' })
+      .finally(() => { _humEnVuelo = null; });
+  }
+  const d = await _humEnVuelo;
+
   if (d && d.ok) {
     _humDatos = d;
     _humCargado = true;
-  } else if (cont) {
-    cont.innerHTML = '<div class="empty" style="padding:24px;color:var(--red)">No se pudo consultar la app de planta. Verifica la conexión y vuelve a intentar.</div>';
+    _humCacheGuardar(d);
+  } else if (!_humDatos) {
+    _humMensajeEstado('<div class="empty" style="padding:24px;color:var(--red)">No se pudo consultar la app de planta. Verifica la conexión y vuelve a intentar.</div>');
     return;
   }
   renderHumusDetalle();
