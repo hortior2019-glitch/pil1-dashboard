@@ -526,6 +526,15 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   #panel-ingreso .ic-name > div[style*="font-size:11px"]{white-space:normal !important}
 }
 
+/* Botones de periodo del detalle por referencia (Producción Humus) */
+#panel-ProduccionHumus .hum-fbtn{
+  padding:6px 14px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;
+  background:var(--white);color:var(--ink-m);border:1px solid var(--rule);border-radius:3px;
+  cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:.15s
+}
+#panel-ProduccionHumus .hum-fbtn:hover{background:var(--rule-l);color:var(--ink)}
+#panel-ProduccionHumus .hum-fbtn.activo{background:var(--navy);color:#fff;border-color:var(--navy)}
+
 @media(max-width:768px){
   #panel-kpi .card{padding:16px 14px}
   #panel-kpi div[title]{max-width:20px !important}
@@ -1644,6 +1653,76 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
       </table>
     </div>
   </div>
+
+  <!--
+    ═══════════════════════════════════════════════════════════
+    DETALLE POR REFERENCIA (línea + presentación)
+    Fuente: Apps Script de la app de planta (Producción / Salidas),
+    no el CSV de "Resumen Diario". Permite ver TODAS las referencias,
+    no solo el Humus Sólido.
+    ═══════════════════════════════════════════════════════════
+  -->
+  <div class="card" style="margin-bottom:24px;padding:0;overflow:hidden">
+    <div style="padding:20px 24px 16px;border-bottom:1px solid var(--rule-l);display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px">
+      <div>
+        <div style="font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink-l)">Detalle por referencia</div>
+        <div class="card-hdr" style="margin:4px 0 0 0">Producción y despachos</div>
+        <div id="hum-periodo-info" style="font-size:11px;color:var(--ink-l);margin-top:4px">—</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <div style="display:flex;border:1px solid var(--rule)">
+          <button id="hum-tab-prod" onclick="humSetVista('prod')" style="padding:8px 18px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:none;border-right:1px solid var(--rule);cursor:pointer;background:var(--navy);color:#fff;font-family:'Source Sans 3',sans-serif">Producción</button>
+          <button id="hum-tab-sal" onclick="humSetVista('sal')" style="padding:8px 18px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:none;cursor:pointer;background:transparent;color:var(--ink-m);font-family:'Source Sans 3',sans-serif">Despachos</button>
+        </div>
+        <button onclick="cargarHumusDetalle(true)" style="padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Actualizar</button>
+      </div>
+    </div>
+
+    <!-- Filtros de periodo propios de este bloque -->
+    <div style="padding:14px 24px;border-bottom:1px solid var(--rule-l);background:var(--s2);display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l)">Periodo</span>
+      <div style="display:flex;gap:6px;flex-wrap:wrap" id="hum-filtros">
+        <button class="hum-fbtn" data-f="hoy"     onclick="humSetPeriodo('hoy')">Hoy</button>
+        <button class="hum-fbtn" data-f="ayer"    onclick="humSetPeriodo('ayer')">Ayer</button>
+        <button class="hum-fbtn" data-f="semana"  onclick="humSetPeriodo('semana')">Esta semana</button>
+        <button class="hum-fbtn" data-f="mes"     onclick="humSetPeriodo('mes')">Este mes</button>
+        <button class="hum-fbtn" data-f="todo"    onclick="humSetPeriodo('todo')">Todo</button>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-wrap:wrap">
+        <span style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">Intervalo</span>
+        <input type="date" id="hum-desde" onchange="humSetPeriodo('rango')" style="padding:5px 8px;font-size:12px;border:1px solid var(--rule);border-radius:3px;background:var(--white);color:var(--ink)">
+        <span style="font-size:11px;color:var(--ink-l)">—</span>
+        <input type="date" id="hum-hasta" onchange="humSetPeriodo('rango')" style="padding:5px 8px;font-size:12px;border:1px solid var(--rule);border-radius:3px;background:var(--white);color:var(--ink)">
+        <button onclick="humLimpiarRango()" style="padding:5px 10px;font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--white);color:var(--ink-m);border:1px solid var(--rule);border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Limpiar</button>
+      </div>
+    </div>
+
+    <!-- KPIs del periodo + meta (solo aplica a Humus Sólido · Bultos x 50 kg) -->
+    <div id="hum-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:1px;background:var(--rule);border-bottom:1px solid var(--rule)"></div>
+
+    <!-- Barras horizontales por referencia -->
+    <div style="padding:20px 24px">
+      <div id="hum-barras"><div class="empty" style="padding:24px">Cargando referencias…</div></div>
+    </div>
+
+    <!-- Trazabilidad: registros individuales -->
+    <div style="border-top:1px solid var(--rule-l)">
+      <div style="padding:16px 24px 10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink-l)">Trazabilidad</div>
+          <div id="hum-traza-titulo" class="card-hdr" style="margin:4px 0 0 0">Registros del periodo</div>
+        </div>
+        <input id="hum-buscar" oninput="renderHumusDetalle()" placeholder="Buscar referencia, responsable, destino..." style="padding:7px 12px;font-size:12px;border:1px solid var(--rule);border-radius:4px;background:var(--white);color:var(--ink);min-width:230px;font-family:'Source Sans 3',sans-serif">
+      </div>
+      <div style="overflow-x:auto;padding:0 24px 20px">
+        <table class="tbl" id="hum-traza-tabla">
+          <thead><tr id="hum-traza-head"></tr></thead>
+          <tbody id="hum-traza-body"><tr><td colspan="7" class="empty">—</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
 </div>
 <div class="panel" id="panel-catalogo">
   <div class="sec-hdr"><div class="sec-title">Lista de Precios de Referencia 2025</div><div class="sec-sub">39 referencias · 9 lineas de producto</div></div>
@@ -3840,6 +3919,8 @@ function showPanel(id, el) {
         try { mostrarEstadoPinCorte(); if (_cortePinOk) initCortesProveedores(); } catch(e){}
       } else if (id === 'informecortes') {
         try { cargarCortesFavoritosRemoto(); cargarInformesGuardados(); } catch(e){ console.error('initInformeCortes error:', e); }
+      } else if (id === 'ProduccionHumus') {
+        try { humSetPeriodo(_humPeriodo || 'hoy'); cargarHumusDetalle(); } catch(e) { console.error('cargarHumusDetalle:', e); }
       } else if (id === 'vehiculos') {
         try { cargarVehiculos(); } catch(e) { console.error('cargarVehiculos:', e); }
       } else if (id === 'permisos') {
@@ -6114,6 +6195,238 @@ function verHistorialVehiculo(placa) {
     <div style="display:flex;justify-content:flex-end;margin-top:16px">
       <button onclick="_cerrarModalVeh()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Cerrar</button>
     </div>`);
+}
+
+
+/*
+  ═══════════════════════════════════════════════════════════
+  PRODUCCIÓN HUMUS · DETALLE POR REFERENCIA
+  - Fuente: Apps Script de la app de planta (misma que alimenta la app),
+    no el CSV de "Resumen Diario". Así se ven TODAS las referencias.
+  - La meta de 300 aplica SOLO a Humus Sólido · Bultos x 50 kg.
+  - Las referencias sin movimiento en el periodo no se muestran.
+  ═══════════════════════════════════════════════════════════
+*/
+const HUMUS_API = 'https://script.google.com/macros/s/AKfycbypCbXLf03WHeq9hwQh3Jt0DrLv5hCMzqc2sGqChyVsawIwt70YDeWytRMhKpg35diXjw/exec';
+
+// Meta diaria y a qué referencia aplica
+const HUM_META_DIARIA = 300;
+const HUM_META_LINEA = 'humus solido';
+const HUM_META_PRESENTACION = '50';   // se busca "50" dentro del nombre de la presentación
+
+let _humDatos = null;         // respuesta completa del Apps Script
+let _humCargado = false;
+let _humVista = 'prod';       // 'prod' | 'sal'
+let _humPeriodo = 'hoy';      // hoy | ayer | semana | mes | todo | rango
+
+function _humNorm(s) {
+  return (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g,'').trim().toLowerCase();
+}
+
+// ¿Esta fila es la referencia que cuenta para la meta de 300?
+function _humEsReferenciaMeta(linea, presentacion) {
+  return _humNorm(linea) === HUM_META_LINEA && _humNorm(presentacion).includes(HUM_META_PRESENTACION);
+}
+
+// Fecha (yyyy-mm-dd) de un registro, que llega como "yyyy-MM-dd HH:mm"
+function _humFecha(reg) {
+  const s = (reg && reg[0] ? reg[0] : '').toString().trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? m[0] : '';
+}
+
+async function cargarHumusDetalle(forzar) {
+  if (_humCargado && !forzar) { renderHumusDetalle(); return; }
+  const cont = document.getElementById('hum-barras');
+  if (cont && !_humDatos) cont.innerHTML = '<div class="empty" style="padding:24px">Cargando referencias…</div>';
+  const d = await fetchJSONTolerante(HUMUS_API + '?accion=resumen', { redirect:'follow' });
+  if (d && d.ok) {
+    _humDatos = d;
+    _humCargado = true;
+  } else if (cont) {
+    cont.innerHTML = '<div class="empty" style="padding:24px;color:var(--red)">No se pudo consultar la app de planta. Verifica la conexión y vuelve a intentar.</div>';
+    return;
+  }
+  renderHumusDetalle();
+}
+
+function humSetVista(v) {
+  _humVista = v;
+  const bP = document.getElementById('hum-tab-prod');
+  const bS = document.getElementById('hum-tab-sal');
+  if (bP) { bP.style.background = v === 'prod' ? 'var(--navy)' : 'transparent'; bP.style.color = v === 'prod' ? '#fff' : 'var(--ink-m)'; }
+  if (bS) { bS.style.background = v === 'sal'  ? 'var(--navy)' : 'transparent'; bS.style.color = v === 'sal'  ? '#fff' : 'var(--ink-m)'; }
+  renderHumusDetalle();
+}
+
+function humSetPeriodo(p) {
+  _humPeriodo = p;
+  document.querySelectorAll('#panel-ProduccionHumus .hum-fbtn').forEach(b => {
+    b.classList.toggle('activo', b.dataset.f === p);
+  });
+  if (p !== 'rango') {
+    const d1 = document.getElementById('hum-desde'), d2 = document.getElementById('hum-hasta');
+    if (d1) d1.value = ''; if (d2) d2.value = '';
+  }
+  renderHumusDetalle();
+}
+
+function humLimpiarRango() {
+  const d1 = document.getElementById('hum-desde'), d2 = document.getElementById('hum-hasta');
+  if (d1) d1.value = ''; if (d2) d2.value = '';
+  humSetPeriodo('hoy');
+}
+
+// Rango [desde, hasta] en yyyy-mm-dd según el filtro activo
+function _humRango() {
+  const hoy = new Date();
+  const ymd = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  const desdeInput = (document.getElementById('hum-desde')||{}).value || '';
+  const hastaInput = (document.getElementById('hum-hasta')||{}).value || '';
+
+  if (_humPeriodo === 'rango' || desdeInput || hastaInput) {
+    return {
+      desde: desdeInput || '0000-01-01',
+      hasta: hastaInput || '9999-12-31',
+      etiqueta: 'Intervalo ' + (desdeInput || '…') + ' a ' + (hastaInput || '…')
+    };
+  }
+  if (_humPeriodo === 'hoy')   return { desde: ymd(hoy), hasta: ymd(hoy), etiqueta: 'Hoy · ' + ymd(hoy) };
+  if (_humPeriodo === 'ayer')  { const a = new Date(hoy); a.setDate(a.getDate()-1); return { desde: ymd(a), hasta: ymd(a), etiqueta: 'Ayer · ' + ymd(a) }; }
+  if (_humPeriodo === 'semana') {
+    const w = new Date(hoy); const dow = hoy.getDay(); const off = dow === 0 ? 6 : dow - 1;
+    w.setDate(hoy.getDate() - off);
+    return { desde: ymd(w), hasta: ymd(hoy), etiqueta: 'Esta semana · ' + ymd(w) + ' a ' + ymd(hoy) };
+  }
+  if (_humPeriodo === 'mes') {
+    const m = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    return { desde: ymd(m), hasta: ymd(hoy), etiqueta: 'Este mes · desde ' + ymd(m) };
+  }
+  return { desde: '0000-01-01', hasta: '9999-12-31', etiqueta: 'Todos los registros disponibles' };
+}
+
+function renderHumusDetalle() {
+  const contBarras = document.getElementById('hum-barras');
+  const contKpis   = document.getElementById('hum-kpis');
+  const head       = document.getElementById('hum-traza-head');
+  const body       = document.getElementById('hum-traza-body');
+  const infoPer    = document.getElementById('hum-periodo-info');
+  const tituloTraza= document.getElementById('hum-traza-titulo');
+  if (!contBarras || !_humDatos) return;
+
+  const rango = _humRango();
+  if (infoPer) infoPer.textContent = rango.etiqueta;
+
+  const esProd = _humVista === 'prod';
+  const registros = (esProd ? _humDatos.produccion : _humDatos.salidas) || [];
+  const enRango = registros.filter(r => {
+    const f = _humFecha(r);
+    return f && f >= rango.desde && f <= rango.hasta;
+  });
+
+  // ── Agrupar por referencia: "Línea · Presentación" ──
+  const porRef = {};
+  enRango.forEach(r => {
+    const linea = (r[1] || 'Sin línea').toString().trim();
+    const pres  = (r[2] || 'Sin presentación').toString().trim();
+    const clave = linea + ' · ' + pres;
+    if (!porRef[clave]) porRef[clave] = { linea, pres, cantidad: 0, registros: 0, esMeta: _humEsReferenciaMeta(linea, pres) };
+    porRef[clave].cantidad += Number(r[3]) || 0;
+    porRef[clave].registros++;
+  });
+  // Solo referencias CON movimiento en el periodo (las de 0 no se muestran)
+  const refs = Object.values(porRef).filter(x => x.cantidad > 0).sort((a,b) => b.cantidad - a.cantidad);
+
+  // ── KPIs ──
+  const totalPeriodo = refs.reduce((s,x) => s + x.cantidad, 0);
+  const refMeta = refs.find(x => x.esMeta);
+  const cantMeta = refMeta ? refMeta.cantidad : 0;
+  const pctMeta = Math.min(100, Math.round((cantMeta / HUM_META_DIARIA) * 100));
+  const colorMeta = pctMeta >= 100 ? 'var(--green)' : pctMeta >= 60 ? 'var(--gold)' : 'var(--red)';
+  const soloUnDia = rango.desde === rango.hasta;
+
+  if (contKpis) {
+    contKpis.innerHTML = `
+      <div style="background:var(--white);padding:14px 18px">
+        <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px">${esProd ? 'Producido' : 'Despachado'} en el periodo</div>
+        <div style="font-family:'Libre Baskerville',serif;font-size:28px;font-weight:700;color:var(--navy);line-height:1">${fmt(Math.round(totalPeriodo))}</div>
+        <div style="font-size:10px;color:var(--ink-l);margin-top:3px">unidades · todas las referencias</div>
+      </div>
+      <div style="background:var(--white);padding:14px 18px">
+        <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px">Referencias con movimiento</div>
+        <div style="font-family:'Libre Baskerville',serif;font-size:28px;font-weight:700;color:var(--ink);line-height:1">${refs.length}</div>
+        <div style="font-size:10px;color:var(--ink-l);margin-top:3px">de ${Object.keys(porRef).length} registradas en el periodo</div>
+      </div>
+      <div style="background:var(--white);padding:14px 18px">
+        <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px">Registros</div>
+        <div style="font-family:'Libre Baskerville',serif;font-size:28px;font-weight:700;color:var(--ink);line-height:1">${enRango.length}</div>
+        <div style="font-size:10px;color:var(--ink-l);margin-top:3px">movimientos individuales</div>
+      </div>
+      ${esProd ? `<div style="background:var(--white);padding:14px 18px">
+        <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px">Meta ${HUM_META_DIARIA} · Sólido x 50 kg</div>
+        <div style="font-family:'Libre Baskerville',serif;font-size:28px;font-weight:700;color:${colorMeta};line-height:1">${fmt(Math.round(cantMeta))}${soloUnDia ? ` <span style="font-size:14px;color:var(--ink-l)">/ ${HUM_META_DIARIA}</span>` : ''}</div>
+        <div style="height:6px;background:var(--rule-l);border-radius:3px;margin-top:6px;overflow:hidden"><div style="width:${pctMeta}%;height:100%;background:${colorMeta}"></div></div>
+        <div style="font-size:10px;color:var(--ink-l);margin-top:3px">${soloUnDia ? pctMeta + '% de la meta del día' : 'acumulado del periodo (meta es diaria)'}</div>
+      </div>` : ''}`;
+  }
+
+  // ── Barras horizontales por referencia ──
+  if (!refs.length) {
+    contBarras.innerHTML = '<div class="empty" style="padding:24px">Sin ' + (esProd ? 'producción' : 'despachos') + ' registrados en este periodo</div>';
+  } else {
+    const maxRef = refs[0].cantidad || 1;
+    contBarras.innerHTML = refs.map(x => {
+      const pct = Math.round(x.cantidad / maxRef * 100);
+      const color = x.esMeta ? 'var(--navy)' : (_humNorm(x.linea).indexOf('solido') >= 0 ? '#2d8a4e' : '#2c5f8a');
+      return `<div style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:5px;flex-wrap:wrap">
+          <span style="font-size:14px;font-weight:700;color:var(--ink)">${x.linea} <span style="color:var(--ink-m);font-weight:600">· ${x.pres}</span>
+            ${x.esMeta ? '<span style="font-size:9px;font-weight:700;letter-spacing:.5px;background:var(--navy);color:#fff;padding:2px 7px;border-radius:10px;margin-left:6px">META</span>' : ''}</span>
+          <span style="font-family:'Libre Baskerville',serif;font-size:17px;font-weight:800;color:${color};white-space:nowrap">${fmt(Math.round(x.cantidad))}
+            <span style="font-size:11px;font-weight:600;color:var(--ink-l)">· ${x.registros} reg.</span></span>
+        </div>
+        <div style="height:20px;background:var(--rule-l);border-radius:4px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:${color};border-radius:4px;transition:width .35s"></div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── Trazabilidad ──
+  const busca = ((document.getElementById('hum-buscar')||{}).value || '').toLowerCase().trim();
+  let filas = enRango.slice();
+  if (busca) {
+    filas = filas.filter(r => [r[1], r[2], r[4], r[5]].some(v => (v||'').toString().toLowerCase().includes(busca)));
+  }
+  filas.sort((a,b) => (b[0]||'').localeCompare(a[0]||''));
+
+  if (tituloTraza) tituloTraza.textContent = (esProd ? 'Producción' : 'Despachos') + ' · ' + filas.length + ' registro' + (filas.length !== 1 ? 's' : '');
+  if (head) {
+    head.innerHTML = `<th>Fecha / Hora</th><th>Línea</th><th>Presentación</th>
+      <th style="text-align:right">Cantidad</th><th>${esProd ? 'Lote' : 'Destino / Cliente'}</th>
+      <th>Responsable</th><th style="text-align:center">Foto</th>`;
+  }
+  if (body) {
+    body.innerHTML = filas.length ? filas.slice(0, 300).map(r => {
+      const foto = (r[6] || '').toString().trim();
+      const celdaFoto = foto && /^https?:\/\//i.test(foto)
+        ? `<td style="text-align:center"><img src="${urlFotoDrive(foto)}" data-alt="${urlFotoDriveAlt(foto)}" loading="lazy"
+             onclick="abrirFotoBaucher('${foto.replace(/'/g,'')}','${((r[1]||'')+' · '+(r[2]||'')).replace(/'/g,'')}')"
+             onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src=this.dataset.alt;}else{this.outerHTML='<a href=&quot;${foto}&quot; target=_blank rel=noopener style=&quot;font-size:11px;color:var(--navy)&quot;>Ver</a>';}"
+             style="width:42px;height:42px;object-fit:cover;border-radius:4px;border:1px solid var(--rule);cursor:zoom-in"></td>`
+        : '<td style="text-align:center;color:var(--ink-l)">—</td>';
+      return `<tr>
+        <td style="white-space:nowrap">${r[0]||'—'}</td>
+        <td>${r[1]||'—'}</td>
+        <td>${r[2]||'—'}</td>
+        <td style="text-align:right;font-weight:700;color:var(--navy)">${fmt(Math.round(Number(r[3])||0))}</td>
+        <td>${r[4]||'—'}</td>
+        <td>${r[5]||'—'}</td>
+        ${celdaFoto}
+      </tr>`;
+    }).join('') + (filas.length > 300 ? '<tr><td colspan="7" style="text-align:center;font-size:11px;color:var(--ink-l);font-style:italic;padding:10px">Mostrando los 300 más recientes de ' + filas.length + '</td></tr>' : '')
+    : '<tr><td colspan="7" class="empty">Sin registros en este periodo</td></tr>';
+  }
 }
 
 // ── SWITCH PIE TAB ───────────────────────────────
