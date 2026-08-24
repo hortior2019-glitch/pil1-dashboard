@@ -1628,31 +1628,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
     </div>
   </div>
 
-  <!-- Tabla resumen diario -->
-  <div class="card" style="padding:0;overflow:hidden">
-    <div style="padding:18px 24px;border-bottom:1px solid var(--rule-l);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-      <div>
-        <div style="font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink-l)">Hoja: Resumen Diario</div>
-        <div class="card-hdr" style="margin:4px 0 0 0">Histórico día por día</div>
-      </div>
-      <button onclick="loadProduccionHumus()" class="refresh-btn">Actualizar</button>
-    </div>
-    <div style="overflow-x:auto">
-      <table class="tbl" id="stock-tabla">
-        <thead><tr>
-          <th>Fecha</th>
-          <th style="text-align:right">Stock Anterior</th>
-          <th style="text-align:right">Producido Hoy</th>
-          <th style="text-align:right">Despachado Hoy</th>
-          <th style="text-align:right">Stock Actual</th>
-          <th style="text-align:right">Diferencia vs Ayer</th>
-          <th style="text-align:right">% Variación</th>
-          <th>Observaciones</th>
-        </tr></thead>
-        <tbody id="tbody-ProduccionHumus"><tr><td colspan="8" class="empty">Cargando...</td></tr></tbody>
-      </table>
-    </div>
-  </div>
 
   <!--
     ═══════════════════════════════════════════════════════════
@@ -11597,8 +11572,10 @@ async function loadProduccionHumus() {
 }
 
 function renderProduccionHumus(rows) {
+  // La tabla "Histórico día por día" se eliminó del panel a pedido. La función
+  // sigue viva porque calcula los KPIs, los objetivos y el comparativo; por eso
+  // ya NO se aborta cuando el tbody no existe: solo se omite pintarlo.
   const tbody = document.getElementById('tbody-ProduccionHumus');
-  if (!tbody) return;
 
   // Parseo de fecha "en local", NO en UTC: new Date("2026-07-08") interpreta esa cadena
   // como medianoche UTC, que en Colombia (UTC-5) cae en 2026-07-07 19:00 hora local —
@@ -11615,7 +11592,7 @@ function renderProduccionHumus(rows) {
   };
 
   if (!rows || !rows.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty">Sin registros</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="empty">Sin registros</td></tr>';
     ['stock-kpi-actual','stock-kpi-producido','stock-kpi-despachado'].forEach(id=>{
       const el = document.getElementById(id); if (el) el.textContent = '—';
     });
@@ -11873,7 +11850,7 @@ function renderProduccionHumus(rows) {
     if (bar2Det)  bar2Det.textContent = fmtInt(prodHoyNum) + ' / ' + METAFIJA_DIARIA + ' bultos de hoy (' + (filaHoy ? (filaHoy[colFecha]||'') : 'sin registro') + ')';
   }
 
-  tbody.innerHTML = sorted.map(r => {
+  if (tbody) tbody.innerHTML = sorted.map(r => {
     const diff = parseNum(r[colDiff]);
     const diffColor = diff > 0 ? 'var(--green)' : diff < 0 ? 'var(--red)' : 'var(--ink-m)';
     const varStr = (r[colVar] || '').toString().trim();
