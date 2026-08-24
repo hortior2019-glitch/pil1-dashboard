@@ -5683,6 +5683,31 @@ function _docsDeVehiculo(placa) {
     .sort((a,b) => (b.creado||'').localeCompare(a.creado||''));
 }
 
+// Foto de la operacion y del conductor, una al lado de la otra.
+// La programacion guarda el ID y el nombre; la foto se busca en el catalogo por
+// ID y, si el registro es viejo o el catalogo se renombro, por nombre.
+function _fotoCatPorId(lista, id, nombre) {
+  let x = id ? lista.find(o => o.id === id) : null;
+  if (!x && nombre) {
+    const n = nombre.toString().trim().toLowerCase();
+    x = lista.find(o => (o.nombre||'').toString().trim().toLowerCase() === n);
+  }
+  return x && x.foto ? x.foto : '';
+}
+
+function _fotoProgHTML(url, nombre, etiqueta, color) {
+  const cuerpo = url
+    ? `<img src="${urlFotoDrive(url)}" data-alt="${urlFotoDriveAlt(url)}"
+         onclick="abrirFotoBaucher('${_escAttrVeh(url)}','${_escAttrVeh(nombre)}')"
+         onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src=this.dataset.alt;}else{this.outerHTML='<div style=&quot;width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;color:${color}&quot;>'+${JSON.stringify(((nombre||'?').toString().trim()[0]||'?').toUpperCase())}+'</div>';}"
+         style="width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in">`
+    : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;color:${color};background:var(--s2)">${_escVeh(((nombre||'?').toString().trim()[0]||'?').toUpperCase())}</div>`;
+  return `<div style="width:58px;flex-shrink:0;text-align:center">
+    <div style="width:58px;height:58px;border-radius:6px;overflow:hidden;border:2px solid ${color};background:var(--s2)" title="${_escVeh(nombre)||'sin asignar'}">${cuerpo}</div>
+    <div style="font-size:8px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-l);margin-top:3px">${etiqueta}</div>
+  </div>`;
+}
+
 // Bloque de programacion dentro de la tarjeta del vehiculo.
 // Muestra lo que viene (de hoy en adelante); lo ya pasado se consulta aparte.
 function bloqueProgramacionVehiculo(placa) {
@@ -5705,18 +5730,28 @@ function bloqueProgramacionVehiculo(placa) {
   const tarjeta = (p, i) => {
     const oculto = i >= VISIBLES ? 'display:none' : '';
     const esHoy = (p.fecha||'') === hoy;
+    const fotoOp = _fotoCatPorId(_vehOperaciones, p.operacionId, p.operacion);
+    const fotoCd = _fotoCatPorId(_vehConductores, p.conductorId, p.conductor);
     return `<div class="prog-item-${idp}" style="${oculto};background:var(--white);border:1px solid var(--rule);
-        border-left:4px solid ${esHoy ? 'var(--gold)' : '#1a5c35'};border-radius:5px;padding:9px 12px;margin-bottom:7px">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px">
-        <span style="font-size:15px;font-weight:800;color:var(--ink)">${_escVeh(p.operacion) || '—'}</span>
-        <span style="font-size:12px;font-weight:700;color:${esHoy ? 'var(--gold)' : 'var(--ink-m)'};white-space:nowrap">
-          ${_fmtFechaVeh(p.fecha)}${esHoy ? ' · HOY' : ''}</span>
+        border-left:4px solid ${esHoy ? 'var(--gold)' : '#1a5c35'};border-radius:5px;padding:10px 12px;margin-bottom:7px">
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <div style="display:flex;gap:8px;flex-shrink:0">
+          ${_fotoProgHTML(fotoOp, p.operacion, 'Operación', '#1a5c35')}
+          ${_fotoProgHTML(fotoCd, p.conductor, 'Conductor', 'var(--navy)')}
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:3px">
+            <span style="font-size:15px;font-weight:800;color:var(--ink)">${_escVeh(p.operacion) || '—'}</span>
+            <span style="font-size:12px;font-weight:700;color:${esHoy ? 'var(--gold)' : 'var(--ink-m)'};white-space:nowrap">
+              ${_fmtFechaVeh(p.fecha)}${esHoy ? ' · HOY' : ''}</span>
+          </div>
+          <div style="font-size:13px;color:var(--ink-m);margin-bottom:${p.observaciones ? '5px' : '0'}">
+            Conductor: <strong style="color:var(--ink)">${_escVeh(p.conductor) || 'sin asignar'}</strong></div>
+          ${p.observaciones ? `<div style="font-size:13px;color:var(--ink-m);background:var(--s2);border-radius:3px;padding:5px 8px;line-height:1.4">${_escVeh(p.observaciones)}</div>` : ''}
+          <div style="margin-top:6px"><button onclick="eliminarProgramacion('${_escAttrVeh(p.id)}')"
+            style="background:none;border:none;color:var(--red);font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;cursor:pointer;padding:0">Quitar</button></div>
+        </div>
       </div>
-      <div style="font-size:13px;color:var(--ink-m);margin-bottom:${p.observaciones ? '4px' : '0'}">
-        Conductor: <strong style="color:var(--ink)">${_escVeh(p.conductor) || 'sin asignar'}</strong></div>
-      ${p.observaciones ? `<div style="font-size:13px;color:var(--ink-m);background:var(--s2);border-radius:3px;padding:5px 8px;line-height:1.4">${_escVeh(p.observaciones)}</div>` : ''}
-      <div style="margin-top:6px"><button onclick="eliminarProgramacion('${_escAttrVeh(p.id)}')"
-        style="background:none;border:none;color:var(--red);font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;cursor:pointer;padding:0">Quitar</button></div>
     </div>`;
   };
 
@@ -5755,13 +5790,19 @@ function verHistorialProgramacion(placa) {
     <div style="font-size:12px;color:var(--ink-l);margin-bottom:16px">${pasadas.length} registro${pasadas.length !== 1 ? 's' : ''} anterior${pasadas.length !== 1 ? 'es' : ''} a hoy.</div>
     <div style="display:flex;flex-direction:column;gap:8px">
       ${pasadas.length ? pasadas.map(p => `
-        <div style="border:1px solid var(--rule);border-left:4px solid var(--rule);border-radius:5px;padding:9px 12px">
-          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
-            <span style="font-size:14px;font-weight:800;color:var(--ink)">${_escVeh(p.operacion)||'—'}</span>
-            <span style="font-size:12px;color:var(--ink-l)">${_fmtFechaVeh(p.fecha)}</span>
+        <div style="border:1px solid var(--rule);border-left:4px solid var(--rule);border-radius:5px;padding:9px 12px;display:flex;gap:12px;align-items:flex-start">
+          <div style="display:flex;gap:8px;flex-shrink:0">
+            ${_fotoProgHTML(_fotoCatPorId(_vehOperaciones, p.operacionId, p.operacion), p.operacion, 'Operación', 'var(--rule)')}
+            ${_fotoProgHTML(_fotoCatPorId(_vehConductores, p.conductorId, p.conductor), p.conductor, 'Conductor', 'var(--rule)')}
           </div>
-          <div style="font-size:12px;color:var(--ink-m);margin-top:3px">Conductor: ${_escVeh(p.conductor)||'sin asignar'}</div>
-          ${p.observaciones ? `<div style="font-size:12px;color:var(--ink-m);margin-top:3px;font-style:italic">${_escVeh(p.observaciones)}</div>` : ''}
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+              <span style="font-size:14px;font-weight:800;color:var(--ink)">${_escVeh(p.operacion)||'—'}</span>
+              <span style="font-size:12px;color:var(--ink-l)">${_fmtFechaVeh(p.fecha)}</span>
+            </div>
+            <div style="font-size:12px;color:var(--ink-m);margin-top:3px">Conductor: ${_escVeh(p.conductor)||'sin asignar'}</div>
+            ${p.observaciones ? `<div style="font-size:12px;color:var(--ink-m);margin-top:3px;font-style:italic">${_escVeh(p.observaciones)}</div>` : ''}
+          </div>
         </div>`).join('')
       : '<div class="empty" style="padding:20px">Sin programación anterior.</div>'}
     </div>
