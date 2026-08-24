@@ -526,15 +526,10 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   #panel-ingreso .ic-name > div[style*="font-size:11px"]{white-space:normal !important}
 }
 
-/* Botones de periodo del detalle por referencia (Producción Humus) */
-#panel-ProduccionHumus .hum-fbtn{
-  padding:6px 14px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;
-  background:var(--white);color:var(--ink-m);border:1px solid var(--rule);border-radius:3px;
-  cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:.15s
+@media(max-width:980px){
+  #panel-ProduccionHumus .hum-cols{grid-template-columns:1fr !important}
+  #panel-ProduccionHumus .hum-cols > div:first-child{border-right:none !important;border-bottom:1px solid var(--rule-l)}
 }
-#panel-ProduccionHumus .hum-fbtn:hover{background:var(--rule-l);color:var(--ink)}
-#panel-ProduccionHumus .hum-fbtn.activo{background:var(--navy);color:#fff;border-color:var(--navy)}
-
 @media(max-width:768px){
   #panel-kpi .card{padding:16px 14px}
   #panel-kpi div[title]{max-width:20px !important}
@@ -869,13 +864,11 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   <button class="nav-wrap-btn" id="navWrapBtn" onclick="toggleNavWrap()" title="Ocultar / mostrar barra superior">⊞</button>
   <div class="nav-tab active" data-panel="clientes" onclick="showPanel('clientes',this)"><span class="nav-lbl">Ingreso por Cliente</span></div>
   <div class="nav-tab" data-panel="ingreso" onclick="showPanel('ingreso',this)"><span class="nav-lbl">Ingreso de Material</span></div>
-  <div class="nav-tab" data-panel="informecortes" data-users-only="gerencia,auditoria,juan" onclick="showPanel('informecortes',this)" style="display:none"><span class="nav-lbl">Informe Cortes</span></div>
   <div class="nav-tab" data-panel="csc-resumen" onclick="showPanel('csc-resumen',this)"><span class="nav-lbl">Cadena · Resumen</span></div>
+  <div class="nav-tab" data-panel="ProduccionHumus" onclick="showPanel('ProduccionHumus',this)"><span class="nav-lbl">Producción Humus</span></div>
   <div class="nav-tab" data-panel="vehiculos" onclick="showPanel('vehiculos',this)"><span class="nav-lbl">Vehículos Carga</span></div>
   <div class="nav-tab" data-panel="csc-aprobaciones" onclick="showPanel('csc-aprobaciones',this)"><span class="nav-lbl">Cadena · Aprobaciones</span></div>
   <div class="nav-tab" data-panel="operaciones" onclick="showPanel('operaciones',this)"><span class="nav-lbl">Proveedores</span></div>
-  <div class="nav-tab" data-panel="viajes" onclick="showPanel('viajes',this)"><span class="nav-lbl">Viajes Internos</span></div>
-  <div class="nav-tab" data-panel="ProduccionHumus" onclick="showPanel('ProduccionHumus',this)"><span class="nav-lbl">Producción Humus</span></div>
   <div class="nav-sep"></div>
   <div class="nav-tab" data-panel="preopequipo" onclick="showPanel('preopequipo',this)"><span class="nav-lbl">Preop. Equipo Pesado</span></div>
   <div class="nav-tab" data-panel="dalas" onclick="showPanel('dalas',this)"><span class="nav-lbl">Dalas_Solutions</span></div>
@@ -1348,121 +1341,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   </div>
 </div>
 
-<!--
-  ═══════════════════════════════════════════════════════════
-  PANEL: VIAJES INTERNOS
-  - Registra viajes de tractores dentro de la planta (4 pulsos: T1-T4)
-  - KPIs: total viajes, toneladas, conductores, duración, completos/incompletos
-  - Ranking de conductores (fondo verde, layout vertical)
-  - Barras: viajes por conductor, toneladas, por placa, rutas
-  - Pasteles: distribución por conductor, placa, ruta
-  - Se llena con: renderViajes(data, filter)
-  - Filtro de día específico independiente del filtro global
-  ═══════════════════════════════════════════════════════════
--->
-<div class="panel" id="panel-viajes">
-  <div class="sec-hdr">
-    <div class="sec-title">Viajes Internos</div>
-    <div class="sec-sub" id="viajes-period">Hoy</div>
-  </div>
-
-  <!-- Filtros internos -->
-  <div style="background:var(--white);border:1px solid var(--rule-l);padding:12px 16px;margin-bottom:20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-    <span style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l)">Filtro día específico</span>
-    <input type="date" id="vj-filtro-fecha" onchange="aplicarFiltrosVj()" style="border:1px solid var(--rule);background:var(--white);padding:7px 10px;font-size:12px;border-radius:3px;color:var(--ink)">
-    <button onclick="limpiarFiltrosVj()" style="border:1px solid var(--rule);background:var(--bg);padding:6px 12px;font-size:11px;font-weight:700;color:var(--ink-m);cursor:pointer;border-radius:3px">Limpiar</button>
-    <span id="vj-filtro-info" style="font-size:11px;color:var(--ink-l);font-style:italic;margin-left:auto"></span>
-  </div>
-
-  <!-- KPIs principales -->
-  <div class="kpi-grid" style="margin-bottom:24px">
-    <div class="kpi" style="--ac:var(--navy)"><div class="kpi-lbl">Total Viajes</div><div class="kpi-val" id="vj-total">—</div><div class="kpi-desc">registros en el periodo</div><div class="kpi-period" id="vj-total-p">Hoy</div></div>
-    <div class="kpi" style="--ac:var(--green)"><div class="kpi-lbl">Toneladas Totales</div><div class="kpi-val" id="vj-ton">—</div><div class="kpi-desc">estimadas acumuladas</div><div class="kpi-period" id="vj-ton-p">Hoy</div></div>
-    <div class="kpi" style="--ac:var(--gold)"><div class="kpi-lbl">Conductores Activos</div><div class="kpi-val" id="vj-conductores">—</div><div class="kpi-desc">distintos en el periodo</div><div class="kpi-period" id="vj-cond-p">Hoy</div></div>
-    <div class="kpi" style="--ac:var(--blue)"><div class="kpi-lbl">Duración Promedio</div><div class="kpi-val" id="vj-duracion">—</div><div class="kpi-desc">minutos por viaje</div><div class="kpi-period" id="vj-dur-p">Hoy</div></div>
-    <div class="kpi" style="--ac:var(--green)"><div class="kpi-lbl">Viajes Completos</div><div class="kpi-val" id="vj-completos">—</div><div class="kpi-desc">con los 4 pulsos registrados</div><div class="kpi-period" id="vj-comp-p">Hoy</div></div>
-    <div class="kpi" style="--ac:var(--red)"><div class="kpi-lbl">Viajes Incompletos</div><div class="kpi-val" id="vj-incompletos">—</div><div class="kpi-desc">sin T4 completado</div><div class="kpi-period" id="vj-incomp-p">Hoy</div></div>
-  </div>
-
-  <!-- ══ RANKING CONDUCTORES — visual impactante ══ -->
-  <!-- CAMBIO: fondo verde en vez de azul, layout vertical (arriba-abajo) en vez de horizontal -->
-  <div class="card" style="margin-bottom:24px;background:linear-gradient(135deg,#0a2e1a 0%,#1a5c35 100%);border:none;padding:28px 24px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
-      <div>
-        <div style="font-size:11px;font-weight:800;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,.45)">Ranking de Conductores</div>
-        <div style="font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:#fff;margin-top:4px">Ordenados por viajes realizados</div>
-      </div>
-    </div>
-    <!-- CAMBIO: flex-direction:column para que vayan de arriba a abajo -->
-    <div id="vj-ranking-conductores" style="display:flex;flex-direction:column;gap:14px"></div>
-  </div>
-
-  <!-- Barras y distribución -->
-  <div class="g2" style="margin-bottom:20px">
-    <div class="card">
-      <div class="card-hdr">Viajes por conductor</div>
-      <div id="vj-bar-conductores"><div class="empty">Cargando...</div></div>
-    </div>
-    <div class="card">
-      <div class="card-hdr">Toneladas por conductor</div>
-      <div id="vj-bar-ton-conductor"><div class="empty">Cargando...</div></div>
-    </div>
-  </div>
-
-  <div class="g2" style="margin-bottom:20px">
-    <div class="card">
-      <div class="card-hdr">Viajes por placa</div>
-      <div id="vj-bar-tractores"><div class="empty">Cargando...</div></div>
-    </div>
-    <div class="card">
-      <div class="card-hdr">Rutas más frecuentes</div>
-      <div id="vj-bar-rutas"><div class="empty">Cargando...</div></div>
-    </div>
-  </div>
-
-  <!-- Balance de carga -->
-  <div class="card" style="margin-bottom:20px">
-    <div class="card-hdr">Balance de carga — Paladas por viaje</div>
-    <div id="vj-balance-carga" style="display:flex;flex-wrap:wrap;gap:20px;padding:8px 0"></div>
-  </div>
-
-  <!-- Diagramas de barras horizontales (reemplazan pasteles) -->
-  <div class="g3" style="margin-bottom:20px">
-    <div class="card">
-      <div class="card-hdr">Distribución de viajes por conductor</div>
-      <div id="hbar-vj-conductores" style="padding:12px 16px"></div>
-    </div>
-    <div class="card">
-      <div class="card-hdr">Distribución de viajes por placa</div>
-      <div id="hbar-vj-tractores" style="padding:12px 16px"></div>
-    </div>
-    <div class="card">
-      <div class="card-hdr">Distribución de viajes por ruta</div>
-      <div id="hbar-vj-rutas" style="padding:12px 16px"></div>
-    </div>
-  </div>
-
-  <!-- Tabla detalle -->
-  <div class="card">
-    <div class="card-hdr">Detalle de viajes — Datos en tiempo real desde Google Sheets</div>
-    <div style="overflow-x:auto">
-      <table class="tbl">
-        <thead><tr>
-          <th>Fecha</th>
-          <th>Conductor</th>
-          <th>Placa</th>
-          <th>Origen → Destino</th>
-          <th>Carga</th>
-          <th class="num">Ton Est.</th>
-          <th class="num">Duración</th>
-          <th>Estado</th>
-        </tr></thead>
-        <tbody id="tbody-viajes"><tr><td colspan="8" class="empty">Cargando...</td></tr></tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
 <!-- ══ Producción Humus ══ -->
 <div class="panel" id="panel-ProduccionHumus">
   <div class="sec-hdr">
@@ -1645,39 +1523,29 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
         <div id="hum-periodo-info" style="font-size:11px;color:var(--ink-l);margin-top:4px">—</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <div style="display:flex;border:1px solid var(--rule)">
-          <button id="hum-tab-prod" onclick="humSetVista('prod')" style="padding:8px 18px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:none;border-right:1px solid var(--rule);cursor:pointer;background:var(--navy);color:#fff;font-family:'Source Sans 3',sans-serif">Producción</button>
-          <button id="hum-tab-sal" onclick="humSetVista('sal')" style="padding:8px 18px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:none;cursor:pointer;background:transparent;color:var(--ink-m);font-family:'Source Sans 3',sans-serif">Despachos</button>
-        </div>
         <button onclick="cargarHumusDetalle(true)" style="padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Actualizar</button>
-      </div>
-    </div>
-
-    <!-- Filtros de periodo propios de este bloque -->
-    <div style="padding:14px 24px;border-bottom:1px solid var(--rule-l);background:var(--s2);display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <span style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l)">Periodo</span>
-      <div style="display:flex;gap:6px;flex-wrap:wrap" id="hum-filtros">
-        <button class="hum-fbtn" data-f="hoy"     onclick="humSetPeriodo('hoy')">Hoy</button>
-        <button class="hum-fbtn" data-f="ayer"    onclick="humSetPeriodo('ayer')">Ayer</button>
-        <button class="hum-fbtn" data-f="semana"  onclick="humSetPeriodo('semana')">Esta semana</button>
-        <button class="hum-fbtn" data-f="mes"     onclick="humSetPeriodo('mes')">Este mes</button>
-        <button class="hum-fbtn" data-f="todo"    onclick="humSetPeriodo('todo')">Todo</button>
-      </div>
-      <div style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-wrap:wrap">
-        <span style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">Intervalo</span>
-        <input type="date" id="hum-desde" onchange="humSetPeriodo('rango')" style="padding:5px 8px;font-size:12px;border:1px solid var(--rule);border-radius:3px;background:var(--white);color:var(--ink)">
-        <span style="font-size:11px;color:var(--ink-l)">—</span>
-        <input type="date" id="hum-hasta" onchange="humSetPeriodo('rango')" style="padding:5px 8px;font-size:12px;border:1px solid var(--rule);border-radius:3px;background:var(--white);color:var(--ink)">
-        <button onclick="humLimpiarRango()" style="padding:5px 10px;font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--white);color:var(--ink-m);border:1px solid var(--rule);border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Limpiar</button>
       </div>
     </div>
 
     <!-- KPIs del periodo + meta (solo aplica a Humus Sólido · Bultos x 50 kg) -->
     <div id="hum-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:1px;background:var(--rule);border-bottom:1px solid var(--rule)"></div>
 
-    <!-- Barras horizontales por referencia -->
-    <div style="padding:20px 24px">
-      <div id="hum-barras"><div class="empty" style="padding:24px">Cargando referencias…</div></div>
+    <!-- Barras horizontales por referencia: Producción (izq) y Despachos (der) -->
+    <div class="hum-cols" style="display:grid;grid-template-columns:1fr 1fr;gap:0">
+      <div style="padding:20px 24px;border-right:1px solid var(--rule-l)">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid var(--navy)">
+          <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--navy)">Producción</div>
+          <div id="hum-tot-prod" style="font-family:'Libre Baskerville',serif;font-size:16px;font-weight:800;color:var(--navy)">—</div>
+        </div>
+        <div id="hum-barras-prod"><div class="empty" style="padding:24px">Cargando…</div></div>
+      </div>
+      <div style="padding:20px 24px">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid var(--gold)">
+          <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold)">Despachos</div>
+          <div id="hum-tot-sal" style="font-family:'Libre Baskerville',serif;font-size:16px;font-weight:800;color:var(--gold)">—</div>
+        </div>
+        <div id="hum-barras-sal"><div class="empty" style="padding:24px">Cargando…</div></div>
+      </div>
     </div>
 
     <!-- Trazabilidad: registros individuales -->
@@ -1692,7 +1560,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
       <div style="overflow-x:auto;padding:0 24px 20px">
         <table class="tbl" id="hum-traza-tabla">
           <thead><tr id="hum-traza-head"></tr></thead>
-          <tbody id="hum-traza-body"><tr><td colspan="7" class="empty">—</td></tr></tbody>
+          <tbody id="hum-traza-body"><tr><td colspan="8" class="empty">—</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -2440,37 +2308,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   </div><!-- fin corte-contenido-protegido -->
 </div>
 
-<!--
-  ═══════════════════════════════════════════════════════════
-  PANEL: INFORME CORTES — acceso restringido a gerencia, auditoria y juan
-  Muestra la facturacion del mes por proveedor (verde = facturado, rojo = pendiente)
-  ═══════════════════════════════════════════════════════════
--->
-<div class="panel" id="panel-informecortes">
-  <div class="sec-hdr">
-    <div class="sec-title">Informe Cortes</div>
-    <div class="sec-sub">Facturación del mes por proveedor — acceso restringido</div>
-  </div>
-
-  <!-- Selector de mes/año (mismo estado que el navegador de "Cortes y facturación") -->
-  <div id="corte-resumen-nav-ic" style="margin-bottom:16px"></div>
-
-  <div class="card" id="corte-gerencial-card" style="padding:20px 24px;display:none">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px;border-bottom:2px solid var(--rule-l);padding-bottom:14px">
-      <div>
-        <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy);margin-bottom:4px">Informe gerencial</div>
-        <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink)">Facturación del mes por proveedor</div>
-      </div>
-      <div style="text-align:right">
-        <div id="corte-gerencial-total" style="font-family:'Libre Baskerville',serif;font-size:34px;font-weight:800;color:var(--gold);line-height:1;font-variant-numeric:lining-nums tabular-nums">—</div>
-        <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);margin-top:4px">total facturado / en sistema</div>
-      </div>
-    </div>
-    <div id="corte-gerencial-bars" style="padding:8px 0"></div>
-  </div>
-  <div id="corte-gerencial-vacio" style="display:none;text-align:center;padding:40px;color:var(--ink-l);font-size:13px">No hay cortes registrados en el período seleccionado.</div>
-</div>
-
 <div class="panel" id="panel-preopequipo">
   <div class="sec-hdr">
     <div class="sec-title">Preoperacional Equipo Pesado</div>
@@ -2642,9 +2479,8 @@ const PESTANAS_CONTROLABLES = [
   { id:'clientes',        label:'Ingreso por Cliente' },
   { id:'ingreso',         label:'Ingreso de Material' },
   { id:'operaciones',     label:'Proveedores' },
-  { id:'viajes',          label:'Viajes Internos' },
-  { id:'ProduccionHumus', label:'Producción Humus' },
   { id:'preopequipo',     label:'Preop. Equipo Pesado' },
+  { id:'ProduccionHumus', label:'Producción Humus' },
   { id:'vehiculos',       label:'Vehículos Carga' },
   { id:'cortes',          label:'Cortes a Proveedor' },
   { id:'solicitudes',     label:'Solicitudes de Compra' },
@@ -3817,13 +3653,6 @@ async function loadAllData() {
   } catch(e) { console.error('Accesos:', e); }
 
   try {
-    dataViajes = await fetchCSV(SHEETS.viajes);
-    renderViajes(dataViajes, currentFilter);
-    const _fv1 = document.getElementById('footer-viajes'); if (_fv1) _fv1.textContent = 'Viajes: '+fmt(dataViajes.length)+' registros';
-    ok++;
-  } catch(e) { errors.push('Viajes Internos'); console.error('Viajes:', e); }
-
-  try {
     dataProduccionHumus = await fetchCSV(SHEETS.ProduccionHumus);
     renderProduccionHumus(dataProduccionHumus);
     ok++;
@@ -3884,18 +3713,14 @@ function showPanel(id, el) {
       } else if (id === 'clientes') {
         renderClientes(dataIngreso, currentFilter);
         if (window.dataIngreso) { try { renderCliCmpChart(window.dataIngreso); } catch(e){} }
-      } else if (id === 'viajes') {
-        renderViajes(dataViajes, currentFilter);
       } else if (id === 'ingreso') {
         renderIngreso(dataIngreso, currentFilter);
         if (window.dataIngreso) { try { renderCmpChart(window.dataIngreso); } catch(e){} }
       } else if (id === 'cortes') {
         // Si ya pasó el PIN en esta sesión, refresca; si no, muestra el gate
         try { mostrarEstadoPinCorte(); if (_cortePinOk) initCortesProveedores(); } catch(e){}
-      } else if (id === 'informecortes') {
-        try { cargarCortesFavoritosRemoto(); cargarInformesGuardados(); } catch(e){ console.error('initInformeCortes error:', e); }
       } else if (id === 'ProduccionHumus') {
-        try { humSetPeriodo(_humPeriodo || 'hoy'); cargarHumusDetalle(); } catch(e) { console.error('cargarHumusDetalle:', e); }
+        try { cargarHumusDetalle(); } catch(e) { console.error('cargarHumusDetalle:', e); }
       } else if (id === 'vehiculos') {
         try { cargarVehiculos(); } catch(e) { console.error('cargarVehiculos:', e); }
       } else if (id === 'permisos') {
@@ -3940,10 +3765,11 @@ function setFilter(f, el) {
   renderHE(dataHE, f);
   renderKPI(dataIngreso.filter(r => inPeriod(getMarcaTemporal(r)||'', f)), f);
   renderAccesos();
-  renderViajes(dataViajes, f);
   const dataCar = dataPreopCar.filter(esCargador);
   const dataTra = dataPreopCar.filter(esTractor);
   renderPreopUnificado(dataCar, dataTra, f);
+  // El detalle por referencia de Producción Humus también obedece al filtro global
+  try { if (_humDatos) renderHumusDetalle(); } catch(e) {}
 }
 
 // ── RELOJ ─────────────────────────────────────────
@@ -6191,8 +6017,6 @@ const HUM_META_PRESENTACION = '50';   // se busca "50" dentro del nombre de la p
 
 let _humDatos = null;         // respuesta completa del Apps Script
 let _humCargado = false;
-let _humVista = 'prod';       // 'prod' | 'sal'
-let _humPeriodo = 'hoy';      // hoy | ayer | semana | mes | todo | rango
 
 function _humNorm(s) {
   return (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g,'').trim().toLowerCase();
@@ -6225,164 +6049,164 @@ async function cargarHumusDetalle(forzar) {
   renderHumusDetalle();
 }
 
-function humSetVista(v) {
-  _humVista = v;
-  const bP = document.getElementById('hum-tab-prod');
-  const bS = document.getElementById('hum-tab-sal');
-  if (bP) { bP.style.background = v === 'prod' ? 'var(--navy)' : 'transparent'; bP.style.color = v === 'prod' ? '#fff' : 'var(--ink-m)'; }
-  if (bS) { bS.style.background = v === 'sal'  ? 'var(--navy)' : 'transparent'; bS.style.color = v === 'sal'  ? '#fff' : 'var(--ink-m)'; }
-  renderHumusDetalle();
-}
-
-function humSetPeriodo(p) {
-  _humPeriodo = p;
-  document.querySelectorAll('#panel-ProduccionHumus .hum-fbtn').forEach(b => {
-    b.classList.toggle('activo', b.dataset.f === p);
-  });
-  if (p !== 'rango') {
-    const d1 = document.getElementById('hum-desde'), d2 = document.getElementById('hum-hasta');
-    if (d1) d1.value = ''; if (d2) d2.value = '';
-  }
-  renderHumusDetalle();
-}
-
-function humLimpiarRango() {
-  const d1 = document.getElementById('hum-desde'), d2 = document.getElementById('hum-hasta');
-  if (d1) d1.value = ''; if (d2) d2.value = '';
-  humSetPeriodo('hoy');
-}
-
-// Rango [desde, hasta] en yyyy-mm-dd según el filtro activo
+// Rango [desde, hasta] tomado del FILTRO GLOBAL del encabezado (Ayer / Hoy /
+// Esta semana / Este mes / Total) y de las fechas "Desde–Hasta" de esa misma
+// barra. Este bloque no tiene filtros propios: obedece al filtro fijo del
+// dashboard, igual que las demas pestañas.
 function _humRango() {
   const hoy = new Date();
   const ymd = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-  const desdeInput = (document.getElementById('hum-desde')||{}).value || '';
-  const hastaInput = (document.getElementById('hum-hasta')||{}).value || '';
 
-  if (_humPeriodo === 'rango' || desdeInput || hastaInput) {
+  // Las fechas del filtro global mandan sobre el periodo por botones
+  const desdeInput = (document.getElementById('cli-fecha-desde')||{}).value || '';
+  const hastaInput = (document.getElementById('cli-fecha-hasta')||{}).value || '';
+  if (desdeInput || hastaInput) {
     return {
       desde: desdeInput || '0000-01-01',
       hasta: hastaInput || '9999-12-31',
-      etiqueta: 'Intervalo ' + (desdeInput || '…') + ' a ' + (hastaInput || '…')
+      etiqueta: 'Intervalo ' + (desdeInput || '…') + ' a ' + (hastaInput || '…') + ' · filtro global'
     };
   }
-  if (_humPeriodo === 'hoy')   return { desde: ymd(hoy), hasta: ymd(hoy), etiqueta: 'Hoy · ' + ymd(hoy) };
-  if (_humPeriodo === 'ayer')  { const a = new Date(hoy); a.setDate(a.getDate()-1); return { desde: ymd(a), hasta: ymd(a), etiqueta: 'Ayer · ' + ymd(a) }; }
-  if (_humPeriodo === 'semana') {
+
+  const f = (typeof currentFilter !== 'undefined') ? currentFilter : 'hoy';
+  if (f === 'hoy')  return { desde: ymd(hoy), hasta: ymd(hoy), etiqueta: 'Hoy · ' + ymd(hoy) };
+  if (f === 'ayer') { const a = new Date(hoy); a.setDate(a.getDate()-1); return { desde: ymd(a), hasta: ymd(a), etiqueta: 'Ayer · ' + ymd(a) }; }
+  if (f === 'semana') {
     const w = new Date(hoy); const dow = hoy.getDay(); const off = dow === 0 ? 6 : dow - 1;
     w.setDate(hoy.getDate() - off);
     return { desde: ymd(w), hasta: ymd(hoy), etiqueta: 'Esta semana · ' + ymd(w) + ' a ' + ymd(hoy) };
   }
-  if (_humPeriodo === 'mes') {
+  if (f === 'mes') {
     const m = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
     return { desde: ymd(m), hasta: ymd(hoy), etiqueta: 'Este mes · desde ' + ymd(m) };
   }
-  return { desde: '0000-01-01', hasta: '9999-12-31', etiqueta: 'Todos los registros disponibles' };
+  return { desde: '0000-01-01', hasta: '9999-12-31', etiqueta: 'Total acumulado (registros disponibles)' };
 }
 
 function renderHumusDetalle() {
-  const contBarras = document.getElementById('hum-barras');
-  const contKpis   = document.getElementById('hum-kpis');
-  const head       = document.getElementById('hum-traza-head');
-  const body       = document.getElementById('hum-traza-body');
-  const infoPer    = document.getElementById('hum-periodo-info');
-  const tituloTraza= document.getElementById('hum-traza-titulo');
-  if (!contBarras || !_humDatos) return;
+  const contProd = document.getElementById('hum-barras-prod');
+  const contSal  = document.getElementById('hum-barras-sal');
+  const contKpis = document.getElementById('hum-kpis');
+  const head     = document.getElementById('hum-traza-head');
+  const body     = document.getElementById('hum-traza-body');
+  const infoPer  = document.getElementById('hum-periodo-info');
+  const tituloTraza = document.getElementById('hum-traza-titulo');
+  if (!contProd || !_humDatos) return;
 
   const rango = _humRango();
   if (infoPer) infoPer.textContent = rango.etiqueta;
 
-  const esProd = _humVista === 'prod';
-  const registros = (esProd ? _humDatos.produccion : _humDatos.salidas) || [];
-  const enRango = registros.filter(r => {
+  // Filtra un set de registros al rango del filtro global
+  const enRangoDe = (arr) => (arr || []).filter(r => {
     const f = _humFecha(r);
     return f && f >= rango.desde && f <= rango.hasta;
   });
+  const regProd = enRangoDe(_humDatos.produccion);
+  const regSal  = enRangoDe(_humDatos.salidas);
 
-  // ── Agrupar por referencia: "Línea · Presentación" ──
-  const porRef = {};
-  enRango.forEach(r => {
-    const linea = (r[1] || 'Sin línea').toString().trim();
-    const pres  = (r[2] || 'Sin presentación').toString().trim();
-    const clave = linea + ' · ' + pres;
-    if (!porRef[clave]) porRef[clave] = { linea, pres, cantidad: 0, registros: 0, esMeta: _humEsReferenciaMeta(linea, pres) };
-    porRef[clave].cantidad += Number(r[3]) || 0;
-    porRef[clave].registros++;
-  });
-  // Solo referencias CON movimiento en el periodo (las de 0 no se muestran)
-  const refs = Object.values(porRef).filter(x => x.cantidad > 0).sort((a,b) => b.cantidad - a.cantidad);
+  // Agrupa por referencia "Línea · Presentación", solo con movimiento
+  const agrupar = (registros) => {
+    const porRef = {};
+    registros.forEach(r => {
+      const linea = (r[1] || 'Sin línea').toString().trim();
+      const pres  = (r[2] || 'Sin presentación').toString().trim();
+      const clave = linea + ' · ' + pres;
+      if (!porRef[clave]) porRef[clave] = { linea, pres, cantidad: 0, registros: 0, esMeta: _humEsReferenciaMeta(linea, pres) };
+      porRef[clave].cantidad += Number(r[3]) || 0;
+      porRef[clave].registros++;
+    });
+    return Object.values(porRef).filter(x => x.cantidad > 0).sort((a,b) => b.cantidad - a.cantidad);
+  };
+  const refsProd = agrupar(regProd);
+  const refsSal  = agrupar(regSal);
 
-  // ── KPIs ──
-  const totalPeriodo = refs.reduce((s,x) => s + x.cantidad, 0);
-  const refMeta = refs.find(x => x.esMeta);
-  const cantMeta = refMeta ? refMeta.cantidad : 0;
-  const pctMeta = Math.min(100, Math.round((cantMeta / HUM_META_DIARIA) * 100));
+  const totalProd = refsProd.reduce((s,x) => s + x.cantidad, 0);
+  const totalSal  = refsSal.reduce((s,x) => s + x.cantidad, 0);
+  const refMeta   = refsProd.find(x => x.esMeta);
+  const cantMeta  = refMeta ? refMeta.cantidad : 0;
+  const pctMeta   = Math.min(100, Math.round((cantMeta / HUM_META_DIARIA) * 100));
   const colorMeta = pctMeta >= 100 ? 'var(--green)' : pctMeta >= 60 ? 'var(--gold)' : 'var(--red)';
   const soloUnDia = rango.desde === rango.hasta;
 
+  const totP = document.getElementById('hum-tot-prod');
+  if (totP) totP.textContent = fmt(Math.round(totalProd));
+  const totS = document.getElementById('hum-tot-sal');
+  if (totS) totS.textContent = fmt(Math.round(totalSal));
+
+  // ── KPIs del periodo ──
   if (contKpis) {
+    const balance = totalProd - totalSal;
+    const colBal  = balance >= 0 ? 'var(--green)' : 'var(--red)';
     contKpis.innerHTML = `
       <div style="background:var(--white);padding:14px 18px">
-        <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px">${esProd ? 'Producido' : 'Despachado'} en el periodo</div>
-        <div style="font-family:'Libre Baskerville',serif;font-size:28px;font-weight:700;color:var(--navy);line-height:1">${fmt(Math.round(totalPeriodo))}</div>
-        <div style="font-size:10px;color:var(--ink-l);margin-top:3px">unidades · todas las referencias</div>
+        <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px">Producido en el periodo</div>
+        <div style="font-family:'Libre Baskerville',serif;font-size:28px;font-weight:700;color:var(--navy);line-height:1">${fmt(Math.round(totalProd))}</div>
+        <div style="font-size:10px;color:var(--ink-l);margin-top:3px">${refsProd.length} referencia${refsProd.length !== 1 ? 's' : ''} · ${regProd.length} registro${regProd.length !== 1 ? 's' : ''}</div>
       </div>
       <div style="background:var(--white);padding:14px 18px">
-        <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px">Referencias con movimiento</div>
-        <div style="font-family:'Libre Baskerville',serif;font-size:28px;font-weight:700;color:var(--ink);line-height:1">${refs.length}</div>
-        <div style="font-size:10px;color:var(--ink-l);margin-top:3px">de ${Object.keys(porRef).length} registradas en el periodo</div>
+        <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px">Despachado en el periodo</div>
+        <div style="font-family:'Libre Baskerville',serif;font-size:28px;font-weight:700;color:var(--gold);line-height:1">${fmt(Math.round(totalSal))}</div>
+        <div style="font-size:10px;color:var(--ink-l);margin-top:3px">${refsSal.length} referencia${refsSal.length !== 1 ? 's' : ''} · ${regSal.length} registro${regSal.length !== 1 ? 's' : ''}</div>
       </div>
       <div style="background:var(--white);padding:14px 18px">
-        <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px">Registros</div>
-        <div style="font-family:'Libre Baskerville',serif;font-size:28px;font-weight:700;color:var(--ink);line-height:1">${enRango.length}</div>
-        <div style="font-size:10px;color:var(--ink-l);margin-top:3px">movimientos individuales</div>
+        <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px">Balance del periodo</div>
+        <div style="font-family:'Libre Baskerville',serif;font-size:28px;font-weight:700;color:${colBal};line-height:1">${balance >= 0 ? '+' : '−'}${fmt(Math.abs(Math.round(balance)))}</div>
+        <div style="font-size:10px;color:var(--ink-l);margin-top:3px">producido menos despachado</div>
       </div>
-      ${esProd ? `<div style="background:var(--white);padding:14px 18px">
+      <div style="background:var(--white);padding:14px 18px">
         <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px">Meta ${HUM_META_DIARIA} · Sólido x 50 kg</div>
         <div style="font-family:'Libre Baskerville',serif;font-size:28px;font-weight:700;color:${colorMeta};line-height:1">${fmt(Math.round(cantMeta))}${soloUnDia ? ` <span style="font-size:14px;color:var(--ink-l)">/ ${HUM_META_DIARIA}</span>` : ''}</div>
         <div style="height:6px;background:var(--rule-l);border-radius:3px;margin-top:6px;overflow:hidden"><div style="width:${pctMeta}%;height:100%;background:${colorMeta}"></div></div>
         <div style="font-size:10px;color:var(--ink-l);margin-top:3px">${soloUnDia ? pctMeta + '% de la meta del día' : 'acumulado del periodo (meta es diaria)'}</div>
-      </div>` : ''}`;
+      </div>`;
   }
 
-  // ── Barras horizontales por referencia ──
-  if (!refs.length) {
-    contBarras.innerHTML = '<div class="empty" style="padding:24px">Sin ' + (esProd ? 'producción' : 'despachos') + ' registrados en este periodo</div>';
-  } else {
-    const maxRef = refs[0].cantidad || 1;
-    contBarras.innerHTML = refs.map(x => {
-      const pct = Math.round(x.cantidad / maxRef * 100);
-      const color = x.esMeta ? 'var(--navy)' : (_humNorm(x.linea).indexOf('solido') >= 0 ? '#2d8a4e' : '#2c5f8a');
+  // ── Barras horizontales: misma escala en ambas columnas para que sean comparables ──
+  const escala = Math.max(refsProd.length ? refsProd[0].cantidad : 0, refsSal.length ? refsSal[0].cantidad : 0) || 1;
+  const pintarBarras = (cont, refs, esProd) => {
+    if (!cont) return;
+    if (!refs.length) {
+      cont.innerHTML = '<div class="empty" style="padding:24px">Sin ' + (esProd ? 'producción' : 'despachos') + ' en este periodo</div>';
+      return;
+    }
+    cont.innerHTML = refs.map(x => {
+      const pct = Math.round(x.cantidad / escala * 100);
+      const color = esProd
+        ? (x.esMeta ? 'var(--navy)' : (_humNorm(x.linea).indexOf('solido') >= 0 ? '#2d8a4e' : '#2c5f8a'))
+        : (x.esMeta ? 'var(--gold)' : '#b8892b');
       return `<div style="margin-bottom:14px">
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:5px;flex-wrap:wrap">
-          <span style="font-size:14px;font-weight:700;color:var(--ink)">${x.linea} <span style="color:var(--ink-m);font-weight:600">· ${x.pres}</span>
+          <span style="font-size:13px;font-weight:700;color:var(--ink)">${x.linea} <span style="color:var(--ink-m);font-weight:600">· ${x.pres}</span>
             ${x.esMeta ? '<span style="font-size:9px;font-weight:700;letter-spacing:.5px;background:var(--navy);color:#fff;padding:2px 7px;border-radius:10px;margin-left:6px">META</span>' : ''}</span>
-          <span style="font-family:'Libre Baskerville',serif;font-size:17px;font-weight:800;color:${color};white-space:nowrap">${fmt(Math.round(x.cantidad))}
+          <span style="font-family:'Libre Baskerville',serif;font-size:16px;font-weight:800;color:${color};white-space:nowrap">${fmt(Math.round(x.cantidad))}
             <span style="font-size:11px;font-weight:600;color:var(--ink-l)">· ${x.registros} reg.</span></span>
         </div>
-        <div style="height:20px;background:var(--rule-l);border-radius:4px;overflow:hidden">
+        <div style="height:18px;background:var(--rule-l);border-radius:4px;overflow:hidden">
           <div style="width:${pct}%;height:100%;background:${color};border-radius:4px;transition:width .35s"></div>
         </div>
       </div>`;
     }).join('');
-  }
+  };
+  pintarBarras(contProd, refsProd, true);
+  pintarBarras(contSal,  refsSal,  false);
 
-  // ── Trazabilidad ──
+  // ── Trazabilidad unificada: producción y despachos en una sola tabla ──
   const busca = ((document.getElementById('hum-buscar')||{}).value || '').toLowerCase().trim();
-  let filas = enRango.slice();
+  let filas = regProd.map(r => ({ r, prod: true })).concat(regSal.map(r => ({ r, prod: false })));
   if (busca) {
-    filas = filas.filter(r => [r[1], r[2], r[4], r[5]].some(v => (v||'').toString().toLowerCase().includes(busca)));
+    filas = filas.filter(o => [o.r[1], o.r[2], o.r[4], o.r[5]].some(v => (v||'').toString().toLowerCase().includes(busca)));
   }
-  filas.sort((a,b) => (b[0]||'').localeCompare(a[0]||''));
+  filas.sort((a,b) => (b.r[0]||'').localeCompare(a.r[0]||''));
 
-  if (tituloTraza) tituloTraza.textContent = (esProd ? 'Producción' : 'Despachos') + ' · ' + filas.length + ' registro' + (filas.length !== 1 ? 's' : '');
+  if (tituloTraza) tituloTraza.textContent = filas.length + ' registro' + (filas.length !== 1 ? 's' : '') + ' del periodo';
   if (head) {
-    head.innerHTML = `<th>Fecha / Hora</th><th>Línea</th><th>Presentación</th>
-      <th style="text-align:right">Cantidad</th><th>${esProd ? 'Lote' : 'Destino / Cliente'}</th>
+    head.innerHTML = `<th>Fecha / Hora</th><th style="text-align:center">Tipo</th><th>Línea</th><th>Presentación</th>
+      <th style="text-align:right">Cantidad</th><th>Lote / Destino</th>
       <th>Responsable</th><th style="text-align:center">Foto</th>`;
   }
   if (body) {
-    body.innerHTML = filas.length ? filas.slice(0, 300).map(r => {
+    body.innerHTML = filas.length ? filas.slice(0, 300).map(o => {
+      const r = o.r;
       const foto = (r[6] || '').toString().trim();
       const celdaFoto = foto && /^https?:\/\//i.test(foto)
         ? `<td style="text-align:center"><img src="${urlFotoDrive(foto)}" data-alt="${urlFotoDriveAlt(foto)}" loading="lazy"
@@ -6390,17 +6214,21 @@ function renderHumusDetalle() {
              onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src=this.dataset.alt;}else{this.outerHTML='<a href=&quot;${foto}&quot; target=_blank rel=noopener style=&quot;font-size:11px;color:var(--navy)&quot;>Ver</a>';}"
              style="width:42px;height:42px;object-fit:cover;border-radius:4px;border:1px solid var(--rule);cursor:zoom-in"></td>`
         : '<td style="text-align:center;color:var(--ink-l)">—</td>';
+      const chip = o.prod
+        ? '<span style="font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--navy);color:#fff;padding:3px 9px;border-radius:10px">Producción</span>'
+        : '<span style="font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--gold);color:#fff;padding:3px 9px;border-radius:10px">Despacho</span>';
       return `<tr>
         <td style="white-space:nowrap">${r[0]||'—'}</td>
+        <td style="text-align:center;white-space:nowrap">${chip}</td>
         <td>${r[1]||'—'}</td>
         <td>${r[2]||'—'}</td>
-        <td style="text-align:right;font-weight:700;color:var(--navy)">${fmt(Math.round(Number(r[3])||0))}</td>
+        <td style="text-align:right;font-weight:700;color:${o.prod ? 'var(--navy)' : 'var(--gold)'}">${fmt(Math.round(Number(r[3])||0))}</td>
         <td>${r[4]||'—'}</td>
         <td>${r[5]||'—'}</td>
         ${celdaFoto}
       </tr>`;
-    }).join('') + (filas.length > 300 ? '<tr><td colspan="7" style="text-align:center;font-size:11px;color:var(--ink-l);font-style:italic;padding:10px">Mostrando los 300 más recientes de ' + filas.length + '</td></tr>' : '')
-    : '<tr><td colspan="7" class="empty">Sin registros en este periodo</td></tr>';
+    }).join('') + (filas.length > 300 ? '<tr><td colspan="8" style="text-align:center;font-size:11px;color:var(--ink-l);font-style:italic;padding:10px">Mostrando los 300 más recientes de ' + filas.length + '</td></tr>' : '')
+    : '<tr><td colspan="8" class="empty">Sin registros en este periodo</td></tr>';
   }
 }
 
