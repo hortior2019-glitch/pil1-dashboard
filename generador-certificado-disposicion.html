@@ -107,12 +107,14 @@
   }
   .status-msg.ok{color:var(--green-dark);}
   .status-msg.err{color:#b23b3b;}
+  /* ---- Galería de certificados guardados (estilo Drive: tarjetas con miniatura) ---- */
   .saved-list{
-    max-height:320px;
+    display:grid;
+    grid-template-columns:repeat(2, 1fr);
+    gap:10px;
+    max-height:460px;
     overflow-y:auto;
-    border:1px solid var(--border);
-    border-radius:6px;
-    background:#fff;
+    padding:3px;
   }
   #buscarGuardados{
     width:100%;
@@ -122,46 +124,91 @@
     font-size:12.5px;
     font-family:inherit;
   }
-  .saved-item{
-    padding:10px 12px;
-    font-size:12px;
-    border-bottom:1px solid var(--border);
+  .saved-card{
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:10px;
+    overflow:hidden;
     cursor:pointer;
-  }
-  .saved-item:last-child{border-bottom:none;}
-  .saved-item:hover{background:#f4f7f4;}
-  .saved-item .fila-top{
     display:flex;
-    justify-content:space-between;
-    align-items:baseline;
-    margin-bottom:3px;
+    flex-direction:column;
+    transition:box-shadow .15s ease, transform .15s ease;
   }
-  .saved-item .acta{
+  .saved-card:hover{
+    box-shadow:0 4px 14px rgba(0,0,0,0.12);
+    transform:translateY(-2px);
+  }
+  .saved-card.selected{
+    border-color:var(--green);
+    box-shadow:0 0 0 2px var(--green);
+  }
+  .saved-card .card-imagen{
+    width:100%;
+    height:64px;
+    object-fit:cover;
+    display:block;
+    background:#eaf6ec;
+  }
+  .saved-card .card-imagen-placeholder{
+    width:100%;
+    height:64px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:20px;
     font-weight:700;
     color:var(--green-dark);
-    font-size:13px;
+    background:linear-gradient(135deg,#eaf6ec,#dcefe0);
   }
-  .saved-item .codigo{
-    font-family:monospace;
+  .saved-card .card-body{
+    padding:7px 8px 9px;
     font-size:10.5px;
-    color:#999;
-    background:#f2f4f2;
-    padding:1px 6px;
-    border-radius:4px;
+    line-height:1.45;
   }
-  .saved-item .empresa{
-    font-weight:600;
-    color:#333;
+  .saved-card .card-acta{
+    font-size:9.5px;
+    font-weight:700;
+    color:var(--green-dark);
     margin-bottom:2px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
   }
-  .saved-item .detalle{
-    color:#777;
+  .saved-card .card-empresa{
+    font-weight:700;
     font-size:11px;
-    line-height:1.5;
+    color:#222;
+    margin-bottom:3px;
+    display:-webkit-box;
+    -webkit-line-clamp:2;
+    -webkit-box-orient:vertical;
+    overflow:hidden;
+    min-height:2.6em;
   }
-  .saved-item .detalle b{color:#555;font-weight:600;}
+  .saved-card .card-meta{
+    color:#888;
+    font-size:9.5px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .saved-card .card-kg{
+    margin-top:3px;
+    font-weight:700;
+    color:#333;
+    font-size:11px;
+  }
+  .saved-card .card-materiales{
+    color:#999;
+    font-size:9px;
+    margin-top:1px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
   .saved-empty{
-    padding:10px;
+    grid-column:1 / -1;
+    padding:16px 10px;
     font-size:12px;
     color:#999;
     text-align:center;
@@ -556,7 +603,7 @@
       <label>Contraseña</label>
       <input id="loginPass" type="password" autocomplete="current-password">
     </div>
-    <button class="btn-login" onclick="intentarLogin()">Ingresar</button>
+    <button class="btn-login" id="btnLogin" onclick="intentarLogin()">Ingresar</button>
     <div class="login-error" id="loginError"></div>
   </div>
 </div>
@@ -599,6 +646,15 @@
       <div class="field">
         <label>Página</label>
         <input id="pagina" value="1 de 1">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Imagen de referencia (opcional, para identificar la empresa en la lista)</label>
+      <input type="file" id="imagenReferenciaInput" accept="image/*">
+      <div id="imagenReferenciaPreviewWrap" style="margin-top:8px;display:none;">
+        <img id="imagenReferenciaPreview" style="max-width:100%;max-height:110px;border-radius:6px;border:1px solid var(--border);display:block;">
+        <button type="button" class="btn-list" id="btnQuitarImagen" style="width:100%;margin-top:6px;">Quitar imagen</button>
       </div>
     </div>
 
@@ -657,7 +713,7 @@
     </div>
 
     <div class="field">
-      <label>Primer párrafo (editable, esto es lo que se imprime)</label>
+      <label>Primer párrafo (editable, esto es lo que se imprime) — escribe **así** para MAYÚSCULAS</label>
       <textarea id="parrafo1" style="min-height:110px;"></textarea>
       <button class="btn-list" type="button" onclick="regenerarParrafo1()" style="width:100%;margin-top:6px;">🔄 Generar desde los datos de arriba</button>
     </div>
@@ -687,7 +743,7 @@
     </div>
 
     <div class="field">
-      <label>Segundo párrafo (editable)</label>
+      <label>Segundo párrafo (editable) — escribe **así** para MAYÚSCULAS</label>
       <textarea id="parrafo2">HORTI ORGANIC SAS CI BIC, en su compromiso con la mejora continua y la sostenibilidad, propone nuevas alternativas basadas en los principios de la economía circular, diseñadas para optimizar la gestión ambiental y promover el uso eficiente de los recursos. Estas iniciativas no solo reflejan nuestra dedicación a la excelencia, sino que también garantizan el estricto cumplimiento de la Resolución 1362 de 2007, alineándonos con los Objetivos de Desarrollo Sostenible (ODS), reafirmando nuestro liderazgo en la transición hacia un futuro más consciente, sostenible y en armonía con el entorno.</textarea>
     </div>
 
@@ -903,6 +959,58 @@
       .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
+  // Convierte cualquier texto entre **dobles asteriscos** a MAYÚSCULAS (y quita los
+  // asteriscos). Se usa al mostrar el primer y segundo párrafo en la vista previa/impresión.
+  function procesarMayusculas(texto){
+    return String(texto == null ? '' : texto).replace(/\*\*(.*?)\*\*/g, (m, p1) => p1.toUpperCase());
+  }
+
+  // ---- Imagen de referencia (opcional, solo para identificar visualmente el certificado
+  // en la lista de "Consultar guardados"; no aparece en el documento impreso) ----
+  let imagenReferenciaBase64 = '';
+
+  function mostrarImagenReferencia(base64){
+    imagenReferenciaBase64 = base64 || '';
+    const wrap = document.getElementById('imagenReferenciaPreviewWrap');
+    const img = document.getElementById('imagenReferenciaPreview');
+    if (imagenReferenciaBase64){
+      img.src = imagenReferenciaBase64;
+      wrap.style.display = 'block';
+    } else {
+      img.src = '';
+      wrap.style.display = 'none';
+    }
+  }
+
+  document.getElementById('imagenReferenciaInput').addEventListener('change', (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        // Se reduce a un lado máximo de 160px y se comprime a JPEG, para que el
+        // certificado guardado (texto en Google Sheets) no quede pesado.
+        const maxLado = 160;
+        let w = img.width, h = img.height;
+        if (w >= h && w > maxLado){ h = Math.round(h * maxLado / w); w = maxLado; }
+        else if (h > maxLado){ w = Math.round(w * maxLado / h); h = maxLado; }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        mostrarImagenReferencia(canvas.toDataURL('image/jpeg', 0.6));
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  document.getElementById('btnQuitarImagen').addEventListener('click', () => {
+    document.getElementById('imagenReferenciaInput').value = '';
+    mostrarImagenReferencia('');
+  });
+
   // Genera un texto SUGERIDO de primer párrafo a partir de los campos de arriba
   // (según la plantilla elegida). Es solo un punto de partida: el texto real que se
   // imprime es el que está en el textarea #parrafo1, que el usuario puede editar libremente.
@@ -954,8 +1062,8 @@
 
     document.getElementById('hActa').textContent = acta;
     document.getElementById('hPagina').textContent = pagina;
-    document.getElementById('pPrimerParrafo').textContent = document.getElementById('parrafo1').value;
-    document.getElementById('pParrafo2Rest').textContent = parrafo2;
+    document.getElementById('pPrimerParrafo').textContent = procesarMayusculas(document.getElementById('parrafo1').value);
+    document.getElementById('pParrafo2Rest').textContent = procesarMayusculas(parrafo2);
     document.getElementById('tPeriodo').textContent = periodo;
     document.getElementById('pFecha').textContent = fecha;
 
@@ -1089,7 +1197,8 @@
       periodo: document.getElementById('periodo').value,
       fecha: document.getElementById('fechaExpedicion').value,
       parrafo2: document.getElementById('parrafo2').value,
-      parrafo1Datos: JSON.stringify(recolectarDatosParrafo1())
+      parrafo1Datos: JSON.stringify(recolectarDatosParrafo1()),
+      imagen: imagenReferenciaBase64
     };
   }
 
@@ -1176,6 +1285,7 @@
   }
 
   let registrosGuardados = [];
+  let registroSeleccionadoCodigo = null; // marca visual de cuál certificado guardado se está viendo
 
   async function cargarGuardados(){
     const cont = document.getElementById('listaGuardados');
@@ -1230,17 +1340,38 @@
     cont.innerHTML = '';
     filtrados.forEach(rec => {
       const { total, nombres, cantidad } = totalYResumenMateriales(rec);
+      const unidad = (() => { try { return JSON.parse(rec.Parrafo1Datos || '{}').unidad || 'kg'; } catch(e){ return 'kg'; } })();
       const div = document.createElement('div');
-      div.className = 'saved-item';
+      const esSeleccionado = !!(rec.Codigo && registroSeleccionadoCodigo && rec.Codigo === registroSeleccionadoCodigo);
+      div.className = 'saved-card' + (esSeleccionado ? ' selected' : '');
+
+      const empresa = rec['Empresa Receptora'] || 'Sin empresa';
+      const inicial = empresa.trim().charAt(0).toUpperCase() || '?';
+      const imagenHtml = rec.ImagenRef
+        ? '<img class="card-imagen" src="' + rec.ImagenRef + '">'
+        : '<div class="card-imagen-placeholder">' + escapeHtml(inicial) + '</div>';
+
+      const cantidadTexto = unidad === 'viajes'
+        ? Math.round(total) + ' viaje(s)'
+        : formatKg(total) + ' kg';
+
       div.innerHTML =
-        '<div class="fila-top"><span class="acta">Acta ' + (rec.Acta || '—') + '</span>' +
-        (rec.Codigo ? '<span class="codigo">' + rec.Codigo + '</span>' : '') + '</div>' +
-        '<div class="empresa">' + (rec['Empresa Receptora'] || 'Sin empresa') + '</div>' +
-        '<div class="detalle">' +
-        '<b>' + formatKg(total) + ' kg</b> en ' + cantidad + ' material(es)' + (nombres ? ' — ' + nombres : '') + '<br>' +
-        (rec.Periodo || '') + (rec['Fecha Expedicion'] ? ' · Expedido: ' + rec['Fecha Expedicion'] : '') +
+        imagenHtml +
+        '<div class="card-body">' +
+          '<div class="card-acta">Acta ' + (rec.Acta || '—') + (rec.Codigo ? ' · ' + rec.Codigo : '') + '</div>' +
+          '<div class="card-empresa">' + escapeHtml(empresa) + '</div>' +
+          '<div class="card-meta">' + escapeHtml(rec.Periodo || 'Sin periodo') + '</div>' +
+          '<div class="card-meta">Exp.: ' + escapeHtml(rec['Fecha Expedicion'] || '—') + '</div>' +
+          '<div class="card-kg">' + cantidadTexto + '</div>' +
+          '<div class="card-materiales" title="' + escapeHtml(nombres) + '">' + (nombres ? escapeHtml(nombres) : cantidad + ' material(es)') + '</div>' +
         '</div>';
-      div.onclick = () => aplicarRegistro(rec);
+
+      div.onclick = () => {
+        document.querySelectorAll('#listaGuardados .saved-card.selected').forEach(el => el.classList.remove('selected'));
+        div.classList.add('selected');
+        registroSeleccionadoCodigo = rec.Codigo || null;
+        aplicarRegistro(rec);
+      };
       cont.appendChild(div);
     });
   }
@@ -1273,24 +1404,71 @@
     certCodigo = rec.Codigo || '';
     renderVerificacion();
 
+    document.getElementById('imagenReferenciaInput').value = '';
+    mostrarImagenReferencia(rec.ImagenRef || '');
+
     update();
     setStatus('Certificado cargado en el formulario.', 'ok');
   }
 
-  // ---- Login (usuario/contraseña "hardcodeados") ----
-  const LOGIN_USER = 'Horti';
-  const LOGIN_PASS = 'Horti123*';
+  // ---- Login contra Google Sheets ----
+  // Columna A = usuario, columna B = contraseña, columna I = autorizado ("si"/"no").
+  // La hoja está compartida como "cualquiera con el enlace, lector", así que se puede leer
+  // igual que la base de datos de disposición: por el endpoint público gviz (JSON).
+  const LOGIN_SHEET_ID = '1qTonHCPcWYct2E9PJt2tI27jAfXf5k9W7TB7gl7kM6I';
+  const LOGIN_SHEET_GID = '0';
+  const LOGIN_URL = 'https://docs.google.com/spreadsheets/d/' + LOGIN_SHEET_ID + '/gviz/tq?tqx=out:json&gid=' + LOGIN_SHEET_GID;
 
-  function intentarLogin(){
+  async function validarUsuario(usuario, password){
+    const res = await fetch(LOGIN_URL);
+    const text = await res.text();
+    const match = text.match(/setResponse\(([\s\S]*)\);?\s*$/);
+    const json = JSON.parse(match ? match[1] : text);
+    const rows = json.table.rows || [];
+
+    for (const row of rows){
+      const c = row.c || [];
+      const u = c[0] && c[0].v != null ? String(c[0].v).trim() : '';       // A
+      const p = c[1] && c[1].v != null ? String(c[1].v).trim() : '';       // B
+      const autorizado = c[8] && c[8].v != null ? String(c[8].v).trim().toLowerCase() : ''; // I
+      if (u && u.toLowerCase() === usuario.toLowerCase() && p === password){
+        return autorizado === 'si' || autorizado === 'sí';
+      }
+    }
+    return false;
+  }
+
+  async function intentarLogin(){
     const u = document.getElementById('loginUser').value.trim();
     const p = document.getElementById('loginPass').value;
     const err = document.getElementById('loginError');
-    if (u === LOGIN_USER && p === LOGIN_PASS){
-      sessionStorage.setItem('horti_logged_in', '1');
-      document.getElementById('loginOverlay').style.display = 'none';
-      document.getElementById('app').classList.add('show');
-    } else {
-      err.textContent = 'Usuario o contraseña incorrectos.';
+    const btn = document.getElementById('btnLogin');
+
+    if (!u || !p){
+      err.textContent = 'Ingresa usuario y contraseña.';
+      return;
+    }
+
+    err.textContent = '';
+    btn.disabled = true;
+    const textoOriginal = btn.textContent;
+    btn.textContent = 'Verificando...';
+
+    try{
+      const autorizado = await validarUsuario(u, p);
+      if (autorizado){
+        sessionStorage.setItem('horti_logged_in', '1');
+        sessionStorage.setItem('horti_usuario', u);
+        document.getElementById('loginOverlay').style.display = 'none';
+        document.getElementById('app').classList.add('show');
+      } else {
+        err.textContent = 'Usuario o contraseña incorrectos, o usuario no autorizado.';
+      }
+    }catch(e){
+      err.textContent = 'No se pudo verificar el usuario (revisa tu conexión). ' + e.message;
+    }finally{
+      btn.disabled = false;
+      btn.textContent = textoOriginal;
     }
   }
 
