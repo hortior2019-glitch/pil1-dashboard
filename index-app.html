@@ -3625,6 +3625,9 @@ async function loadAllData() {
       if (mt.match(/^\d{4}-\d{2}-\d{2}/)) return true; // formato ISO OK
       return false; // cualquier otro formato → corrupto
     });
+    // El canon de materiales debe existir ANTES de los renders: todos
+    // agrupan con splitOperacionMaterial(), que lo consulta.
+    try { construirCanonMateriales(dataIngreso); } catch(e2) { console.error('construirCanonMateriales error:', e2); }
     try { window.dataIngreso = dataIngreso; aplicarMarcasCorteLocales(); } catch(e2) { console.error('aplicarMarcasCorteLocales error:', e2); }
     try { renderIngreso(dataIngreso, currentFilter); } catch(e2) { console.error('renderIngreso error:', e2); }
     try { window.dataIngreso = dataIngreso; renderCmpChart(dataIngreso); } catch(e2) { console.error('renderCmpChart error:', e2); }
@@ -3864,13 +3867,70 @@ function splitSoftysGroup(opNorm, residuo) {
 // formato "Operacion - Material" (ej. "Bavaria - Lodos"). Softys conserva su
 // nomenclatura de siempre (Tromel / Lodos) para no romper nada de lo que ya
 // estaba. Las demas pestañas siguen agrupando por operacion, sin dividir.
+/* ── MATERIALES: AGRUPACION INSENSIBLE A TILDES ────────────────────────
+   En el Sheet un mismo material aparece escrito de varias formas: con tilde
+   y sin tilde ("Lodos De Carbonato" / "Lodos De Carbónato"), con espacios de
+   mas, o deformado por el Title Case del Apps Script ("CarbóNato"). Cada
+   variante formaba su propio grupo y partia el conteo de la operacion.
+
+   La solucion tiene dos partes:
+     · _claveMaterial() genera una clave sin tildes, sin dobles espacios y en
+       minusculas. Todas las variantes de un material caen en la misma clave.
+     · _MAT_CANON guarda, para cada clave, la forma que se va a MOSTRAR: se
+       elige la variante mas frecuente en el Sheet, porque suele ser la bien
+       escrita. Asi se agrupa por la clave pero se muestra el nombre correcto,
+       sin perder las tildes de materiales como "Residuo Organico".
+   ─────────────────────────────────────────────────────────────────────── */
+function _claveMaterial(s) {
+  return (s || '').toString()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')   // quita tildes y dieresis
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+let _MAT_CANON = {};
+
+// Recorre los registros y decide como se escribe cada material.
+// Gana la variante mas repetida; si hay empate, la primera alfabeticamente,
+// para que el nombre no cambie de un refresco a otro.
+function construirCanonMateriales(rows) {
+  const conteo = {};
+  (rows || []).forEach(r => {
+    const bruto = (r['RESIDUO'] || r['Residuo'] || r['residuo'] || '').toString().trim();
+    if (!bruto) return;
+    const k = _claveMaterial(bruto);
+    if (!k) return;
+    const bonito = tituloBonito(bruto);
+    if (!conteo[k]) conteo[k] = {};
+    conteo[k][bonito] = (conteo[k][bonito] || 0) + 1;
+  });
+  const canon = {};
+  Object.keys(conteo).forEach(k => {
+    canon[k] = Object.keys(conteo[k]).sort((a, b) => {
+      const d = conteo[k][b] - conteo[k][a];
+      return d !== 0 ? d : a.localeCompare(b, 'es');
+    })[0];
+  });
+  _MAT_CANON = canon;
+  return canon;
+}
+
+// Nombre a mostrar de un material, ya unificado.
+function materialCanonico(residuo) {
+  const bruto = (residuo || '').toString().trim();
+  if (!bruto) return '';
+  return _MAT_CANON[_claveMaterial(bruto)] || tituloBonito(bruto);
+}
+
 function splitOperacionMaterial(opNorm, residuo) {
   if (!opNorm) return opNorm;
   if (opNorm === 'Softys') return splitSoftysGroup(opNorm, residuo);
   const mat = (residuo || '').toString().trim();
   if (!mat) return opNorm + ' - Sin material';
-  // Title Case respetando tildes (antes salia "CaptacióN")
-  return opNorm + ' - ' + tituloBonito(mat);
+  // Se agrupa por el material canonico: las variantes con y sin tilde,
+  // o mal capitalizadas, quedan en un solo grupo.
+  return opNorm + ' - ' + materialCanonico(mat);
 }
 
 const CLIENT_COLORS = {
