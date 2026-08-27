@@ -4541,9 +4541,24 @@ function drawCmpDiffBars(containerId, labels, valsA, valsB, colorA, colorB, unit
     const px   = v => (v / maxVal * 100).toFixed(4);
     const pctA = px(a);
     const pctB = px(b);
-    const diff = b > 0 ? ((a - b) / b * 100) : null;
-    const diffTxt = diff === null ? '' : (diff >= 0 ? '↑ +' : '↓ ') + Math.abs(diff).toFixed(1) + '%';
-    const diffTxtColor = diff === null ? 'var(--ink-l)' : (diff >= 0 ? 'var(--green)' : 'var(--red)');
+    /* DIFERENCIA PORCENTUAL RELATIVA (base: promedio de los dos periodos)
+       ------------------------------------------------------------------
+       Antes se mostraba la variacion respecto al periodo anterior:
+           (a - b) / b        ->  72 vs 41 daba +75.6%
+       Esa cifra responde "cuanto crecio", y por eso se dispara cuando el mes
+       anterior fue bajo: pasar de 2 a 10 da +400%.
+
+       Ahora se usa la diferencia relativa sobre el PROMEDIO de ambos:
+           |a - b| / ((a + b) / 2)   ->  72 vs 41 da 54.9%
+       Es simetrica (no depende de cual periodo va primero) y no se dispara
+       con bases pequeñas. La flecha sigue indicando la direccion.
+
+       Si los dos periodos son 0 no hay nada que comparar y no se muestra nada. */
+    const promedio = (a + b) / 2;
+    const diff = promedio > 0 ? (Math.abs(a - b) / promedio * 100) : null;
+    const subio = a >= b;
+    const diffTxt = diff === null ? '' : (subio ? '↑ ' : '↓ ') + diff.toFixed(1) + '%';
+    const diffTxtColor = diff === null ? 'var(--ink-l)' : (subio ? 'var(--green)' : 'var(--red)');
 
     // Una barra por periodo: largo directamente proporcional a su valor, sin
     // tramos que haya que interpretar.
