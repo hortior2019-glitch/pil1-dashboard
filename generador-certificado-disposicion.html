@@ -348,6 +348,58 @@
     overflow-y:auto;
   }
 
+  /* ---- Explorador de certificados guardados: mitad y mitad ---- */
+  .explorer-overlay{
+    position:fixed;
+    inset:0;
+    background:#f2f4f2;
+    z-index:60;
+    display:none;
+  }
+  .explorer-overlay.show{
+    display:flex;
+  }
+  .explorer-left{
+    width:50%;
+    height:100vh;
+    overflow-y:auto;
+    background:#f2f4f2;
+    border-right:1px solid var(--border);
+  }
+  .explorer-left .preview-wrap{
+    min-height:100%;
+  }
+  .explorer-right{
+    width:50%;
+    height:100vh;
+    overflow-y:auto;
+    background:#fff;
+    padding:20px;
+  }
+  .explorer-right-header{
+    display:flex;
+    gap:8px;
+    align-items:center;
+    margin-bottom:14px;
+  }
+  .explorer-right-header #btnCerrarExplorador{
+    flex:0 0 auto;
+    width:auto;
+    padding:8px 14px;
+  }
+  .explorer-right-header input{
+    flex:1;
+    padding:8px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    font-size:12.5px;
+    font-family:inherit;
+  }
+  .explorer-right .saved-list{
+    grid-template-columns:repeat(3, 1fr);
+    max-height:none;
+  }
+
   /* ---- Page / letterhead ---- */
   .certificate{
     position:relative;
@@ -758,20 +810,18 @@
 
     <div class="field" style="margin-top:18px;">
       <label>Certificados guardados</label>
-      <button class="btn-list" id="btnConsultar" onclick="cargarGuardados()" style="width:100%;margin-bottom:8px;">Consultar guardados</button>
-      <input id="buscarGuardados" placeholder="Buscar por acta, empresa o código..." style="display:none;margin-bottom:8px;">
-      <div class="saved-list" id="listaGuardados"><div class="saved-empty">Aún no has consultado</div></div>
+      <button class="btn-list" id="btnConsultar" onclick="abrirExplorador()" style="width:100%;margin-bottom:8px;">🔍 Explorar certificados guardados</button>
 
       <button class="btn-list" id="btnRellenarAnteriores" onclick="rellenarCertificadosAnteriores()" style="width:100%;margin-top:8px;">🔁 Rellenar ID en certificados anteriores</button>
       <div class="db-preview" id="resultadoRellenoAnteriores" style="max-height:180px;overflow-y:auto;"></div>
     </div>
 
     <div class="hint">
-      "Buscar en el intervalo" trae de la base de datos (Sheets) los registros de esas fechas y llena la lista de Operaciones con casillas. Marca una o varias y presiona "Totalizar" para sumar el peso neto por tipo de residuo entre todas las seleccionadas, y llenar Materiales, Empresa receptora (junta los nombres separados por "/", ajústalos a la razón social completa) y Periodo. El logo (logo1) y la marca de agua (logo2) se cargan desde el mismo repositorio/carpeta que este archivo. "Guardar en el sistema" envía los datos a tu Apps Script / Google Sheets; "Consultar guardados" trae la lista y al hacer clic en un registro se recarga en el formulario.
+      "Buscar en el intervalo" trae de la base de datos (Sheets) los registros de esas fechas y llena la lista de Operaciones con casillas. Marca una o varias y presiona "Totalizar" para sumar el peso neto por tipo de residuo entre todas las seleccionadas, y llenar Materiales, Empresa receptora (junta los nombres separados por "/", ajústalos a la razón social completa) y Periodo. El logo (logo1) y la marca de agua (logo2) se cargan desde el mismo repositorio/carpeta que este archivo. "Guardar en el sistema" envía los datos a tu Apps Script / Google Sheets; "Explorar certificados guardados" abre la galería de dos mitades: a la izquierda la vista previa, a la derecha la lista para elegir.
     </div>
   </div>
 
-  <div class="preview-wrap">
+  <div class="preview-wrap" id="previewWrap">
     <div class="certificate" id="certificate">
 
       <div class="watermark">
@@ -851,6 +901,17 @@
     </div>
   </div>
 
+</div>
+
+<div class="explorer-overlay" id="explorerOverlay">
+  <div class="explorer-left" id="explorerLeft"></div>
+  <div class="explorer-right">
+    <div class="explorer-right-header">
+      <button class="btn-list" id="btnCerrarExplorador" onclick="cerrarExplorador()">✕ Cerrar</button>
+      <input id="buscarGuardados" placeholder="Buscar por acta, empresa o código...">
+    </div>
+    <div class="saved-list" id="listaGuardados"><div class="saved-empty">Cargando...</div></div>
+  </div>
 </div>
 
 <script>
@@ -1297,7 +1358,6 @@
       const res = await fetch(APPS_SCRIPT_URL, { method: 'GET' });
       const data = await res.json();
       registrosGuardados = (data.records || []).slice().reverse();
-      buscador.style.display = registrosGuardados.length ? 'block' : 'none';
       buscador.value = '';
       renderListaGuardados('');
     }catch(err){
@@ -1305,6 +1365,21 @@
     }finally{
       btn.disabled = false;
     }
+  }
+
+  // ---- Explorador de certificados guardados: mitad izquierda = vista previa, mitad
+  // derecha = galería para elegir. Se reutiliza el mismo bloque .preview-wrap (con el
+  // .certificate ya armado) moviéndolo de sitio en el DOM, así que se sigue actualizando
+  // con la misma función update()/aplicarRegistro() de siempre, sin duplicar nada.
+  function abrirExplorador(){
+    document.getElementById('explorerLeft').appendChild(document.getElementById('previewWrap'));
+    document.getElementById('explorerOverlay').classList.add('show');
+    cargarGuardados();
+  }
+
+  function cerrarExplorador(){
+    document.querySelector('.app').appendChild(document.getElementById('previewWrap'));
+    document.getElementById('explorerOverlay').classList.remove('show');
   }
 
   function totalYResumenMateriales(rec){
