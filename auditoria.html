@@ -576,7 +576,7 @@ footer b{color:#fff;font-weight:600}
   <span class="sep"></span>
   <span id="pieStats"></span>
   <span id="pieAtajos" style="cursor:help" title="Ctrl+C copiar · Ctrl+X cortar · Ctrl+V pegar · Ctrl+A seleccionar todo · Ctrl+I pintar el fondo · Ctrl+Shift+I color de letra · Ctrl+B negrilla · Ctrl+Espacio columna · Shift+Espacio fila · Ctrl+Z deshacer · Ctrl+S guardar · arrastre el encabezado para reordenar">Atajos ⌨</span>
-  <span id="pieVersion">Auditoría v2.0</span>
+  <span id="pieVersion">Auditoría v2.1</span>
 </footer>
 
 <!-- popup de color -->
@@ -781,6 +781,15 @@ const URL_POR_DEFECTO = 'https://script.google.com/macros/s/AKfycbz1CznJcepKoBIJ
                 lista nunca llega al navegador. Para usarlo: ponga
                 'servidor' aquí y AUD_EXIGIR_LOGIN = true en el .gs.
    ─────────────────────────────────────────────────────────────────── */
+/* ── USUARIOS FIJOS DEL ARCHIVO ────────────────────────────────────
+   Entran siempre, sin depender de la hoja ni de internet. Se revisan
+   ANTES que la hoja. Para agregar o quitar gente, edite esta lista:
+   una linea por persona, y listo.
+   ─────────────────────────────────────────────────────────────────── */
+const USUARIOS_LOCALES = [
+  { usuario: 'Horti', clave: 'Horti123*', nombre: 'Horti' }
+];
+
 const MODO_LOGIN   = 'directo';
 const HOJA_USUARIOS = '1qTonHCPcWYct2E9PJt2tI27jAfXf5k9W7TB7gl7kM6I';
 const HOJA_USUARIOS_GID = '0';
@@ -1029,6 +1038,19 @@ function partirCSV(texto){
   return filas;
 }
 
+// Usuarios escritos en este archivo. Devuelve la sesion o null.
+function validarLocal(usuario, clave){
+  const u = usuario.trim().toLowerCase();
+  const encontrado = USUARIOS_LOCALES.find(x => x.usuario.toLowerCase() === u);
+  if(!encontrado) return null;
+  if(encontrado.clave !== clave) {
+    const e = new Error('Usuario o contraseña incorrectos.');
+    e.claveMala = true;
+    throw e;
+  }
+  return { usuario: encontrado.usuario, nombre: encontrado.nombre || encontrado.usuario };
+}
+
 async function validarDirecto(usuario, clave){
   const filas = await bajarUsuarios();
   if(!filas.length) throw new Error('La hoja de usuarios está vacía.');
@@ -1109,8 +1131,10 @@ async function entrar(ev){
   $('loginEntrar').textContent = 'Verificando…';
   $('loginError').style.display = 'none';
   try{
-    let sesion;
-    if(MODO_LOGIN === 'directo'){
+    let sesion = validarLocal(usuario, clave);   // primero los del archivo
+    if(sesion){
+      // entra de una: no se consulta la hoja
+    }else if(MODO_LOGIN === 'directo'){
       try{
         sesion = await validarDirecto(usuario, clave);
       }catch(err){
@@ -1118,7 +1142,7 @@ async function entrar(ev){
         if(err.noAutorizado || /incorrectos|autorizado|vacía/.test(err.message)) throw err;
         // si fue un problema para leer la hoja, se intenta por el Apps Script
         const res = await llamar({ accion:'auditLogin', usuario, clave });
-        if(!res.success) throw new Error(res.error || err.message);
+        if(!res.success) throw new Error(res.error || ('No se pudo leer la hoja de usuarios: ' + err.message));
         sesion = { usuario: res.usuario || usuario, nombre: res.nombre || '', token: res.token || '' };
       }
     }else{
@@ -1182,7 +1206,7 @@ async function cargar(){
     pedirComentarios();
     cargarFavoritos();
     estado('ok', 'Conectado');
-    $('pieVersion').textContent = 'Auditoría v2.0 · ' + (res.version || '');
+    $('pieVersion').textContent = 'Auditoría v2.1 · ' + (res.version || '');
     if(res.truncado) aviso('La hoja es muy grande: se trajeron las últimas ' + S.filas.length + ' filas.');
     aviso(S.filas.length + ' registros cargados de ' + res.total + ' en la hoja.');
   }catch(err){
