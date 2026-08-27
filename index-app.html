@@ -4533,14 +4533,21 @@ function drawCmpDiffBars(containerId, labels, valsA, valsB, colorA, colorB, unit
 
   el.innerHTML = leyenda + labels.map((lbl, i) => {
     const a = valsA[i] || 0, b = valsB[i] || 0;
-    const pctA = Math.round(a / maxVal * 100);
-    const pctB = Math.round(b / maxVal * 100);
+    // Anchuras SIN redondear. Antes se usaba Math.round() y luego 'common' y
+    // 'excessWidth' se derivaban de esos enteros, asi que el error se acumulaba:
+    // en barras pequeñas dos tramos que debian medir lo mismo salian uno del
+    // doble del otro (A=2 / B=1 daba rayado 2% y solido 1%, cuando ambos valen
+    // 1.37%). Con decimales la proporcion visual coincide siempre con los
+    // numeros. Se recorta a 4 decimales solo para no ensuciar el HTML.
+    const px   = v => (v / maxVal * 100).toFixed(4);
+    const pctA = px(a);
+    const pctB = px(b);
     // "common" = hasta donde llegan AMBOS periodos (la parte solida, sin ambigüedad).
     // La DIFERENCIA (|A-B|) se pinta rayada PRIMERO (a la izquierda), alternando el
     // color dorado (mes anterior) con el color propio de la empresa; luego sigue la
     // parte solida (lo que ambos periodos alcanzan por igual) a la derecha.
-    const common = Math.min(pctA, pctB);
-    const excessWidth = Math.max(pctA, pctB) - common;
+    const common = px(Math.min(a, b));
+    const excessWidth = px(Math.abs(a - b));
     const creciendo = a >= b;
     // Cuando el periodo actual (A) supera al anterior (B), el rayado alterna dorado
     // y el color de la empresa (para resaltar el crecimiento). Cuando es al reves
