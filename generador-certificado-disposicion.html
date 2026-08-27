@@ -369,6 +369,16 @@
   .explorer-left .preview-wrap{
     min-height:100%;
   }
+  .explorer-left-bar{
+    padding:14px 20px 0;
+    display:flex;
+    justify-content:center;
+  }
+  .explorer-left-bar button{
+    width:auto;
+    padding:8px 14px;
+    font-size:12px;
+  }
   .explorer-right{
     width:50%;
     height:100vh;
@@ -708,6 +718,7 @@
         <img id="imagenReferenciaPreview" style="max-width:100%;max-height:110px;border-radius:6px;border:1px solid var(--border);display:block;">
         <button type="button" class="btn-list" id="btnQuitarImagen" style="width:100%;margin-top:6px;">Quitar imagen</button>
       </div>
+      <button type="button" class="btn-list" id="btnGuardarImagenExistente" style="width:100%;margin-top:6px;display:none;" onclick="guardarImagenEnCertificadoActual()">💾 Guardar esta imagen en el certificado cargado</button>
     </div>
 
     <div class="field">
@@ -904,7 +915,12 @@
 </div>
 
 <div class="explorer-overlay" id="explorerOverlay">
-  <div class="explorer-left" id="explorerLeft"></div>
+  <div class="explorer-left" id="explorerLeft">
+    <div class="explorer-left-bar" id="explorerLeftBar" style="display:none;">
+      <input type="file" id="imagenReferenciaInputExplorer" accept="image/*" style="display:none;">
+      <button type="button" class="btn-list" onclick="document.getElementById('imagenReferenciaInputExplorer').click()">📷 Cambiar imagen de referencia de este certificado</button>
+    </div>
+  </div>
   <div class="explorer-right">
     <div class="explorer-right-header">
       <button class="btn-list" id="btnCerrarExplorador" onclick="cerrarExplorador()">✕ Cerrar</button>
@@ -1043,34 +1059,80 @@
     }
   }
 
-  document.getElementById('imagenReferenciaInput').addEventListener('change', (e) => {
+  // Reduce cualquier imagen a un lado máximo (por defecto 160px) y la comprime a JPEG,
+  // para que el certificado guardado (texto en Google Sheets) no quede pesado. Devuelve
+  // una promesa con el resultado en base64 (data URL).
+  function redimensionarImagenAJpeg(file, maxLado, calidad){
+    maxLado = maxLado || 160;
+    calidad = calidad || 0.6;
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = reject;
+      reader.onload = (ev) => {
+        const img = new Image();
+        img.onerror = reject;
+        img.onload = () => {
+          let w = img.width, h = img.height;
+          if (w >= h && w > maxLado){ h = Math.round(h * maxLado / w); w = maxLado; }
+          else if (h > maxLado){ w = Math.round(w * maxLado / h); h = maxLado; }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', calidad));
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  document.getElementById('imagenReferenciaInput').addEventListener('change', async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const img = new Image();
-      img.onload = () => {
-        // Se reduce a un lado máximo de 160px y se comprime a JPEG, para que el
-        // certificado guardado (texto en Google Sheets) no quede pesado.
-        const maxLado = 160;
-        let w = img.width, h = img.height;
-        if (w >= h && w > maxLado){ h = Math.round(h * maxLado / w); w = maxLado; }
-        else if (h > maxLado){ w = Math.round(w * maxLado / h); h = maxLado; }
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        mostrarImagenReferencia(canvas.toDataURL('image/jpeg', 0.6));
-      };
-      img.src = ev.target.result;
-    };
-    reader.readAsDataURL(file);
+    mostrarImagenReferencia(await redimensionarImagenAJpeg(file));
   });
 
   document.getElementById('btnQuitarImagen').addEventListener('click', () => {
     document.getElementById('imagenReferenciaInput').value = '';
     mostrarImagenReferencia('');
   });
+
+  // ---- Cambiar/agregar la imagen de referencia DESPUÉS de guardado, desde el explorador
+  // (por ejemplo, a certificados viejos que no tenían foto) ----
+  document.getElementById('imagenReferenciaInputExplorer').addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    mostrarImagenReferencia(await redimensionarImagenAJpeg(file));
+    await guardarImagenEnCertificadoActual();
+    e.target.value = '';
+  });
+
+  async function guardarImagenEnCertificadoActual(){
+    if (!certCodigo){
+      setStatus('Primero guarda o carga un certificado.', 'err');
+      return;
+    }
+    setStatus('Guardando imagen...', '');
+    try{
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'actualizar_imagen', codigo: certCodigo, imagen: imagenReferenciaBase64 })
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Error desconocido');
+
+      // Refleja el cambio de inmediato en la lista/galería sin necesitar recargar todo.
+      const rec = registrosGuardados.find(r => r.Codigo === certCodigo);
+      if (rec) rec.ImagenRef = imagenReferenciaBase64;
+      renderListaGuardados(document.getElementById('buscarGuardados').value);
+
+      setStatus('Imagen guardada en el certificado ' + certCodigo + '.', 'ok');
+    }catch(err){
+      setStatus('No se pudo guardar la imagen: ' + err.message, 'err');
+    }
+  }
 
   // Genera un texto SUGERIDO de primer párrafo a partir de los campos de arriba
   // (según la plantilla elegida). Es solo un punto de partida: el texto real que se
@@ -1277,7 +1339,15 @@
   function renderVerificacion(){
     const qrEl = document.getElementById('qrCode');
     const textoEl = document.getElementById('verifCodigoTexto');
+    const btnImgExistente = document.getElementById('btnGuardarImagenExistente');
+    const barExplorador = document.getElementById('explorerLeftBar');
     qrEl.innerHTML = '';
+
+    // Solo se puede agregar/cambiar la imagen de un certificado que YA existe guardado
+    // (tiene código), no de uno nuevo que aún no se ha guardado.
+    if (btnImgExistente) btnImgExistente.style.display = certCodigo ? 'block' : 'none';
+    if (barExplorador) barExplorador.style.display = certCodigo ? 'flex' : 'none';
+
     if (!certCodigo){
       textoEl.innerHTML = 'Guarda el certificado para generar su código de verificación';
       return;
