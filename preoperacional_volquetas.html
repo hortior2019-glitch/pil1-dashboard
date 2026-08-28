@@ -979,9 +979,85 @@
 // ── URLs ────────────────────────────────────────────────────
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwq-8IIio1eJCjdyqgsXkZd1vNlHDClJM9uOPBUq_ztwYmjOwrQspnYxivnKI-D6o1zuw/exec';
 
-// ── ROSTER: placas y conductores (edite aquí para agregar o quitar) ──
-const PLACAS = ['OAI509', 'SPM930', 'WOW100', 'WOW101', 'XGD873'];
+// ════════════════════════════════════════════════════════════
+//  PLACAS — se cargan solas desde la hoja "Tractores"
+//  (Apps Script de Control de Viajes, acción getTractores)
+// ════════════════════════════════════════════════════════════
+const TRACTORES_URL = 'https://script.google.com/macros/s/AKfycbzDdC-fBDhB5GQPEk9FfnH1uWc5YgOuu8pKBEpi87mg55-YCox6v_JR6IkUkWIw_Hq3Eg/exec?action=getTractores';
+const SELECTS_PLACA = ['placa', 'comb-placa'];
+const CACHE_PLACAS  = 'placas_cache_v1';
 
+// Respaldo: solo se usa si el servicio no responde y no hay copia guardada
+const PLACAS_RESPALDO = ['OAI509', 'SPM930', 'WOW100', 'WOW101', 'XGD873'];
+
+function pintarPlacas(lista) {
+  SELECTS_PLACA.forEach(function (id) {
+    const sel = document.getElementById(id);
+    if (!sel || sel.tagName !== 'SELECT') return;
+    const previo = sel.value;
+    sel.innerHTML = '<option value="">Seleccione la placa…</option>';
+    lista.forEach(function (t) {
+      const o = document.createElement('option');
+      o.value = t.placa;
+      o.textContent = t.modelo ? (t.placa + ' · ' + t.modelo) : t.placa;
+      sel.appendChild(o);
+    });
+    if (previo) sel.value = previo;
+  });
+}
+
+function estadoPlacas(texto) {
+  SELECTS_PLACA.forEach(function (id) {
+    const sel = document.getElementById(id);
+    if (sel && sel.tagName === 'SELECT' && sel.options.length && !sel.value) {
+      sel.options[0].textContent = texto;
+    }
+  });
+}
+
+// La hoja devuelve las columnas en mayúscula: MODELO, CAPACIDAD, PLACA, FRENTE
+function normalizarTractores(json) {
+  const arr = (json && (json.tractores || json.datos || json.data)) || [];
+  const vistas = {}, out = [];
+  (Array.isArray(arr) ? arr : []).forEach(function (t) {
+    if (!t) return;
+    const esTexto = (typeof t === 'string');
+    const placa = (esTexto ? t : (t.PLACA || t.Placa || t.placa || '')).toString().trim();
+    if (!placa || vistas[placa.toUpperCase()]) return;
+    vistas[placa.toUpperCase()] = true;
+    const modelo = (esTexto ? '' : (t.MODELO || t.Modelo || t.modelo || '')).toString().trim();
+    out.push({ placa: placa, modelo: modelo });
+  });
+  out.sort(function (a, b) { return a.placa.localeCompare(b.placa); });
+  return out;
+}
+
+async function cargarPlacas() {
+  // 1) Copia guardada: la app sirve aunque no haya señal
+  let hayCopia = false;
+  try {
+    const cache = JSON.parse(localStorage.getItem(CACHE_PLACAS) || 'null');
+    if (cache && cache.length) { pintarPlacas(cache); hayCopia = true; }
+  } catch (e) {}
+  if (!hayCopia) estadoPlacas('Cargando placas…');
+
+  // 2) Lista viva desde la hoja "Tractores"
+  try {
+    const res   = await fetch(TRACTORES_URL);
+    const json  = await res.json();
+    const lista = normalizarTractores(json);
+    if (!lista.length) throw new Error('sin placas');
+    pintarPlacas(lista);
+    try { localStorage.setItem(CACHE_PLACAS, JSON.stringify(lista)); } catch (e) {}
+  } catch (e) {
+    if (!hayCopia) {
+      pintarPlacas(PLACAS_RESPALDO.map(function (p) { return { placa: p, modelo: '' }; }));
+      estadoPlacas('Seleccione la placa… (lista sin actualizar)');
+    }
+  }
+}
+
+// ── CONDUCTORES (edite aquí para agregar o quitar) ───────────
 const CONDUCTORES = [
   'HERNANDO ALBERTO NIETO CASTILLO',
   'JUAN CARLOS PACHON MOLINA',
@@ -999,9 +1075,8 @@ function poblarLista(id, valores) {
   });
 }
 function poblarListas() {
-  poblarLista('placa', PLACAS);
   poblarLista('conductor', CONDUCTORES);
-  poblarLista('comb-placa', PLACAS);
+  cargarPlacas();               // placa y comb-placa desde la hoja "Tractores"
 }
 
 // ── DATOS — key: nombre exacto de columna en Sheets | desc: texto visible ──
