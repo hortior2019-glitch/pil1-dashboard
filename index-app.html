@@ -2917,7 +2917,12 @@ const SHEETS = {
   preopCar:   "https://docs.google.com/spreadsheets/d/e/2PACX-1vT7jlTWFp85CfMimM71gXUysc5zVcMU9PW-5RLtikP3aBDKXAFF4lgg5olu3_F0kARUxiEdDz0TDD5c/pub?gid=910474309&single=true&output=csv",
   viajes:     "https://docs.google.com/spreadsheets/d/e/2PACX-1vQfJ3w0m6ulvnQuosQllRg9mozlPZjPq4a_xlOD6t2kB21ShbW_qnFsMZ9r_I2METGWv2hZIEKL-RRN/pub?gid=1700187693&single=true&output=csv",
   ProduccionHumus: "https://docs.google.com/spreadsheets/d/1RIL3EvKasEdh9PgqZs24sO13ucS2sit0ncnQt14rV0o/export?format=csv&gid=85759097",
-  coaching: "https://docs.google.com/spreadsheets/d/1-erGdKH9NLSuMNtJdBcvNk6K084hgGj0fG-FDjuOv90/export?format=csv&gid=848770587"
+  coaching: "https://docs.google.com/spreadsheets/d/1-erGdKH9NLSuMNtJdBcvNk6K084hgGj0fG-FDjuOv90/export?format=csv&gid=848770587",
+  // Hoja "Combustible" del MISMO Sheet de los preoperacionales: cambia solo el gid.
+  // Para obtenerlo: abra la hoja Combustible y copie el numero que aparece
+  // despues de #gid= en la barra de direcciones. Reemplace PEGAR_GID_COMBUSTIBLE.
+  // Mientras no se reemplace, el bloque de combustible simplemente no aparece.
+  combustible: "https://docs.google.com/spreadsheets/d/e/2PACX-1vT7jlTWFp85CfMimM71gXUysc5zVcMU9PW-5RLtikP3aBDKXAFF4lgg5olu3_F0kARUxiEdDz0TDD5c/pub?gid=PEGAR_GID_COMBUSTIBLE&single=true&output=csv"
 };
 const AUTO_REFRESH_MS = 5 * 60 * 1000; // Refresco automático cada 5 minutos
 let currentFilter = 'hoy'; // Filtro de periodo activo ('hoy','semana','mes','total','custom')
@@ -2929,6 +2934,7 @@ let currentFilter = 'hoy'; // Filtro de periodo activo ('hoy','semana','mes','to
   - Ejemplo: dataIngreso[0]['PLACA'] → valor de la columna PLACA de la fila 1
 */
 let dataIngreso = [], dataSolicitudes = [], dataHE = [], dataPreopVol = [], dataPreopCar = [], dataViajes = [], dataProduccionHumus = [], dataCoaching = [];
+let dataCombustible = [];   // hoja "Combustible": tanqueos por placa
 
 /*
   UTILIDADES DE DATOS
@@ -3667,6 +3673,15 @@ async function loadAllData() {
     renderPreopUnificado(dataCargador, dataTractor, currentFilter);
     ok++;
   } catch(e) { errors.push('Preop Cargador/Tractor'); console.error('PreopCar:', e); }
+
+  // Combustible. No suma a 'errors' ni corta la carga: es un modulo opcional y
+  // mientras el gid no este configurado la URL responde con error.
+  try {
+    if (SHEETS.combustible.indexOf('PEGAR_GID') === -1) {
+      dataCombustible = await fetchCSV(SHEETS.combustible);
+      try { if (typeof renderVehiculos === 'function' && _vehiculosCargados) renderVehiculos(); } catch(eV) {}
+    }
+  } catch(e) { console.error('Combustible (no bloqueante):', e); }
 
   try {
     await cargarAccesos();
@@ -5702,6 +5717,7 @@ function renderVehiculos() {
             ${_cajaDocVeh('Tecnomecánica', v.tecno)}
           </div>
           ${bloqueProgramacionVehiculo(v.placa)}
+          ${bloqueCombustibleVehiculo(v.placa)}
           ${bloquePreopVehiculo(v.placa)}
           <div style="background:var(--s2);border-radius:4px;padding:8px 12px;margin-bottom:10px">
             <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">Último mantenimiento</div>
@@ -6264,6 +6280,302 @@ async function eliminarDocumentoVeh(id, placa) {
   if (!d || !d.success) { alert('No se pudo quitar el documento.'); return; }
   await cargarVehiculos(true);
   verDocumentosVehiculo(placa);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   COMBUSTIBLE · TRAZABILIDAD DE TANQUEOS POR VEHICULO
+   ───────────────────────────────────────────────────────────────────────
+   Fuente: hoja "Combustible" del mismo Sheet de los preoperacionales.
+   Columnas: Timestamp | Fecha | Origen | Placa / Equipo | Encargado |
+             Kilometraje | Valor tanqueado | Foto tablero | Foto recibo | Ubicación
+
+   Se une a cada vehiculo por PLACA, igual que el preoperacional: no hay
+   ninguna lista fija, si aparece una placa nueva en la hoja se une sola.
+
+   En la tarjeta se muestra SOLO el ultimo tanqueo. El historico completo
+   vive en un modal con filtro por intervalo de fechas y descarga a Excel.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+// Convierte "$ 1.234.567" o "12.345" a numero. Devuelve 0 si no se puede.
+// El CSV publicado entrega los valores YA formateados por el Sheet, por eso
+// hay que limpiar simbolos y separadores de miles antes de convertir.
+function _numComb(v) {
+  var s = (v == null ? '' : v).toString().trim();
+  if (!s) return 0;
+  s = s.replace(/[^\d,.-]/g, '');              // fuera $, espacios, letras
+  if (/,\d{1,2}$/.test(s)) {                   // coma decimal al final
+    s = s.replace(/\./g, '').replace(',', '.');
+  } else {
+    s = s.replace(/[.,]/g, '');                // puntos y comas = miles
+  }
+  var n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+
+// Fecha del tanqueo en yyyy-mm-dd. Prioriza la columna Fecha; si viene vacia
+// usa el Timestamp, que lo pone el Apps Script y siempre existe.
+function _fechaComb(r) {
+  var f = (r['Fecha'] || '').toString().trim();
+  var t = (r['Timestamp'] || '').toString().trim();
+  var d = parseDateTime(f) || parseDateTime(t);
+  if (!d) return '';
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+// Hora legible, para distinguir dos tanqueos del mismo dia
+function _horaComb(r) {
+  var t = (r['Timestamp'] || '').toString().trim();
+  var m = t.match(/(\d{1,2}):(\d{2})/);
+  return m ? (m[1].padStart(2,'0') + ':' + m[2]) : '';
+}
+
+/* Tanqueos de una placa, del mas reciente al mas antiguo.
+   A cada uno se le calcula 'kmRecorridos': la diferencia de kilometraje
+   contra el tanqueo ANTERIOR de esa misma placa. El primero no tiene con
+   que compararse, asi que queda en null (se muestra como guion, no como 0,
+   para no confundir "sin dato" con "no se movio"). */
+function combDeVehiculo(placa) {
+  var objetivo = _placaNorm(placa);
+  if (!objetivo) return [];
+  var lista = (typeof dataCombustible !== 'undefined' ? dataCombustible : [])
+    .filter(function (r) { return _placaNorm(r['Placa / Equipo'] || r['Placa'] || '') === objetivo; })
+    .map(function (r) {
+      return {
+        fecha: _fechaComb(r),
+        hora: _horaComb(r),
+        origen: (r['Origen'] || '').toString().trim(),
+        placa: (r['Placa / Equipo'] || r['Placa'] || '').toString().trim(),
+        encargado: (r['Encargado'] || '').toString().trim(),
+        km: _numComb(r['Kilometraje']),
+        valor: _numComb(r['Valor tanqueado']),
+        fotoTablero: (r['Foto tablero'] || '').toString().trim(),
+        fotoRecibo: (r['Foto recibo'] || '').toString().trim(),
+        ubicacion: (r['Ubicación'] || r['Ubicacion'] || '').toString().trim()
+      };
+    })
+    .filter(function (x) { return x.fecha; });
+
+  // Orden cronologico ascendente para poder restar kilometrajes consecutivos
+  lista.sort(function (a, b) {
+    return (a.fecha + ' ' + a.hora).localeCompare(b.fecha + ' ' + b.hora);
+  });
+  for (var i = 0; i < lista.length; i++) {
+    if (i === 0 || !lista[i].km || !lista[i-1].km) { lista[i].kmRecorridos = null; continue; }
+    var d = lista[i].km - lista[i-1].km;
+    // Un kilometraje que baja es un error de digitacion: no se inventa un
+    // recorrido negativo, se marca como sin dato.
+    lista[i].kmRecorridos = d > 0 ? d : null;
+  }
+  return lista.reverse();   // el mas reciente primero
+}
+
+function _diasDesde(fechaISO) {
+  var d = parseDateTime(fechaISO);
+  if (!d) return null;
+  var hoy = new Date();
+  return Math.floor((new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+}
+
+function _fmtPesos(n) {
+  return '$' + Math.round(n || 0).toLocaleString('es-CO');
+}
+
+// Miniatura de foto. El Apps Script guarda enlaces de Drive; si la celda trae
+// una formula HYPERLINK, el CSV entrega el texto visible ("Ver tablero") en vez
+// de la URL, y ahi no hay foto que mostrar: se avisa en lugar de fallar mudo.
+function _fotoComb(url, titulo) {
+  var u = (url || '').toString().trim();
+  if (!u) return '<span style="font-size:11px;color:var(--ink-l)">—</span>';
+  if (!/^https?:\/\//i.test(u)) {
+    return '<span title="La hoja guardo la foto como formula HYPERLINK, por eso el CSV no entrega el enlace" style="font-size:11px;color:var(--gold);cursor:help">' + _escVeh(u) + ' ⚠</span>';
+  }
+  return '<img src="' + urlFotoDrive(u) + '" data-alt="' + urlFotoDriveAlt(u) + '" loading="lazy"' +
+    ' onclick="abrirFotoBaucher(\'' + _escAttrVeh(u) + '\',\'' + _escAttrVeh(titulo) + '\')"' +
+    ' onerror="if(!this.dataset.f2){this.dataset.f2=\'1\';this.src=this.dataset.alt;}else{this.outerHTML=\'<a href=&quot;' + u + '&quot; target=_blank rel=noopener style=&quot;font-size:11px;color:var(--navy)&quot;>Ver</a>\';}"' +
+    ' style="width:38px;height:38px;object-fit:cover;border-radius:4px;border:1px solid var(--rule);cursor:zoom-in">';
+}
+
+/* ── BLOQUE EN LA TARJETA DEL VEHICULO: SOLO EL ULTIMO TANQUEO ── */
+function bloqueCombustibleVehiculo(placa) {
+  var lista = combDeVehiculo(placa);
+
+  if (!lista.length) {
+    return '<div style="background:var(--s2);border-radius:4px;padding:8px 12px;margin-bottom:10px">' +
+      '<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">Combustible</div>' +
+      '<div style="font-size:12px;color:var(--ink-l);font-style:italic">Sin tanqueos registrados para esta placa</div></div>';
+  }
+
+  var u = lista[0];
+  var dias = _diasDesde(u.fecha);
+  // Mas de 30 dias sin tanquear suele significar que dejaron de reportar,
+  // no que el equipo no consumio. Por eso se resalta.
+  var colorDias = dias === null ? 'var(--ink-l)' : (dias > 30 ? 'var(--red)' : dias > 15 ? 'var(--gold)' : 'var(--green)');
+  var txtDias = dias === null ? '' : (dias === 0 ? 'hoy' : dias === 1 ? 'hace 1 día' : 'hace ' + dias + ' días');
+
+  return '<div style="background:var(--s2);border-radius:4px;padding:10px 12px;margin-bottom:10px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:7px">' +
+      '<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">Combustible · último tanqueo</div>' +
+      '<button onclick="verHistorialCombustible(\'' + _escAttrVeh(placa) + '\')" style="background:none;border:none;color:var(--navy);font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;cursor:pointer;padding:0">Historial (' + lista.length + ')</button>' +
+    '</div>' +
+    '<div style="background:var(--white);border:1px solid var(--rule);border-left:4px solid ' + colorDias + ';border-radius:5px;padding:10px 12px">' +
+      '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">' +
+        '<div style="display:flex;gap:6px;flex-shrink:0">' +
+          _fotoComb(u.fotoTablero, placa + ' · tablero') +
+          _fotoComb(u.fotoRecibo,  placa + ' · recibo') +
+        '</div>' +
+        '<div style="flex:1;min-width:180px">' +
+          '<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">' +
+            '<span style="font-family:\'Libre Baskerville\',serif;font-size:19px;font-weight:800;color:var(--navy)">' + _fmtPesos(u.valor) + '</span>' +
+            '<span style="font-size:12px;font-weight:700;color:' + colorDias + '">' + _fmtFechaVeh(u.fecha) + (txtDias ? ' · ' + txtDias : '') + '</span>' +
+          '</div>' +
+          '<div style="font-size:12px;color:var(--ink-m);margin-top:3px">' +
+            fmt(Math.round(u.km)) + ' km' +
+            (u.kmRecorridos ? ' <span style="color:var(--green);font-weight:700">· +' + fmt(u.kmRecorridos) + ' km desde el anterior</span>' : '') +
+          '</div>' +
+          (u.encargado ? '<div style="font-size:12px;color:var(--ink-l);margin-top:2px">' + _escVeh(u.encargado) + '</div>' : '') +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+/* ── MODAL: HISTORICO CON INTERVALO Y DESCARGA ── */
+var _combPlacaModal = '';
+
+function verHistorialCombustible(placa) {
+  _combPlacaModal = placa;
+  var lista = combDeVehiculo(placa);
+  // Por defecto se abre con todo el historico: el usuario acota si quiere
+  var desde = lista.length ? lista[lista.length - 1].fecha : '';
+  var hasta = lista.length ? lista[0].fecha : '';
+
+  _modalVeh(
+    '<div style="font-family:\'Playfair Display\',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">Combustible · ' + _escVeh(placa) + '</div>' +
+    '<div style="font-size:12px;color:var(--ink-l);margin-bottom:14px">' + lista.length + ' tanqueo' + (lista.length !== 1 ? 's' : '') + ' registrado' + (lista.length !== 1 ? 's' : '') + '. Acote el intervalo si necesita un corte puntual.</div>' +
+    '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">' +
+      '<div><label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Desde</label>' +
+      '<input id="cmb-desde" type="date" value="' + desde + '" onchange="renderHistorialCombustible()" style="padding:8px 10px;font-size:13px;border:1px solid var(--rule);border-radius:4px"></div>' +
+      '<div><label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Hasta</label>' +
+      '<input id="cmb-hasta" type="date" value="' + hasta + '" onchange="renderHistorialCombustible()" style="padding:8px 10px;font-size:13px;border:1px solid var(--rule);border-radius:4px"></div>' +
+      '<button onclick="limpiarIntervaloCombustible()" style="padding:8px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--bg);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:\'Source Sans 3\',sans-serif">Todo</button>' +
+      '<button onclick="exportarCombustibleExcel()" style="padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:#1a5c35;color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:\'Source Sans 3\',sans-serif;margin-left:auto">Descargar Excel</button>' +
+    '</div>' +
+    '<div id="cmb-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:4px;overflow:hidden;margin-bottom:14px"></div>' +
+    '<div id="cmb-tabla" style="overflow-x:auto"></div>' +
+    '<div style="display:flex;justify-content:flex-end;margin-top:16px">' +
+      '<button onclick="_cerrarModalVeh()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:\'Source Sans 3\',sans-serif">Cerrar</button>' +
+    '</div>'
+  );
+  renderHistorialCombustible();
+}
+
+function limpiarIntervaloCombustible() {
+  var d = document.getElementById('cmb-desde'); if (d) d.value = '';
+  var h = document.getElementById('cmb-hasta'); if (h) h.value = '';
+  renderHistorialCombustible();
+}
+
+// Tanqueos de la placa del modal, ya recortados al intervalo elegido.
+// El calculo de km recorridos se hace ANTES de filtrar, para que el primer
+// tanqueo del intervalo conserve su diferencia contra el anterior real.
+function _combFiltrado() {
+  var lista = combDeVehiculo(_combPlacaModal);
+  var d = (document.getElementById('cmb-desde') || {}).value || '';
+  var h = (document.getElementById('cmb-hasta') || {}).value || '';
+  return lista.filter(function (x) {
+    if (d && x.fecha < d) return false;
+    if (h && x.fecha > h) return false;
+    return true;
+  });
+}
+
+function renderHistorialCombustible() {
+  var filas = _combFiltrado();
+  var kpis = document.getElementById('cmb-kpis');
+  var tabla = document.getElementById('cmb-tabla');
+
+  var gasto = filas.reduce(function (s, x) { return s + x.valor; }, 0);
+  var kmTot = filas.reduce(function (s, x) { return s + (x.kmRecorridos || 0); }, 0);
+  var conKm = filas.filter(function (x) { return x.kmRecorridos; }).length;
+
+  if (kpis) {
+    kpis.innerHTML =
+      '<div style="background:var(--white);padding:12px 14px">' +
+        '<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">Gasto acumulado</div>' +
+        '<div style="font-family:\'Libre Baskerville\',serif;font-size:22px;font-weight:700;color:var(--navy);line-height:1">' + _fmtPesos(gasto) + '</div>' +
+        '<div style="font-size:10px;color:var(--ink-l);margin-top:3px">' + filas.length + ' tanqueo' + (filas.length !== 1 ? 's' : '') + '</div>' +
+      '</div>' +
+      '<div style="background:var(--white);padding:12px 14px">' +
+        '<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">Km recorridos</div>' +
+        '<div style="font-family:\'Libre Baskerville\',serif;font-size:22px;font-weight:700;color:var(--ink);line-height:1">' + fmt(Math.round(kmTot)) + '</div>' +
+        '<div style="font-size:10px;color:var(--ink-l);margin-top:3px">sobre ' + conKm + ' tramo' + (conKm !== 1 ? 's' : '') + ' medible' + (conKm !== 1 ? 's' : '') + '</div>' +
+      '</div>';
+  }
+
+  if (tabla) {
+    tabla.innerHTML = filas.length
+      ? '<table class="tbl"><thead><tr>' +
+          '<th>Fecha</th><th>Encargado</th><th style="text-align:right">Kilometraje</th>' +
+          '<th style="text-align:right">Km recorridos</th><th style="text-align:right">Valor</th>' +
+          '<th style="text-align:center">Tablero</th><th style="text-align:center">Recibo</th></tr></thead><tbody>' +
+        filas.map(function (x) {
+          return '<tr>' +
+            '<td style="white-space:nowrap">' + _fmtFechaVeh(x.fecha) + (x.hora ? ' <span style="color:var(--ink-l);font-size:11px">' + x.hora + '</span>' : '') + '</td>' +
+            '<td>' + (_escVeh(x.encargado) || '—') + '</td>' +
+            '<td style="text-align:right">' + fmt(Math.round(x.km)) + '</td>' +
+            '<td style="text-align:right;font-weight:700;color:' + (x.kmRecorridos ? 'var(--green)' : 'var(--ink-l)') + '">' + (x.kmRecorridos ? fmt(x.kmRecorridos) : '—') + '</td>' +
+            '<td style="text-align:right;font-weight:700;color:var(--navy)">' + _fmtPesos(x.valor) + '</td>' +
+            '<td style="text-align:center">' + _fotoComb(x.fotoTablero, x.placa + ' · tablero') + '</td>' +
+            '<td style="text-align:center">' + _fotoComb(x.fotoRecibo, x.placa + ' · recibo') + '</td>' +
+          '</tr>';
+        }).join('') +
+        '</tbody></table>'
+      : '<div class="empty" style="padding:24px">Sin tanqueos en el intervalo seleccionado.</div>';
+  }
+}
+
+/* Descarga el intervalo visible a .xlsx. Se usa la misma libreria (SheetJS)
+   que ya carga el dashboard para los cortes. Los enlaces de las fotos van
+   como texto para poder abrirlos desde Excel. */
+function exportarCombustibleExcel() {
+  var filas = _combFiltrado();
+  if (!filas.length) { alert('No hay tanqueos en el intervalo seleccionado.'); return; }
+
+  var datos = filas.map(function (x) {
+    return {
+      'Fecha': x.fecha,
+      'Hora': x.hora,
+      'Placa / Equipo': x.placa,
+      'Origen': x.origen,
+      'Encargado': x.encargado,
+      'Kilometraje': Math.round(x.km),
+      'Km recorridos': x.kmRecorridos || '',
+      'Valor tanqueado': Math.round(x.valor),
+      'Foto tablero': x.fotoTablero,
+      'Foto recibo': x.fotoRecibo,
+      'Ubicación': x.ubicacion
+    };
+  });
+
+  // Fila de totales al final, para que el Excel se pueda leer sin recalcular
+  var gasto = filas.reduce(function (s, x) { return s + x.valor; }, 0);
+  var kmTot = filas.reduce(function (s, x) { return s + (x.kmRecorridos || 0); }, 0);
+  datos.push({});
+  datos.push({
+    'Fecha': 'TOTAL',
+    'Km recorridos': kmTot || '',
+    'Valor tanqueado': Math.round(gasto)
+  });
+
+  var ws = XLSX.utils.json_to_sheet(datos);
+  ws['!cols'] = [{wch:11},{wch:7},{wch:14},{wch:11},{wch:24},{wch:12},{wch:13},{wch:15},{wch:42},{wch:42},{wch:22}];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Combustible');
+
+  var d = (document.getElementById('cmb-desde') || {}).value || 'inicio';
+  var h = (document.getElementById('cmb-hasta') || {}).value || 'hoy';
+  XLSX.writeFile(wb, 'combustible_' + _placaNorm(_combPlacaModal) + '_' + d + '_a_' + h + '.xlsx');
 }
 
 
