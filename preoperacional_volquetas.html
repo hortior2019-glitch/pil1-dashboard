@@ -1057,26 +1057,101 @@ async function cargarPlacas() {
   }
 }
 
-// ── CONDUCTORES (edite aquí para agregar o quitar) ───────────
-const CONDUCTORES = [
+// ════════════════════════════════════════════════════════════
+//  CONDUCTORES — se cargan solos desde la columna C de la hoja
+//  de empleados (la misma de donde salen las contraseñas)
+// ════════════════════════════════════════════════════════════
+const CONDUCTORES_URL   = APPS_SCRIPT_URL + '?action=getConductores';  // script del preoperacional
+const NOMBRES_URL       = 'https://script.google.com/macros/s/AKfycbzDdC-fBDhB5GQPEk9FfnH1uWc5YgOuu8pKBEpi87mg55-YCox6v_JR6IkUkWIw_Hq3Eg/exec?action=getNombres'; // respaldo
+const CACHE_CONDUCTORES = 'conductores_cache_v1';
+
+// Respaldo: solo se usa si ningún servicio responde y no hay copia guardada
+const CONDUCTORES_RESPALDO = [
   'HERNANDO ALBERTO NIETO CASTILLO',
   'JUAN CARLOS PACHON MOLINA',
   'MIGUEL ANGEL BARRIOS MORA',
   'JESUS ENRIQUE HERRERA CAMPOS',
 ];
 
-function poblarLista(id, valores) {
-  const sel = document.getElementById(id);
-  if (!sel) return;
-  valores.forEach(function (v) {
-    const o = document.createElement('option');
-    o.value = v; o.textContent = v;
-    sel.appendChild(o);
+// Llamada JSONP (Apps Script bloquea CORS en algunos despliegues)
+function jsonp(url, ms) {
+  return new Promise(function (resolve, reject) {
+    const cb = 'cb_' + Math.random().toString(36).slice(2);
+    const s  = document.createElement('script');
+    const t  = setTimeout(function () { delete window[cb]; s.remove(); reject(new Error('timeout')); }, ms || 8000);
+    window[cb] = function (data) { clearTimeout(t); delete window[cb]; s.remove(); resolve(data); };
+    s.src = url + (url.indexOf('?') > -1 ? '&' : '?') + 'callback=' + cb;
+    s.onerror = function () { clearTimeout(t); delete window[cb]; s.remove(); reject(new Error('error')); };
+    document.head.appendChild(s);
   });
 }
+
+function normalizarNombres(json) {
+  const arr = (json && (json.conductores || json.nombres || json.datos || json.data)) || [];
+  const vistos = {}, out = [];
+  (Array.isArray(arr) ? arr : []).forEach(function (n) {
+    const txt = (typeof n === 'string' ? n
+              : (n && (n.nombre || n.NOMBRE || n.Nombre || n.name)) || '').toString().trim();
+    if (!txt || vistos[txt.toUpperCase()]) return;
+    vistos[txt.toUpperCase()] = true;
+    out.push(txt);
+  });
+  out.sort(function (a, b) { return a.localeCompare(b); });
+  return out;
+}
+
+function pintarConductores(lista) {
+  const sel = document.getElementById('conductor');
+  if (!sel) return;
+  const previo = sel.value;
+  sel.innerHTML = '<option value="">Seleccione el conductor…</option>';
+  lista.forEach(function (n) {
+    const o = document.createElement('option');
+    o.value = n; o.textContent = n;
+    sel.appendChild(o);
+  });
+  if (previo) sel.value = previo;
+}
+
+function estadoConductores(texto) {
+  const sel = document.getElementById('conductor');
+  if (sel && sel.options.length && !sel.value) sel.options[0].textContent = texto;
+}
+
+async function cargarConductores() {
+  // 1) Copia guardada: la app sirve aunque no haya señal
+  let hayCopia = false;
+  try {
+    const cache = JSON.parse(localStorage.getItem(CACHE_CONDUCTORES) || 'null');
+    if (cache && cache.length) { pintarConductores(cache); hayCopia = true; }
+  } catch (e) {}
+  if (!hayCopia) estadoConductores('Cargando conductores…');
+
+  let lista = [];
+
+  // 2) Script del preoperacional: columna C de los empleados con acceso al preoperacional
+  try { lista = normalizarNombres(await jsonp(CONDUCTORES_URL)); } catch (e) {}
+
+  // 3) Respaldo: getNombres del script de Control de Viajes
+  if (!lista.length) {
+    try {
+      const res = await fetch(NOMBRES_URL);
+      lista = normalizarNombres(await res.json());
+    } catch (e) {}
+  }
+
+  if (lista.length) {
+    pintarConductores(lista);
+    try { localStorage.setItem(CACHE_CONDUCTORES, JSON.stringify(lista)); } catch (e) {}
+  } else if (!hayCopia) {
+    pintarConductores(CONDUCTORES_RESPALDO);
+    estadoConductores('Seleccione el conductor… (lista sin actualizar)');
+  }
+}
+
 function poblarListas() {
-  poblarLista('conductor', CONDUCTORES);
-  cargarPlacas();               // placa y comb-placa desde la hoja "Tractores"
+  cargarPlacas();        // placa y comb-placa  → hoja "Tractores"
+  cargarConductores();   // conductor           → columna C de la hoja de empleados
 }
 
 // ── DATOS — key: nombre exacto de columna en Sheets | desc: texto visible ──
