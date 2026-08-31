@@ -6013,7 +6013,7 @@ function renderVehiculos() {
           ${bloqueMantenimientosVehiculo(v.placa)}
           <div class="veh-btns" style="display:flex;gap:8px;flex-wrap:wrap;padding-top:3px">
             <button onclick="verReporteVehiculo('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Ver reporte</button>
-            <button onclick="abrirFormProgramacion('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:#1a5c35;color:#fff;border:none;border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">+ Programar</button>
+            <button onclick="abrirCalendarioProgramacion('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:#1a5c35;color:#fff;border:none;border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">📅 Programar</button>
             <button onclick="verDocumentosVehiculo('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--white);color:var(--gold);border:1px solid var(--gold);border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Documentos (${_docsDeVehiculo(v.placa).length})</button>
             <button onclick="abrirFormKm('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--white);color:var(--navy);border:1px solid var(--navy);border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Actualizar km</button>
             <button onclick="abrirFormMantenimiento('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">+ Mantenimiento</button>
@@ -6136,8 +6136,9 @@ function bloqueProgramacionVehiculo(placa) {
   const pasadas = todas.length - futuras.length;
 
   if (!todas.length) {
-    return _vsecVacio('programacion', 'Programación', 'var(--navy)', 'var(--blue-l)',
-      'Sin operaciones programadas');
+    return _vsec('programacion', 'Programación', 'var(--navy)', 'var(--blue-l)',
+      `<button onclick="abrirCalendarioProgramacion('${_escAttrVeh(placa)}')" style="padding:5px 12px;font-size:9.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:#1a5c35;color:#fff;border:none;border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">📅 Abrir calendario</button>`,
+      '<div style="font-size:12px;color:var(--ink-l);font-style:italic">Sin operaciones programadas</div>');
   }
 
   const VISIBLES = 3;
@@ -6427,6 +6428,210 @@ async function guardarProgramacion(placa) {
   }
   _cerrarModalVeh();
   await cargarVehiculos(true);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CALENDARIO DE PROGRAMACION
+   ───────────────────────────────────────────────────────────────────────
+   Programar como quien raya un calendario: se elige una operación y un
+   conductor arriba (el "pincel") y se hace clic en los días. Cada clic
+   agrega esa asignación a ese día; un mismo día admite varias.
+   Lo que ya está guardado se ve en verde; lo pendiente, en dorado, y no
+   se manda al servidor hasta apretar Guardar.
+   ═══════════════════════════════════════════════════════════════════════ */
+let _pcalPlaca = '';
+let _pcalMes = null;          // primer día del mes que se está mostrando
+let _pcalPendientes = [];     // asignaciones "rayadas" todavía sin guardar
+/* El "pincel" (operación + conductor + observaciones) se guarda aparte:
+   cada clic repinta el calendario y eso recrea los selects, así que sin
+   esto habría que volver a elegir la operación para CADA día. */
+let _pcalPincel = { opId:'', cdId:'', obs:'' };
+
+const PCAL_DIAS = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+const PCAL_MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+
+function _pcalISO(d){
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+function abrirCalendarioProgramacion(placa){
+  _pcalPlaca = placa;
+  _pcalPendientes = [];
+  _pcalPincel = { opId:'', cdId:'', obs:'' };
+  const h = new Date();
+  _pcalMes = new Date(h.getFullYear(), h.getMonth(), 1);
+  _modalVeh('<div id="pcal-cont"></div>', 860);
+  _pcalRender();
+}
+
+function _pcalCambiarMes(delta){
+  _pcalMes = new Date(_pcalMes.getFullYear(), _pcalMes.getMonth() + delta, 1);
+  _pcalRender();
+}
+
+/* Agrega al día la operación y el conductor elegidos arriba */
+function _pcalPintar(iso){
+  _pcalLeerPincel();
+  const err  = document.getElementById('pcal-error');
+  const opId = _pcalPincel.opId;
+  if (!opId){
+    if (err){ err.textContent = 'Elegí primero la operación de arriba, después hacé clic en los días.'; err.style.display = 'block'; }
+    return;
+  }
+  if (err) err.style.display = 'none';
+  const op = _vehOperaciones.find(o => o.id === opId);
+  const cdId = _pcalPincel.cdId;
+  const cd = _vehConductores.find(c => c.id === cdId);
+  _pcalPendientes.push({
+    fecha: iso,
+    operacionId: opId, operacion: op ? op.nombre : '',
+    conductorId: cdId, conductor: cd ? cd.nombre : '',
+    observaciones: (_pcalPincel.obs || '').trim()
+  });
+  _pcalRender();
+}
+
+function _pcalQuitarPendiente(i, ev){
+  if (ev) ev.stopPropagation();
+  _pcalPendientes.splice(i, 1);
+  _pcalRender();
+}
+
+async function _pcalBorrarGuardada(id, ev){
+  if (ev) ev.stopPropagation();
+  await eliminarProgramacion(id);
+  _pcalRender();
+}
+
+// Toma lo que hay en los selects hacia el pincel (antes de repintar)
+function _pcalLeerPincel(){
+  const op = document.getElementById('pcal-op');
+  const cd = document.getElementById('pcal-cond');
+  const ob = document.getElementById('pcal-obs');
+  if (op) _pcalPincel.opId = op.value;
+  if (cd) _pcalPincel.cdId = cd.value;
+  if (ob) _pcalPincel.obs  = ob.value;
+}
+
+function _pcalRender(){
+  const cont = document.getElementById('pcal-cont');
+  if (!cont) return;
+  _pcalLeerPincel();
+
+  const guardadas = _progDeVehiculo(_pcalPlaca);
+  const anio = _pcalMes.getFullYear(), mes = _pcalMes.getMonth();
+  const primero = new Date(anio, mes, 1);
+  const dow = primero.getDay();                       // 0 = domingo
+  const inicio = new Date(anio, mes, 1 - (dow === 0 ? 6 : dow - 1));   // lunes previo
+  const hoyISO = _hoyISOVeh();
+
+  let celdas = '';
+  for (let i = 0; i < 42; i++){
+    const d = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate() + i);
+    const iso = _pcalISO(d);
+    const otroMes = d.getMonth() !== mes;
+    const esHoy = iso === hoyISO;
+
+    const chipsG = guardadas.filter(p => p.fecha === iso).map(p => `
+      <div title="Guardada — clic en la × para quitarla"
+        style="display:flex;align-items:center;gap:3px;background:var(--green-l);border-left:3px solid var(--green);border-radius:0 3px 3px 0;padding:2px 4px;margin-bottom:2px;font-size:9.5px;line-height:1.25;text-align:left">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;color:var(--green);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_escVeh(p.operacion||'—')}</div>
+          ${p.conductor ? `<div style="color:var(--ink-m);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_escVeh(p.conductor)}</div>` : ''}
+        </div>
+        <button onclick="_pcalBorrarGuardada('${_escAttrVeh(p.id)}', event)" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:11px;line-height:1;padding:0 1px">×</button>
+      </div>`).join('');
+
+    const chipsP = _pcalPendientes.map((p, idx) => ({ p, idx }))
+      .filter(x => x.p.fecha === iso).map(x => `
+      <div title="Sin guardar — clic en la × para sacarla"
+        style="display:flex;align-items:center;gap:3px;background:var(--gold-l);border-left:3px solid var(--gold);border-radius:0 3px 3px 0;padding:2px 4px;margin-bottom:2px;font-size:9.5px;line-height:1.25;text-align:left">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_escVeh(x.p.operacion||'—')}</div>
+          ${x.p.conductor ? `<div style="color:var(--ink-m);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_escVeh(x.p.conductor)}</div>` : ''}
+        </div>
+        <button onclick="_pcalQuitarPendiente(${x.idx}, event)" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:11px;line-height:1;padding:0 1px">×</button>
+      </div>`).join('');
+
+    celdas += `<div onclick="_pcalPintar('${iso}')" title="Clic para programar acá"
+      style="min-height:86px;border:1px solid var(--rule-l);background:${otroMes ? 'var(--bg)' : 'var(--white)'};padding:4px;cursor:pointer;overflow:hidden;${esHoy ? 'box-shadow:inset 0 0 0 2px var(--navy)' : ''}">
+      <div style="font-size:10.5px;font-weight:700;color:${otroMes ? 'var(--ink-l)' : (esHoy ? 'var(--navy)' : 'var(--ink-m)')};margin-bottom:3px">${d.getDate()}</div>
+      ${chipsG}${chipsP}
+    </div>`;
+  }
+
+  const nPend = _pcalPendientes.length;
+  cont.innerHTML = `
+  <div style="background:var(--white);border-radius:6px;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+    <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">Programación · ${_escVeh(_pcalPlaca)}</div>
+    <div style="font-size:12px;color:var(--ink-l);margin-bottom:14px">Elegí la operación y el conductor, y hacé clic en los días. Podés poner varias operaciones el mismo día.</div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;background:var(--s2);border:1px solid var(--rule);border-radius:5px;padding:10px 12px;margin-bottom:14px">
+      <div style="flex:1;min-width:150px">
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:3px">Operación *</label>
+        <div style="display:flex;gap:5px">
+          <select id="pcal-op" style="flex:1;padding:7px 9px;font-size:13px;border:1px solid var(--rule);border-radius:4px;background:var(--white);font-family:'Source Sans 3',sans-serif">${_opcionesOperacion(_pcalPincel.opId)}</select>
+          <button onclick="abrirFormOperacionVeh()" title="Crear operación nueva" style="padding:7px 10px;font-size:14px;font-weight:700;background:var(--white);color:var(--navy);border:1px solid var(--navy);border-radius:4px;cursor:pointer;line-height:1">+</button>
+        </div>
+      </div>
+      <div style="flex:1;min-width:150px">
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:3px">Conductor</label>
+        <div style="display:flex;gap:5px">
+          <select id="pcal-cond" style="flex:1;padding:7px 9px;font-size:13px;border:1px solid var(--rule);border-radius:4px;background:var(--white);font-family:'Source Sans 3',sans-serif">${_opcionesConductor(_pcalPincel.cdId)}</select>
+          <button onclick="abrirFormConductor()" title="Crear conductor nuevo" style="padding:7px 10px;font-size:14px;font-weight:700;background:var(--white);color:var(--navy);border:1px solid var(--navy);border-radius:4px;cursor:pointer;line-height:1">+</button>
+        </div>
+      </div>
+      <div style="flex:1;min-width:150px">
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:3px">Observaciones</label>
+        <input id="pcal-obs" value="${_escVeh(_pcalPincel.obs)}" placeholder="Hora, punto de cargue..." style="width:100%;box-sizing:border-box;padding:7px 9px;font-size:13px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif">
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+      <button onclick="_pcalCambiarMes(-1)" style="padding:5px 11px;font-size:14px;background:var(--white);color:var(--navy);border:1px solid var(--rule);border-radius:4px;cursor:pointer;line-height:1">‹</button>
+      <div style="font-family:'Playfair Display',serif;font-size:17px;font-weight:700;color:var(--ink);text-transform:capitalize">${PCAL_MESES[mes]} ${anio}</div>
+      <button onclick="_pcalCambiarMes(1)" style="padding:5px 11px;font-size:14px;background:var(--white);color:var(--navy);border:1px solid var(--rule);border-radius:4px;cursor:pointer;line-height:1">›</button>
+      <div style="margin-left:auto;display:flex;gap:12px;font-size:10px;color:var(--ink-m)">
+        <span><span style="display:inline-block;width:9px;height:9px;background:var(--green);vertical-align:middle;margin-right:4px"></span>Guardada</span>
+        <span><span style="display:inline-block;width:9px;height:9px;background:var(--gold);vertical-align:middle;margin-right:4px"></span>Sin guardar</span>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:0;border:1px solid var(--rule)">
+      ${PCAL_DIAS.map(d => `<div style="background:var(--navy);color:#fff;font-size:9.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;text-align:center;padding:6px 0">${d}</div>`).join('')}
+      ${celdas}
+    </div>
+
+    <div id="pcal-error" style="display:none;font-size:12px;color:var(--red);font-weight:600;margin-top:10px"></div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end;align-items:center;margin-top:16px">
+      <div style="margin-right:auto;font-size:12px;color:${nPend ? 'var(--gold)' : 'var(--ink-l)'};font-weight:${nPend ? '700' : '400'}">
+        ${nPend ? nPend + (nPend === 1 ? ' asignación sin guardar' : ' asignaciones sin guardar') : 'Nada pendiente de guardar'}
+      </div>
+      <button onclick="_cerrarModalVeh()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Cerrar</button>
+      <button id="pcal-guardar" onclick="guardarCalendarioProgramacion()" ${nPend ? '' : 'disabled'} style="padding:9px 20px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:#1a5c35;color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif;${nPend ? '' : 'opacity:.45;cursor:default'}">Guardar</button>
+    </div>
+  </div>`;
+}
+
+async function guardarCalendarioProgramacion(){
+  if (!_pcalPendientes.length) return;
+  const err = document.getElementById('pcal-error');
+  const btn = document.getElementById('pcal-guardar');
+  if (btn){ btn.disabled = true; btn.textContent = 'Guardando ' + _pcalPendientes.length + '...'; }
+
+  const autor = (window._usuarioActual && _usuarioActual.nombre) || '';
+  const d = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({ accion:'guardarProgramacion', placa:_pcalPlaca, fecha:_pcalPendientes[0].fecha, items:_pcalPendientes, autor }) });
+
+  if (!d || !d.success){
+    if (err){ err.textContent = (d && d.error) ? d.error : 'No se pudo guardar. Intentá de nuevo.'; err.style.display = 'block'; }
+    if (btn){ btn.disabled = false; btn.textContent = 'Guardar'; }
+    return;
+  }
+  _pcalPendientes = [];
+  await cargarVehiculos(true);
+  _pcalRender();
 }
 
 async function eliminarProgramacion(id) {
@@ -6756,10 +6961,15 @@ function bloqueMantenimientosVehiculo(placa) {
    aceite. Muestra cuando fue, a que kilometraje, y cuanto se recorrio desde
    entonces (si se registro el km en ambos momentos). */
 function bloqueAceiteVehiculo(v) {
+  // Botón directo: abre el formulario ya marcado como cambio de aceite,
+  // sin tener que acordarse de tildar la casilla.
+  const btnRegistrar = `<button onclick="abrirFormMantenimiento('${_escAttrVeh(v.placa)}', true)"
+    style="padding:5px 12px;font-size:9.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--gold);color:#fff;border:none;border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">+ Registrar cambio</button>`;
+
   const a = _ultimoCambioAceite(v.placa);
   if (!a) {
-    return _vsecVacio('aceite', 'Último cambio de aceite', 'var(--gold)', 'var(--gold-l)',
-      'Sin cambios de aceite registrados. Marca la casilla "Es cambio de aceite" al cargar el mantenimiento.');
+    return _vsec('aceite', 'Último cambio de aceite', 'var(--gold)', 'var(--gold-l)', btnRegistrar,
+      '<div style="font-size:12px;color:var(--ink-l);font-style:italic">Sin cambios de aceite registrados. Usá el botón para cargar el primero.</div>');
   }
   const dias     = _diasDesdeVeh(a.fecha);
   const kmAceite = parseInt(a.km, 10) || 0;
@@ -6773,7 +6983,7 @@ function bloqueAceiteVehiculo(v) {
      </div>`;
 
   return _vsec('aceite', 'Último cambio de aceite', 'var(--gold)', 'var(--gold-l)',
-    dias !== null ? 'hace ' + dias + ' día' + (dias !== 1 ? 's' : '') : '',
+    (dias !== null ? '<span style="margin-right:10px">hace ' + dias + ' día' + (dias !== 1 ? 's' : '') + '</span>' : '') + btnRegistrar,
     `<div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px">${_escVeh(a.titulo || 'Cambio de aceite')}</div>
      <div style="display:flex;gap:14px;flex-wrap:wrap">
        ${dato('Fecha', _fmtFechaVeh(a.fecha))}
@@ -7643,14 +7853,17 @@ async function guardarKmVehiculo(placa, actual) {
    v3: antes era una sola imagen, ahora se admiten varias. */
 let _mantFotosTmp = [];
 
-function abrirFormMantenimiento(placa) {
+/* esAceite = true abre el formulario ya marcado como cambio de aceite,
+   con el título sugerido. Se usa desde el botón del bloque de aceite. */
+function abrirFormMantenimiento(placa, esAceite) {
   _mantFotosTmp = [];
   const hoy = new Date();
   const hoyStr = hoy.getFullYear()+'-'+String(hoy.getMonth()+1).padStart(2,'0')+'-'+String(hoy.getDate()).padStart(2,'0');
   const vehiculo = _vehiculos.find(v => _placaNorm(v.placa) === _placaNorm(placa));
   const kmActual = vehiculo ? (parseInt(vehiculo.km, 10) || 0) : 0;
+  const marcarAceite = esAceite === true;
   _modalVeh(`
-    <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">Nuevo mantenimiento · ${placa}</div>
+    <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">${marcarAceite ? 'Registrar cambio de aceite' : 'Nuevo mantenimiento'} · ${placa}</div>
     <div style="font-size:12px;color:var(--ink-l);margin-bottom:16px">Queda guardado en el historial del vehículo.</div>
     <div style="display:flex;flex-direction:column;gap:12px">
       <div>
@@ -7659,7 +7872,7 @@ function abrirFormMantenimiento(placa) {
       </div>
       <div>
         <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Título *</label>
-        <input id="vm-titulo" placeholder="Ej. Cambio de aceite y filtros" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif">
+        <input id="vm-titulo" value="${marcarAceite ? 'Cambio de aceite' : ''}" placeholder="Ej. Cambio de aceite y filtros" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif">
       </div>
       <div>
         <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Descripción</label>
@@ -7667,7 +7880,7 @@ function abrirFormMantenimiento(placa) {
       </div>
       <div style="background:var(--gold-l);border-left:3px solid var(--gold);padding:10px 12px;border-radius:0 4px 4px 0">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input id="vm-aceite" type="checkbox" onchange="_toggleKmAceite()" style="width:16px;height:16px;accent-color:var(--gold);cursor:pointer">
+          <input id="vm-aceite" type="checkbox" ${marcarAceite ? 'checked' : ''} onchange="_toggleKmAceite()" style="width:16px;height:16px;accent-color:var(--gold);cursor:pointer">
           <span style="font-size:12.5px;font-weight:700;color:var(--ink)">Es cambio de aceite</span>
         </label>
         <div style="font-size:10.5px;color:var(--ink-m);margin-top:4px;margin-left:24px">Marcarlo lo destaca en el bloque "Último cambio de aceite" de la tarjeta.</div>
@@ -7689,6 +7902,8 @@ function abrirFormMantenimiento(placa) {
       <button onclick="_cerrarModalVeh()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Cancelar</button>
       <button id="vm-guardar" onclick="guardarMantenimiento('${placa.replace(/'/g,'')}')" style="padding:9px 20px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Guardar</button>
     </div>`);
+  // Deja el campo de km resaltado si ya viene marcado como cambio de aceite
+  if (marcarAceite) _toggleKmAceite();
 }
 
 /* Acepta varias imágenes por vez y las va acumulando. El input se vacía
@@ -15149,28 +15364,52 @@ async function vozAsegurarDatos(claves){
   }
 }
 
-/* Aplica el rango de fechas usando los filtros nativos del dashboard */
-function vozAplicarRango(desde, hasta, etiqueta){
+/* Únicas pestañas que saben filtrar por un rango exacto (campos Desde/Hasta).
+   El resto solo obedece a los botones de periodo (Ayer/Hoy/Semana/Mes/Total):
+   si se les pide "junio" siguen mostrando el periodo del botón activo. */
+const VOZ_PANELES_CON_RANGO = ['clientes'];
+
+/* Lo que quedó realmente aplicado en pantalla. Se guarda para contárselo al
+   modelo: así nunca describe un periodo distinto del que se está viendo. */
+let _vozFiltroEnPantalla = '';
+
+/* Aplica el rango usando los filtros nativos del dashboard.
+   Devuelve el panel donde el filtro es válido (puede diferir del pedido). */
+function vozAplicarRango(desde, hasta, etiqueta, panelDestino){
   const nombrado = vozPeriodoNombrado(desde, hasta);
   const dEl = document.getElementById('cli-fecha-desde');
   const hEl = document.getElementById('cli-fecha-hasta');
   try {
     if (nombrado){
+      // Periodo con botón propio: vale para TODAS las pestañas
       if (dEl) dEl.value = '';
       if (hEl) hEl.value = '';
       const mapa = { ayer:0, hoy:1, semana:2, mes:3, total:4 };
-      const btns = document.querySelectorAll('.fbtn');
-      const btn = btns[mapa[nombrado]];
-      if (btn) { setFilter(nombrado, btn); }
+      const btn = document.querySelectorAll('.fbtn')[mapa[nombrado]];
+      if (btn) setFilter(nombrado, btn);
+      _vozFiltroEnPantalla = etiqueta;
       vozAccion('📅', 'Filtro aplicado: ' + etiqueta, true);
-    } else {
-      if (dEl && hEl){
-        dEl.value = desde; hEl.value = hasta;
-        renderClientesFiltro();
-        vozAccion('📅', 'Filtro de fechas aplicado: ' + desde + ' → ' + hasta, true);
-      }
+      return panelDestino;
     }
-  } catch(e){}
+
+    // Rango exacto: solo lo entiende "Ingreso por Cliente"
+    if (!dEl || !hEl) return panelDestino;
+    dEl.value = desde; hEl.value = hasta;
+    renderClientesFiltro();
+    _vozFiltroEnPantalla = (etiqueta && etiqueta.indexOf(desde) === -1)
+      ? etiqueta + ' (' + desde + ' a ' + hasta + ')'
+      : desde + ' a ' + hasta;
+
+    if (panelDestino && VOZ_PANELES_CON_RANGO.indexOf(panelDestino) === -1){
+      // La pestaña pedida no sabe mostrar ese rango: se usa la que sí puede,
+      // en vez de dejar la pantalla mostrando un periodo que no es el pedido.
+      vozAccion('📅', 'Rango ' + desde + ' → ' + hasta +
+        ': lo muestro en Ingreso por Cliente, que es la pestaña que filtra por fechas exactas', true);
+      return 'clientes';
+    }
+    vozAccion('📅', 'Filtro de fechas aplicado: ' + desde + ' → ' + hasta, true);
+    return panelDestino;
+  } catch(e){ return panelDestino; }
 }
 
 /* Navega visualmente a la pestaña de la respuesta */
@@ -15488,9 +15727,12 @@ async function vozEjecutarAcciones(acciones, plan){
         await vozEsperar(260);
 
       } else if (a.tipo === 'rango'){
-        vozAplicarRango(a.desde || plan.desde, a.hasta || plan.hasta,
-                        vozEtiquetaRango(a.desde || plan.desde, a.hasta || plan.hasta, a.etiqueta));
-        await vozEsperar(260);
+        const d = a.desde || plan.desde, h = a.hasta || plan.hasta;
+        const destino = vozAplicarRango(d, h, vozEtiquetaRango(d, h, a.etiqueta),
+                                        (document.querySelector('.panel.active')||{}).id?.replace('panel-',''));
+        // Si el rango exacto obliga a cambiar de pestaña, se navega
+        if (destino && !document.querySelector('#panel-' + destino + '.active')) vozNavegar(destino);
+        await vozEsperar(300);
 
       } else if (a.tipo === 'control'){
         const c = VOZ_CONTROLES[a.control];
@@ -15531,7 +15773,19 @@ function vozEtapasDelPlan(plan){
 }
 
 async function vozEjecutarEtapa(etapa, plan, idx, total){
-  const panel  = etapa.panel || plan.panel;
+  let panel = etapa.panel || plan.panel;
+
+  /* Si la etapa pide un rango exacto (ej. "junio") y esa pestaña no sabe
+     filtrar por fechas, se resuelve en "Ingreso por Cliente", que sí puede.
+     Antes la pantalla quedaba mostrando el periodo del botón activo mientras
+     la respuesta hablaba del rango pedido: dos cosas distintas a la vez. */
+  const pideRango = (Array.isArray(etapa.acciones) ? etapa.acciones : [])
+    .some(function(a){ return a && a.tipo === 'rango'; });
+  if (pideRango && VOZ_PANELES_CON_RANGO.indexOf(panel) === -1){
+    const d = (etapa.acciones.find(function(a){ return a.tipo === 'rango'; }) || {});
+    if (!vozPeriodoNombrado(d.desde || plan.desde, d.hasta || plan.hasta)) panel = 'clientes';
+  }
+
   const titulo = etapa.titulo || (VOZ_PANEL_FUENTE[panel] ? panel : 'Consulta');
 
   if (total > 1){
@@ -15574,7 +15828,15 @@ function vozLeerPanelActivo(){
   let out = '=== LO QUE SE VE AHORA EN PANTALLA (pestaña "' + nombre.trim() + '") ===\n';
 
   const per = p.querySelector('.sec-sub');
-  if (per) out += 'Periodo mostrado: ' + per.textContent.trim() + '\n';
+  if (per) out += 'Periodo mostrado en pantalla: ' + per.textContent.trim() + '\n';
+  if (_vozFiltroEnPantalla) out += 'Filtro que aplicó el asistente: ' + _vozFiltroEnPantalla + '\n';
+  // El botón de periodo solo manda cuando NO hay un rango exacto puesto:
+  // con fechas Desde/Hasta cargadas, el botón queda desactivado y nombrarlo
+  // solo confundiría sobre qué periodo se está viendo.
+  const rangoActivo = (document.getElementById('cli-fecha-desde')||{}).value ||
+                      (document.getElementById('cli-fecha-hasta')||{}).value;
+  const btnAct = document.querySelector('.fbtn.active');
+  if (!rangoActivo && btnAct) out += 'Botón de periodo activo: ' + btnAct.textContent.trim() + '\n';
 
   // Indicadores grandes
   const kpis = Array.from(p.querySelectorAll('.kpi')).slice(0, 14);
