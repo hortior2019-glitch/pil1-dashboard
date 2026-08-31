@@ -15104,21 +15104,40 @@ function vozAccion(icono, texto, ok){
 }
 function vozLimpiarAcciones(){ document.getElementById('voz-acciones').innerHTML = ''; }
 
+/* Fuentes que ya fallaron durante esta consulta: no se reintentan en cada
+   etapa, y se informa el problema en vez de darlo por bueno. */
+let _vozFuentesFallidas = {};
+
 /* Carga las fuentes que hagan falta, aunque nunca se haya abierto esa pestaña */
 async function vozAsegurarDatos(claves){
   for (let i=0;i<claves.length;i++){
-    const f = VOZ_FUENTES[claves[i]];
+    const clave = claves[i];
+    const f = VOZ_FUENTES[clave];
     if (!f || !f.cargar) continue;
     if (f.obtener().length) continue;
+    if (_vozFuentesFallidas[clave]) continue;   // ya se intentó y no vino nada
+
     const chip = vozAccion('⏳', 'Cargando ' + f.label + '…');
+    const fallo = function(msg){
+      _vozFuentesFallidas[clave] = true;
+      chip.className = 'voz-accion';
+      chip.innerHTML = '<span class="voz-ic">⚠</span><span></span>';
+      chip.lastChild.textContent = msg;
+    };
     try {
       await f.cargar();
-      chip.className = 'voz-accion voz-ok';
-      chip.innerHTML = '<span class="voz-ic">✓</span><span></span>';
-      chip.lastChild.textContent = f.label + ': ' + f.obtener().length + ' registros cargados';
+      const n = f.obtener().length;
+      if (!n){
+        // Llegó respuesta pero sin registros: casi siempre es el Apps Script
+        // de esa fuente que no está respondiendo lo que debería.
+        fallo(f.label + ': no devolvió datos. Revisá que su Apps Script esté publicado y correcto.');
+      } else {
+        chip.className = 'voz-accion voz-ok';
+        chip.innerHTML = '<span class="voz-ic">✓</span><span></span>';
+        chip.lastChild.textContent = f.label + ': ' + n + ' registros cargados';
+      }
     } catch(e){
-      chip.innerHTML = '<span class="voz-ic">⚠</span><span></span>';
-      chip.lastChild.textContent = 'No se pudo cargar ' + f.label;
+      fallo('No se pudo cargar ' + f.label);
     }
   }
 }
@@ -15386,6 +15405,23 @@ function vozPonerTag(el, texto){
   return tag;
 }
 
+/* Señala un dato concreto en la pestaña que está abierta: lo centra,
+   oscurece el resto y lo etiqueta. Devuelve false si no lo encuentra. */
+async function vozEnfocarUno(texto, buscar, tipo){
+  const el = vozBuscarEnPanel(buscar || texto);
+  if (!el) return false;
+  vozScrollA(el);
+  await vozEsperar(540);
+  vozAislar(el);
+  const tag = vozPonerTag(el, (tipo ? tipo + ' · ' : '') + texto);
+  vozAccion('🎯', 'Señalando: ' + texto, true);
+  await vozEsperar(2000);
+  vozQuitarFocos();
+  if (tag) tag.remove();
+  await vozEsperar(150);
+  return true;
+}
+
 /* Recorre lo que el plan pidió señalar y, además, lo que la respuesta
    terminó nombrando. Se evita repetir el mismo dato dos veces. */
 async function vozRecorrerFocos(respuesta, delPlan){
@@ -15461,6 +15497,61 @@ async function vozEjecutarAcciones(acciones, plan){
     } catch(e){ /* un paso que falle no corta el resto */ }
   }
   return resaltados;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   4d-bis. ETAPAS
+   Una pregunta puede necesitar mirar más de una pestaña. En vez de
+   saltar de una a otra, el asistente resuelve UNA COMPLETA —entra,
+   filtra, lee lo que quedó en pantalla y señala lo relevante— y recién
+   ahí pasa a la siguiente. Cada etapa aporta su propia lectura al
+   contexto, así la respuesta final cruza todo lo que recorrió.
+   ══════════════════════════════════════════════════════════════ */
+
+// Del plan salen las etapas. Se aceptan las tres formas (etapas, acciones
+// sueltas o plan simple) para que un proxy sin actualizar siga andando.
+function vozEtapasDelPlan(plan){
+  if (Array.isArray(plan.etapas) && plan.etapas.length){
+    return plan.etapas.slice(0, 4);
+  }
+  if (Array.isArray(plan.acciones) && plan.acciones.length){
+    return [{ panel: plan.panel, titulo: '', acciones: plan.acciones }];
+  }
+  return [{ panel: plan.panel, titulo: '', acciones: [
+    { tipo:'navegar', panel: plan.panel },
+    { tipo:'rango', desde: plan.desde, hasta: plan.hasta }
+  ] }];
+}
+
+async function vozEjecutarEtapa(etapa, plan, idx, total){
+  const panel  = etapa.panel || plan.panel;
+  const titulo = etapa.titulo || (VOZ_PANEL_FUENTE[panel] ? panel : 'Consulta');
+
+  if (total > 1){
+    vozAccion('▶', 'Paso ' + (idx + 1) + ' de ' + total + ': ' + titulo, true);
+  }
+
+  await vozAsegurarDatos(VOZ_PANEL_FUENTE[panel] || []);
+
+  const acciones = Array.isArray(etapa.acciones) ? etapa.acciones.slice() : [];
+  // Si la etapa no dice explícitamente que hay que entrar a la pestaña, se entra igual
+  if (panel && !acciones.some(function(a){ return a && a.tipo === 'navegar'; })){
+    acciones.unshift({ tipo:'navegar', panel: panel });
+  }
+  const deAcciones = await vozEjecutarAcciones(acciones, plan) || [];
+  await vozEsperar(280);
+
+  // Lo que quedó realmente en pantalla en esta etapa
+  const lectura = vozLeerPanelActivo();
+
+  // Se muestra lo que esta etapa vino a mostrar, antes de seguir
+  const senalar = (Array.isArray(etapa.resaltar) ? etapa.resaltar : [])
+    .concat(deAcciones.map(function(r){ return r.texto; }));
+  for (let i = 0; i < Math.min(senalar.length, 3); i++){
+    await vozEnfocarUno(senalar[i], senalar[i], 'dato');
+  }
+
+  return (total > 1 ? '--- ' + titulo + ' ---\n' : '') + lectura;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -15582,13 +15673,30 @@ async function vozPedirPlan(pregunta){
       plan.panel = VOZ_FUENTES[plan.fuentes[0]].panel;
     }
     // Solo se aceptan acciones conocidas: cualquier otra cosa se descarta
-    if (Array.isArray(plan.acciones)){
-      plan.acciones = plan.acciones.filter(function(a){
+    // antes de tocar el dashboard.
+    function limpiarAcciones(lista){
+      if (!Array.isArray(lista)) return [];
+      return lista.filter(function(a){
         if (!a || !a.tipo) return false;
         if (a.tipo === 'navegar')  return !!document.getElementById('panel-' + a.panel);
         if (a.tipo === 'control')  return !!VOZ_CONTROLES[a.control];
         return ['periodo','rango','resaltar'].indexOf(a.tipo) !== -1;
       }).slice(0, 8);
+    }
+
+    plan.acciones = limpiarAcciones(plan.acciones);
+
+    if (Array.isArray(plan.etapas)){
+      plan.etapas = plan.etapas
+        .filter(function(e){ return e && document.getElementById('panel-' + (e.panel || plan.panel)); })
+        .slice(0, 4)
+        .map(function(e){
+          e.acciones = limpiarAcciones(e.acciones);
+          if (!Array.isArray(e.resaltar)) e.resaltar = [];
+          e.resaltar = e.resaltar.filter(function(t){ return typeof t === 'string' && t.trim(); }).slice(0, 3);
+          return e;
+        });
+      if (!plan.etapas.length) delete plan.etapas;
     }
     return plan;
   } catch(e){
@@ -15672,6 +15780,7 @@ async function vozConsultar(pregunta){
   vozPanel.innerHTML = '';       // sin histórico: solo la consulta actual
   vozLimpiarAcciones();
   vozQuitarFocos();              // corta un recorrido anterior si seguía activo
+  _vozFuentesFallidas = {};      // cada consulta vuelve a intentar lo que falló
   vozBurbuja('user', pregunta);
   vozSetEstado('thinking','Entendiendo la consulta…');
   vozInput.disabled = true; vozSend.disabled = true; vozMicBtn.disabled = true;
@@ -15681,25 +15790,24 @@ async function vozConsultar(pregunta){
     const plan = await vozPedirPlan(pregunta);
     const etiqueta = vozEtiquetaRango(plan.desde, plan.hasta, plan.etiqueta);
 
-    // 2. El navegador ejecuta ese plan sobre el dashboard real
-    vozSetEstado('thinking','Consultando el sistema…');
+    // 2. El navegador recorre el dashboard real, una etapa por vez:
+    //    resuelve una pestaña completa y recién ahí pasa a la siguiente.
     await vozAsegurarDatos(plan.fuentes);
     vozOverlay.classList.add('voz-compacto');   // deja ver la pestaña detrás
 
-    let resaltadosDelPlan = [];
-    if (Array.isArray(plan.acciones) && plan.acciones.length){
-      // Plan con pasos: el asistente opera el dashboard (filtros, clics, pestañas)
-      resaltadosDelPlan = await vozEjecutarAcciones(plan.acciones, plan) || [];
-    } else {
-      // Plan simple (o proxy sin actualizar): comportamiento de siempre
-      vozAplicarRango(plan.desde, plan.hasta, etiqueta);
-      vozNavegar(plan.panel);
+    const etapas = vozEtapasDelPlan(plan);
+    let lecturas = '';
+    for (let i = 0; i < etapas.length; i++){
+      vozSetEstado('thinking', etapas.length > 1
+        ? ('Revisando ' + (i + 1) + ' de ' + etapas.length + '…')
+        : 'Consultando el sistema…');
+      lecturas += await vozEjecutarEtapa(etapas[i], plan, i, etapas.length);
     }
 
-    // 3. Se arma el contexto: los datos del periodo MAS lo que quedó en
-    //    pantalla después de operar, para que responda sobre lo que se ve.
+    // 3. Se arma el contexto: lo que quedó en pantalla en CADA etapa,
+    //    más los datos del periodo ya calculados.
     vozSetEstado('thinking','Analizando los datos…');
-    const contexto = vozLeerPanelActivo() +
+    const contexto = lecturas +
                      vozConstruirContexto(plan.fuentes, plan.desde, plan.hasta, etiqueta);
     const r = await vozProxy({ mode:'answer', question: pregunta, context: contexto });
 
@@ -15707,9 +15815,9 @@ async function vozConsultar(pregunta){
     vozSetEstado('','Preguntame por cualquier fecha o pestaña');
     vozHablar(r.answer);
 
-    // Mientras habla, recorre y resalta lo que el plan pidió señalar
-    // más lo que la respuesta terminó nombrando
-    vozRecorrerFocos(r.answer, resaltadosDelPlan);
+    // Si fue una sola etapa, se señala lo que la respuesta nombró.
+    // Con varias, cada etapa ya mostró lo suyo mientras la recorría.
+    if (etapas.length === 1) vozRecorrerFocos(r.answer, []);
   } catch(err){
     vozBurbuja('assistant', 'No pude completar la consulta: ' + err.message);
     vozSetEstado('','Preguntame por cualquier fecha o pestaña');
