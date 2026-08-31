@@ -5972,9 +5972,7 @@ function renderVehiculos() {
 
   cont.innerHTML = lista.map(v => {
     const alerta = _vehTieneAlerta(v);
-    const mantsV = _mantenimientos.filter(m => (m.placa||'').toUpperCase() === (v.placa||'').toUpperCase())
-      .sort((a,b) => (b.fecha||'').localeCompare(a.fecha||''));
-    const ultimo = mantsV[0];
+    const mantsV = _mantsDeVehiculo(v.placa);
     const fotoHtml = v.foto
       ? `<img src="${urlFotoDrive(v.foto)}" data-alt="${urlFotoDriveAlt(v.foto)}" alt="${v.placa}" onclick="abrirFotoBaucher('${(v.foto||'').replace(/'/g,'')}','${(v.placa||'').replace(/'/g,'')}')" onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src=this.dataset.alt;}else{this.style.display='none';}" style="width:130px;height:100px;object-fit:cover;border-radius:5px;border:1px solid var(--rule);cursor:zoom-in;flex-shrink:0">`
       : `<div style="width:130px;height:100px;border:1px dashed var(--rule);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--ink-l);flex-shrink:0;text-align:center">Sin foto</div>`;
@@ -5994,12 +5992,8 @@ function renderVehiculos() {
           ${bloqueProgramacionVehiculo(v.placa)}
           ${bloqueCombustibleVehiculo(v.placa)}
           ${bloquePreopVehiculo(v.placa)}
-          ${_vsec('mantenimiento', 'Último mantenimiento', 'var(--ink-m)', 'var(--s2)',
-              mantsV.length ? mantsV.length + ' registro' + (mantsV.length !== 1 ? 's' : '') : '',
-              ultimo
-                ? `<div style="font-size:14px;font-weight:700;color:var(--ink)">${(ultimo.titulo||'—')} <span style="font-size:11px;font-weight:400;color:var(--ink-l)">· ${_fmtFechaVeh(ultimo.fecha)}</span></div>
-                   <div style="font-size:12px;color:var(--ink-m);margin-top:3px;line-height:1.45">${(ultimo.descripcion||'').slice(0,160)}</div>`
-                : '<div style="font-size:12px;color:var(--ink-l);font-style:italic">Sin mantenimientos registrados</div>')}
+          ${bloqueAceiteVehiculo(v)}
+          ${bloqueMantenimientosVehiculo(v.placa)}
           <div class="veh-btns" style="display:flex;gap:8px;flex-wrap:wrap;padding-top:3px">
             <button onclick="verReporteVehiculo('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Ver reporte</button>
             <button onclick="abrirFormProgramacion('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:#1a5c35;color:#fff;border:none;border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">+ Programar</button>
@@ -6043,6 +6037,47 @@ function _progDeVehiculo(placa) {
     .filter(p => _placaNorm(p.placa) === obj)
     .sort((a,b) => (a.fecha||'').localeCompare(b.fecha||''));
 }
+/* ── MANTENIMIENTOS: helpers compartidos (backend v3) ──
+   El backend v3 devuelve 'fotos' (varias), 'esAceite' y 'km'. Los registros
+   viejos (v2) solo traen 'foto': estas funciones normalizan las dos formas,
+   así el dashboard funciona igual antes y después de actualizar el script. */
+
+// Todas las fotos de un mantenimiento, venga de v2 o de v3
+function _fotosDeMant(m) {
+  if (Array.isArray(m.fotos) && m.fotos.length) return m.fotos;
+  return (m.foto ? [m.foto] : []);
+}
+
+// ¿Fue un cambio de aceite? Si nadie marcó la casilla, se deduce del título,
+// para que los mantenimientos ya cargados también cuenten.
+function _esCambioAceite(m) {
+  if (m.esAceite === true)  return true;
+  if (m.esAceite === false) return false;
+  return (m.titulo || '').toLowerCase().indexOf('aceite') !== -1;
+}
+
+// Mantenimientos de un vehículo, del más reciente al más viejo
+function _mantsDeVehiculo(placa) {
+  const obj = _placaNorm(placa);
+  return _mantenimientos
+    .filter(m => _placaNorm(m.placa) === obj)
+    .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+}
+
+function _ultimoCambioAceite(placa) {
+  return _mantsDeVehiculo(placa).find(_esCambioAceite) || null;
+}
+
+// Días transcurridos desde una fecha 'yyyy-mm-dd' (null si no se puede leer)
+function _diasDesdeVeh(fechaStr) {
+  const m = (fechaStr || '').toString().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const d = new Date(+m[1], +m[2] - 1, +m[3]);
+  const hoy = new Date();
+  const h0 = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+  return Math.round((h0 - d) / 86400000);
+}
+
 function _docsDeVehiculo(placa) {
   const obj = _placaNorm(placa);
   return _vehDocumentos
@@ -6218,14 +6253,92 @@ function _lineaProgramacionHTML(n) {
   </div>`;
 }
 
+/* ── PROGRAMACION POR SEMANA ──
+   Lunes de la semana a la que pertenece una fecha 'yyyy-mm-dd'. */
+function _lunesDeVeh(iso) {
+  const m = (iso || '').toString().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const d = new Date(+m[1], +m[2] - 1, +m[3]);
+  const dow = d.getDay();                         // 0 = domingo
+  d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
+  return d;
+}
+function _isoMasDiasVeh(base, n) {
+  const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + n);
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+// Pinta los 7 días de la semana de la fecha de referencia. De lunes a viernes
+// vienen marcados; sábado y domingo quedan libres para marcarlos si hace falta.
+function _pintarDiasSemanaProg() {
+  const cont = document.getElementById('pg-dias');
+  const ref  = (document.getElementById('pg-semana-ref')||{}).value || _hoyISOVeh();
+  if (!cont) return;
+  const lunes = _lunesDeVeh(ref);
+  if (!lunes) { cont.innerHTML = ''; return; }
+  const NOM = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  const MES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  let html = '';
+  for (let i = 0; i < 7; i++) {
+    const iso = _isoMasDiasVeh(lunes, i);
+    const d = new Date(lunes.getFullYear(), lunes.getMonth(), lunes.getDate() + i);
+    const finde = i >= 5;
+    html += `<label style="display:flex;align-items:center;gap:7px;padding:7px 9px;border:1px solid var(--rule);border-radius:4px;background:${finde ? 'var(--bg)' : 'var(--white)'};cursor:pointer;flex:1;min-width:112px">
+      <input type="checkbox" class="pg-dia" value="${iso}" ${finde ? '' : 'checked'} style="width:15px;height:15px;accent-color:#1a5c35;cursor:pointer">
+      <span style="font-size:12px;font-weight:700;color:var(--ink)">${NOM[i]}</span>
+      <span style="font-size:11px;color:var(--ink-l)">${d.getDate()} ${MES[d.getMonth()]}</span>
+    </label>`;
+  }
+  cont.innerHTML = html;
+}
+
+function _cambiarModoProg() {
+  const semana = (document.querySelector('input[name="pg-modo"]:checked')||{}).value === 'semana';
+  const cajaDia = document.getElementById('pg-caja-dia');
+  const cajaSem = document.getElementById('pg-caja-semana');
+  if (cajaDia) cajaDia.style.display = semana ? 'none' : '';
+  if (cajaSem) cajaSem.style.display = semana ? '' : 'none';
+  if (semana) _pintarDiasSemanaProg();
+}
+
+// Fechas finalmente elegidas, segun el modo activo
+function _fechasProgSeleccionadas() {
+  const semana = (document.querySelector('input[name="pg-modo"]:checked')||{}).value === 'semana';
+  if (!semana) {
+    const f = (document.getElementById('pg-fecha')||{}).value || '';
+    return f ? [f] : [];
+  }
+  return Array.from(document.querySelectorAll('#pg-dias .pg-dia:checked')).map(c => c.value);
+}
+
 function abrirFormProgramacion(placa) {
   _progLineas = 1;
   _modalVeh(`
     <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">Programar · ${_escVeh(placa)}</div>
-    <div style="font-size:12px;color:var(--ink-l);margin-bottom:16px">Puedes agendar varias operaciones para la misma fecha. La hora y los puntos específicos van en observaciones.</div>
-    <div style="margin-bottom:14px">
+    <div style="font-size:12px;color:var(--ink-l);margin-bottom:14px">Puedes agendar varias operaciones, para un día suelto o para toda la semana de una vez. La hora y los puntos específicos van en observaciones.</div>
+
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <label style="flex:1;display:flex;align-items:center;gap:7px;padding:9px 11px;border:1px solid var(--rule);border-radius:4px;cursor:pointer;background:var(--white)">
+        <input type="radio" name="pg-modo" value="dia" checked onchange="_cambiarModoProg()" style="accent-color:#1a5c35;cursor:pointer">
+        <span style="font-size:12.5px;font-weight:700;color:var(--ink)">Un día</span>
+      </label>
+      <label style="flex:1;display:flex;align-items:center;gap:7px;padding:9px 11px;border:1px solid var(--rule);border-radius:4px;cursor:pointer;background:var(--white)">
+        <input type="radio" name="pg-modo" value="semana" onchange="_cambiarModoProg()" style="accent-color:#1a5c35;cursor:pointer">
+        <span style="font-size:12.5px;font-weight:700;color:var(--ink)">Semana completa</span>
+      </label>
+    </div>
+
+    <div id="pg-caja-dia" style="margin-bottom:14px">
       <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Fecha *</label>
       <input id="pg-fecha" type="date" value="${_hoyISOVeh()}" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px">
+    </div>
+
+    <div id="pg-caja-semana" style="display:none;margin-bottom:14px">
+      <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Semana de</label>
+      <input id="pg-semana-ref" type="date" value="${_hoyISOVeh()}" onchange="_pintarDiasSemanaProg()" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px;margin-bottom:8px">
+      <div style="font-size:10.5px;color:var(--ink-l);margin-bottom:7px">Elegí cualquier día y se arma su semana. Destildá los días que no correspondan.</div>
+      <div id="pg-dias" style="display:flex;gap:7px;flex-wrap:wrap"></div>
+      <div style="font-size:10.5px;color:var(--ink-m);margin-top:8px;background:var(--blue-l);padding:8px 10px;border-radius:4px">Las operaciones que cargues abajo se programan <strong>en cada día marcado</strong>.</div>
     </div>
     <div id="pg-lineas" style="display:flex;flex-direction:column;gap:12px">${_lineaProgramacionHTML(1)}</div>
     <button onclick="agregarLineaProgramacion()" style="margin-top:12px;width:100%;padding:9px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--white);color:var(--navy);border:1px dashed var(--navy);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">+ Agregar otra operación</button>
@@ -6244,14 +6357,16 @@ function agregarLineaProgramacion() {
 }
 
 async function guardarProgramacion(placa) {
-  const fecha = (document.getElementById('pg-fecha')||{}).value || '';
   const err = document.getElementById('pg-error');
   const btn = document.getElementById('pg-guardar');
   const mostrar = m => { if (err) { err.textContent = m; err.style.display = 'block'; } };
 
-  if (!fecha) { mostrar('La fecha es obligatoria.'); return; }
+  const fechas = _fechasProgSeleccionadas();
+  if (!fechas.length) { mostrar('Selecciona al menos un día.'); return; }
 
-  const items = [];
+  // Primero se leen las operaciones cargadas, y después se repiten en cada
+  // día elegido: una sola línea puede generar toda la semana.
+  const lineas = [];
   let faltaOp = false;
   document.querySelectorAll('#pg-lineas .prog-linea').forEach(div => {
     const selOp = div.querySelector('.pg-op');
@@ -6262,8 +6377,7 @@ async function guardarProgramacion(placa) {
     const op = _vehOperaciones.find(o => o.id === opId);
     const cdId = selCd ? selCd.value : '';
     const cd = _vehConductores.find(x => x.id === cdId);
-    items.push({
-      fecha,
+    lineas.push({
       operacionId: opId,
       operacion: op ? op.nombre : '',
       conductorId: cdId,
@@ -6273,9 +6387,18 @@ async function guardarProgramacion(placa) {
   });
 
   if (faltaOp) { mostrar('Selecciona la operación en todas las líneas (o quita las que sobren).'); return; }
-  if (!items.length) { mostrar('Agrega al menos una operación.'); return; }
+  if (!lineas.length) { mostrar('Agrega al menos una operación.'); return; }
 
-  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+  const items = [];
+  fechas.forEach(f => lineas.forEach(l => items.push(Object.assign({ fecha: f }, l))));
+  const fecha = fechas[0];   // el backend la usa como respaldo si faltara en alguna línea
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = fechas.length > 1
+      ? ('Guardando ' + items.length + ' programaciones...')
+      : 'Guardando...';
+  }
   const autor = (window._usuarioActual && _usuarioActual.nombre) || '';
   const d = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
     body: JSON.stringify({ accion:'guardarProgramacion', placa, fecha, items, autor }) });
@@ -6577,8 +6700,71 @@ const ICO_VEH = {
   programacion: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
   preop: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
   mantenimiento: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>',
-  documentos: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
+  documentos: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
+  aceite: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M12 2.7s5.5 5.9 5.5 9.8a5.5 5.5 0 0 1-11 0C6.5 8.6 12 2.7 12 2.7z"/></svg>'
 };
+
+/* ── BLOQUE: HISTORIAL DE MANTENIMIENTOS ──
+   Antes solo se veia el ultimo. Ahora se listan todos, del mas reciente al
+   mas viejo, en una lista con scroll propio para no estirar la tarjeta.
+   Cada linea abre el historial completo con las fotos. */
+function bloqueMantenimientosVehiculo(placa) {
+  const mants = _mantsDeVehiculo(placa);
+  if (!mants.length) {
+    return _vsecVacio('mantenimiento', 'Historial de mantenimientos', 'var(--ink-m)', 'var(--s2)',
+      'Sin mantenimientos registrados');
+  }
+  const filas = mants.map(m => {
+    const nFotos = _fotosDeMant(m).length;
+    const aceite = _esCambioAceite(m);
+    return `<div onclick="verHistorialVehiculo('${_escAttrVeh(placa)}')" title="Ver historial completo"
+      style="padding:7px 0;border-bottom:1px solid var(--rule-l);cursor:pointer">
+      <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
+        <span style="font-size:13px;font-weight:700;color:var(--ink)">${_escVeh(m.titulo || '—')}</span>
+        ${aceite ? '<span style="font-size:8.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--gold-l);color:var(--gold);padding:2px 7px;border-radius:10px">Aceite</span>' : ''}
+        ${nFotos ? `<span style="font-size:10px;color:var(--ink-l)">${nFotos} foto${nFotos !== 1 ? 's' : ''}</span>` : ''}
+        <span style="margin-left:auto;font-size:11px;color:var(--ink-l);white-space:nowrap">${_fmtFechaVeh(m.fecha)}</span>
+      </div>
+      ${m.descripcion ? `<div style="font-size:11.5px;color:var(--ink-m);margin-top:2px;line-height:1.4">${_escVeh(m.descripcion.slice(0, 110))}${m.descripcion.length > 110 ? '…' : ''}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  return _vsec('mantenimiento', 'Historial de mantenimientos', 'var(--ink-m)', 'var(--s2)',
+    mants.length + ' registro' + (mants.length !== 1 ? 's' : ''),
+    `<div style="max-height:186px;overflow-y:auto;padding-right:4px">${filas}</div>`);
+}
+
+/* ── BLOQUE: ULTIMO CAMBIO DE ACEITE ──
+   Sale del historial: el mantenimiento mas reciente marcado como cambio de
+   aceite. Muestra cuando fue, a que kilometraje, y cuanto se recorrio desde
+   entonces (si se registro el km en ambos momentos). */
+function bloqueAceiteVehiculo(v) {
+  const a = _ultimoCambioAceite(v.placa);
+  if (!a) {
+    return _vsecVacio('aceite', 'Último cambio de aceite', 'var(--gold)', 'var(--gold-l)',
+      'Sin cambios de aceite registrados. Marca la casilla "Es cambio de aceite" al cargar el mantenimiento.');
+  }
+  const dias     = _diasDesdeVeh(a.fecha);
+  const kmAceite = parseInt(a.km, 10) || 0;
+  const kmActual = parseInt(v.km, 10) || 0;
+  const recorrido = (kmAceite && kmActual > kmAceite) ? (kmActual - kmAceite) : null;
+
+  const dato = (etq, val) =>
+    `<div style="flex:1;min-width:96px">
+       <div style="font-size:8.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:2px">${etq}</div>
+       <div style="font-family:'Libre Baskerville',Georgia,serif;font-size:15px;font-weight:700;color:var(--ink)">${val}</div>
+     </div>`;
+
+  return _vsec('aceite', 'Último cambio de aceite', 'var(--gold)', 'var(--gold-l)',
+    dias !== null ? 'hace ' + dias + ' día' + (dias !== 1 ? 's' : '') : '',
+    `<div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px">${_escVeh(a.titulo || 'Cambio de aceite')}</div>
+     <div style="display:flex;gap:14px;flex-wrap:wrap">
+       ${dato('Fecha', _fmtFechaVeh(a.fecha))}
+       ${dato('Km al cambio', kmAceite ? fmt(kmAceite) : '—')}
+       ${dato('Km recorridos desde', recorrido !== null ? fmt(recorrido) : '—')}
+     </div>
+     ${a.descripcion ? `<div style="font-size:11.5px;color:var(--ink-m);margin-top:8px;line-height:1.45">${_escVeh(a.descripcion.slice(0, 160))}</div>` : ''}`);
+}
 
 /* Envoltorio comun de todos los bloques de la tarjeta.
    icono   : clave de ICO_VEH
@@ -7436,11 +7622,16 @@ async function guardarKmVehiculo(placa, actual) {
 }
 
 // ── MANTENIMIENTOS ──────────────────────────────────────────
-let _mantFotoTmp = '';
+/* Fotos elegidas para el mantenimiento que se está cargando.
+   v3: antes era una sola imagen, ahora se admiten varias. */
+let _mantFotosTmp = [];
+
 function abrirFormMantenimiento(placa) {
-  _mantFotoTmp = '';
+  _mantFotosTmp = [];
   const hoy = new Date();
   const hoyStr = hoy.getFullYear()+'-'+String(hoy.getMonth()+1).padStart(2,'0')+'-'+String(hoy.getDate()).padStart(2,'0');
+  const vehiculo = _vehiculos.find(v => _placaNorm(v.placa) === _placaNorm(placa));
+  const kmActual = vehiculo ? (parseInt(vehiculo.km, 10) || 0) : 0;
   _modalVeh(`
     <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">Nuevo mantenimiento · ${placa}</div>
     <div style="font-size:12px;color:var(--ink-l);margin-bottom:16px">Queda guardado en el historial del vehículo.</div>
@@ -7457,9 +7648,22 @@ function abrirFormMantenimiento(placa) {
         <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Descripción</label>
         <textarea id="vm-desc" rows="3" placeholder="Detalle del trabajo realizado, repuestos, taller..." style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif;resize:vertical"></textarea>
       </div>
+      <div style="background:var(--gold-l);border-left:3px solid var(--gold);padding:10px 12px;border-radius:0 4px 4px 0">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input id="vm-aceite" type="checkbox" onchange="_toggleKmAceite()" style="width:16px;height:16px;accent-color:var(--gold);cursor:pointer">
+          <span style="font-size:12.5px;font-weight:700;color:var(--ink)">Es cambio de aceite</span>
+        </label>
+        <div style="font-size:10.5px;color:var(--ink-m);margin-top:4px;margin-left:24px">Marcarlo lo destaca en el bloque "Último cambio de aceite" de la tarjeta.</div>
+      </div>
+      <div id="vm-km-caja">
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Kilometraje al momento del mantenimiento</label>
+        <input id="vm-km" type="number" min="0" step="1" value="${kmActual || ''}" placeholder="Ej. 128500" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif">
+        <div style="font-size:10.5px;color:var(--ink-l);margin-top:4px">Sirve para saber cuántos km lleva recorridos desde el último cambio. Km actual del vehículo: ${kmActual ? fmt(kmActual) : 'sin registrar'}.</div>
+      </div>
       <div>
         <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Evidencia fotográfica</label>
-        <input id="vm-foto" type="file" accept="image/*" onchange="_previewFotoMant(this)" style="font-size:12px">
+        <input id="vm-foto" type="file" accept="image/*" multiple onchange="_previewFotosMant(this)" style="font-size:12px">
+        <div style="font-size:10.5px;color:var(--ink-l);margin-top:4px">Podés elegir varias a la vez, o ir agregándolas de a una.</div>
         <div id="vm-foto-prev" style="margin-top:8px"></div>
       </div>
       <div id="vm-error" style="display:none;font-size:12px;color:var(--red);font-weight:600"></div>
@@ -7470,11 +7674,53 @@ function abrirFormMantenimiento(placa) {
     </div>`);
 }
 
-async function _previewFotoMant(input) {
-  const f = input.files && input.files[0];
-  _mantFotoTmp = await _comprimirImagenVeh(f);
+/* Acepta varias imágenes por vez y las va acumulando. El input se vacía
+   después de leerlas, para poder volver a elegir la misma foto si hiciera falta. */
+async function _previewFotosMant(input) {
+  const files = Array.from(input.files || []);
   const prev = document.getElementById('vm-foto-prev');
-  if (prev) prev.innerHTML = _mantFotoTmp ? `<img src="${_mantFotoTmp}" style="width:110px;height:80px;object-fit:cover;border-radius:4px;border:1px solid var(--rule)">` : '';
+  if (prev && files.length) prev.innerHTML = '<div style="font-size:11px;color:var(--ink-l)">Procesando imágenes…</div>';
+  for (const f of files) {
+    const b64 = await _comprimirImagenVeh(f);
+    if (b64) _mantFotosTmp.push(b64);
+  }
+  input.value = '';
+  _pintarFotosMant();
+}
+
+function _pintarFotosMant() {
+  const prev = document.getElementById('vm-foto-prev');
+  if (!prev) return;
+  if (!_mantFotosTmp.length) {
+    prev.innerHTML = '<div style="font-size:11px;color:var(--ink-l);font-style:italic">Sin fotos adjuntas todavía.</div>';
+    return;
+  }
+  prev.innerHTML =
+    '<div style="display:flex;flex-wrap:wrap;gap:8px">' +
+    _mantFotosTmp.map((src, i) => `
+      <div style="position:relative">
+        <img src="${src}" style="width:92px;height:70px;object-fit:cover;border-radius:4px;border:1px solid var(--rule);display:block">
+        <button onclick="_quitarFotoMant(${i})" title="Quitar esta foto"
+          style="position:absolute;top:-7px;right:-7px;width:21px;height:21px;border-radius:50%;background:var(--red);color:#fff;border:2px solid var(--white);cursor:pointer;font-size:12px;line-height:1;padding:0;font-weight:700">×</button>
+      </div>`).join('') +
+    '</div>' +
+    `<div style="font-size:11px;color:var(--ink-m);margin-top:6px;font-weight:600">${_mantFotosTmp.length} foto${_mantFotosTmp.length !== 1 ? 's' : ''} lista${_mantFotosTmp.length !== 1 ? 's' : ''} para subir</div>`;
+}
+
+function _quitarFotoMant(i) {
+  _mantFotosTmp.splice(i, 1);
+  _pintarFotosMant();
+}
+
+// El campo de kilometraje se resalta cuando se marca "es cambio de aceite",
+// porque ahi es donde de verdad importa registrarlo.
+function _toggleKmAceite() {
+  const chk = document.getElementById('vm-aceite');
+  const caja = document.getElementById('vm-km-caja');
+  if (!chk || !caja) return;
+  caja.style.background = chk.checked ? 'var(--gold-l)' : '';
+  caja.style.padding = chk.checked ? '10px 12px' : '';
+  caja.style.borderRadius = chk.checked ? '4px' : '';
 }
 
 async function guardarMantenimiento(placa) {
@@ -7484,34 +7730,66 @@ async function guardarMantenimiento(placa) {
   const err    = document.getElementById('vm-error');
   const btn    = document.getElementById('vm-guardar');
   if (!titulo) { if (err) { err.textContent = 'El título es obligatorio.'; err.style.display='block'; } return; }
-  if (btn) { btn.disabled = true; btn.textContent = _mantFotoTmp ? 'Subiendo foto...' : 'Guardando...'; }
+
+  const esAceite = !!(document.getElementById('vm-aceite')||{}).checked;
+  const kmTxt = ((document.getElementById('vm-km')||{}).value || '').trim();
+  const km = kmTxt === '' ? '' : (parseInt(kmTxt, 10) || 0);
+
+  const n = _mantFotosTmp.length;
+  if (btn) { btn.disabled = true; btn.textContent = n ? ('Subiendo ' + n + ' foto' + (n !== 1 ? 's' : '') + '...') : 'Guardando...'; }
   const autor = (window._usuarioActual && _usuarioActual.nombre) || '';
   const d = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body: JSON.stringify({ accion:'guardarMantenimiento', placa, fecha, titulo, descripcion: desc, foto: _mantFotoTmp || '', autor }) });
+    body: JSON.stringify({ accion:'guardarMantenimiento', placa, fecha, titulo, descripcion: desc,
+                           fotos: _mantFotosTmp, esAceite, km, autor }) });
   if (!d || !d.success) {
-    if (err) { err.textContent = 'No se pudo guardar. Intenta de nuevo.'; err.style.display='block'; }
+    if (err) {
+      err.textContent = (d && d.error) ? d.error
+        : 'No se pudo guardar. Si adjuntaste varias fotos, verifica que el Apps Script esté en la versión v3.';
+      err.style.display='block';
+    }
     if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
     return;
   }
+  _mantFotosTmp = [];
   _cerrarModalVeh();
   await cargarVehiculos(true);
 }
 
 function verHistorialVehiculo(placa) {
-  const mants = _mantenimientos.filter(m => (m.placa||'').toUpperCase() === placa.toUpperCase())
-    .sort((a,b) => (b.fecha||'').localeCompare(a.fecha||''));
-  const filas = mants.length ? mants.map(m => `
-    <div style="border-left:3px solid var(--navy);background:var(--s2);border-radius:0 4px 4px 0;padding:10px 14px;margin-bottom:10px">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
-        <div style="font-size:14px;font-weight:700;color:var(--ink)">${m.titulo||'—'}</div>
-        <div style="font-size:11px;color:var(--ink-l)">${_fmtFechaVeh(m.fecha)}${m.autor?' · '+m.autor:''}</div>
+  const mants = _mantsDeVehiculo(placa);
+  const nAceite = mants.filter(_esCambioAceite).length;
+
+  const filas = mants.length ? mants.map(m => {
+    const fotos = _fotosDeMant(m);
+    const aceite = _esCambioAceite(m);
+    // Todas las fotos del mantenimiento, en una tira; cada una se abre en grande
+    const galeria = fotos.length ? `
+      <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:9px">
+        ${fotos.map(f => `<img src="${urlFotoDrive(f)}" data-alt="${urlFotoDriveAlt(f)}"
+            onclick="abrirFotoBaucher('${_escAttrVeh(f)}','${_escAttrVeh(m.titulo||'')}')"
+            onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src=this.dataset.alt;}else{this.style.display='none';}"
+            style="width:104px;height:78px;object-fit:cover;border-radius:4px;border:1px solid var(--rule);cursor:zoom-in">`).join('')}
       </div>
-      ${m.descripcion?`<div style="font-size:12px;color:var(--ink-m);margin-top:5px;white-space:pre-wrap">${m.descripcion}</div>`:''}
-      ${m.foto?`<img src="${urlFotoDrive(m.foto)}" data-alt="${urlFotoDriveAlt(m.foto)}" onclick="abrirFotoBaucher('${(m.foto||'').replace(/'/g,'')}','${(m.titulo||'').replace(/'/g,'')}')" onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src=this.dataset.alt;}else{this.style.display='none';}" style="margin-top:8px;width:110px;height:80px;object-fit:cover;border-radius:4px;border:1px solid var(--rule);cursor:zoom-in">`:''}
-    </div>`).join('') : '<div style="font-size:13px;color:var(--ink-l);font-style:italic;padding:10px 0">Este vehículo no tiene mantenimientos registrados.</div>';
+      <div style="font-size:10.5px;color:var(--ink-l);margin-top:4px">${fotos.length} foto${fotos.length!==1?'s':''}</div>` : '';
+
+    return `
+    <div style="border-left:3px solid ${aceite ? 'var(--gold)' : 'var(--navy)'};background:${aceite ? 'var(--gold-l)' : 'var(--s2)'};border-radius:0 4px 4px 0;padding:10px 14px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+        <div style="font-size:14px;font-weight:700;color:var(--ink)">
+          ${_escVeh(m.titulo||'—')}
+          ${aceite ? '<span style="font-size:8.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--gold);color:#fff;padding:2px 7px;border-radius:10px;margin-left:6px;vertical-align:middle">Cambio de aceite</span>' : ''}
+        </div>
+        <div style="font-size:11px;color:var(--ink-l)">${_fmtFechaVeh(m.fecha)}${m.autor?' · '+_escVeh(m.autor):''}</div>
+      </div>
+      ${m.km ? `<div style="font-size:11.5px;color:var(--ink-m);margin-top:4px;font-weight:600">${fmt(parseInt(m.km,10)||0)} km</div>` : ''}
+      ${m.descripcion?`<div style="font-size:12px;color:var(--ink-m);margin-top:5px;white-space:pre-wrap">${_escVeh(m.descripcion)}</div>`:''}
+      ${galeria}
+    </div>`;
+  }).join('') : '<div style="font-size:13px;color:var(--ink-l);font-style:italic;padding:10px 0">Este vehículo no tiene mantenimientos registrados.</div>';
+
   _modalVeh(`
-    <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">Historial · ${placa}</div>
-    <div style="font-size:12px;color:var(--ink-l);margin-bottom:16px">${mants.length} mantenimiento${mants.length!==1?'s':''} registrado${mants.length!==1?'s':''}</div>
+    <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">Historial · ${_escVeh(placa)}</div>
+    <div style="font-size:12px;color:var(--ink-l);margin-bottom:16px">${mants.length} mantenimiento${mants.length!==1?'s':''} registrado${mants.length!==1?'s':''}${nAceite ? ' · ' + nAceite + ' cambio' + (nAceite!==1?'s':'') + ' de aceite' : ''}</div>
     ${filas}
     <div style="display:flex;justify-content:flex-end;margin-top:16px">
       <button onclick="_cerrarModalVeh()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Cerrar</button>
