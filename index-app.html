@@ -5749,6 +5749,7 @@ function renderVehiculos() {
                    <div style="font-size:12px;color:var(--ink-m);margin-top:3px;line-height:1.45">${(ultimo.descripcion||'').slice(0,160)}</div>`
                 : '<div style="font-size:12px;color:var(--ink-l);font-style:italic">Sin mantenimientos registrados</div>')}
           <div class="veh-btns" style="display:flex;gap:8px;flex-wrap:wrap;padding-top:3px">
+            <button onclick="verReporteVehiculo('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Ver reporte</button>
             <button onclick="abrirFormProgramacion('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:#1a5c35;color:#fff;border:none;border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">+ Programar</button>
             <button onclick="verDocumentosVehiculo('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--white);color:var(--gold);border:1px solid var(--gold);border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Documentos (${_docsDeVehiculo(v.placa).length})</button>
             <button onclick="abrirFormKm('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--white);color:var(--navy);border:1px solid var(--navy);border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Actualizar km</button>
@@ -6352,6 +6353,224 @@ function _vsecVacio(icono, titulo, color, fondo, mensaje) {
 
 
 /* ═══════════════════════════════════════════════════════════════════════
+   REPORTE DE ESTADO DE VEHICULO
+   ───────────────────────────────────────────────────────────────────────
+   Vista de pagina completa, al estilo del informe impreso de la empresa.
+   Se abre desde el boton "Ver reporte" de cada tarjeta.
+
+   REGLA DE FONDO: aqui NO se calcula nada nuevo. Todo sale de lo que ya
+   muestran los bloques de la tarjeta (documentos, preoperacional,
+   combustible, mantenimiento, programacion). Si un dato no existe, la
+   seccion lo dice; no se inventan campos vacios para llenar el diseño.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const VERDE_REPORTE = '#1a5c35';
+
+// Franja de titulo de seccion, como las del informe impreso
+function _rpBanda(titulo, ancho) {
+  return `<div style="background:${VERDE_REPORTE};color:#fff;padding:8px 16px;border-radius:6px;
+    font-size:12px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;text-align:center;
+    ${ancho ? 'width:' + ancho + ';' : ''}margin-bottom:10px">${titulo}</div>`;
+}
+
+// Fila de dato con icono, como la seccion "Informacion general"
+function _rpFila(icono, etiqueta, valor, colorValor) {
+  return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px dotted var(--rule)">
+    <span style="width:26px;height:26px;border-radius:5px;background:${VERDE_REPORTE};color:#fff;
+      display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${ICO_VEH[icono] || ''}</span>
+    <span style="font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-m);flex-shrink:0">${etiqueta}</span>
+    <span style="margin-left:auto;font-size:14px;font-weight:700;color:${colorValor || 'var(--ink)'};text-align:right">${valor}</span>
+  </div>`;
+}
+
+// Caja de documento (SOAT / tecnomecanica) con su vencimiento
+function _rpDoc(titulo, fechaStr) {
+  const d = _diasParaVencer(fechaStr);
+  let color = 'var(--ink)', nota = 'sin fecha', fondo = 'var(--white)', borde = 'var(--rule)';
+  if (d !== null) {
+    if (d < 0)                     { color = 'var(--red)'; fondo = 'var(--red-l)'; borde = 'var(--red)'; nota = 'VENCIDO hace ' + Math.abs(d) + ' día' + (Math.abs(d) !== 1 ? 's' : ''); }
+    else if (d <= VEH_DIAS_ALERTA) { color = 'var(--red)'; fondo = 'var(--red-l)'; borde = 'var(--red)'; nota = d === 0 ? 'VENCE HOY' : 'vence en ' + d + ' día' + (d !== 1 ? 's' : ''); }
+    else                           { color = VERDE_REPORTE; nota = 'vigente · ' + d + ' días'; }
+  } else { color = 'var(--ink-l)'; }
+  return `<div style="flex:1;min-width:180px;background:${fondo};border:1.5px solid ${borde};border-radius:10px;padding:12px 16px;text-align:center">
+    <div style="font-size:10px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-m);margin-bottom:6px">${titulo}</div>
+    <div style="font-family:'Libre Baskerville',serif;font-size:18px;font-weight:800;color:${color}">${_fmtFechaVeh(fechaStr)}</div>
+    <div style="font-size:11px;font-weight:700;color:${color};margin-top:3px">${nota}</div>
+  </div>`;
+}
+
+// Miniatura de evidencia con su rotulo
+function _rpFoto(url, rotulo) {
+  const u = (url || '').toString().trim();
+  const cuerpo = /^https?:\/\//i.test(u)
+    ? `<img src="${urlFotoDrive(u)}" data-alt="${urlFotoDriveAlt(u)}" loading="lazy"
+         onclick="abrirFotoBaucher('${_escAttrVeh(u)}','${_escAttrVeh(rotulo)}')"
+         onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src=this.dataset.alt;}else{this.style.opacity='.25';}"
+         style="width:100%;height:130px;object-fit:cover;display:block;cursor:zoom-in">`
+    : `<div style="width:100%;height:130px;display:flex;align-items:center;justify-content:center;background:var(--s2);color:var(--ink-l);font-size:11px">Sin imagen</div>`;
+  return `<div style="border:2px solid ${VERDE_REPORTE};border-radius:8px;overflow:hidden;background:var(--white)">
+    <div style="background:${VERDE_REPORTE};color:#fff;font-size:9px;font-weight:800;letter-spacing:.8px;
+      text-transform:uppercase;padding:5px 8px;text-align:center;line-height:1.3">${_escVeh(rotulo)}</div>
+    ${cuerpo}
+  </div>`;
+}
+
+/* Novedades: se arman con los hallazgos del ULTIMO preoperacional.
+   Los "malos" van primero porque son los que exigen accion inmediata; los
+   "regulares" despues, en ambar. Si no hay ninguno se dice explicitamente,
+   que es informacion tan util como la lista. */
+function _rpNovedades(placa) {
+  const insp = preopDeVehiculo(placa);
+  if (!insp.length) {
+    return '<div style="padding:16px;color:var(--ink-l);font-style:italic;font-size:13px">Sin inspecciones preoperacionales registradas para esta placa.</div>';
+  }
+  const u = insp[0];
+  const items = []
+    .concat((u.detMalos || []).map(t => ({ txt: t, grave: true })))
+    .concat((u.detReg   || []).map(t => ({ txt: t, grave: false })));
+
+  if (!items.length) {
+    return `<div style="display:flex;align-items:center;gap:12px;padding:16px;background:var(--green-l);border-radius:8px">
+      <span style="width:34px;height:34px;border-radius:50%;background:${VERDE_REPORTE};color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+      <div><div style="font-size:14px;font-weight:800;color:${VERDE_REPORTE}">Sin novedades</div>
+      <div style="font-size:12px;color:var(--ink-m)">Todos los ítems evaluados salieron en buen estado el ${_fmtFechaVeh(u.fecha)}.</div></div>
+    </div>`;
+  }
+
+  return items.map((it, i) => {
+    const col = it.grave ? 'var(--red)' : '#8b6914';
+    const fondo = it.grave ? 'var(--red-l)' : 'var(--gold-l)';
+    return `<div style="display:flex;align-items:center;gap:11px;padding:9px 4px;border-bottom:1px dotted var(--rule)">
+      <span style="width:26px;height:26px;border-radius:50%;background:${col};color:#fff;flex-shrink:0;
+        display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800">${i + 1}</span>
+      <span style="flex:1;font-size:13px;color:var(--ink);line-height:1.35">${_escVeh(it.txt)}</span>
+      <span style="background:${fondo};color:${col};font-size:9px;font-weight:800;letter-spacing:.5px;
+        text-transform:uppercase;padding:3px 9px;border-radius:10px;white-space:nowrap;flex-shrink:0">${it.grave ? 'Malo' : 'Regular'}</span>
+    </div>`;
+  }).join('');
+}
+
+function verReporteVehiculo(placa) {
+  const v = _vehiculos.find(x => (x.placa || '').toUpperCase() === (placa || '').toUpperCase());
+  if (!v) { alert('No se encontró el vehículo ' + placa); return; }
+
+  const insp = preopDeVehiculo(placa);
+  const u = insp[0] || null;
+  const mants = _mantenimientos.filter(m => (m.placa || '').toUpperCase() === (placa || '').toUpperCase())
+    .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+  const ultMant = mants[0] || null;
+  const comb = combDeVehiculo(placa);
+  const ultComb = comb[0] || null;
+
+  // Indice de estado: mismo calculo que el bloque de preoperacional de la
+  // tarjeta, para que las dos vistas nunca muestren cifras distintas.
+  let pct = null, colorPct = 'var(--ink-l)', etiquetaPct = 'Sin inspección';
+  if (u) {
+    const evaluados = u.buenos + u.regulares + u.malos;
+    const base = evaluados || 35;
+    pct = Math.round(((u.buenos + u.regulares * 0.5) / base) * 100);
+    colorPct = pct >= 90 ? VERDE_REPORTE : pct >= 70 ? '#8b6914' : 'var(--red)';
+    etiquetaPct = pct >= 90 ? 'Óptimo' : pct >= 70 ? 'Aceptable' : pct >= 50 ? 'Deficiente' : 'Crítico';
+  }
+
+  // Evidencias: se toma lo que exista, sin rellenar huecos
+  const fotos = [];
+  if (v.foto) fotos.push({ u: v.foto, r: 'Vista general' });
+  if (ultMant && ultMant.foto) fotos.push({ u: ultMant.foto, r: 'Mantenimiento · ' + (ultMant.titulo || '') });
+  if (ultComb) {
+    if (ultComb.fotoTablero) fotos.push({ u: ultComb.fotoTablero, r: 'Tablero · último tanqueo' });
+    if (ultComb.fotoRecibo)  fotos.push({ u: ultComb.fotoRecibo,  r: 'Recibo · último tanqueo' });
+  }
+
+  const html = `
+  <div style="background:#fff;border:3px solid ${VERDE_REPORTE};border-radius:12px;padding:20px">
+
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;
+      border-bottom:2px dotted var(--rule);padding-bottom:14px;margin-bottom:16px">
+      <div>
+        <div style="font-family:'Playfair Display',serif;font-size:13px;font-weight:700;color:var(--ink-m);letter-spacing:1px">REPORTE DE</div>
+        <div style="font-family:'Playfair Display',serif;font-size:26px;font-weight:800;color:${VERDE_REPORTE};line-height:1.1">ESTADO DE VEHÍCULO</div>
+        <div style="font-size:11px;color:var(--ink-l);margin-top:4px">Generado el ${_fmtFechaVeh(_hoyISOVeh())}</div>
+      </div>
+      <div style="text-align:center;background:${VERDE_REPORTE};border-radius:10px;padding:12px 22px;color:#fff">
+        <div style="font-size:10px;font-weight:700;letter-spacing:2px;opacity:.75">PLACA</div>
+        <div style="font-family:'Libre Baskerville',serif;font-size:30px;font-weight:800;line-height:1.1">${_escVeh(v.placa)}</div>
+      </div>
+    </div>
+
+    ${_rpBanda('Estado general')}
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px">
+      <div style="flex:1;min-width:180px;border:1.5px solid var(--rule);border-radius:10px;padding:12px 16px;text-align:center">
+        <div style="font-size:10px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-m);margin-bottom:6px">Índice de estado</div>
+        <div style="font-family:'Libre Baskerville',serif;font-size:30px;font-weight:800;color:${colorPct};line-height:1">${pct === null ? '—' : pct + '%'}</div>
+        <div style="font-size:11px;font-weight:700;color:${colorPct};margin-top:3px">${etiquetaPct}</div>
+      </div>
+      ${_rpDoc('Revisión técnico mecánica', v.tecno)}
+      ${_rpDoc('SOAT', v.soat)}
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:18px">
+      <div>
+        ${_rpBanda('Información general')}
+        <div style="border:1.5px solid var(--rule);border-radius:10px;padding:6px 14px 10px">
+          ${_rpFila('documentos', 'Placa', _escVeh(v.placa))}
+          ${_rpFila('mantenimiento', 'Kilometraje', fmt(parseInt(v.km || 0, 10) || 0) + ' km')}
+          ${_rpFila('programacion', 'Km actualizado', v.kmActualizado ? _fmtFechaVeh(v.kmActualizado) : '—')}
+          ${_rpFila('combustible', 'Último tanqueo', ultComb ? _fmtPesos(ultComb.valor) + ' · ' + _fmtFechaVeh(ultComb.fecha) : 'sin registros')}
+          ${_rpFila('preop', 'Última inspección', u ? _fmtFechaVeh(u.fecha) + (u.conductor ? ' · ' + _escVeh(u.conductor) : '') : 'sin registros')}
+        </div>
+      </div>
+      <div>
+        ${_rpBanda('Novedades encontradas')}
+        <div style="border:1.5px solid var(--rule);border-radius:10px;padding:6px 14px">
+          ${_rpNovedades(placa)}
+        </div>
+      </div>
+    </div>
+
+    ${_rpBanda('Evidencias fotográficas')}
+    ${fotos.length
+      ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:18px">
+           ${fotos.map(f => _rpFoto(f.u, f.r)).join('')}
+         </div>`
+      : `<div style="border:1.5px dashed var(--rule);border-radius:10px;padding:24px;text-align:center;color:var(--ink-l);font-size:13px;margin-bottom:18px">
+           Este vehículo aún no tiene fotos cargadas.
+         </div>`}
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
+      <div>
+        ${_rpBanda('Observaciones generales')}
+        <div style="border:1.5px solid var(--rule);border-radius:10px;padding:14px;font-size:13px;color:var(--ink-m);line-height:1.5">
+          ${ultMant
+            ? `<strong style="color:var(--ink)">${_escVeh(ultMant.titulo || '—')}</strong> · ${_fmtFechaVeh(ultMant.fecha)}<br>${_escVeh(ultMant.descripcion || 'Sin descripción.')}`
+            : 'Sin mantenimientos registrados para este vehículo.'}
+          ${u && u.obs ? `<div style="margin-top:8px;padding-top:8px;border-top:1px dotted var(--rule)"><em>Preoperacional:</em> ${_escVeh(u.obs)}</div>` : ''}
+        </div>
+      </div>
+      <div>
+        ${_rpBanda('Responsable de la inspección')}
+        <div style="border:1.5px solid var(--rule);border-radius:10px;padding:14px;font-size:13px">
+          ${u
+            ? `${_rpFila('preop', 'Nombre', _escVeh(u.conductor) || '—')}
+               ${_rpFila('programacion', 'Fecha', _fmtFechaVeh(u.fecha) + (u.hora ? ' · ' + u.hora : ''))}
+               ${_rpFila('documentos', 'Origen', _escVeh(u.tipo) || '—')}`
+            : '<div style="color:var(--ink-l);font-style:italic">Sin inspecciones registradas.</div>'}
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px">
+      <button onclick="window.print()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--white);color:${VERDE_REPORTE};border:1.5px solid ${VERDE_REPORTE};border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Imprimir</button>
+      <button onclick="_cerrarModalVeh()" style="padding:9px 20px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:${VERDE_REPORTE};color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Cerrar</button>
+    </div>
+  </div>`;
+
+  _modalVeh(html, 940);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
    COMBUSTIBLE · TRAZABILIDAD DE TANQUEOS POR VEHICULO
    ───────────────────────────────────────────────────────────────────────
    Fuente: hoja "Combustible" del mismo Sheet de los preoperacionales.
@@ -6469,13 +6688,20 @@ function _fotoComb(url, titulo) {
   //    lugar del enlace.
   // En ambos casos se muestra una marca corta con la explicacion en el tooltip,
   // no el texto crudo, que mide varios renglones y rompe la tabla.
+  // La celda no siempre trae una URL utilizable. Que falte la miniatura NO
+  // bloquea nada: el resto del tanqueo se muestra igual. Por eso la marca es
+  // discreta, del mismo tamaño que la foto que reemplaza, y no una alerta:
+  // no es un error del sistema, es un dato que no llego.
   if (!/^https?:\/\//i.test(u)) {
-    var esErrorDrive = /^ERROR al guardar foto/i.test(u);
-    var etiqueta = esErrorDrive ? 'Sin foto' : 'Sin enlace';
+    var esErrorDrive = /^ERROR al guardar foto|^FALTA AUTORIZAR/i.test(u);
     var motivo = esErrorDrive
-      ? 'La foto no se subio: el Apps Script no tenia permiso de Drive cuando se registro este tanqueo. Hay que volver a cargarla.'
-      : 'La hoja guardo la foto como formula HYPERLINK y el CSV exporta el texto visible, no la URL. Ejecute repararEnlacesCombustible() en el Apps Script.';
-    return '<span title="' + motivo + '" style="display:inline-block;font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:#fdf5e0;border:1px solid #e8d5a3;color:#8b6914;padding:3px 7px;border-radius:3px;cursor:help;white-space:nowrap">' + etiqueta + ' ⚠</span>';
+      ? 'La foto no llego a subirse a Drive: cuando se registro este tanqueo el Apps Script aun no tenia permiso. No es recuperable, habria que volver a cargarla.'
+      : 'La foto SI existe en Drive, pero la hoja la guarda como formula HYPERLINK y el CSV exporta el texto visible en vez del enlace. Se recupera ejecutando repararEnlacesCombustible() en el Apps Script.';
+    // Camara tachada para "no llego" · camara simple para "existe pero no hay enlace"
+    var ico = esErrorDrive
+      ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 7h4l2-2h6l2 2h4v12H3z"/><circle cx="12" cy="13" r="3"/><line x1="3" y1="3" x2="21" y2="21"/></svg>'
+      : '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 7h4l2-2h6l2 2h4v12H3z"/><circle cx="12" cy="13" r="3"/></svg>';
+    return '<span title="' + motivo + '" style="width:38px;height:38px;border:1px dashed var(--rule);border-radius:4px;display:inline-flex;align-items:center;justify-content:center;color:var(--ink-l);cursor:help;flex-shrink:0">' + ico + '</span>';
   }
   return '<img src="' + urlFotoDrive(u) + '" data-alt="' + urlFotoDriveAlt(u) + '" loading="lazy"' +
     ' onclick="abrirFotoBaucher(\'' + _escAttrVeh(u) + '\',\'' + _escAttrVeh(titulo) + '\')"' +
@@ -6835,13 +7061,18 @@ function togglePreopVeh(placa) {
 }
 
 // ── MODAL GENERICO ──────────────────────────────────────────
-function _modalVeh(html) {
+// El segundo parametro es opcional: los formularios siguen en 560px y solo
+// el reporte de estado pide mas ancho.
+function _modalVeh(html, ancho) {
   const prev = document.getElementById('veh-modal'); if (prev) prev.remove();
   const ov = document.createElement('div');
   ov.id = 'veh-modal';
-  ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,20,18,.6);z-index:100000;display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,20,18,.6);z-index:100000;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow:auto';
   ov.onclick = e => { if (e.target === ov) ov.remove(); };
-  ov.innerHTML = `<div style="background:var(--white);border-radius:6px;max-width:560px;width:100%;max-height:88vh;overflow:auto;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.35)">${html}</div>`;
+  const max = (typeof ancho === 'number' && ancho > 0) ? ancho : 560;
+  const pad = max > 700 ? '0' : '22px 24px';
+  const fondo = max > 700 ? 'transparent' : 'var(--white)';
+  ov.innerHTML = `<div style="background:${fondo};border-radius:6px;max-width:${max}px;width:100%;margin:auto;padding:${pad};box-shadow:${max > 700 ? 'none' : '0 20px 60px rgba(0,0,0,.35)'}">${html}</div>`;
   document.body.appendChild(ov);
 }
 function _cerrarModalVeh() { const m = document.getElementById('veh-modal'); if (m) m.remove(); }
