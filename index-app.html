@@ -427,16 +427,26 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
   }
 }
 
-/* ── FOCO: resalta en el dashboard el dato que el asistente está diciendo ── */
-.voz-foco{
-  position:relative;z-index:60;border-radius:8px;
-  animation:voz-foco-anim 2.15s var(--voz-suave) both;
+/* ── FOCO: aísla en el dashboard el dato que el asistente está diciendo ──
+   Se oscurece todo el tablero con una capa y se levanta SOLO el elemento
+   señalado por encima de ella, para que quede recortado contra el resto. */
+#voz-dim{
+  position:fixed;inset:0;z-index:10500;background:rgba(8,20,13,.55);
+  opacity:0;pointer-events:none;transition:opacity .42s var(--voz-suave);
 }
+#voz-dim.voz-on{opacity:1}
+
+.voz-foco{
+  position:relative;z-index:10600;border-radius:8px;
+  background:var(--white);
+  box-shadow:0 0 0 3px var(--gold), 0 22px 60px rgba(0,0,0,.45);
+  animation:voz-foco-anim .55s var(--voz-rebote) both;
+}
+/* Las filas de tabla no aceptan bien transform ni sombra: se resaltan con fondo */
+tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gold)}
 @keyframes voz-foco-anim{
-  0%  {box-shadow:0 0 0 0 rgba(139,105,20,0), 0 0 0 0 rgba(139,105,20,0); transform:scale(1)}
-  16% {box-shadow:0 0 0 3px rgba(139,105,20,.95), 0 16px 44px rgba(139,105,20,.30); transform:scale(1.018)}
-  84% {box-shadow:0 0 0 3px rgba(139,105,20,.95), 0 16px 44px rgba(139,105,20,.30); transform:scale(1.018)}
-  100%{box-shadow:0 0 0 0 rgba(139,105,20,0), 0 0 0 0 rgba(139,105,20,0); transform:scale(1)}
+  from{transform:scale(.985)}
+  to  {transform:scale(1.015)}
 }
 /* Etiqueta flotante que acompaña al foco */
 .voz-foco-tag{
@@ -15155,6 +15165,75 @@ function vozNavegar(panelId){
 }
 
 /* ══════════════════════════════════════════════════════════════
+   4a. CONTROLES QUE EL ASISTENTE PUEDE ACCIONAR
+   ──────────────────────────────────────────────────────────────
+   Lista blanca a propósito. El asistente solo puede tocar controles
+   de CONSULTA: filtros, búsquedas y cambios de vista. Nunca botones
+   que crean, editan o borran datos, ni el PIN de Cortes a Proveedor.
+   Para sumar un control nuevo alcanza con agregar una entrada acá.
+   ══════════════════════════════════════════════════════════════ */
+function vozBotonPeriodo(nombre){
+  const mapa = { ayer:0, hoy:1, semana:2, mes:3, total:4 };
+  if (!(nombre in mapa)) return false;
+  const btn = document.querySelectorAll('.fbtn')[mapa[nombre]];
+  if (!btn) return false;
+  setFilter(nombre, btn);
+  return true;
+}
+
+const VOZ_CONTROLES = {
+  clientes_ver_viajes: {
+    desc: 'en Ingreso por Cliente, cambiar la vista a "Viajes"',
+    hacer: function(){ if (typeof switchPieTab !== 'function') return false; switchPieTab('viajes'); return true; }
+  },
+  clientes_ver_peso: {
+    desc: 'en Ingreso por Cliente, cambiar la vista a "Peso (kg)"',
+    hacer: function(){ if (typeof switchPieTab !== 'function') return false; switchPieTab('peso'); return true; }
+  },
+  clientes_limpiar_filtros: {
+    desc: 'en Ingreso por Cliente, limpiar los filtros de fecha y operación',
+    hacer: function(){ if (typeof limpiarFiltrosCliente !== 'function') return false; limpiarFiltrosCliente(); return true; }
+  },
+  vehiculos_buscar_placa: {
+    desc: 'en Vehículos Carga, buscar una placa (requiere "valor" con la placa)',
+    hacer: function(valor){
+      const i = document.getElementById('veh-buscar');
+      if (!i) return false;
+      i.value = (valor || '').toString().toUpperCase();
+      renderVehiculos();
+      return true;
+    }
+  },
+  vehiculos_solo_vencidos: {
+    desc: 'en Vehículos Carga, mostrar solo los que tienen documentos por vencer o vencidos',
+    hacer: function(valor){
+      const c = document.getElementById('veh-solo-vencidos');
+      if (!c) return false;
+      c.checked = (valor === false || valor === 'false') ? false : true;
+      renderVehiculos();
+      return true;
+    }
+  }
+};
+
+/* Qué datos hace falta tener cargados para que una pestaña muestre algo.
+   Así el asistente puede entrar a una pestaña que nunca se abrió. */
+const VOZ_PANEL_FUENTE = {
+  clientes:        ['ingreso'],
+  ingreso:         ['ingreso'],
+  vehiculos:       ['vehiculos', 'combustible'],
+  ProduccionHumus: ['humus'],
+  horasextras:     ['horasExtras'],
+  solicitudes:     ['solicitudes'],
+  pedidos:         ['solicitudes'],
+  preopequipo:     ['preopEquipo', 'preopVolquetas'],
+  accesos:         ['accesos'],
+  kpi:             ['coaching'],
+  cortes:          ['ingreso'],
+  operaciones:     ['ingreso']
+};
+
+/* ══════════════════════════════════════════════════════════════
    4b. RECORRIDO VISUAL
    Después de responder, el asistente se para encima de cada dato que
    nombró: lo busca en la pestaña, lo centra en pantalla y lo resalta,
@@ -15243,9 +15322,55 @@ function vozBuscarEnPanel(texto){
   return (contenedor && panel.contains(contenedor)) ? contenedor : el;
 }
 
+/* Alto de la franja fija de arriba (topbar + nav + filtros + estado).
+   Sin esto, scrollIntoView deja el dato escondido detrás del encabezado. */
+function vozAltoCabecera(){
+  let alto = 0;
+  ['.topbar', '.nav-wrap', '.filter-bar', '.status-bar'].forEach(function(sel){
+    const el = document.querySelector(sel);
+    if (!el) return;
+    const cs = getComputedStyle(el);
+    if (cs.display === 'none' || cs.position !== 'fixed') return;
+    alto = Math.max(alto, el.getBoundingClientRect().bottom);
+  });
+  return Math.max(0, Math.ceil(alto));
+}
+
+/* Centra el elemento en la franja realmente visible: debajo del encabezado
+   fijo y sin quedar tapado por la tarjeta del asistente. */
+function vozScrollA(el){
+  const cab = vozAltoCabecera();
+  const r = el.getBoundingClientRect();
+  const util = window.innerHeight - cab;
+  let destino = window.scrollY + r.top - cab - Math.max(16, (util - r.height) / 2);
+  destino = Math.max(0, Math.min(destino, document.body.scrollHeight - window.innerHeight));
+  window.scrollTo({ top: destino, behavior: 'smooth' });
+}
+
+/* Levanta el elemento por encima de la capa oscura. Se recuerda el estilo
+   previo para poder devolverlo tal cual estaba. */
+let _vozDim = null;
+function vozAislar(el){
+  if (!_vozDim){
+    _vozDim = document.createElement('div');
+    _vozDim.id = 'voz-dim';
+    document.body.appendChild(_vozDim);
+  }
+  _vozDim.classList.add('voz-on');
+  el.dataset.vozPos = el.style.position || '';
+  el.dataset.vozZ   = el.style.zIndex || '';
+  if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
+  el.classList.add('voz-foco');
+}
+
 function vozQuitarFocos(){
-  document.querySelectorAll('.voz-foco').forEach(function(e){ e.classList.remove('voz-foco'); });
+  document.querySelectorAll('.voz-foco').forEach(function(e){
+    e.classList.remove('voz-foco');
+    if (e.dataset.vozPos !== undefined){ e.style.position = e.dataset.vozPos; delete e.dataset.vozPos; }
+    if (e.dataset.vozZ   !== undefined){ e.style.zIndex   = e.dataset.vozZ;   delete e.dataset.vozZ; }
+  });
   document.querySelectorAll('.voz-foco-tag').forEach(function(e){ e.remove(); });
+  if (_vozDim) _vozDim.classList.remove('voz-on');
 }
 
 /* Etiqueta flotante que acompaña al elemento resaltado */
@@ -15261,8 +15386,17 @@ function vozPonerTag(el, texto){
   return tag;
 }
 
-async function vozRecorrerFocos(respuesta){
-  const focos = vozDetectarFocos(respuesta);
+/* Recorre lo que el plan pidió señalar y, además, lo que la respuesta
+   terminó nombrando. Se evita repetir el mismo dato dos veces. */
+async function vozRecorrerFocos(respuesta, delPlan){
+  const previos = Array.isArray(delPlan) ? delPlan : [];
+  const detectados = vozDetectarFocos(respuesta).filter(function(d){
+    return !previos.some(function(p){
+      const a = vozNorm(p.texto), b = vozNorm(d.texto);
+      return a.indexOf(b) !== -1 || b.indexOf(a) !== -1;
+    });
+  });
+  const focos = previos.concat(detectados).slice(0, VOZ_MAX_FOCOS);
   if (!focos.length) return;
 
   for (let i=0;i<focos.length;i++){
@@ -15270,28 +15404,130 @@ async function vozRecorrerFocos(respuesta){
     const el = vozBuscarEnPanel(f.buscar || f.texto);
     if (!el) continue;
 
-    el.scrollIntoView({ behavior:'smooth', block:'center' });
-    await vozEsperar(480);                 // deja terminar el desplazamiento
+    vozScrollA(el);
+    await vozEsperar(560);                 // deja terminar el desplazamiento
 
-    el.classList.add('voz-foco');
+    vozAislar(el);                         // oscurece el resto y levanta este
     const tag = vozPonerTag(el, f.tipo + ' · ' + f.texto);
     vozAccion('🎯', 'Señalando: ' + f.texto, true);
 
-    await vozEsperar(2050);                // dura lo mismo que la animación
-    el.classList.remove('voz-foco');
+    await vozEsperar(2100);
+    vozQuitarFocos();
     if (tag) tag.remove();
-    await vozEsperar(140);
+    await vozEsperar(160);
   }
+  vozQuitarFocos();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   4d. EJECUTOR DE ACCIONES
+   El plan puede traer una secuencia de pasos; acá se ejecutan de a uno
+   sobre el dashboard real, dejando constancia de cada uno.
+   ══════════════════════════════════════════════════════════════ */
+async function vozEjecutarAcciones(acciones, plan){
+  // Los "resaltar" NO se ejecutan acá: se guardan para después de la
+  // respuesta, así el señalamiento acompaña a lo que se está diciendo
+  // en vez de ocurrir antes de que haya algo que decir.
+  const resaltados = [];
+  for (let i = 0; i < acciones.length; i++){
+    const a = acciones[i] || {};
+    try {
+      if (a.tipo === 'navegar'){
+        await vozAsegurarDatos(VOZ_PANEL_FUENTE[a.panel] || []);
+        vozNavegar(a.panel);
+        await vozEsperar(320);
+
+      } else if (a.tipo === 'periodo'){
+        const dEl = document.getElementById('cli-fecha-desde');
+        const hEl = document.getElementById('cli-fecha-hasta');
+        if (dEl) dEl.value = ''; if (hEl) hEl.value = '';
+        if (vozBotonPeriodo(a.valor)) vozAccion('📅', 'Filtro de periodo: ' + a.valor, true);
+        await vozEsperar(260);
+
+      } else if (a.tipo === 'rango'){
+        vozAplicarRango(a.desde || plan.desde, a.hasta || plan.hasta,
+                        vozEtiquetaRango(a.desde || plan.desde, a.hasta || plan.hasta, a.etiqueta));
+        await vozEsperar(260);
+
+      } else if (a.tipo === 'control'){
+        const c = VOZ_CONTROLES[a.control];
+        if (!c){ vozAccion('⚠', 'No puedo accionar "' + a.control + '"'); continue; }
+        if (c.hacer(a.valor)) vozAccion('🖱', c.desc + (a.valor ? ': ' + a.valor : ''), true);
+        await vozEsperar(300);
+
+      } else if (a.tipo === 'resaltar' && a.texto){
+        resaltados.push({ texto: a.texto, tipo: 'dato', buscar: a.texto, pos: -1 });
+      }
+    } catch(e){ /* un paso que falle no corta el resto */ }
+  }
+  return resaltados;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   4e. LECTURA DE LA PANTALLA
+   Después de operar el dashboard, se lee lo que quedó REALMENTE
+   renderizado. Es la fuente más fiel: son los mismos números que
+   está viendo la persona, ya calculados por el propio sistema.
+   ══════════════════════════════════════════════════════════════ */
+function vozLeerPanelActivo(){
+  const p = document.querySelector('.panel.active');
+  if (!p) return '';
+  const nombre = (document.querySelector('.nav-tab.active') || {}).textContent || '';
+  let out = '=== LO QUE SE VE AHORA EN PANTALLA (pestaña "' + nombre.trim() + '") ===\n';
+
+  const per = p.querySelector('.sec-sub');
+  if (per) out += 'Periodo mostrado: ' + per.textContent.trim() + '\n';
+
+  // Indicadores grandes
+  const kpis = Array.from(p.querySelectorAll('.kpi')).slice(0, 14);
+  if (kpis.length){
+    out += 'Indicadores:\n';
+    kpis.forEach(function(k){
+      const l = k.querySelector('.kpi-lbl'), v = k.querySelector('.kpi-val'), d = k.querySelector('.kpi-desc');
+      if (!l && !v) return;
+      out += '  - ' + (l ? l.textContent.trim() : '') + ': ' + (v ? v.textContent.trim() : '') +
+             (d ? ' (' + d.textContent.trim() + ')' : '') + '\n';
+    });
+  }
+
+  // Tablas visibles
+  const tablas = Array.from(p.querySelectorAll('table.tbl')).slice(0, 3);
+  tablas.forEach(function(t, idx){
+    const filas = Array.from(t.querySelectorAll('tr')).slice(0, 16);
+    if (filas.length < 2) return;
+    out += 'Tabla ' + (idx + 1) + ':\n';
+    filas.forEach(function(tr){
+      const celdas = Array.from(tr.querySelectorAll('th,td')).map(function(c){ return c.textContent.trim(); });
+      if (celdas.join('').trim()) out += '  ' + celdas.join(' | ') + '\n';
+    });
+  });
+
+  if (out.length > 9000) out = out.slice(0, 9000) + '\n[...recortado...]\n';
+  return out + '\n';
 }
 
 /* ══════════════════════════════════════════════════════════════
    5. CONTEXTO + LLAMADAS AL PROXY
    ══════════════════════════════════════════════════════════════ */
 function vozCatalogo(){
-  return Object.keys(VOZ_FUENTES).map(function(k){
+  let t = 'FUENTES DE DATOS (clave -> pestaña -> contenido):\n';
+  t += Object.keys(VOZ_FUENTES).map(function(k){
     const f = VOZ_FUENTES[k];
     return '- ' + k + ' (pestaña "' + f.panel + '"): ' + f.desc;
   }).join('\n');
+
+  // Pestañas a las que se puede navegar aunque no sean una fuente propia
+  const tabs = Array.from(document.querySelectorAll('.nav-tab[data-panel]'))
+    .filter(function(x){ return x.style.display !== 'none'; })
+    .map(function(x){ return x.getAttribute('data-panel') + ' ("' + (x.textContent||'').trim() + '")'; });
+  t += '\n\nPESTAÑAS DISPONIBLES para "navegar":\n' + tabs.join(', ');
+
+  t += '\n\nCONTROLES que podés accionar con {"tipo":"control","control":"<id>","valor":"<opcional>"}:\n';
+  t += Object.keys(VOZ_CONTROLES).map(function(k){
+    return '- ' + k + ': ' + VOZ_CONTROLES[k].desc;
+  }).join('\n');
+  t += '\nNo existe ningún control para crear, editar ni borrar datos, ni para el PIN de Cortes a Proveedor: no los pidas.';
+  return t;
 }
 
 function vozConstruirContexto(claves, desde, hasta, etiqueta){
@@ -15344,6 +15580,15 @@ async function vozPedirPlan(pregunta){
     if (!plan.hasta) plan.hasta = vozHoy();
     if (!plan.panel || !document.getElementById('panel-' + plan.panel)) {
       plan.panel = VOZ_FUENTES[plan.fuentes[0]].panel;
+    }
+    // Solo se aceptan acciones conocidas: cualquier otra cosa se descarta
+    if (Array.isArray(plan.acciones)){
+      plan.acciones = plan.acciones.filter(function(a){
+        if (!a || !a.tipo) return false;
+        if (a.tipo === 'navegar')  return !!document.getElementById('panel-' + a.panel);
+        if (a.tipo === 'control')  return !!VOZ_CONTROLES[a.control];
+        return ['periodo','rango','resaltar'].indexOf(a.tipo) !== -1;
+      }).slice(0, 8);
     }
     return plan;
   } catch(e){
@@ -15439,21 +15684,32 @@ async function vozConsultar(pregunta){
     // 2. El navegador ejecuta ese plan sobre el dashboard real
     vozSetEstado('thinking','Consultando el sistema…');
     await vozAsegurarDatos(plan.fuentes);
-    vozAplicarRango(plan.desde, plan.hasta, etiqueta);
-    vozNavegar(plan.panel);
     vozOverlay.classList.add('voz-compacto');   // deja ver la pestaña detrás
 
-    // 3. Se arma el contexto ya filtrado y se pide la respuesta
+    let resaltadosDelPlan = [];
+    if (Array.isArray(plan.acciones) && plan.acciones.length){
+      // Plan con pasos: el asistente opera el dashboard (filtros, clics, pestañas)
+      resaltadosDelPlan = await vozEjecutarAcciones(plan.acciones, plan) || [];
+    } else {
+      // Plan simple (o proxy sin actualizar): comportamiento de siempre
+      vozAplicarRango(plan.desde, plan.hasta, etiqueta);
+      vozNavegar(plan.panel);
+    }
+
+    // 3. Se arma el contexto: los datos del periodo MAS lo que quedó en
+    //    pantalla después de operar, para que responda sobre lo que se ve.
     vozSetEstado('thinking','Analizando los datos…');
-    const contexto = vozConstruirContexto(plan.fuentes, plan.desde, plan.hasta, etiqueta);
+    const contexto = vozLeerPanelActivo() +
+                     vozConstruirContexto(plan.fuentes, plan.desde, plan.hasta, etiqueta);
     const r = await vozProxy({ mode:'answer', question: pregunta, context: contexto });
 
     vozBurbuja('assistant', r.answer);
     vozSetEstado('','Preguntame por cualquier fecha o pestaña');
     vozHablar(r.answer);
 
-    // Mientras habla, recorre y resalta en el dashboard cada dato que nombró
-    vozRecorrerFocos(r.answer);
+    // Mientras habla, recorre y resalta lo que el plan pidió señalar
+    // más lo que la respuesta terminó nombrando
+    vozRecorrerFocos(r.answer, resaltadosDelPlan);
   } catch(err){
     vozBurbuja('assistant', 'No pude completar la consulta: ' + err.message);
     vozSetEstado('','Preguntame por cualquier fecha o pestaña');
