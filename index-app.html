@@ -2615,10 +2615,6 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
   <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:18px">
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
       <input id="veh-buscar" oninput="renderVehiculos()" placeholder="Buscar placa..." style="padding:7px 12px;font-size:13px;border:1px solid var(--rule);border-radius:4px;background:var(--white);color:var(--ink);font-family:'Source Sans 3',sans-serif;width:170px">
-      <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-m);cursor:pointer">
-        <input type="checkbox" id="veh-solo-vencidos" onchange="renderVehiculos()" style="width:15px;height:15px;accent-color:var(--red);cursor:pointer">
-        Solo por vencer / vencidos
-      </label>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button onclick="abrirFormVehiculo()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">+ Agregar vehículo</button>
@@ -5971,14 +5967,12 @@ function renderVehiculos() {
   const cont = document.getElementById('veh-lista');
   if (!cont) return;
   const busca = (document.getElementById('veh-buscar')||{}).value || '';
-  const soloVenc = (document.getElementById('veh-solo-vencidos')||{}).checked;
 
   // (Las tarjetas de KPI de la parte superior se quitaron a pedido: la
   // informacion de vencimientos ya se ve en cada tarjeta de vehiculo.)
 
   let lista = _vehiculos.slice();
   if (busca) lista = lista.filter(v => (v.placa||'').toUpperCase().includes(busca.toUpperCase()));
-  if (soloVenc) lista = lista.filter(_vehTieneAlerta);
   // Primero los que tienen alerta, luego por placa
   lista.sort((a,b) => (_vehTieneAlerta(b)?1:0) - (_vehTieneAlerta(a)?1:0) || (a.placa||'').localeCompare(b.placa||''));
 
@@ -6127,13 +6121,48 @@ function _fotoProgHTML(url, nombre, etiqueta, color) {
   </div>`;
 }
 
+/* Franja de HOY: lo primero que se ve en la tarjeta, sin abrir nada.
+   Muestra con foto quién maneja y para qué operación va hoy. */
+function _progHoyHTML(deHoy) {
+  if (!deHoy.length) {
+    return `<div style="display:flex;align-items:center;gap:9px;background:var(--s2);border:1px dashed var(--rule);border-radius:5px;padding:8px 11px;margin-bottom:9px">
+      <span style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l)">Hoy</span>
+      <span style="font-size:12.5px;color:var(--ink-l);font-style:italic">Sin programación para hoy</span>
+    </div>`;
+  }
+  const filas = deHoy.map(p => {
+    const fotoOp = _fotoCatPorId(_vehOperaciones, p.operacionId, p.operacion);
+    const fotoCd = _fotoCatPorId(_vehConductores, p.conductorId, p.conductor);
+    return `<div style="display:flex;gap:10px;align-items:center">
+      <div style="display:flex;gap:8px;flex-shrink:0">
+        ${_fotoProgHTML(fotoOp, p.operacion, 'Operación', '#1a5c35')}
+        ${_fotoProgHTML(fotoCd, p.conductor, 'Conductor', 'var(--navy)')}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:16px;font-weight:800;color:var(--ink);line-height:1.15">${_escVeh(p.operacion) || '—'}</div>
+        <div style="font-size:13.5px;color:var(--ink-m);margin-top:2px">
+          Conductor: <strong style="color:var(--ink)">${_escVeh(p.conductor) || 'sin asignar'}</strong></div>
+        ${p.observaciones ? `<div style="font-size:12.5px;color:var(--ink-m);background:rgba(255,255,255,.65);border-radius:3px;padding:4px 7px;margin-top:5px;line-height:1.4">${_escVeh(p.observaciones)}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('<div style="height:1px;background:var(--gold);opacity:.35;margin:9px 0"></div>');
+
+  return `<div style="background:var(--gold-l);border:1px solid var(--gold);border-radius:5px;padding:10px 12px;margin-bottom:9px">
+    <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold);margin-bottom:8px">
+      Hoy · ${deHoy.length === 1 ? '1 operación' : deHoy.length + ' operaciones'}
+    </div>
+    ${filas}
+  </div>`;
+}
+
 // Bloque de programacion dentro de la tarjeta del vehiculo.
-// Muestra lo que viene (de hoy en adelante); lo ya pasado se consulta aparte.
+// Arriba, lo de HOY bien visible; debajo, lo que viene. Lo pasado, aparte.
 function bloqueProgramacionVehiculo(placa) {
   const hoy = _hoyISOVeh();
   const todas = _progDeVehiculo(placa);
-  const futuras = todas.filter(p => (p.fecha||'') >= hoy);
-  const pasadas = todas.length - futuras.length;
+  const deHoy = todas.filter(p => (p.fecha||'') === hoy);
+  const futuras = todas.filter(p => (p.fecha||'') > hoy);
+  const pasadas = todas.length - deHoy.length - futuras.length;
 
   if (!todas.length) {
     return _vsec('programacion', 'Programación', 'var(--navy)', 'var(--blue-l)',
@@ -6173,9 +6202,10 @@ function bloqueProgramacionVehiculo(placa) {
     </div>`;
   };
 
-  const cuerpo = lista.length
-    ? lista.map(tarjeta).join('')
-    : '<div style="font-size:12px;color:var(--ink-l);font-style:italic;margin-bottom:6px">Nada programado hacia adelante</div>';
+  // Primero HOY (con fotos), después lo que viene más adelante
+  const cuerpo = _progHoyHTML(deHoy) + (lista.length
+    ? '<div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);margin-bottom:6px">Próximas</div>' + lista.map(tarjeta).join('')
+    : '<div style="font-size:12px;color:var(--ink-l);font-style:italic">Nada programado hacia adelante</div>');
 
   const hayMas = lista.length > VISIBLES;
 
@@ -6186,7 +6216,8 @@ function bloqueProgramacionVehiculo(placa) {
     </span>`;
 
   return _vsec('programacion',
-    'Programación' + (lista.length ? ' · ' + lista.length + ' pendiente' + (lista.length !== 1 ? 's' : '') : ''),
+    'Programación' + (deHoy.length ? ' · hoy asignado' : '') +
+      (lista.length ? ' · ' + lista.length + ' próxima' + (lista.length !== 1 ? 's' : '') : ''),
     'var(--navy)', 'var(--blue-l)', derecha, cuerpo);
 }
 
@@ -15591,12 +15622,12 @@ const VOZ_CONTROLES = {
       return true;
     }
   },
-  vehiculos_solo_vencidos: {
-    desc: 'en Vehículos Carga, mostrar solo los que tienen documentos por vencer o vencidos',
-    hacer: function(valor){
-      const c = document.getElementById('veh-solo-vencidos');
-      if (!c) return false;
-      c.checked = (valor === false || valor === 'false') ? false : true;
+  vehiculos_ver_todos: {
+    desc: 'en Vehículos Carga, limpiar la búsqueda para ver toda la flota',
+    hacer: function(){
+      const i = document.getElementById('veh-buscar');
+      if (!i) return false;
+      i.value = '';
       renderVehiculos();
       return true;
     }
