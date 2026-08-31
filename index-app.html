@@ -340,6 +340,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 #voz-probar{background:var(--navy);color:#fff;border:none}
 #voz-aj-cerrar{background:var(--white);color:var(--ink-m);border:1px solid var(--rule)}
 #voz-aj-nota{font-size:10.5px;color:var(--ink-m);margin-top:8px;line-height:1.4}
+#voz-aj-idioma{font-size:11px;font-weight:700;color:var(--navy);background:rgba(255,255,255,.7);border-left:3px solid var(--navy);border-radius:0 4px 4px 0;padding:6px 9px;margin-top:9px;line-height:1.35}
 
 #voz-body{padding:16px 16px 6px;overflow-y:auto;flex:1;scroll-behavior:smooth}
 
@@ -15026,6 +15027,7 @@ window.cscActivar = function(mountId, tab){
         <button id="voz-probar">▶ Probar</button>
         <button id="voz-aj-cerrar">Listo</button>
       </div>
+      <div id="voz-aj-idioma" style="display:none"></div>
       <div id="voz-aj-nota"></div>
     </div>
 
@@ -16252,6 +16254,33 @@ function vozVocesDisponibles(){
   return es.concat(resto);   // primero las de español
 }
 
+/* El idioma sale de la voz elegida: si se elige una voz en inglés, el
+   asistente responde en inglés (no tendría sentido leer texto español
+   con pronunciación inglesa). Vale para cualquier idioma disponible. */
+const VOZ_IDIOMAS = {
+  es:'español', en:'inglés', pt:'portugués', fr:'francés',
+  it:'italiano', de:'alemán', ca:'catalán', gl:'gallego', eu:'euskera'
+};
+
+function vozIdiomaActual(){
+  const porDefecto = { lang:'es-CO', codigo:'es', nombre:'español' };
+  if (!_vozElegida) return porDefecto;
+  const v = vozVocesDisponibles().find(function(x){ return x.name === _vozElegida; });
+  if (!v || !v.lang) return porDefecto;
+  const codigo = v.lang.slice(0,2).toLowerCase();
+  return { lang: v.lang, codigo: codigo, nombre: VOZ_IDIOMAS[codigo] || v.lang };
+}
+
+// Frase de prueba en el idioma de la voz, para que la prueba sea real
+const VOZ_FRASE_PRUEBA = {
+  es:'Hola, soy el asistente de Horti Organic. Hoy ingresaron veintiocho viajes con trescientas veinticuatro toneladas de material.',
+  en:'Hi, I am the Horti Organic assistant. Today we received twenty-eight trips with three hundred twenty-four tons of material.',
+  pt:'Olá, sou o assistente da Horti Organic. Hoje entraram vinte e oito viagens com trezentas e vinte e quatro toneladas de material.',
+  fr:"Bonjour, je suis l'assistant de Horti Organic. Aujourd'hui, nous avons reçu vingt-huit voyages avec trois cent vingt-quatre tonnes de matériel.",
+  it:'Ciao, sono l\'assistente di Horti Organic. Oggi sono entrati ventotto viaggi con trecentoventiquattro tonnellate di materiale.',
+  de:'Hallo, ich bin der Assistent von Horti Organic. Heute kamen achtundzwanzig Fahrten mit dreihundertvierundzwanzig Tonnen Material an.'
+};
+
 function vozPintarSelectorVoces(){
   const sel = document.getElementById('voz-select');
   const nota = document.getElementById('voz-aj-nota');
@@ -16355,7 +16384,9 @@ async function vozConsultar(pregunta){
     const contexto = lecturas +
                      vozConstruirContexto(plan.fuentes, plan.desde, plan.hasta, etiqueta,
                                           pregunta, plan.extras);
-    const r = await vozProxy({ mode:'answer', question: pregunta, context: contexto });
+    const idioma = vozIdiomaActual();
+    const r = await vozProxy({ mode:'answer', question: pregunta, context: contexto,
+                               idioma: idioma.lang, idiomaNombre: idioma.nombre });
 
     vozBurbuja('assistant', r.answer);
     vozSetEstado('','Preguntame por cualquier fecha o pestaña');
@@ -16386,7 +16417,7 @@ if (vozVelVal) vozVelVal.textContent = _vozVelocidad.toFixed(2).replace(/0$/,'')
 vozCfg.addEventListener('click', function(){
   const abierto = vozAj.classList.toggle('voz-abierto');
   vozCfg.classList.toggle('voz-on', abierto);
-  if (abierto) vozPintarSelectorVoces();
+  if (abierto){ vozPintarSelectorVoces(); vozAvisarIdioma(); }
 });
 document.getElementById('voz-aj-cerrar').addEventListener('click', function(){
   vozAj.classList.remove('voz-abierto');
@@ -16395,14 +16426,27 @@ document.getElementById('voz-aj-cerrar').addEventListener('click', function(){
 vozSelect.addEventListener('change', function(){
   _vozElegida = vozSelect.value;
   try { localStorage.setItem('hortiVozNombre', _vozElegida); } catch(e){}
+  vozAvisarIdioma();
 });
+
+/* Avisa en qué idioma va a responder según la voz elegida */
+function vozAvisarIdioma(){
+  const nota = document.getElementById('voz-aj-idioma');
+  if (!nota) return;
+  const id = vozIdiomaActual();
+  nota.textContent = id.codigo === 'es'
+    ? 'El asistente responde en español.'
+    : 'El asistente va a responder en ' + id.nombre + ', no solo a leer con esa voz.';
+  nota.style.display = 'block';
+}
 vozVel.addEventListener('input', function(){
   _vozVelocidad = parseFloat(vozVel.value) || 1;
   if (vozVelVal) vozVelVal.textContent = _vozVelocidad.toFixed(2).replace(/0$/,'');
   try { localStorage.setItem('hortiVozVelocidad', String(_vozVelocidad)); } catch(e){}
 });
 document.getElementById('voz-probar').addEventListener('click', function(){
-  vozHablar('Hola, soy el asistente de Horti Organic. Hoy ingresaron veintiocho viajes con trescientas veinticuatro toneladas de material.');
+  const id = vozIdiomaActual();
+  vozHablar(VOZ_FRASE_PRUEBA[id.codigo] || VOZ_FRASE_PRUEBA.es);
 });
 
 // La lista de voces suele llegar después de cargar la página
@@ -16454,6 +16498,8 @@ if (VozSR){
   vozMicBtn.addEventListener('click', function(){
     if (vozEscuchando){ vozRec.stop(); return; }
     try { window.speechSynthesis.cancel(); } catch(e){}
+    // El micrófono escucha en el mismo idioma en que responde el asistente
+    try { vozRec.lang = vozIdiomaActual().lang; } catch(e){}
     try { vozRec.start(); } catch(e){}
   });
 } else {
