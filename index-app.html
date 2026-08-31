@@ -15141,6 +15141,92 @@ const VOZ_FUENTES = {
 };
 
 /* ══════════════════════════════════════════════════════════════
+   1b. LECTOR UNIVERSAL
+   ──────────────────────────────────────────────────────────────
+   Las fuentes de arriba tienen resumen propio porque son las más
+   consultadas. Pero el asistente NO se limita a ellas: acá está
+   TODO lo que el dashboard tiene cargado en memoria, y lo puede
+   leer con un formato genérico, sin código a medida por caso.
+   Si mañana el dashboard suma otra tabla, basta agregar una línea.
+   ══════════════════════════════════════════════════════════════ */
+const VOZ_GLOBALES = [
+  { clave:'ingresoCrudo',    etq:'Ingreso de material (registros crudos, fila por viaje)', get:()=>dataIngreso },
+  { clave:'solicitudes',     etq:'Solicitudes de compra',                    get:()=>dataSolicitudes },
+  { clave:'horasExtras',     etq:'Horas extras',                             get:()=>dataHE },
+  { clave:'preopVolquetas',  etq:'Preoperacional de volquetas',              get:()=>dataPreopVol },
+  { clave:'preopEquipo',     etq:'Preoperacional de cargador y tractor',     get:()=>dataPreopCar },
+  { clave:'viajes',          etq:'Viajes',                                   get:()=>dataViajes },
+  { clave:'combustible',     etq:'Combustible y tanqueos',                   get:()=>dataCombustible },
+  { clave:'humus',           etq:'Producción de humus',                      get:()=>dataProduccionHumus },
+  { clave:'coaching',        etq:'Coaching y KPIs de operarios',             get:()=>dataCoaching },
+  { clave:'accesos',         etq:'Control de accesos (entradas y salidas)',  get:()=>rawAccesos },
+  { clave:'vehiculos',       etq:'Vehículos de la flota (placas, SOAT, tecnomecánica, km)', get:()=>_vehiculos },
+  { clave:'mantenimientos',  etq:'Mantenimientos de vehículos: incluye cuáles fueron cambio de aceite, el kilometraje y cuántas fotos tiene cada uno', get:()=>_mantenimientos },
+  { clave:'programacion',    etq:'Programación del calendario: qué operación y qué conductor tiene asignado cada vehículo en cada fecha', get:()=>_vehProgramacion },
+  { clave:'conductores',     etq:'Catálogo de conductores',                  get:()=>_vehConductores },
+  { clave:'operacionesVeh',  etq:'Catálogo de operaciones de vehículos',     get:()=>_vehOperaciones },
+  { clave:'documentosVeh',   etq:'Documentos PDF cargados por vehículo',     get:()=>_vehDocumentos },
+  { clave:'alertasPlacas',   etq:'Alertas registradas por placa',            get:()=>_alertasPlacas },
+  { clave:'informesCortes',  etq:'Informes guardados de cortes a proveedor', get:()=>_informesGuardados },
+  { clave:'cortesFavoritos', etq:'Cortes marcados como favoritos',           get:()=>_cortesFavoritosCache }
+];
+
+function vozGlobal(clave){
+  const g = VOZ_GLOBALES.find(function(x){ return x.clave === clave; });
+  if (!g) return null;
+  try {
+    const v = g.get();
+    return Array.isArray(v) ? v : (v ? [v] : []);
+  } catch(e){ return []; }   // todavía no cargado
+}
+
+/* Qué hay disponible y con cuántos registros. Va SIEMPRE en el contexto:
+   así el asistente sabe qué puede llegar a mirar y nunca dice "no tengo
+   acceso" a algo que en realidad está cargado. */
+function vozInventario(){
+  let t = '=== TODO LO QUE PODÉS CONSULTAR (datos cargados en el sistema) ===\n';
+  VOZ_GLOBALES.forEach(function(g){
+    const v = vozGlobal(g.clave);
+    t += '- ' + g.clave + ': ' + g.etq + ' — ' + (v ? v.length : 0) + ' registro(s)\n';
+  });
+  return t + '\n';
+}
+
+/* Volcado genérico de cualquier conjunto de datos, sin formato a medida.
+   Si tiene columna de fecha, se filtra por el periodo consultado. */
+function vozBloqueLibre(clave, desde, hasta, etiqueta, maxFilas){
+  const g = VOZ_GLOBALES.find(function(x){ return x.clave === clave; });
+  if (!g) return '';
+  const filas = vozGlobal(clave);
+  let out = '=== ' + g.etq + ' ===\n';
+  if (!filas || !filas.length) return out + '(sin datos cargados)\n\n';
+
+  const tieneFecha = filas.some(function(r){ return !!vozFechaGenerica(r); });
+  let usar = filas;
+  if (tieneFecha && desde && hasta){
+    const f = filas.filter(function(r){ return vozEnRango(vozFechaGenerica(r), desde, hasta); });
+    out += 'Registros en ' + (etiqueta || 'el periodo') + ': ' + f.length + ' (total histórico: ' + filas.length + ')\n';
+    if (f.length) usar = f;
+    else out += 'Ninguno en ese periodo; se muestran los últimos del histórico como referencia:\n';
+  } else {
+    out += 'Total de registros: ' + filas.length + '\n';
+  }
+
+  const tope = maxFilas || VOZ_MAX_FILAS;
+  const muestra = usar.slice(-tope);
+  const heads = Object.keys(muestra[0] || {});
+  if (!heads.length) return out + '\n';
+  out += heads.join(' | ') + '\n';
+  muestra.forEach(function(r){
+    out += heads.map(function(h){
+      const v = r[h];
+      return Array.isArray(v) ? (v.length + ' elemento(s)') : (v == null ? '' : String(v).slice(0, 90));
+    }).join(' | ') + '\n';
+  });
+  return out + '\n';
+}
+
+/* ══════════════════════════════════════════════════════════════
    2. UTILIDADES DE FECHA (rangos arbitrarios, no solo hoy/semana/mes)
    ══════════════════════════════════════════════════════════════ */
 function vozYMD(d){
@@ -15277,12 +15363,48 @@ function vozResumenFlota(fuente, desde, hasta, etiqueta){
   veh.slice(0, 40).forEach(function(v){
     out += (v.placa||'-') + ' | ' + (v.soat||'-') + ' | ' + (v.tecno||'-') + ' | ' + (v.km||'-') + '\n';
   });
+  // Último cambio de aceite por vehículo, con km recorridos desde entonces
+  out += '\nULTIMO CAMBIO DE ACEITE POR VEHICULO:\n';
+  veh.forEach(function(v){
+    let a = null;
+    try { a = _ultimoCambioAceite(v.placa); } catch(e){}
+    if (!a){ out += '  - ' + v.placa + ': sin cambios de aceite registrados\n'; return; }
+    const kmA = parseInt(a.km,10)||0, kmV = parseInt(v.km,10)||0;
+    let dias = null; try { dias = _diasDesdeVeh(a.fecha); } catch(e){}
+    out += '  - ' + v.placa + ': ' + (a.fecha||'?') +
+           (dias !== null ? ' (hace ' + dias + ' días)' : '') +
+           (kmA ? ' | km al cambio: ' + kmA : '') +
+           ((kmA && kmV > kmA) ? ' | recorridos desde entonces: ' + (kmV - kmA) : '') + '\n';
+  });
+
   const mant = vozArr(function(){ return _mantenimientos; });
   if (mant.length){
-    out += '\nUltimos mantenimientos registrados:\n';
-    mant.slice(-12).forEach(function(m){
-      out += '  - ' + (m.placa||'?') + ' | ' + (m.fecha||'?') + ' | ' + (m.titulo||'') + '\n';
+    out += '\nULTIMOS MANTENIMIENTOS (aceite = fue cambio de aceite):\n';
+    mant.slice(-15).forEach(function(m){
+      let esAc = false, nf = 0;
+      try { esAc = _esCambioAceite(m); nf = _fotosDeMant(m).length; } catch(e){}
+      out += '  - ' + (m.placa||'?') + ' | ' + (m.fecha||'?') + ' | ' + (m.titulo||'') +
+             (esAc ? ' | ACEITE' : '') +
+             (m.km ? ' | ' + m.km + ' km' : '') +
+             (nf ? ' | ' + nf + ' foto(s)' : '') + '\n';
     });
+  }
+
+  // Programación del calendario: quién maneja qué y cuándo
+  const prog = vozArr(function(){ return _vehProgramacion; });
+  if (prog.length){
+    const orden = prog.slice().sort(function(a,b){ return (a.fecha||'').localeCompare(b.fecha||''); });
+    const hoy = vozHoy();
+    const futuras = orden.filter(function(p){ return (p.fecha||'') >= hoy; });
+    const lista = futuras.length ? futuras : orden.slice(-15);
+    out += '\nPROGRAMACION ' + (futuras.length ? '(de hoy en adelante)' : '(últimas registradas)') + ':\n';
+    lista.slice(0, 25).forEach(function(p){
+      out += '  - ' + (p.fecha||'?') + ' | ' + (p.placa||'?') + ' | ' + (p.operacion||'sin operación') +
+             ' | conductor: ' + (p.conductor||'sin asignar') +
+             (p.observaciones ? ' | ' + p.observaciones : '') + '\n';
+    });
+  } else {
+    out += '\nPROGRAMACION: no hay operaciones programadas.\n';
   }
   return out + '\n';
 }
@@ -15862,6 +15984,14 @@ function vozLeerPanelActivo(){
     });
   });
 
+  /* Respaldo genérico: hay pestañas (como Vehículos Carga) que no usan
+     .kpi ni tablas, sino bloques propios. Si con lo anterior no se sacó
+     nada, se lee el texto visible tal cual, para no quedarse a ciegas. */
+  if (out.split('\n').length < 6){
+    const texto = (p.innerText || '').replace(/\n{2,}/g, '\n').trim();
+    if (texto) out += 'Contenido visible de la pestaña:\n' + texto.slice(0, 7000) + '\n';
+  }
+
   if (out.length > 9000) out = out.slice(0, 9000) + '\n[...recortado...]\n';
   return out + '\n';
 }
@@ -15887,12 +16017,41 @@ function vozCatalogo(){
     return '- ' + k + ': ' + VOZ_CONTROLES[k].desc;
   }).join('\n');
   t += '\nNo existe ningún control para crear, editar ni borrar datos, ni para el PIN de Cortes a Proveedor: no los pidas.';
+
+  t += '\n\nADEMAS podés pedir cualquiera de estos conjuntos de datos con "extras":["clave1","clave2"] (hasta 5). ' +
+       'Sirven para responder cosas que las pestañas no muestran directamente:\n';
+  t += VOZ_GLOBALES.map(function(g){
+    const v = vozGlobal(g.clave);
+    return '- ' + g.clave + ': ' + g.etq + ' (' + (v ? v.length : 0) + ' registros)';
+  }).join('\n');
   return t;
 }
 
-function vozConstruirContexto(claves, desde, hasta, etiqueta){
+/* Elige qué conjuntos del lector universal sumar: los que el plan pidió
+   explícitamente, más los que la propia pregunta menciona por su nombre. */
+function vozGlobalesRelevantes(pregunta, extras){
+  const elegidas = [];
+  (Array.isArray(extras) ? extras : []).forEach(function(k){
+    if (VOZ_GLOBALES.some(function(g){ return g.clave === k; }) && elegidas.indexOf(k) === -1) elegidas.push(k);
+  });
+  const q = vozNorm(pregunta || '');
+  VOZ_GLOBALES.forEach(function(g){
+    if (elegidas.indexOf(g.clave) !== -1) return;
+    // Coincidencia por palabras significativas de la descripción
+    const hit = vozNorm(g.etq).split(/[^a-z0-9]+/)
+      .some(function(p){ return p.length > 5 && q.indexOf(p) !== -1; });
+    if (hit) elegidas.push(g.clave);
+  });
+  return elegidas.slice(0, 5);
+}
+
+function vozConstruirContexto(claves, desde, hasta, etiqueta, pregunta, extras){
   let ctx = 'Fecha de hoy: ' + new Date().toLocaleDateString('es-CO',{weekday:'long',year:'numeric',month:'long',day:'numeric'}) + '\n';
   ctx += 'Periodo consultado: ' + etiqueta + ' (desde ' + desde + ' hasta ' + hasta + ')\n\n';
+
+  // Inventario: qué existe y cuánto hay, para que nunca niegue algo que sí tiene
+  ctx += vozInventario();
+
   for (let i=0;i<claves.length;i++){
     if (ctx.length >= VOZ_MAX_CTX) break;
     const f = VOZ_FUENTES[claves[i]];
@@ -15902,6 +16061,15 @@ function vozConstruirContexto(claves, desde, hasta, etiqueta){
     ctx += (ctx.length + bloque.length > VOZ_MAX_CTX)
       ? bloque.slice(0, VOZ_MAX_CTX - ctx.length) + '\n[...recortado...]\n\n'
       : bloque;
+  }
+
+  // Lector universal: cualquier otro conjunto que venga al caso
+  const globales = vozGlobalesRelevantes(pregunta, extras);
+  for (let i=0;i<globales.length;i++){
+    if (ctx.length >= VOZ_MAX_CTX) break;
+    const bloque = vozBloqueLibre(globales[i], desde, hasta, etiqueta);
+    if (ctx.length + bloque.length > VOZ_MAX_CTX) break;
+    ctx += bloque;
   }
   return ctx;
 }
@@ -16077,7 +16245,8 @@ async function vozConsultar(pregunta){
     //    más los datos del periodo ya calculados.
     vozSetEstado('thinking','Analizando los datos…');
     const contexto = lecturas +
-                     vozConstruirContexto(plan.fuentes, plan.desde, plan.hasta, etiqueta);
+                     vozConstruirContexto(plan.fuentes, plan.desde, plan.hasta, etiqueta,
+                                          pregunta, plan.extras);
     const r = await vozProxy({ mode:'answer', question: pregunta, context: contexto });
 
     vozBurbuja('assistant', r.answer);
