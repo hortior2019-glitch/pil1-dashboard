@@ -736,6 +736,36 @@
     border-radius: 8px; font-size: 13.5px; font-weight: 600;
     box-shadow: 0 4px 24px rgba(0,0,0,.25); z-index: 9998; max-width: 90vw;
   }
+/* ── ESPERA DEL LOGIN ──────────────────────────────────────────────
+   La verificacion tarda de verdad: la clave se compara contra un hash
+   iterado miles de veces (a proposito, para encarecer el probar claves
+   al azar) y ademas hay un viaje al Apps Script. Sin este aviso el
+   boton parece no responder y el operario lo pulsa de nuevo. */
+#login-cargando{display:none;margin-top:18px;text-align:center}
+#login-cargando.viendose{display:block;animation:lg-entra .3s ease both}
+@keyframes lg-entra{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.lg-anillo{position:relative;width:46px;height:46px;margin:0 auto 12px}
+.lg-anillo span{
+  position:absolute;inset:0;border-radius:50%;
+  border:2px solid transparent;
+  animation:lg-gira 1.1s cubic-bezier(.5,0,.5,1) infinite;
+}
+.lg-anillo span:nth-child(1){border-top-color:#2d5a27}
+.lg-anillo span:nth-child(2){inset:7px;border-top-color:#b5860d;animation-duration:.85s;animation-direction:reverse}
+.lg-anillo span:nth-child(3){inset:14px;border-top-color:#3a7032;animation-duration:1.35s}
+@keyframes lg-gira{to{transform:rotate(360deg)}}
+.lg-msg{font-size:12px;font-weight:700;letter-spacing:.6px;color:#2d5a27;min-height:16px;transition:opacity .25s}
+.lg-msg.cambiando{opacity:0}
+.lg-sub{font-size:10.5px;color:#8a978a;margin-top:3px}
+/* Con el sistema pensando, el formulario deja de aceptar clics: evita el
+   doble envio, que gastaria dos intentos del limite sin que se entienda. */
+.login-ocupado input,.login-ocupado button{opacity:.45;pointer-events:none}
+.login-ocupado #login-cargando,.login-ocupado #pin-cargando{opacity:1}
+@media (prefers-reduced-motion:reduce){
+  .lg-anillo span{animation-duration:2.6s}
+  #login-cargando.viendose{animation:none}
+}
+
 </style>
 </head>
 <body>
@@ -805,6 +835,11 @@
       <button class="pin-key pin-del"  onclick="pinDel()">&#x232B;</button>
     </div>
     <div class="pin-error" id="pin-error"></div>
+<div id="login-cargando">
+  <div class="lg-anillo"><span></span><span></span><span></span></div>
+  <div class="lg-msg" id="login-cargando-msg">Verificando credenciales</div>
+  <div class="lg-sub">Esto toma unos segundos</div>
+</div>
     <button class="pin-btn" id="pin-btn" onclick="pinSubmit()">Ingresar</button>
   </div>
 </div>
@@ -1665,6 +1700,7 @@ async function pinSubmit() {
   const btn = document.getElementById('pin-btn');
   btn.disabled = true;
   btn.textContent = 'Verificando…';
+  loginEsperando(true);
 
   // JSONP — evita bloqueo CORS con Apps Script
   function verificarPinJSONP(url) {
@@ -1714,6 +1750,7 @@ async function pinSubmit() {
     pinValue = '';
     actualizarDots();
   }
+  loginEsperando(false);
   btn.disabled = false;
   btn.textContent = 'Ingresar';
 }
@@ -1722,6 +1759,53 @@ async function pinSubmit() {
 document.getElementById('comb-fecha').value = hoyLocal();
 cargarEquipos();
 // ═══════════════════════════════════════════════════════════
+/* ── ESPERA DEL LOGIN ──────────────────────────────────────────────
+   Los mensajes van cambiando para que se note que el sistema sigue
+   trabajando y no que se colgo. El ultimo se queda fijo: si tarda mas
+   de la cuenta, decir "ya casi" seria mentir. */
+var LOGIN_MENSAJES = [
+  'Verificando credenciales',
+  'Comprobando tu contraseña',
+  'Preparando tu sesión',
+  'Casi listo, el servidor está respondiendo',
+  'Sigue procesando, no cierres esta ventana'
+];
+var _loginTimer = null;
+
+function loginEsperando(activo) {
+  var caja = document.getElementById('login-cargando');
+  var msg  = document.getElementById('login-cargando-msg');
+  /* Sirve para las dos formas de ingreso: usuario y clave (pantalla-login)
+     y PIN (pin-overlay). */
+  var cont = document.getElementById('pantalla-login')
+          || document.getElementById('pin-overlay')
+          || document.body;
+  if (!caja || !msg) return;
+
+  if (_loginTimer) { clearInterval(_loginTimer); _loginTimer = null; }
+
+  if (!activo) {
+    caja.classList.remove('viendose');
+    cont.classList.remove('login-ocupado');
+    return;
+  }
+
+  var i = 0;
+  msg.textContent = LOGIN_MENSAJES[0];
+  caja.classList.add('viendose');
+  cont.classList.add('login-ocupado');
+
+  _loginTimer = setInterval(function () {
+    if (i >= LOGIN_MENSAJES.length - 1) { clearInterval(_loginTimer); _loginTimer = null; return; }
+    i++;
+    msg.classList.add('cambiando');
+    setTimeout(function () {
+      msg.textContent = LOGIN_MENSAJES[i];
+      msg.classList.remove('cambiando');
+    }, 250);
+  }, 2200);
+}
+
 </script>
 </body>
 </html>

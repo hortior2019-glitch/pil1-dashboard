@@ -351,6 +351,36 @@ input.campo-error-resaltado,select.campo-error-resaltado,textarea.campo-error-re
   .apreciacion-grid{grid-template-columns:repeat(3,1fr)}
   .tbl th,.tbl td{padding:6px 7px;font-size:11px}
 }
+/* ── ESPERA DEL LOGIN ──────────────────────────────────────────────
+   La verificacion tarda de verdad: la clave se compara contra un hash
+   iterado miles de veces (a proposito, para encarecer el probar claves
+   al azar) y ademas hay un viaje al Apps Script. Sin este aviso el
+   boton parece no responder y el operario lo pulsa de nuevo. */
+#login-cargando{display:none;margin-top:18px;text-align:center}
+#login-cargando.viendose{display:block;animation:lg-entra .3s ease both}
+@keyframes lg-entra{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.lg-anillo{position:relative;width:46px;height:46px;margin:0 auto 12px}
+.lg-anillo span{
+  position:absolute;inset:0;border-radius:50%;
+  border:2px solid transparent;
+  animation:lg-gira 1.1s cubic-bezier(.5,0,.5,1) infinite;
+}
+.lg-anillo span:nth-child(1){border-top-color:#1a5c35}
+.lg-anillo span:nth-child(2){inset:7px;border-top-color:#c9a227;animation-duration:.85s;animation-direction:reverse}
+.lg-anillo span:nth-child(3){inset:14px;border-top-color:#24784a;animation-duration:1.35s}
+@keyframes lg-gira{to{transform:rotate(360deg)}}
+.lg-msg{font-size:12px;font-weight:700;letter-spacing:.6px;color:#1a5c35;min-height:16px;transition:opacity .25s}
+.lg-msg.cambiando{opacity:0}
+.lg-sub{font-size:10.5px;color:#8a978a;margin-top:3px}
+/* Con el sistema pensando, el formulario deja de aceptar clics: evita el
+   doble envio, que gastaria dos intentos del limite sin que se entienda. */
+.login-ocupado input,.login-ocupado button{opacity:.45;pointer-events:none}
+.login-ocupado #login-cargando,.login-ocupado #pin-cargando{opacity:1}
+@media (prefers-reduced-motion:reduce){
+  .lg-anillo span{animation-duration:2.6s}
+  #login-cargando.viendose{animation:none}
+}
+
 </style>
 </head>
 <body>
@@ -401,6 +431,11 @@ input.campo-error-resaltado,select.campo-error-resaltado,textarea.campo-error-re
     <div class="login-error" id="login-error">Usuario o contrasena incorrectos.</div>
     <div class="login-block" id="login-block"></div>
     <div class="login-intentos" id="login-intentos"></div>
+<div id="login-cargando">
+  <div class="lg-anillo"><span></span><span></span><span></span></div>
+  <div class="lg-msg" id="login-cargando-msg">Verificando credenciales</div>
+  <div class="lg-sub">Esto toma unos segundos</div>
+</div>
   </div>
 </div>
 
@@ -4375,20 +4410,78 @@ async function enviarReporte(){
 }
 
 // ── LOGIN & SESION ────────────────────────────────
-const USUARIOS_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSU6sHBRI35p5dMo7JlkeWW9Wn648agSah05G-mD6xqA-NUjLAgg7TBynyZaBdQ3WNNXTFINsRNhgQ-/pub?gid=0&single=true&output=csv';
+/* AUTORIDAD DE AUTENTICACION.
+   Reemplaza al CSV publicado de usuarios: ese enlace entregaba a cualquiera
+   la lista completa con las contraseñas en texto plano, y esta app las
+   comparaba aca mismo, en el telefono del operario.
+   Es el MISMO endpoint que usa el dashboard, asi que las contraseñas y los
+   usuarios se administran en un solo lugar. */
+const AUTH_API = "https://script.google.com/macros/s/AKfycbwmseO6aZVuEaEWsfnXWKcH8TD4BrcN1VwsdI8tFZRHGgY9PsKs2d3fyJWegVR0Ao3Kow/exec";
+
+/* El token no lleva adentro el usuario ni los permisos: solo sirve para que
+   el servidor busque la sesion. Como no se usan cookies, el navegador no lo
+   manda solo y otro sitio no puede actuar en nombre del operario. */
+var _authToken = null;
+try { _authToken = localStorage.getItem('pil1_token') || null; } catch(e) {}
+
+function _guardarToken(t) {
+  _authToken = t || null;
+  try { t ? localStorage.setItem('pil1_token', t) : localStorage.removeItem('pil1_token'); } catch(e) {}
+}
+
+/* POST con text/plain: en GET la clave quedaria en la URL y en el historial,
+   y text/plain evita el preflight de CORS que Apps Script no responde. */
+function authPost(accion, extra) {
+  var cuerpo = Object.assign({ accion: accion, token: _authToken || '' }, extra || {});
+  return fetch(AUTH_API, {
+    method: 'POST', redirect: 'follow',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(cuerpo)
+  }).then(function(r){ return r.json(); });
+}
 const MAX_INTENTOS = 5;
 const BLOQUEO_MS   = 5 * 60 * 1000; // 5 minutos
 
 var usuariosDB = [];
 var sesionUsuario = null;
 
-// Restaurar sesión guardada
+/* Restaurar sesion.
+   Antes bastaba con que hubiera algo guardado en localStorage: cualquiera
+   podia escribir ahi a mano y quedar "adentro". Ahora lo guardado es solo
+   para pintar el nombre sin parpadeo; quien decide si la sesion sigue viva
+   es el servidor, al que se le pregunta enseguida. Si dice que no, se cierra. */
 (function() {
   try {
     var saved = localStorage.getItem('pil1_sesion');
     if (saved) sesionUsuario = JSON.parse(saved);
   } catch(e) { sesionUsuario = null; }
+
+  if (!_authToken) { sesionUsuario = null; return; }
+
+  authPost('sesion', {}).then(function(r){
+    if (r && r.ok) {
+      sesionUsuario = { usuario: r.usuario, nombre: r.nombre || r.usuario, activo: true, esAdmin: !!r.admin };
+      try { localStorage.setItem('pil1_sesion', JSON.stringify(sesionUsuario)); } catch(e) {}
+      if (typeof actualizarUIFiltroRango === 'function') { try { actualizarUIFiltroRango(); } catch(e) {} }
+    } else {
+      cerrarSesionPil();
+    }
+  }).catch(function(){ /* sin señal: se deja lo guardado y se revalida al reintentar */ });
 })();
+
+/* Cierra la sesion aca y tambien en el servidor, para que el token no sirva
+   mas aunque alguien se lo hubiera copiado. */
+function cerrarSesionPil() {
+  var t = _authToken;
+  _guardarToken(null);
+  sesionUsuario = null;
+  try { localStorage.removeItem('pil1_sesion'); } catch(e) {}
+  if (t) { authPost('logout', {}).catch(function(){}); }
+  var pl = document.getElementById('pantalla-login');
+  var pb = document.getElementById('pantalla-bienvenida');
+  if (pl) pl.style.display = '';
+  if (pb) pb.style.display = 'none';
+}
 
 // ── PREFERENCIAS VISUALES: restaurar alto contraste y modo noche ──
 (function() {
@@ -4455,23 +4548,10 @@ window.addEventListener('load', function() {
   cargarConductores();
   // Cargar limites de peso por placa+operacion
   cargarLimitesPeso();
-  // Cargar CSV de usuarios
-  fetchCSVMultiProxy(USUARIOS_CSV)
-    .then(function(t){
-      var lines = t.trim().split('\n').slice(1);
-      usuariosDB = lines.map(function(l){
-        var p = l.split(',').map(function(x){return x.trim().replace(/^"|"$/g,'');});
-        return {usuario: (p[0]||'').toLowerCase().trim(), contrasena: (p[1]||'').trim(), nombre: (p[2]||'').trim(), activo: (p[3]||'').toUpperCase().trim()==='SI'};
-      }).filter(function(u){return u.usuario;});
-    }).catch(function(){
-      // Si falla el CSV, permitir continuar con usuarios hardcodeados de respaldo
-      usuariosDB = [
-        {usuario:'alexander',contrasena:'pil2026',nombre:'Alexander Velásquez Benavides',activo:true},
-        {usuario:'hidalgo',  contrasena:'pil2026',nombre:'Idaldo Madrid Lara',           activo:true},
-        {usuario:'deivi',    contrasena:'pil2026',nombre:'Deivi José Oliveros Peinado',  activo:true},
-        {usuario:'saul',     contrasena:'pil2026',nombre:'Saúl García Sandoval',         activo:true},
-      ];
-    });
+  /* Aca se descargaba el CSV de usuarios con las contraseñas en texto plano
+     y, si fallaba, se caia a una lista con cuatro claves escritas en este
+     mismo archivo publico. Ya no se descarga ninguna lista: el servidor es
+     el unico que sabe quien existe y con que clave. */
 });
 
 function verificarBloqueo() {
@@ -4506,10 +4586,11 @@ function intentarLogin() {
   var bloqueadoHasta = parseInt(sessionStorage.getItem('pil1_bloqueado')||'0');
   if (bloqueadoHasta > Date.now()) return;
 
-  var usuario    = (document.getElementById('login-usuario').value||'').replace(/^[\s\u00A0\u200B\u200C\u200D\uFEFF\u2000-\u200A\u202F\u205F\u3000]+|[\s\u00A0\u200B\u200C\u200D\uFEFF\u2000-\u200A\u202F\u205F\u3000]+$/g,'').toLowerCase();
-  var contrasena = (document.getElementById('login-pass').value||'').trim();
-  var errEl     = document.getElementById('login-error');
-  var intEl     = document.getElementById('login-intentos');
+  var usuario    = (document.getElementById('login-usuario').value||'').trim().toLowerCase();
+  var contrasena = (document.getElementById('login-pass').value||'');
+  var errEl      = document.getElementById('login-error');
+  var intEl      = document.getElementById('login-intentos');
+  var btn        = document.getElementById('btn-login');
 
   if (!usuario || !contrasena) {
     errEl.textContent = 'Ingrese usuario y contrasena.';
@@ -4517,56 +4598,76 @@ function intentarLogin() {
     return;
   }
 
-  // Usuario Admin hardcodeado: unico con acceso al filtro de rango
-  // ampliado en Consultar registros (los demas usuarios quedan igual).
-  var ADMIN_USUARIO = 'admin';
-  var ADMIN_CLAVE   = 'Horti123++';
-  var esAdminHardcodeado = (usuario === ADMIN_USUARIO && contrasena === ADMIN_CLAVE);
-
-  var user = esAdminHardcodeado
-    ? { usuario: 'admin', contrasena: ADMIN_CLAVE, nombre: 'Administrador', activo: true, esAdmin: true }
-    : usuariosDB.find(function(u){ return u.usuario === usuario && u.contrasena === contrasena && u.activo; });
-
-  if (user) {
-    // Login exitoso
-    sessionStorage.removeItem('pil1_intentos');
-    sessionStorage.removeItem('pil1_bloqueado');
-    errEl.style.display = 'none';
-    intEl.textContent = '';
-    sesionUsuario = user;
-    localStorage.setItem('pil1_sesion', JSON.stringify(user));
-
-    // Registrar acceso en log
-    fetch('https://script.google.com/macros/s/AKfycbxZpFHLbmGpE9LuASyf-0iWvFWtzUO3HZPjk6u68Yp76E9Fip2wrviCF6z2iAuWMMqZHA/exec', {
-      method: 'POST',
-      body: JSON.stringify({
-        action: 'registrarAcceso',
-        usuario: user.usuario,
-        nombre: user.nombre,
-        dispositivo: navigator.userAgent
-      })
-    }).catch(function(){}); // silencioso, no bloquea el login
-
-    mostrarBienvenida();
-  } else {
-    // Intento fallido
-    var intentos = parseInt(sessionStorage.getItem('pil1_intentos')||'0') + 1;
-    sessionStorage.setItem('pil1_intentos', intentos);
-    var restantes = MAX_INTENTOS - intentos;
-    if (intentos >= MAX_INTENTOS) {
-      var hasta = Date.now() + BLOQUEO_MS;
-      sessionStorage.setItem('pil1_bloqueado', hasta);
-      document.getElementById('btn-login').disabled = true;
-      errEl.style.display = 'none';
-      mostrarContadorBloqueo(hasta);
-    } else {
-      errEl.textContent = 'Usuario o contrasena incorrectos.';
-      errEl.style.display = 'block';
-      intEl.textContent = restantes + ' intento' + (restantes===1?'':'s') + ' restante' + (restantes===1?'':'s') + '.';
-    }
-    document.getElementById('login-pass').value = '';
-    document.getElementById('login-pass').focus();
+  /* Si la URL del servicio quedara sin configurar, fetch() la tomaria como
+     ruta relativa y el 404 en HTML reventaria al leerlo como JSON, dando un
+     "revise su conexion" que le echa la culpa a la red. Se detecta antes. */
+  if (AUTH_API.indexOf('script.google.com') === -1) {
+    errEl.textContent = 'El sistema no esta configurado. Avise al administrador.';
+    errEl.style.display = 'block';
+    return;
   }
+
+  errEl.style.display = 'none';
+  intEl.textContent = '';
+  btn.disabled = true;
+  loginEsperando(true);
+
+  authPost('login', { usuario: usuario, password: contrasena })
+    .catch(function(e){
+      console.error('Login: el servicio no respondio JSON.', e);
+      return { ok:false, error:'No se pudo verificar el ingreso. Intente de nuevo.' };
+    })
+    .then(function(r){
+      btn.disabled = false;
+      loginEsperando(false);
+
+      if (r && r.ok) {
+        sessionStorage.removeItem('pil1_intentos');
+        sessionStorage.removeItem('pil1_bloqueado');
+        errEl.style.display = 'none';
+        intEl.textContent = '';
+
+        _guardarToken(r.token);
+        /* Solo lo indispensable, y NUNCA la contraseña: antes el objeto que
+           se guardaba aca traia la clave adentro y quedaba en el telefono.
+           Que sea administrador tambien lo decide el servidor. */
+        sesionUsuario = { usuario: r.usuario, nombre: r.nombre || r.usuario, activo: true, esAdmin: !!r.admin };
+        try { localStorage.setItem('pil1_sesion', JSON.stringify(sesionUsuario)); } catch(e) {}
+
+        fetch('https://script.google.com/macros/s/AKfycbxZpFHLbmGpE9LuASyf-0iWvFWtzUO3HZPjk6u68Yp76E9Fip2wrviCF6z2iAuWMMqZHA/exec', {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'registrarAcceso',
+            usuario: sesionUsuario.usuario,
+            nombre: sesionUsuario.nombre,
+            dispositivo: navigator.userAgent
+          })
+        }).catch(function(){});
+
+        mostrarBienvenida();
+        return;
+      }
+
+      /* El conteo local sigue, pero ahora es solo comodidad visual: el limite
+         de verdad lo aplica el servidor, que es el unico que no se puede
+         saltar borrando el almacenamiento del navegador. */
+      var intentos = parseInt(sessionStorage.getItem('pil1_intentos')||'0') + 1;
+      sessionStorage.setItem('pil1_intentos', intentos);
+      var restantes = MAX_INTENTOS - intentos;
+      if (intentos >= MAX_INTENTOS) {
+        var hasta = Date.now() + BLOQUEO_MS;
+        sessionStorage.setItem('pil1_bloqueado', hasta);
+        btn.disabled = true;
+        errEl.style.display = 'none';
+        mostrarContadorBloqueo(hasta);
+      } else {
+        errEl.textContent = (r && r.error) ? r.error : 'Usuario o contrasena incorrectos.';
+        errEl.style.display = 'block';
+        intEl.textContent = restantes + ' intento' + (restantes===1?'':'s') + ' restante' + (restantes===1?'':'s') + '.';
+      }
+      document.getElementById('login-pass').value = '';
+      document.getElementById('login-pass').focus();
+    });
 }
 
 function mostrarBienvenida() {
@@ -4855,6 +4956,49 @@ function getAHTSegundos() {
   if (!ahtInicio) return 0;
   return Math.floor((Date.now() - ahtInicio) / 1000);
 }
+/* ── ESPERA DEL LOGIN ──────────────────────────────────────────────
+   Los mensajes van cambiando para que se note que el sistema sigue
+   trabajando y no que se colgo. El ultimo se queda fijo: si tarda mas
+   de la cuenta, decir "ya casi" seria mentir. */
+var LOGIN_MENSAJES = [
+  'Verificando credenciales',
+  'Comprobando tu contraseña',
+  'Preparando tu sesión',
+  'Casi listo, el servidor está respondiendo',
+  'Sigue procesando, no cierres esta ventana'
+];
+var _loginTimer = null;
+
+function loginEsperando(activo) {
+  var caja = document.getElementById('login-cargando');
+  var msg  = document.getElementById('login-cargando-msg');
+  var cont = document.getElementById('pantalla-login') || document.body;
+  if (!caja || !msg) return;
+
+  if (_loginTimer) { clearInterval(_loginTimer); _loginTimer = null; }
+
+  if (!activo) {
+    caja.classList.remove('viendose');
+    cont.classList.remove('login-ocupado');
+    return;
+  }
+
+  var i = 0;
+  msg.textContent = LOGIN_MENSAJES[0];
+  caja.classList.add('viendose');
+  cont.classList.add('login-ocupado');
+
+  _loginTimer = setInterval(function () {
+    if (i >= LOGIN_MENSAJES.length - 1) { clearInterval(_loginTimer); _loginTimer = null; return; }
+    i++;
+    msg.classList.add('cambiando');
+    setTimeout(function () {
+      msg.textContent = LOGIN_MENSAJES[i];
+      msg.classList.remove('cambiando');
+    }, 250);
+  }, 2200);
+}
+
 </script>
 </div><!-- /pantalla-app -->
 
