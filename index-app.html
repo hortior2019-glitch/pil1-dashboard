@@ -6003,34 +6003,78 @@ function renderVehiculos() {
     const fotoHtml = v.foto
       ? `<img src="${urlFotoDrive(v.foto)}" data-alt="${urlFotoDriveAlt(v.foto)}" alt="${v.placa}" onclick="abrirFotoBaucher('${(v.foto||'').replace(/'/g,'')}','${(v.placa||'').replace(/'/g,'')}')" onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src=this.dataset.alt;}else{this.style.display='none';}" style="width:130px;height:100px;object-fit:cover;border-radius:5px;border:1px solid var(--rule);cursor:zoom-in;flex-shrink:0">`
       : `<div style="width:130px;height:100px;border:1px dashed var(--rule);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--ink-l);flex-shrink:0;text-align:center">Sin foto</div>`;
-    return `<div class="card" style="padding:16px 18px;border-left:5px solid ${alerta?'var(--red)':'var(--green)'}">
-      <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
-        ${fotoHtml}
-        <div style="flex:1;min-width:240px">
-          <div class="veh-top" style="background:${alerta?'var(--red-l)':'var(--blue-l)'}">
-            <div style="font-family:'Libre Baskerville',serif;font-size:26px;font-weight:800;color:${alerta?'var(--red)':'var(--navy)'};letter-spacing:1px;line-height:1">${v.placa||'—'}</div>
-            ${alerta?'<span style="font-size:9px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:20px;background:var(--red);color:#fff">REVISAR DOCUMENTOS</span>':''}
-            <span style="margin-left:auto;font-family:'Libre Baskerville',serif;font-size:15px;font-weight:700;color:var(--ink-m);white-space:nowrap">${fmt(parseInt(v.km||0,10)||0)} <span style="font-size:11px;font-weight:400;color:var(--ink-l)">km</span></span>
+    /* La tarjeta del listado usa el MISMO lenguaje visual que el reporte
+       impreso: marco verde, cabecera con la placa, franjas de sección y
+       las mismas cajas de documentos e índice de estado. Comparte las
+       funciones con verReporteVehiculo(), así las dos vistas no pueden
+       mostrar cifras distintas. */
+    const est = _vehIndiceEstado(v.placa);
+    const ultComb = (combDeVehiculo(v.placa) || [])[0] || null;
+    const ultMantV = mantsV[0] || null;
+
+    return `<div class="card" style="padding:20px;background:#fff;border:3px solid ${alerta ? 'var(--red)' : VERDE_REPORTE};border-radius:12px;margin-bottom:18px">
+
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;
+        border-bottom:2px dotted var(--rule);padding-bottom:14px;margin-bottom:16px">
+        <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">
+          ${fotoHtml}
+          <div>
+            <div style="font-family:'Playfair Display',serif;font-size:13px;font-weight:700;color:var(--ink-m);letter-spacing:1px">ESTADO DE</div>
+            <div style="font-family:'Playfair Display',serif;font-size:24px;font-weight:800;color:${alerta ? 'var(--red)' : VERDE_REPORTE};line-height:1.1">VEHÍCULO DE CARGA</div>
+            <div style="font-size:11px;color:var(--ink-l);margin-top:4px">
+              ${fmt(parseInt(v.km||0,10)||0)} km${v.kmActualizado ? ' · actualizado el ' + _fmtFechaVeh(v.kmActualizado) : ''}</div>
+            ${alerta ? '<span style="display:inline-block;margin-top:7px;font-size:9px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:20px;background:var(--red);color:#fff">REVISAR DOCUMENTOS</span>' : ''}
           </div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-            ${_cajaDocVeh('SOAT', v.soat)}
-            ${_cajaDocVeh('Tecnomecánica', v.tecno)}
+        </div>
+        <div style="text-align:center;background:${alerta ? 'var(--red)' : VERDE_REPORTE};border-radius:10px;padding:12px 22px;color:#fff">
+          <div style="font-size:10px;font-weight:700;letter-spacing:2px;opacity:.75">PLACA</div>
+          <div style="font-family:'Libre Baskerville',serif;font-size:30px;font-weight:800;line-height:1.1">${_escVeh(v.placa||'—')}</div>
+        </div>
+      </div>
+
+      ${_rpBanda('Estado general')}
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px">
+        ${_rpIndice(est)}
+        ${_rpDoc('Revisión técnico mecánica', v.tecno)}
+        ${_rpDoc('SOAT', v.soat)}
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:18px">
+        <div>
+          ${_rpBanda('Información general')}
+          <div style="border:1.5px solid var(--rule);border-radius:10px;padding:6px 14px 10px">
+            ${_rpFila('mantenimiento', 'Kilometraje', fmt(parseInt(v.km||0,10)||0) + ' km')}
+            ${_rpFila('combustible', 'Último tanqueo', ultComb ? _fmtPesos(ultComb.valor) + ' · ' + _fmtFechaVeh(ultComb.fecha) : 'sin registros')}
+            ${_rpFila('preop', 'Última inspección', est.u ? _fmtFechaVeh(est.u.fecha) + (est.u.conductor ? ' · ' + _escVeh(est.u.conductor) : '') : 'sin registros')}
+            ${_rpFila('mantenimiento', 'Último mantenimiento', ultMantV ? _escVeh(ultMantV.titulo||'—') + ' · ' + _fmtFechaVeh(ultMantV.fecha) : 'sin registros')}
+            ${_rpFila('documentos', 'Documentos', _docsDeVehiculo(v.placa).length + ' archivo(s)')}
           </div>
-          ${bloqueProgramacionVehiculo(v.placa)}
-          ${bloqueCombustibleVehiculo(v.placa)}
-          ${bloquePreopVehiculo(v.placa)}
-          ${bloqueAceiteVehiculo(v)}
-          ${bloqueMantenimientosVehiculo(v.placa)}
-          <div class="veh-btns" style="display:flex;gap:8px;flex-wrap:wrap;padding-top:3px">
-            <button onclick="verReporteVehiculo('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Ver reporte</button>
+        </div>
+        <div>
+          ${_rpBanda('Novedades encontradas')}
+          <div style="border:1.5px solid var(--rule);border-radius:10px;padding:6px 14px">
+            ${_rpNovedades(v.placa)}
+          </div>
+        </div>
+      </div>
+
+      ${_rpBanda('Seguimiento')}
+      <div style="margin-bottom:4px">
+        ${bloqueProgramacionVehiculo(v.placa)}
+        ${bloqueCombustibleVehiculo(v.placa)}
+        ${bloquePreopVehiculo(v.placa)}
+        ${bloqueAceiteVehiculo(v)}
+        ${bloqueMantenimientosVehiculo(v.placa)}
+      </div>
+
+          <div class="veh-btns" style="display:flex;gap:8px;flex-wrap:wrap;padding-top:8px;border-top:2px dotted var(--rule);margin-top:14px">
+            <button onclick="verReporteVehiculo('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">🖨 Imprimir reporte</button>
             <button onclick="abrirCalendarioProgramacion('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:#1a5c35;color:#fff;border:none;border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">📅 Programar</button>
             <button onclick="verDocumentosVehiculo('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--white);color:var(--gold);border:1px solid var(--gold);border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Documentos (${_docsDeVehiculo(v.placa).length})</button>
             <button onclick="abrirFormKm('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--white);color:var(--navy);border:1px solid var(--navy);border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Actualizar km</button>
             <button onclick="abrirFormMantenimiento('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">+ Mantenimiento</button>
             <button onclick="verHistorialVehiculo('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Historial (${mantsV.length})</button>
             <button onclick="abrirFormVehiculo('${(v.placa||'').replace(/'/g,'')}')" style="padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:transparent;color:var(--ink-l);border:1px solid var(--rule);border-radius:3px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Editar</button>
-          </div>
-        </div>
       </div>
     </div>`;
   }).join('');
@@ -7077,6 +7121,31 @@ function _vsecVacio(icono, titulo, color, fondo, mensaje) {
    ═══════════════════════════════════════════════════════════════════════ */
 
 const VERDE_REPORTE = '#1a5c35';
+
+/* Indice de estado del vehiculo, a partir del ultimo preoperacional.
+   Vive en una sola funcion para que la tarjeta del listado y el reporte
+   impreso muestren SIEMPRE la misma cifra. */
+function _vehIndiceEstado(placa) {
+  const u = (preopDeVehiculo(placa) || [])[0] || null;
+  if (!u) return { u:null, pct:null, color:'var(--ink-l)', etiqueta:'Sin inspección' };
+  const evaluados = u.buenos + u.regulares + u.malos;
+  const base = evaluados || 35;
+  const pct = Math.round(((u.buenos + u.regulares * 0.5) / base) * 100);
+  return {
+    u: u, pct: pct,
+    color: pct >= 90 ? VERDE_REPORTE : pct >= 70 ? '#8b6914' : 'var(--red)',
+    etiqueta: pct >= 90 ? 'Óptimo' : pct >= 70 ? 'Aceptable' : pct >= 50 ? 'Deficiente' : 'Crítico'
+  };
+}
+
+// Caja del indice de estado, con el mismo aspecto que las de documentos
+function _rpIndice(est) {
+  return `<div style="flex:1;min-width:180px;border:1.5px solid var(--rule);border-radius:10px;padding:12px 16px;text-align:center">
+    <div style="font-size:10px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-m);margin-bottom:6px">Índice de estado</div>
+    <div style="font-family:'Libre Baskerville',serif;font-size:30px;font-weight:800;color:${est.color};line-height:1">${est.pct === null ? '—' : est.pct + '%'}</div>
+    <div style="font-size:11px;font-weight:700;color:${est.color};margin-top:3px">${est.etiqueta}</div>
+  </div>`;
+}
 
 // Franja de titulo de seccion, como las del informe impreso
 function _rpBanda(titulo, ancho) {
@@ -16304,9 +16373,7 @@ function vozPintarSelectorVoces(){
   }
 }
 
-function vozHablar(texto){
-  if (!('speechSynthesis' in window)) return;
-  window.speechSynthesis.cancel();
+function vozArmarUtterance(texto){
   const u = new SpeechSynthesisUtterance(texto);
   u.lang = 'es-CO';
   u.rate = _vozVelocidad;
@@ -16314,9 +16381,39 @@ function vozHablar(texto){
     const v = vozVocesDisponibles().find(function(x){ return x.name === _vozElegida; });
     if (v){ u.voice = v; u.lang = v.lang; }
   }
+  return u;
+}
+
+function vozHablar(texto){
+  if (!('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+  const u = vozArmarUtterance(texto);
   u.onstart = function(){ vozSetEstado('speaking','Hablando…'); };
   u.onend   = function(){ vozSetEstado('','Preguntame por cualquier fecha o pestaña'); };
   window.speechSynthesis.speak(u);
+}
+
+/* Habla y AVISA cuando terminó. Es lo que permite narrar por partes:
+   se dice un tramo, se espera a que la voz lo termine, y recién ahí se
+   pasa al siguiente. Trae dos respaldos porque no todos los motores de
+   voz disparan onend de forma confiable. */
+function vozHablarEsperar(texto){
+  return new Promise(function(resolver){
+    const estimado = Math.min(22000, 1800 + texto.length * 85);
+    if (!('speechSynthesis' in window)){
+      setTimeout(resolver, Math.min(7000, 900 + texto.length * 45));
+      return;
+    }
+    window.speechSynthesis.cancel();
+    let listo = false;
+    const terminar = function(){ if (listo) return; listo = true; resolver(); };
+    const u = vozArmarUtterance(texto);
+    u.onstart = function(){ vozSetEstado('speaking','Hablando…'); };
+    u.onend   = terminar;
+    u.onerror = terminar;
+    window.speechSynthesis.speak(u);
+    setTimeout(terminar, estimado);
+  });
 }
 
 /* Apertura/cierre en dos tiempos: primero se hace visible el contenedor,
@@ -16346,6 +16443,65 @@ function vozCerrarPanel(){
   }, 430);   // acompaña la transición de salida de la tarjeta
 }
 
+/* ══════════════════════════════════════════════════════════════
+   NARRACION POR TRAMOS
+   La respuesta viene partida en pedazos. Por cada uno: se abre la
+   pestaña, se aplica el filtro, se resalta el dato y recién ahí se
+   habla. Se espera a que la voz termine antes de seguir, para que lo
+   que se ve y lo que se escucha vayan juntos.
+   ══════════════════════════════════════════════════════════════ */
+async function vozNarrarPorTramos(r, plan, etapas){
+  // Si el proxy todavía no manda tramos, se usa la respuesta entera
+  let tramos = Array.isArray(r.segmentos) ? r.segmentos.filter(function(s){ return s && s.dice; }) : [];
+  if (!tramos.length) tramos = [{ dice: r.answer || '', muestra: '' }];
+
+  const textoCompleto = tramos.map(function(s){ return s.dice; }).join(' ');
+  let panelActual = '';
+
+  for (let i = 0; i < tramos.length; i++){
+    const s = tramos[i];
+
+    // 1. Llevar la pantalla a donde está ese dato
+    const panel = s.panel || (etapas[0] && etapas[0].panel) || plan.panel;
+    if (panel && panel !== panelActual){
+      await vozAsegurarDatos(VOZ_PANEL_FUENTE[panel] || []);
+      if (vozNavegar(panel)) panelActual = panel;
+      // El filtro del periodo se aplica una sola vez, al entrar
+      if (i === 0 || s.panel){
+        const et = vozEtiquetaRango(plan.desde, plan.hasta, plan.etiqueta);
+        const destino = vozAplicarRango(plan.desde, plan.hasta, et, panel);
+        if (destino && destino !== panel){ vozNavegar(destino); panelActual = destino; }
+      }
+      await vozEsperar(340);
+    }
+
+    // 2. Resaltar lo que se va a nombrar, ANTES de decirlo
+    let el = null;
+    if (s.muestra){
+      el = vozBuscarEnPanel(s.muestra);
+      if (el){
+        vozScrollA(el);
+        await vozEsperar(520);
+        vozAislar(el);
+        var tag = vozPonerTag(el, s.muestra);
+        vozAccion('🎯', 'Mostrando: ' + s.muestra, true);
+      }
+    }
+
+    // 3. Decirlo, y esperar a que termine de hablar
+    vozBurbuja('assistant', s.dice);
+    await vozHablarEsperar(s.dice);
+
+    // 4. Soltar el foco y seguir con el próximo tramo
+    if (el){ vozQuitarFocos(); if (tag) tag.remove(); }
+    await vozEsperar(260);
+  }
+
+  vozQuitarFocos();
+  vozSetEstado('','Preguntame por cualquier fecha o pestaña');
+  return textoCompleto;
+}
+
 /* ── Ciclo principal: pregunta → plan → ejecución → respuesta ── */
 async function vozConsultar(pregunta){
   pregunta = (pregunta||'').trim();
@@ -16364,37 +16520,41 @@ async function vozConsultar(pregunta){
     const plan = await vozPedirPlan(pregunta);
     const etiqueta = vozEtiquetaRango(plan.desde, plan.hasta, plan.etiqueta);
 
-    // 2. El navegador recorre el dashboard real, una etapa por vez:
-    //    resuelve una pestaña completa y recién ahí pasa a la siguiente.
+    /* ── FASE 1: UBICAR, SIN MOVER EL DASHBOARD ──
+       Solo se cargan los datos que hagan falta. No se navega, no se
+       filtra y no se resalta nada: primero se averigua DÓNDE está la
+       información, en silencio, sin marear con saltos de pestaña. */
+    vozSetEstado('thinking','Ubicando la información…');
     await vozAsegurarDatos(plan.fuentes);
-    vozOverlay.classList.add('voz-compacto');   // deja ver la pestaña detrás
 
     const etapas = vozEtapasDelPlan(plan);
-    let lecturas = '';
-    for (let i = 0; i < etapas.length; i++){
-      vozSetEstado('thinking', etapas.length > 1
-        ? ('Revisando ' + (i + 1) + ' de ' + etapas.length + '…')
-        : 'Consultando el sistema…');
-      lecturas += await vozEjecutarEtapa(etapas[i], plan, i, etapas.length);
-    }
+    const paneles = [];
+    etapas.forEach(function(e){
+      const p = e.panel || plan.panel;
+      if (p && paneles.indexOf(p) === -1) paneles.push(p);
+      (VOZ_PANEL_FUENTE[p] || []).forEach(function(k){});
+    });
+    const nombres = paneles.map(function(p){
+      const t = document.querySelector('.nav-tab[data-panel="' + p + '"]');
+      return t ? (t.textContent || '').trim() : p;
+    });
+    vozAccion('🔎', 'Ya sé dónde está: ' + nombres.join(' y '), true);
 
-    // 3. Se arma el contexto: lo que quedó en pantalla en CADA etapa,
-    //    más los datos del periodo ya calculados.
-    vozSetEstado('thinking','Analizando los datos…');
-    const contexto = lecturas +
-                     vozConstruirContexto(plan.fuentes, plan.desde, plan.hasta, etiqueta,
+    const contexto = vozConstruirContexto(plan.fuentes, plan.desde, plan.hasta, etiqueta,
                                           pregunta, plan.extras);
+
+    /* ── FASE 2: NARRAR MOSTRANDO ──
+       Se pide la respuesta partida en tramos. Cada tramo se muestra y se
+       dice: se abre la pestaña, se resalta el dato, se habla, y recién
+       cuando la voz termina se pasa al siguiente. */
+    vozSetEstado('thinking','Preparando el recorrido…');
     const idioma = vozIdiomaActual();
     const r = await vozProxy({ mode:'answer', question: pregunta, context: contexto,
-                               idioma: idioma.lang, idiomaNombre: idioma.nombre });
+                               idioma: idioma.lang, idiomaNombre: idioma.nombre,
+                               narrado: true, panelPorDefecto: plan.panel });
 
-    vozBurbuja('assistant', r.answer);
-    vozSetEstado('','Preguntame por cualquier fecha o pestaña');
-    vozHablar(r.answer);
-
-    // Si fue una sola etapa, se señala lo que la respuesta nombró.
-    // Con varias, cada etapa ya mostró lo suyo mientras la recorría.
-    if (etapas.length === 1) vozRecorrerFocos(r.answer, []);
+    vozOverlay.classList.add('voz-compacto');   // deja ver el dashboard detrás
+    await vozNarrarPorTramos(r, plan, etapas);
   } catch(err){
     vozBurbuja('assistant', 'No pude completar la consulta: ' + err.message);
     vozSetEstado('','Preguntame por cualquier fecha o pestaña');
