@@ -1970,11 +1970,69 @@ function validarCodigoPomar(input) {
   warn.style.display = val.length > 0 && val.length < 6 ? 'block' : 'none';
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   LECTURA DE REGISTROS POR BACKEND (para cerrar el Google Sheet)
+   ───────────────────────────────────────────────────────────────
+   Los registros ya no se leen del CSV publicado sino del Apps
+   Script, que corre con los permisos del dueño de la hoja. Asi el
+   Sheet puede quedar en RESTRINGIDO.
+
+   El endpoint ?datos=1 manda los encabezados una sola vez y las
+   filas como arreglos; aca se rearman los objetos para que todo lo
+   que sigue (renderConsulta, exportar PDF, etc.) funcione igual.
+
+   Respaldo en cascada, para no dejar la planta sin registros
+   mientras se termina de migrar:
+     1. backend rapido (?datos=1)
+     2. backend viejo (devuelve objetos)
+     3. CSV publicado
+   ═══════════════════════════════════════════════════════════════ */
+function armarObjetosIngreso(headers, rows) {
+  var h = (headers || []).map(function (x) { return (x || '').toString().trim(); });
+  return (rows || []).map(function (fila) {
+    var obj = {};
+    h.forEach(function (nombre, i) { obj[nombre] = (fila[i] == null ? '' : fila[i]).toString().trim(); });
+    return obj;
+  }).filter(function (o) {
+    return Object.keys(o).some(function (k) { return o[k]; });
+  });
+}
+
+async function obtenerRegistrosBackend() {
+  try {
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 60000) : null;
+    var res = await fetch(WEBAPP_URL + '?datos=1&t=' + Date.now(), ctrl ? { signal: ctrl.signal } : {});
+    if (timer) clearTimeout(timer);
+    if (res.ok) {
+      var j = await res.json();
+      if (j && j.success && Array.isArray(j.rows)) return armarObjetosIngreso(j.headers, j.rows);
+      /* Backend sin actualizar: devuelve los valores con su tipo nativo
+         (el tiquete llega como numero) y todo el codigo espera texto,
+         que es lo que daba el CSV. Se normaliza. */
+      if (j && j.success && Array.isArray(j.data)) {
+        return j.data.map(function (fila) {
+          var obj = {};
+          Object.keys(fila).forEach(function (k) {
+            obj[(k || '').toString().trim()] = (fila[k] == null ? '' : fila[k]).toString().trim();
+          });
+          return obj;
+        });
+      }
+    }
+  } catch (e) {
+    console.warn('Registros por backend fallaron:', e.message);
+  }
+  // Respaldo: CSV publicado
+  console.warn('Registros: usando el CSV publicado como respaldo.');
+  var text = await fetchCSVMultiProxy(CSV_URL);
+  return parseCSV(text);
+}
+
 // ── ALQUERIA CONSECUTIVOS ─────────────────────────
 function cargarConsecutivosAlqueria() {
-  fetchCSVMultiProxy(CSV_URL)
-    .then(function(text){
-      var rows = parseCSV(text);
+  obtenerRegistrosBackend()
+    .then(function(rows){
       alqueriaCodigos = rows
         .filter(function(r){ return (r['OPERACION']||'').toLowerCase().includes('alquer'); })
         .map(function(r){ return parseInt(r['NUMERO TIQUETE']||'0'); })
@@ -3938,8 +3996,7 @@ async function cargarRegistros() {
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="12" class="empty"><span class="spinner"></span>Cargando...</td></tr>';
   try {
-    var text = await fetchCSVMultiProxy(CSV_URL);
-    registrosData = parseCSV(text);
+    registrosData = await obtenerRegistrosBackend();
     renderConsulta();
   } catch(e) {
     console.log('cargarRegistros error:', e.message);

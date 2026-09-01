@@ -3228,6 +3228,76 @@ const SHEETS = {
   // basta con que el Sheet sea visible para cualquiera con el enlace.
   combustible: "https://docs.google.com/spreadsheets/d/124b75oV4gNis_BBQe55Xhppt5IIPMZhJaH7n5DedWtM/export?format=csv&gid=1057192845"
 };
+/* ═══════════════════════════════════════════════════════════════════════
+   INGRESO DE MATERIAL · LECTURA POR BACKEND
+   ───────────────────────────────────────────────────────────────────────
+   La hoja de ingreso ya NO se lee por CSV publicado, sino a traves del
+   Apps Script, que corre con los permisos del dueño. Asi el Google Sheet
+   puede quedar en RESTRINGIDO sin que el dashboard deje de funcionar.
+
+   El endpoint ?datos=1 devuelve los encabezados una sola vez y las filas
+   como arreglos (mucho mas liviano que repetir los 33 nombres de columna
+   en cada una de las 4.400 filas). Aca se rearman los objetos, para que
+   todo lo que sigue funcione exactamente igual que con el CSV.
+
+   Hay respaldo en cascada para no romper nada mientras se migra:
+     1. backend rapido (?datos=1)
+     2. backend viejo (devuelve objetos)
+     3. CSV publicado (avisa en la barra de estado que hay que revisar)
+   ═══════════════════════════════════════════════════════════════════════ */
+/* Misma URL /exec que INGRESO_API (la que usan los cortes y las alertas),
+   pero con constante propia: aquella se declara mucho mas abajo en el
+   archivo y loadAllData() corre antes, asi que usarla aca daba
+   "Cannot access 'INGRESO_API' before initialization" y la lectura se
+   iba siempre al respaldo por CSV. */
+const ING_LECTURA_API = 'https://script.google.com/macros/s/AKfycbz1CznJcepKoBIJXwnQ6yc82n7fFX7q20kCxes5Na4OgPQUoe3xe5AllPhXUAe2JNg/exec';
+
+// Convierte { headers:[...], rows:[[...]] } en la lista de objetos que
+// usa todo el dashboard (misma forma que devolvia parseCSV).
+function _ingArmarObjetos(headers, rows) {
+  const h = (headers || []).map(x => (x || '').toString().trim());
+  return (rows || []).map(function (fila) {
+    const obj = {};
+    h.forEach(function (nombre, i) { obj[nombre] = (fila[i] == null ? '' : fila[i]).toString().trim(); });
+    return obj;
+  }).filter(function (o) { return Object.keys(o).some(function (k) { return o[k]; }); });
+}
+
+async function fetchIngreso() {
+  // 1. Endpoint rapido del backend
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 60000);
+    const res = await fetch(ING_LECTURA_API + '?datos=1&t=' + Date.now(), { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (res.ok) {
+      const j = await res.json();
+      if (j && j.success && Array.isArray(j.rows)) {
+        return _ingArmarObjetos(j.headers, j.rows);
+      }
+      /* 2. Backend todavia sin actualizar: responde la forma vieja.
+         Ahi los valores vienen con su tipo nativo (el numero de tiquete
+         llega como numero, no como texto) y el dashboard espera texto,
+         que es lo que daba el CSV. Se normaliza para no romper nada. */
+      if (j && j.success && Array.isArray(j.data)) {
+        return j.data.map(function (fila) {
+          const obj = {};
+          Object.keys(fila).forEach(function (k) {
+            obj[(k || '').toString().trim()] = (fila[k] == null ? '' : fila[k]).toString().trim();
+          });
+          return obj;
+        });
+      }
+    }
+  } catch (e) { console.warn('Ingreso por backend fallo:', e.message); }
+
+  // 3. Ultimo respaldo: CSV publicado. Si se llega aca es porque el Apps
+  //    Script no respondio, y conviene que se note.
+  console.warn('Ingreso: usando el CSV publicado como respaldo.');
+  try { setStatus('Ingreso de material: no respondio el Apps Script, se leyo el CSV publicado. Revise la implementacion.', 'error'); } catch (e) {}
+  return await fetchCSV(SHEETS.ingreso);
+}
+
 const AUTO_REFRESH_MS = 5 * 60 * 1000; // Refresco automático cada 5 minutos
 let currentFilter = 'hoy'; // Filtro de periodo activo ('hoy','semana','mes','total','custom')
 
@@ -3923,7 +3993,7 @@ async function loadAllData() {
   })();
 
   try {
-    const rawIngreso = await fetchCSV(SHEETS.ingreso);
+    const rawIngreso = await fetchIngreso();
     // Filtrar registros corruptos (filas clonadas con Marca temporal inválida)
     dataIngreso = rawIngreso.filter(r => {
       const mt = (r['Marca temporal'] || '').toString().trim();
@@ -15182,7 +15252,7 @@ const VOZ_FUENTES = {
     obtener: () => vozArr(() => dataIngreso),
     fecha:   r => { try { return getMarcaTemporal(r) || vozFechaGenerica(r); } catch(e){ return vozFechaGenerica(r); } },
     cargar: async () => {
-      const d = await fetchCSV(SHEETS.ingreso);
+      const d = await fetchIngreso();
       dataIngreso = d; try { window.dataIngreso = d; } catch(e){}
       try { construirCanonMateriales(d); } catch(e){}
       try { renderIngreso(d, currentFilter); renderClientes(d, currentFilter); } catch(e){}
