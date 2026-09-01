@@ -14510,6 +14510,20 @@ const API = {
     it.estado='entregada'; it.entrega={receptor,cargo,firma,fecha:now()};
     log('recepcion_firmada','item',it.id);   // el stock NO baja aquí; solo con "Registrar salida"
   },
+  /* Ingreso directo a bodega: registra lo que YA esta en la bodega o lo que
+     llego por fuera de la cadena de compra. Suma sobre el articulo si ya
+     existe (por id o por nombre) y si no lo crea. El servidor devuelve el
+     estado completo, asi que la pantalla queda al dia sola.
+     Sin backend no se simula: guardar en memoria daria la falsa impresion
+     de que quedo registrado y al recargar no habria nada. */
+  ingresoBodega: async (datos)=>{
+    if(MODO!=='remoto') throw new Error('Se necesita conexion con el servidor para registrar existencias.');
+    await saveChain;
+    const r = await remote('ingresoBodega', Object.assign({ responsable: (session&&session.nombre)||'' }, datos));
+    if(!r || r.ok===false) throw new Error((r&&r.error) || 'No se pudo registrar el ingreso');
+    applyState(r);
+    return r;
+  },
   invMove: async (inv,tipo,cant,motivo)=>{
     if(MODO==='remoto'){ await saveChain; applyState(await remote('invMove',{invId:inv.id,tipo,cantidad:cant,motivo})); return; }
     inv.stock = tipo==='entrada'? inv.stock+cant : Math.max(0,inv.stock-cant);
@@ -14773,7 +14787,16 @@ function viewInventario(){
   const rows=inv.map(i=>{
     const low=i.stock<i.minimo, pct=Math.min(100,i.minimo?Math.round(i.stock/Math.max(i.minimo*1.5,1)*100):100);
     return `<tr>
-      <td><b>${esc(i.item)}</b><div class="help">${esc(i.ubicacion)}</div></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:10px">
+          ${i.foto
+            ? `<img src="${esc(i.foto)}" alt="" loading="lazy"
+                 onerror="this.style.display='none'"
+                 style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--csc-line);flex-shrink:0">`
+            : '<span style="width:40px;height:40px;border-radius:6px;border:1px dashed var(--csc-line);flex-shrink:0"></span>'}
+          <div style="min-width:0"><b>${esc(i.item)}</b><div class="help">${esc(i.ubicacion)}</div></div>
+        </div>
+      </td>
       <td>${catTag(i.categoria)}</td>
       <td><div class="stock ${low?'low':''}">${i.stock.toLocaleString('es-CO')} ${esc(i.unidad)}</div>
         <div class="stock-bar"><i class="${low?'low':''}" style="width:${pct}%"></i></div></td>
@@ -14786,10 +14809,13 @@ function viewInventario(){
     </tr>`;
   }).join('');
   return `<div class="page-head"><div><div class="eyebrow">Bodega</div>
-      <h2>Inventario</h2><p>El stock sube cuando ingresa una compra y baja cuando se entrega o se usa.</p></div></div>
+      <h2>Inventario</h2><p>El stock sube cuando ingresa una compra o cuando se carga una existencia de bodega, y baja cuando se entrega o se usa.</p></div></div>
     <div class="toolbar">
       <div class="search"><span class="ic">⌕</span><input id="search" placeholder="Buscar ítem…" value="${esc(search)}"></div>
-      <div class="chips"><button class="chip ${!filterCat?'on':''}" data-cat="">Todas</button>${cats}</div></div>
+      <div class="chips"><button class="chip ${!filterCat?'on':''}" data-cat="">Todas</button>${cats}</div>
+      ${['almacen','admin'].includes(session.rol)
+        ? '<button class="btn btn-primary act" data-a="invin" style="margin-left:auto">+ Cargar existencia</button>'
+        : ''}</div>
     <div class="tbl-wrap"><table><thead><tr>
       <th>Ítem</th><th>Categoría</th><th>Stock actual</th><th>Mínimo</th><th>Estado</th>
       ${['almacen','admin'].includes(session.rol)?'<th></th>':''}</tr></thead>
@@ -14828,6 +14854,7 @@ async function handleAction(a,id){
     case 'deliver': openDeliver(it); break;
     case 'detail': openDetail(it); break;
     case 'invout': openInvOut(findInv(id)); break;
+    case 'invin':  openInvIn(); break;
   }
 }
 function refresh(){ render(); }
@@ -15142,6 +15169,116 @@ function openDeliver(it){
     const [nombre,cargo]=$('#d-rec').value.split('|');
     await API.deliver(it,nombre,cargo,cv.toDataURL());
     toast('Entrega registrada con firma ✓'); closeModal(); refresh();
+  };
+}
+
+/* ---------- CARGAR EXISTENCIA EN BODEGA (almacén) ----------
+   Registra lo que YA está en la bodega, o lo que llegó por fuera de la
+   cadena de compra. Si el nombre coincide con un ítem que ya existe, suma
+   sobre ese en vez de crear un duplicado: de otro modo la bodega termina
+   con el mismo artículo repetido según por dónde entró.
+   La foto es lo que hace auditable el registro: sin ella queda la palabra
+   de quien lo digitó contra un número de stock.                          */
+function openInvIn(){
+  const inv = API.inventario();
+  const opciones = inv.map(i=>`<option value="${esc(i.item)}">`).join('');
+  modal(`<div class="modal-head"><button class="modal-close" data-close>×</button>
+      <h3>Cargar existencia en bodega</h3>
+      <p>Para registrar lo que ya está en bodega o lo que entró por fuera de una compra.</p></div>
+    <div class="modal-body">
+      <div class="field"><label>Artículo</label>
+        <input id="b-item" list="b-items" placeholder="Ej. Bolsas biodegradables 5kg" autocomplete="off">
+        <datalist id="b-items">${opciones}</datalist>
+        <div class="help" id="b-item-help">Si ya existe con ese nombre, se suma al stock que tiene.</div></div>
+      <div class="row2">
+        <div class="field"><label>Categoría</label><select id="b-cat">
+          ${Object.entries(CAT).map(([k,v])=>`<option value="${k}">${k} · ${v.label}</option>`).join('')}</select></div>
+        <div class="field"><label>Unidad</label><input id="b-uni" value="und" placeholder="und, kg, caja…"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Cantidad que hay</label><input id="b-cant" type="number" min="1" step="1" value="1"></div>
+        <div class="field"><label>Stock mínimo</label><input id="b-min" type="number" min="0" step="1" value="0"></div>
+      </div>
+      <div class="field"><label>Ubicación</label><input id="b-ubi" placeholder="Bodega A-2, Silo 1…"></div>
+      <div class="field"><label>Observación</label>
+        <textarea id="b-obs" rows="2" placeholder="De dónde salió, en qué estado está, quién lo contó…"></textarea></div>
+      <div class="field"><label>Foto del artículo</label>
+        <input id="b-foto" type="file" accept="image/*" capture="environment">
+        <div class="help">Queda como evidencia del ingreso y como miniatura del ítem.</div>
+        <div id="b-foto-prev" style="margin-top:8px"></div></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>Cancelar</button>
+      <button class="btn btn-primary" id="b-do">Registrar ingreso</button></div>`);
+
+  // Avisar en vivo si el nombre coincide con algo que ya existe: es la
+  // diferencia entre crear un ítem nuevo y sumarle a uno que ya está.
+  const itemEl=$('#b-item'), helpEl=$('#b-item-help');
+  const sincronizar=()=>{
+    const n=(itemEl.value||'').trim().toLowerCase();
+    const ya=inv.find(x=>String(x.item).toLowerCase()===n);
+    if(ya){
+      helpEl.innerHTML='Ya existe: tiene <b>'+Number(ya.stock).toLocaleString('es-CO')+' '+esc(ya.unidad)+'</b>. Se le suma lo que registres.';
+      $('#b-uni').value=ya.unidad||'und';
+      $('#b-ubi').value=ya.ubicacion||'';
+      $('#b-min').value=Number(ya.minimo)||0;
+      if(ya.categoria) $('#b-cat').value=ya.categoria;
+    } else {
+      helpEl.textContent=n?'Se crea como artículo nuevo.':'Si ya existe con ese nombre, se suma al stock que tiene.';
+    }
+  };
+  itemEl.oninput=sincronizar;
+
+  // La foto se reduce en el navegador antes de subirla (máx 900px, JPEG
+  // 0.75): desde un celular una foto original son varios MB y el Apps
+  // Script los rechaza.
+  let fotoDataUrl='';
+  const fotoInput=$('#b-foto');
+  fotoInput.onchange=()=>{
+    const file=fotoInput.files&&fotoInput.files[0], prev=$('#b-foto-prev');
+    if(!file){ fotoDataUrl=''; prev.innerHTML=''; return; }
+    const rd=new FileReader();
+    rd.onload=()=>{
+      const img=new Image();
+      img.onload=()=>{
+        const MAX=900; let w=img.width,h=img.height;
+        if(w>MAX||h>MAX){ if(w>=h){h=Math.round(h*MAX/w);w=MAX;} else {w=Math.round(w*MAX/h);h=MAX;} }
+        const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+        cv.getContext('2d').drawImage(img,0,0,w,h);
+        fotoDataUrl=cv.toDataURL('image/jpeg',0.75);
+        prev.innerHTML='<img src="'+fotoDataUrl+'" style="width:84px;height:84px;object-fit:cover;border-radius:6px;border:1px solid var(--csc-line)">';
+      };
+      img.src=rd.result;
+    };
+    rd.readAsDataURL(file);
+  };
+
+  $('#b-do').onclick=async ()=>{
+    const item=(itemEl.value||'').trim();
+    const cant=+$('#b-cant').value||0;
+    if(!item){ toast('Escribe el nombre del artículo','bad'); itemEl.focus(); return; }
+    if(cant<=0){ toast('La cantidad debe ser mayor que cero','bad'); return; }
+
+    const btn=$('#b-do'); btn.disabled=true; btn.textContent='Registrando…';
+    try{
+      const ya=inv.find(x=>String(x.item).toLowerCase()===item.toLowerCase());
+      const r=await API.ingresoBodega({
+        invId:      ya ? ya.id : '',
+        item:       item,
+        categoria:  $('#b-cat').value,
+        unidad:     ($('#b-uni').value||'und').trim(),
+        cantidad:   cant,
+        minimo:     +$('#b-min').value||0,
+        ubicacion:  ($('#b-ubi').value||'').trim(),
+        observacion:($('#b-obs').value||'').trim(),
+        foto:       fotoDataUrl
+      });
+      closeModal();
+      toast('Ingreso registrado · '+item+' queda en '+Number(r.stockNuevo).toLocaleString('es-CO'));
+      render();
+    }catch(e){
+      btn.disabled=false; btn.textContent='Registrar ingreso';
+      toast(e.message||'No se pudo registrar','bad');
+    }
   };
 }
 
