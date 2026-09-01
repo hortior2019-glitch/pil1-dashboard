@@ -3336,7 +3336,12 @@ function aplicarNavWrapGuardado() {
 // ── LOGIN DASHBOARD ───────────────────────────────
 const LOG_ACCESOS_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTyPle5xdPlmQX9NMV_your_published_csv/pub?gid=0&single=true&output=csv';
 const LOG_ACCESOS_URL = 'https://script.google.com/macros/s/AKfycbxZpFHLbmGpE9LuASyf-0iWvFWtzUO3HZPjk6u68Yp76E9Fip2wrviCF6z2iAuWMMqZHA/exec';
-const USUARIOS_CSV_DASH = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSU6sHBRI35p5dMo7JlkeWW9Wn648agSah05G-mD6xqA-NUjLAgg7TBynyZaBdQ3WNNXTFINsRNhgQ-/pub?gid=0&single=true&output=csv';
+/* AUTORIDAD DE AUTENTICACION.
+   Pega aqui la URL /exec del Apps Script Codigo-auth-usuarios.gs.
+   Reemplaza al CSV publicado de usuarios: ese CSV entregaba a cualquiera
+   la lista completa con las contraseñas en texto plano. Una vez migrado,
+   hay que DETENER SU PUBLICACION en el Sheet. */
+const AUTH_API = "PEGAR_URL_DEL_APPS_SCRIPT_DE_AUTENTICACION";
 let dashUsuariosDB = [];
 // Usuario actualmente logueado y si es admin (admins hardcodeados, el resto viene del Sheet)
 let _usuarioActual = null;
@@ -3347,7 +3352,9 @@ function esAdminDash(usuario) {
 
 // ── PERMISOS DE PESTAÑAS POR USUARIO ──
 // URL del Apps Script del Sheet de usuarios (pegar la URL real de implementación)
-const PERMISOS_API = "https://script.google.com/macros/s/AKfycbwmseO6aZVuEaEWsfnXWKcH8TD4BrcN1VwsdI8tFZRHGgY9PsKs2d3fyJWegVR0Ao3Kow/exec";
+// Los permisos los sirve el MISMO script de autenticacion: comparten la
+// sesion, y asi no hay dos endpoints con dos criterios distintos.
+const PERMISOS_API = AUTH_API;
 
 // Lista de pestañas controlables (debe coincidir con data-panel de las nav-tabs)
 const PESTANAS_CONTROLABLES = [
@@ -3462,17 +3469,30 @@ function aplicarPermisoVoz() {
 }
 
 // Carga la config de permisos desde el Apps Script
+/* Solo para administradores: trae la matriz completa para pintar la
+   pestaña Permisos. Un usuario normal nunca la pide, porque sus permisos
+   ya vinieron en la respuesta del login (y el servidor no se los daria). */
 async function cargarPermisosRemoto() {
-  if (PERMISOS_API.startsWith('PEGAR_')) { renderPermisosTabla(); return; }
+  if (!_authToken || !_usuarioActual || !_usuarioActual.admin) { renderPermisosTabla(); return; }
+  if (AUTH_API.startsWith('PEGAR_')) { renderPermisosTabla(); return; }
   const st = document.getElementById('permisos-status');
   if (st) { st.style.color = 'var(--ink-l)'; st.textContent = 'Cargando permisos...'; }
   try {
-    const res = await fetch(PERMISOS_API + '?accion=listarPermisos', { redirect:'follow' });
-    const data = await res.json();
-    if (data.ok) {
+    const data = await authPost('listarPermisos', {});
+    if (data && data.ok) {
       _permisosConfig = data.permisos || {};
+      // La lista de usuarios ya no sale del CSV publicado: la manda el
+      // backend, y solo con identificador y nombre.
+      if (Array.isArray(data.usuarios)) {
+        dashUsuariosDB = data.usuarios.map(function(u){
+          return { usuario:u.usuario, nombre:u.nombre, activo:u.activo, dashboard:u.activo };
+        });
+      }
+    } else if (st) {
+      st.style.color = 'var(--red)';
+      st.textContent = 'No se pudieron cargar los permisos.';
     }
-  } catch(e) { console.error('Error cargando permisos:', e); }
+  } catch(e) { if (st) { st.style.color = 'var(--red)'; st.textContent = 'No se pudieron cargar los permisos.'; } }
   if (st) st.textContent = '';
   renderPermisosTabla();
   aplicarPermisosNav();
@@ -3529,8 +3549,13 @@ function guardarPermisos() {
   });
   _permisosConfig = config;
 
-  if (PERMISOS_API.startsWith('PEGAR_')) {
-    if (st) { st.style.color = 'var(--red)'; st.textContent = 'Falta configurar la URL del Apps Script de usuarios.'; }
+  if (AUTH_API.startsWith('PEGAR_')) {
+    if (st) { st.style.color = 'var(--red)'; st.textContent = 'Falta configurar la URL del Apps Script de autenticacion.'; }
+    return;
+  }
+  // El servidor vuelve a comprobar sesion y rol; esto solo evita el viaje.
+  if (!_authToken || !_usuarioActual || !_usuarioActual.admin) {
+    if (st) { st.style.color = 'var(--red)'; st.textContent = 'No tienes permiso para guardar permisos.'; }
     return;
   }
   if (st) { st.style.color = 'var(--ink-l)'; st.textContent = 'Guardando...'; }
@@ -3546,7 +3571,7 @@ function guardarPermisos() {
     method: 'POST',
     redirect: 'follow',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ accion:'guardarPermisos', permisos: config })
+    body: JSON.stringify({ accion:'guardarPermisos', token: _authToken, permisos: config })
   })
     .then(r => r.json())
     .then(data => {
@@ -3580,53 +3605,63 @@ function _limpiarCredencial(s) {
 // Marca si la lista de usuarios quedo en la de respaldo (solo 5 usuarios
 // hardcodeados) porque no se pudo leer el Sheet. Sirve para dar un mensaje
 // claro en el login en vez de decir "usuario o contraseña incorrectos".
-let _usuariosDesdeFallback = false;
+/* ── AUTENTICACION CONTRA EL BACKEND ────────────────────────────────
+   Antes este archivo descargaba el CSV publicado de usuarios (con las
+   contraseñas en texto plano), lo dejaba en dashUsuariosDB y comparaba
+   la clave aca mismo. Cualquiera con la URL del CSV tenia todas las
+   credenciales, y el "control" de acceso vivia en el navegador, que el
+   propio usuario controla.
+   Ahora el navegador no ve usuarios ni claves: manda usuario+clave al
+   Apps Script, y este responde solo con la sesion del que pregunta. */
+let _usuariosDesdeFallback = false;   // se conserva: hay codigo que lo consulta
 
-async function cargarUsuariosDash() {
-  try {
-    // Se usa fetchCSV (con proxies y reintentos) en vez de un fetch directo:
-    // antes, si la red fallaba un instante, se caia al respaldo de 5 usuarios
-    // y los usuarios reales del Sheet no podian entrar.
-    let rows;
-    try {
-      rows = await fetchCSV(USUARIOS_CSV_DASH);
-    } catch(ePrimero) {
-      await new Promise(r => setTimeout(r, 1500));
-      rows = await fetchCSV(USUARIOS_CSV_DASH); // segundo intento
-    }
-    _usuariosDesdeFallback = false;
-    dashUsuariosDB = rows.map(r => ({
-      usuario:    _limpiarCredencial(r['USUARIO']).toLowerCase(),
-      contrasena: _limpiarCredencial(r['CONTRASENA']),
-      nombre:     (r['NOMBRE_COMPLETO']|| r['NOMBRE'] || '').toString().trim(),
-      activo:     ['si','true','yes','1','TRUE'].includes((r['ACTIVO'] ||'').toString().trim().toLowerCase()),
-      dashboard:  ['si','true','yes','1','TRUE'].includes((r['ACTIVO'] ||'').toString().trim().toLowerCase()),
-      recepcion:  ['si','true','yes','1','TRUE'].includes((r['ACTIVO RECEPCION']||r['ACTIVO-RECEP']||r['ACTIVO RECEP']||'').toString().trim().toLowerCase()),
-      viajes:     ['si','true','yes','1','TRUE'].includes((r['ACTIVO VIAJES']   ||r['ACTIVO-VIAJES']||'').toString().trim().toLowerCase())
-    }));
-    console.log('Usuarios cargados:', dashUsuariosDB.length);
-  } catch(e) {
-    console.error('No se pudo leer la lista de usuarios del Sheet:', e);
-    _usuariosDesdeFallback = true;
-    // Reintento en segundo plano: si la red vuelve, se reemplaza el respaldo
-    // por la lista real sin que el usuario tenga que recargar la pagina.
-    setTimeout(() => { if (_usuariosDesdeFallback) cargarUsuariosDash(); }, 8000);
-    dashUsuariosDB = [
-      {usuario:'saul',         contrasena:'pil2026',      nombre:'Saúl García Sandoval',  activo:true, dashboard:true, recepcion:false, viajes:false},
-      {usuario:'juan',         contrasena:'pil2025',      nombre:'Juan Camilo Gomez',      activo:true, dashboard:true, recepcion:false, viajes:false},
-      {usuario:'gerencia',     contrasena:'Empathy2026*', nombre:'Felipe Sanchez',         activo:true, dashboard:true, recepcion:false, viajes:false},
-      {usuario:'sub-gerencia', contrasena:'Empathy2026*', nombre:'Lina Paola Scholl',      activo:true, dashboard:true, recepcion:false, viajes:false},
-      {usuario:'auditoria',    contrasena:'Empathy2026*', nombre:'Lizet Sanchez',          activo:true, dashboard:true, recepcion:false, viajes:false}
-    ];
-  }
+/* Token de sesion. Vive en sessionStorage para que sobreviva a un F5 pero
+   no quede en el equipo al cerrar la pestaña. NO es una credencial de
+   seguridad por si mismo: el servidor valida el token en cada operacion.
+   Al no usar cookies, el navegador no lo adjunta solo, asi que otro sitio
+   no puede actuar en nombre del usuario aunque alcance el endpoint. */
+let _authToken = null;
+try { _authToken = sessionStorage.getItem('horti_token') || null; } catch(e) {}
+
+function _guardarToken(t) {
+  _authToken = t || null;
+  try { t ? sessionStorage.setItem('horti_token', t) : sessionStorage.removeItem('horti_token'); } catch(e) {}
 }
 
-let dataAccesos = [];
+/* Todo va por POST con text/plain: en GET la clave quedaria en la URL, en
+   el historial y en los registros de cualquier intermediario; y text/plain
+   evita el preflight de CORS que Apps Script no responde. */
+async function authPost(accion, extra) {
+  const cuerpo = Object.assign({ accion: accion, token: _authToken || '' }, extra || {});
+  const res = await fetch(AUTH_API, {
+    method: 'POST',
+    redirect: 'follow',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(cuerpo)
+  });
+  return await res.json();
+}
 
-function intentarLoginDash() {
+async function cargarUsuariosDash() {
+  // Se deja como funcion vacia a proposito: hay llamadas repartidas y el
+  // navegador ya no debe descargar la lista de usuarios por ningun motivo.
+  return;
+}
+
+function cerrarSesionDash() {
+  const t = _authToken;
+  _guardarToken(null);
+  _usuarioActual = null;
+  _permisosConfig = {};
+  if (t) { authPost('logout', {}).catch(function(){}); }   // se invalida tambien en el servidor
+  location.reload();
+}
+
+async function intentarLoginDash() {
   const usuario    = _limpiarCredencial(document.getElementById('dash-usuario').value).toLowerCase();
-  const contrasena = _limpiarCredencial(document.getElementById('dash-pass').value);
+  const contrasena = document.getElementById('dash-pass').value;
   const errEl      = document.getElementById('dash-login-error');
+  const btn        = document.getElementById('dash-login-btn');
 
   if (!usuario || !contrasena) {
     errEl.textContent = 'Ingrese usuario y contraseña.';
@@ -3634,81 +3669,46 @@ function intentarLoginDash() {
     return;
   }
 
-  if (dashUsuariosDB.length === 0) {
-    errEl.textContent = 'Verificando credenciales...';
-    errEl.style.display = 'block';
-    setTimeout(intentarLoginDash, 800);
-    return;
+  if (btn) { btn.disabled = true; btn.dataset.txt = btn.textContent; btn.textContent = 'Verificando...'; }
+  errEl.style.display = 'none';
+
+  let r;
+  try {
+    r = await authPost('login', { usuario: usuario, password: contrasena });
+  } catch (e) {
+    // Ni el mensaje de red se detalla: no aporta nada al usuario y si al
+    // que este probando el endpoint.
+    r = { ok: false, error: 'No se pudo conectar. Revisa tu conexion e intenta de nuevo.' };
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = btn.dataset.txt || 'Ingresar'; }
   }
 
-  console.log('Intentando login:', usuario, '| DB:', dashUsuariosDB.map(u=>u.usuario+'='+u.contrasena+'|dash:'+u.dashboard));
-
-  if (usuario === '1' && contrasena === '1') {
-    errEl.style.display = 'none';
-    _usuarioActual = { usuario:'1', nombre:'Admin', admin:true };
-    document.getElementById('dash-login').style.display = 'none';
-    const app = document.getElementById('dash-app');
-    app.style.display = 'block';
-    aplicarNavWrapGuardado();
-    aplicarPermisosNav();
-    requestAnimationFrame(function(){ ajustarPosiciones(); setTimeout(ajustarPosiciones, 200); });
-    loadAllData();
-    return;
-  }
-
-  const user = dashUsuariosDB.find(u => u.usuario === usuario && u.contrasena === contrasena && u.activo);
-
-  if (!user) {
-    // Diagnostico en consola: distingue "usuario que no existe" de
-    // "clave equivocada" o "usuario inactivo", sin revelarlo en pantalla.
-    const _porNombre = dashUsuariosDB.find(u => u.usuario === usuario);
-    // Caso especial: la lista de usuarios no se pudo leer del Sheet y se esta
-    // usando el respaldo de 5 usuarios. Decir "contraseña incorrecta" seria
-    // engañoso: el usuario existe, solo que su lista no cargo.
-    if (!_porNombre && _usuariosDesdeFallback) {
-      console.warn('Login: la lista de usuarios no se pudo leer del Sheet (se esta usando el respaldo). Reintentando...');
-      errEl.textContent = 'No se pudo cargar la lista de usuarios. Reintentando, espera unos segundos...';
-      errEl.style.display = 'block';
-      cargarUsuariosDash().then(() => {
-        if (!_usuariosDesdeFallback) {
-          errEl.textContent = 'Lista de usuarios actualizada. Intenta ingresar de nuevo.';
-        }
-      });
-      return;
-    }
-    if (!_porNombre) {
-      console.warn('Login: el usuario "' + usuario + '" no existe en el Sheet. Usuarios disponibles:', dashUsuariosDB.map(u=>u.usuario).join(', '));
-    } else if (!_porNombre.activo) {
-      console.warn('Login: el usuario "' + usuario + '" existe pero esta marcado como INACTIVO en la columna ACTIVO del Sheet.');
-    } else if (_porNombre.contrasena !== contrasena) {
-      console.warn('Login: contraseña incorrecta para "' + usuario + '" (largo digitado: ' + contrasena.length + ', largo en el Sheet: ' + _porNombre.contrasena.length + ').');
-    }
-    errEl.textContent = 'Usuario o contraseña incorrectos.';
+  if (!r || !r.ok) {
+    errEl.textContent = (r && r.error) ? r.error : 'Usuario o contraseña incorrectos.';
     errEl.style.display = 'block';
     return;
   }
 
-  if (!user.dashboard) {
-    errEl.textContent = 'No tienes permiso para acceder al dashboard.';
-    errEl.style.display = 'block';
-    return;
-  }
+  _guardarToken(r.token);
+  _usuarioActual = { usuario: r.usuario, nombre: r.nombre, admin: !!r.admin };
+  // Los permisos llegan con la respuesta del login: son SOLO los de este
+  // usuario. Ya no se descarga la matriz de todos.
+  _permisosConfig = {};
+  if (r.permisos) _permisosConfig[r.usuario] = r.permisos;
 
   errEl.style.display = 'none';
-  _usuarioActual = { usuario: user.usuario, nombre: user.nombre, admin: esAdminDash(user.usuario) };
   document.getElementById('dash-login').style.display = 'none';
   const app = document.getElementById('dash-app');
   app.style.display = 'block';
   aplicarNavWrapGuardado();
   // Para usuarios normales: ocultar pestañas controlables de inmediato para evitar el parpadeo
-  // (se revelan solo las permitidas cuando llega la config fresca del Sheet)
   if (!_usuarioActual.admin) {
     document.querySelectorAll('.nav-tab[data-panel]').forEach(t => {
       if (t.getAttribute('data-admin-only') !== '1') t.style.display = 'none';
     });
   }
-  aplicarPermisosNav();           // aplica con lo que haya en cache de inmediato
-  cargarPermisosRemoto();         // recarga permisos frescos del Sheet y re-aplica al terminar
+  aplicarPermisosNav();
+  if (_usuarioActual.admin) cargarPermisosRemoto();   // la matriz completa: solo admins
   requestAnimationFrame(function(){ ajustarPosiciones(); setTimeout(ajustarPosiciones, 200); });
   loadAllData();
 }
@@ -9745,8 +9745,11 @@ renderOps(opsActuales());
 // ningun dato. Las funciones de las pestañas retiradas (renderHE,
 // renderKPI, renderSolicitudes, renderPedidos, renderTablaEmp) siguen
 // definidas mas arriba pero ya no las llama nadie.
-cargarUsuariosDash().then(() => { cargarPermisosRemoto(); });
-loadAllData();
+/* Aca se descargaban, ANTES de cualquier login: la lista completa de
+   usuarios con sus contraseñas, la matriz de permisos de todo el mundo y
+   los nueve origenes de datos del negocio. Bastaba abrir la pagina y mirar
+   la pestaña Network. Ahora no se pide nada hasta que hay sesion:
+   loadAllData() y cargarPermisosRemoto() los dispara intentarLoginDash(). */
 // Inicializar los selectores de mes de los comparativos.
 // Siempre arrancan en "mes actual vs mes anterior"; antes los de Ingreso de
 // Material venian fijados en el HTML y se quedaban en meses viejos.
