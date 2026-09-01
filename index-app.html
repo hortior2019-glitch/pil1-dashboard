@@ -3341,7 +3341,7 @@ const LOG_ACCESOS_URL = 'https://script.google.com/macros/s/AKfycbxZpFHLbmGpE9Lu
    Reemplaza al CSV publicado de usuarios: ese CSV entregaba a cualquiera
    la lista completa con las contraseñas en texto plano. Una vez migrado,
    hay que DETENER SU PUBLICACION en el Sheet. */
-const AUTH_API = "PEGAR_URL_DEL_APPS_SCRIPT_DE_AUTENTICACION";
+const AUTH_API = "https://script.google.com/macros/s/AKfycbwmseO6aZVuEaEWsfnXWKcH8TD4BrcN1VwsdI8tFZRHGgY9PsKs2d3fyJWegVR0Ao3Kow/exec";
 let dashUsuariosDB = [];
 // Usuario actualmente logueado y si es admin (admins hardcodeados, el resto viene del Sheet)
 let _usuarioActual = null;
@@ -3669,6 +3669,17 @@ async function intentarLoginDash() {
     return;
   }
 
+  /* Si AUTH_API quedo sin configurar, fetch() la toma como ruta relativa,
+     GitHub Pages devuelve su 404 en HTML y res.json() revienta. Eso caia en
+     el catch de abajo y decia "revisa tu conexion", culpando a la red de un
+     problema de configuracion. Se detecta antes y se dice lo que pasa. */
+  if (!/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec/.test(AUTH_API)) {
+    errEl.textContent = 'El sistema no esta configurado: falta la URL del servicio de autenticacion. Avisale al administrador.';
+    errEl.style.display = 'block';
+    console.error('AUTH_API sin configurar. Valor actual:', AUTH_API);
+    return;
+  }
+
   if (btn) { btn.disabled = true; btn.dataset.txt = btn.textContent; btn.textContent = 'Verificando...'; }
   errEl.style.display = 'none';
 
@@ -3678,7 +3689,11 @@ async function intentarLoginDash() {
   } catch (e) {
     // Ni el mensaje de red se detalla: no aporta nada al usuario y si al
     // que este probando el endpoint.
-    r = { ok: false, error: 'No se pudo conectar. Revisa tu conexion e intenta de nuevo.' };
+    // El detalle no se le muestra al usuario, pero si queda en consola: casi
+    // siempre es la implementacion del Apps Script mal publicada (acceso
+    // distinto de "Cualquier usuario"), no la red del que intenta entrar.
+    console.error('Login: el servicio de autenticacion no respondio JSON.', e);
+    r = { ok: false, error: 'No se pudo verificar el ingreso. Intenta de nuevo; si sigue igual, avisale al administrador.' };
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = btn.dataset.txt || 'Ingresar'; }
   }
