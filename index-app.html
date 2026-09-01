@@ -1357,7 +1357,7 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 
 /* ══════════════ POPUPS ══════════════ */
 #panel-auditoria .pop{
-  position:fixed;z-index:60;background:var(--papel);border:1px solid var(--linea-fuerte);
+  position:fixed;z-index:13010;background:var(--papel);border:1px solid var(--linea-fuerte);
   border-radius:4px;box-shadow:0 8px 26px rgba(0,0,0,.20);padding:10px;display:none;
 }
 #panel-auditoria .pop.abierto{display:block}
@@ -1411,7 +1411,7 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 
 /* ══════════════ MODAL ══════════════ */
 #panel-auditoria .velo{
-  position:fixed;inset:0;background:rgba(18,60,37,.55);z-index:80;
+  position:fixed;inset:0;background:rgba(18,60,37,.55);z-index:13020;
   display:none;align-items:center;justify-content:center;padding:20px;
 }
 #panel-auditoria .velo.abierto{display:flex}
@@ -1486,7 +1486,7 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 
 /* ══════════════ VISOR DE FOTOS ══════════════ */
 #panel-auditoria #veloVisor{
-  position:fixed;inset:0;z-index:95;background:rgba(13,43,27,.96);
+  position:fixed;inset:0;z-index:13030;background:rgba(13,43,27,.96);
   display:none;flex-direction:column;
 }
 #panel-auditoria #veloVisor.abierto{display:flex}
@@ -1541,7 +1541,7 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-auditoria #visorError a{color:var(--oro-claro)}
 
 /* ══════════════ AVISOS ══════════════ */
-#panel-auditoria #avisos{position:fixed;right:16px;bottom:44px;z-index:90;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+#panel-auditoria #avisos{position:fixed;right:16px;bottom:44px;z-index:13040;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
 #panel-auditoria .aviso{
   background:var(--verde-osc);color:#fff;border-left:4px solid var(--oro);border-radius:3px;
   padding:10px 14px;font-size:12.5px;max-width:340px;box-shadow:0 6px 18px rgba(0,0,0,.25);
@@ -1561,6 +1561,44 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 /* El CSS original venia de un <body> con display:flex. Al pasar a
    #panel-auditoria gana por especificidad de ID y dejaria la pestaña
    siempre visible, tapando a .panel{display:none}. Se corrige aca. */
+/* ── ESPERA DEL LOGIN ──────────────────────────────────────────────
+   Tres anillos girando a distinta velocidad y en sentidos alternos: da
+   sensacion de trabajo en curso sin marcar un porcentaje falso, porque
+   no sabemos cuanto va a tardar el Apps Script. */
+#dash-cargando{display:none;margin-top:18px;text-align:center}
+#dash-cargando.viendose{display:block;animation:dl-entra .3s ease both}
+@keyframes dl-entra{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+
+.dl-anillo{position:relative;width:46px;height:46px;margin:0 auto 12px}
+.dl-anillo span{
+  position:absolute;inset:0;border-radius:50%;
+  border:2px solid transparent;
+  animation:dl-gira 1.1s cubic-bezier(.5,0,.5,1) infinite;
+}
+.dl-anillo span:nth-child(1){border-top-color:var(--navy);}
+.dl-anillo span:nth-child(2){inset:7px;border-top-color:var(--gold);animation-duration:.85s;animation-direction:reverse}
+.dl-anillo span:nth-child(3){inset:14px;border-top-color:#24784a;animation-duration:1.35s}
+@keyframes dl-gira{to{transform:rotate(360deg)}}
+
+.dl-msg{
+  font-size:12px;font-weight:700;letter-spacing:.6px;color:var(--navy);
+  min-height:16px;transition:opacity .25s
+}
+.dl-msg.cambiando{opacity:0}
+.dl-sub{font-size:10.5px;color:var(--ink-l);margin-top:3px}
+
+/* Con el sistema pensando, el formulario se atenua y deja de aceptar
+   clics: evita el doble envio, que dispararia dos intentos y acercaria
+   al usuario al limite de reintentos sin que entienda por que. */
+#dash-login.ocupado input,
+#dash-login.ocupado button{opacity:.45;pointer-events:none}
+#dash-login.ocupado #dash-cargando{opacity:1}
+
+@media (prefers-reduced-motion:reduce){
+  .dl-anillo span{animation-duration:2.6s}
+  #dash-cargando.viendose{animation:none}
+}
+
 #panel-auditoria{display:none}
 #panel-auditoria.active{display:flex}
 /* La grilla se aprovecha de cada pixel de ancho, asi que esta pestaña se
@@ -1621,11 +1659,21 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
         </button>
       </div>
     </div>
-    <button onclick="intentarLoginDash()"
+    <button id="dash-login-btn" onclick="intentarLoginDash()"
       style="width:100%;padding:12px;background:var(--navy);color:white;border:none;font-family:'Source Sans 3',sans-serif;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;cursor:pointer">
       Ingresar
     </button>
     <div id="dash-login-error" style="display:none;margin-top:12px;padding:10px 12px;background:#fef9c3;color:#92400e;font-size:12px;font-weight:600;text-align:center;border:1px solid #fde68a"></div>
+
+    <!-- Espera del login. Ahora la verificacion tarda de verdad: la clave se
+         compara contra un hash iterado miles de veces (a proposito, para que
+         probar claves al azar salga caro) y ademas hay un viaje de ida y
+         vuelta al Apps Script. Sin este aviso el boton parece no responder. -->
+    <div id="dash-cargando">
+      <div class="dl-anillo"><span></span><span></span><span></span></div>
+      <div class="dl-msg" id="dash-cargando-msg">Verificando credenciales</div>
+      <div class="dl-sub">Esto toma unos segundos</div>
+    </div>
   </div>
 </div>
 
@@ -1675,7 +1723,7 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
   <div class="nav-tab" data-panel="operaciones" onclick="showPanel('operaciones',this)"><span class="nav-lbl">Proveedores</span></div>
   <!-- Auditoria: lista blanca explicita (data-users-only). No pasa por la
        pestaña de Permisos: se oculta a todos salvo a estos usuarios. -->
-  <div class="nav-tab" data-panel="auditoria" data-users-only="gerencia,sub-gerencia,juan,auditoria" onclick="showPanel('auditoria',this)" style="display:none"><span class="nav-lbl">Auditoría</span></div>
+  <div class="nav-tab" data-panel="auditoria" data-users-only="gerencia,sub-gerencia,juan,auditoria" onclick="showPanel('auditoria',this)" style="display:none"><span class="nav-lbl">Operaciones</span></div>
   <div class="nav-sep"></div>
   <div class="nav-tab" data-panel="csc-resumen" onclick="showPanel('csc-resumen',this)"><span class="nav-lbl">Cadena · Resumen</span></div>
   <div class="nav-tab" data-panel="csc-compras" onclick="showPanel('csc-compras',this)"><span class="nav-lbl">Cadena · Compras</span></div>
@@ -1968,7 +2016,7 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
   <span class="sep"></span>
   <span id="pieStats"></span>
   <span id="pieAtajos" style="cursor:help" title="Ctrl+C copiar · Ctrl+X cortar · Ctrl+V pegar · Ctrl+A seleccionar todo · Ctrl+I pintar el fondo · Ctrl+Shift+I color de letra · Ctrl+B negrilla · Ctrl+Espacio columna · Shift+Espacio fila · Ctrl+Z deshacer · Ctrl+S guardar · Ctrl+F abre y cierra las fotos · arrastre el encabezado para reordenar">Atajos ⌨</span>
-  <span id="pieVersion">Auditoría v2.2</span>
+  <span id="pieVersion">Operaciones v2.2</span>
 </footer>
 
 <!-- popup de color -->
@@ -2693,27 +2741,6 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
     </div>
   </div>
 
-  <!-- BARRAS HORIZONTALES POR CLIENTE CON TABS -->
-  <div class="card" style="margin-bottom:20px;">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:0 0 16px;border-bottom:1px solid var(--rule-l);flex-wrap:wrap;gap:12px">
-      <div>
-        <div style="font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px">Distribución por cliente</div>
-        <div id="pie-title" style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink)">Registros (viajes)</div>
-      </div>
-      <div style="display:flex;gap:0;border:1px solid var(--rule)">
-        <button id="pie-tab-viajes" onclick="switchPieTab('viajes')"
-          style="padding:8px 20px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:none;border-right:1px solid var(--rule);cursor:pointer;background:var(--navy);color:white;font-family:'Source Sans 3',sans-serif;transition:.2s">
-          Viajes
-        </button>
-        <button id="pie-tab-peso" onclick="switchPieTab('peso')"
-          style="padding:8px 20px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:none;cursor:pointer;background:transparent;color:var(--ink-m);font-family:'Source Sans 3',sans-serif;transition:.2s">
-          Peso (kg)
-        </button>
-      </div>
-    </div>
-    <div id="hbar-clientes-viajes" style="padding:16px 20px"></div>
-    <div id="hbar-clientes-peso" style="padding:16px 20px;display:none"></div>
-  </div>
 
   <!-- BARRAS HORIZONTALES POR RESIDUO -->
   <div class="card" style="margin-bottom:20px;">
@@ -2788,14 +2815,6 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
     <canvas id="chart-dias-bar" style="width:100%;display:block" height="280"></canvas>
   </div>
 
-  <!-- Leyenda de colores -->
-  <div class="card" style="margin-bottom:20px;">
-    <div class="card-hdr">Identificación de clientes por color</div>
-    <div id="leyenda-clientes" style="display:flex;flex-wrap:wrap;gap:12px 28px;"></div>
-  </div>
-
-  <!-- Cards por cliente -->
-  <div id="cards-clientes"></div>
 </div>
 
 <!--
@@ -3334,8 +3353,6 @@ function aplicarNavWrapGuardado() {
   }
 }
 // ── LOGIN DASHBOARD ───────────────────────────────
-const LOG_ACCESOS_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTyPle5xdPlmQX9NMV_your_published_csv/pub?gid=0&single=true&output=csv';
-const LOG_ACCESOS_URL = 'https://script.google.com/macros/s/AKfycbxZpFHLbmGpE9LuASyf-0iWvFWtzUO3HZPjk6u68Yp76E9Fip2wrviCF6z2iAuWMMqZHA/exec';
 /* AUTORIDAD DE AUTENTICACION.
    Pega aqui la URL /exec del Apps Script Codigo-auth-usuarios.gs.
    Reemplaza al CSV publicado de usuarios: ese CSV entregaba a cualquiera
@@ -3613,7 +3630,6 @@ function _limpiarCredencial(s) {
    propio usuario controla.
    Ahora el navegador no ve usuarios ni claves: manda usuario+clave al
    Apps Script, y este responde solo con la sesion del que pregunta. */
-let _usuariosDesdeFallback = false;   // se conserva: hay codigo que lo consulta
 
 /* Token de sesion. Vive en sessionStorage para que sobreviva a un F5 pero
    no quede en el equipo al cerrar la pestaña. NO es una credencial de
@@ -3657,6 +3673,51 @@ function cerrarSesionDash() {
   location.reload();
 }
 
+/* ── ESPERA DEL LOGIN ──────────────────────────────────────────────
+   Los mensajes van cambiando para que se note que el sistema sigue
+   trabajando, no que se colgo. Dicen lo que de verdad esta pasando: la
+   demora real es el hash iterado y el viaje al Apps Script.
+   El ultimo mensaje se queda fijo: si tarda mas de la cuenta, mentir con
+   "ya casi" seria peor que reconocer que va lento.                    */
+const LOGIN_MENSAJES = [
+  'Verificando credenciales',
+  'Comprobando tu contraseña',
+  'Preparando tu sesión',
+  'Casi listo, el servidor está respondiendo',
+  'Sigue procesando, no cierres esta ventana'
+];
+let _loginTimer = null;
+
+function _loginEsperando(activo) {
+  const caja  = document.getElementById('dash-cargando');
+  const msg   = document.getElementById('dash-cargando-msg');
+  const velo  = document.getElementById('dash-login');
+  if (!caja || !msg || !velo) return;
+
+  if (_loginTimer) { clearInterval(_loginTimer); _loginTimer = null; }
+
+  if (!activo) {
+    caja.classList.remove('viendose');
+    velo.classList.remove('ocupado');
+    return;
+  }
+
+  let i = 0;
+  msg.textContent = LOGIN_MENSAJES[0];
+  caja.classList.add('viendose');
+  velo.classList.add('ocupado');
+
+  _loginTimer = setInterval(function () {
+    if (i >= LOGIN_MENSAJES.length - 1) { clearInterval(_loginTimer); _loginTimer = null; return; }
+    i++;
+    msg.classList.add('cambiando');                    // se desvanece
+    setTimeout(function () {
+      msg.textContent = LOGIN_MENSAJES[i];
+      msg.classList.remove('cambiando');               // y vuelve con el nuevo
+    }, 250);
+  }, 2200);
+}
+
 async function intentarLoginDash() {
   const usuario    = _limpiarCredencial(document.getElementById('dash-usuario').value).toLowerCase();
   const contrasena = document.getElementById('dash-pass').value;
@@ -3682,6 +3743,7 @@ async function intentarLoginDash() {
 
   if (btn) { btn.disabled = true; btn.dataset.txt = btn.textContent; btn.textContent = 'Verificando...'; }
   errEl.style.display = 'none';
+  _loginEsperando(true);
 
   let r;
   try {
@@ -3696,6 +3758,7 @@ async function intentarLoginDash() {
     r = { ok: false, error: 'No se pudo verificar el ingreso. Intenta de nuevo; si sigue igual, avisale al administrador.' };
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = btn.dataset.txt || 'Ingresar'; }
+    _loginEsperando(false);
   }
 
   if (!r || !r.ok) {
@@ -4254,71 +4317,6 @@ function renderIngreso(data, filter) {
 }
 
 // ── RENDER SOLICITUDES ────────────────────────────
-function renderSolicitudes(data, filter) {
-  const filtered = data.filter(r => {
-    const dateField = r['FECHA SOLICITUD'] || getMarcaTemporal(r);
-    return inPeriod(dateField, filter);
-  });
-
-  const total = filtered.length;
-  const clientes = new Set(filtered.map(r => r['NOMBRE DEL CLIENTE O EMPRESA']).filter(Boolean));
-  let totalValor = 0, sinFecha = 0, conId = 0;
-  const pagos = {};
-  const productos = { 'HUMUS SOLIDO':0,'HUMUS LIQUIDO PURO':0,'HUMUS LIQUIDO PLUS':0,'HUMUS LIQUIDO ORGANICO MINERAL':0,'HUMUS LIQUIDO PRADERA':0,'ENRAIZADOR':0,'HUMUS LIQUIDO CNM':0,'HORTI OLOR':0,'HORTI COMPOSTAJE':0 };
-
-  filtered.forEach(r => {
-    const v = parseFloat((r['PRECIO ACORDADO (CON DESCUENTO)']||r['VALOR A PAGAR']||'0').toString().replace(/[^0-9.]/g,'')) || 0;
-    totalValor += v;
-    if (!r['FECHA DE ENTREGA']) sinFecha++;
-    if (r['NUMERO IDENTIFICACION CLIENTE']) conId++;
-    const p = r['METODO DE PAGO'] || 'No especificado';
-    pagos[p] = (pagos[p]||0)+1;
-    Object.keys(productos).forEach(k => { if (r[k]) productos[k]++; });
-  });
-
-  const pctId = total > 0 ? (conId/total)*100 : 0;
-  const promedio = total > 0 ? totalValor/total : 0;
-  const lbl = { ayer:'Ayer', hoy:'Hoy', semana:'Esta semana', mes:'Este mes', total:'Total acumulado' }[filter];
-
-  document.getElementById('s-total').textContent = fmt(total);
-  document.getElementById('s-valor').textContent = fmtCop(totalValor);
-  document.getElementById('s-clientes').textContent = fmt(clientes.size);
-  document.getElementById('s-promedio').textContent = fmtCop(promedio);
-  document.getElementById('s-sin-fecha').textContent = fmt(sinFecha);
-  document.getElementById('s-id').textContent = Math.round(pctId)+'%';
-  ['s-total-p','s-valor-p','s-clientes-p','s-promedio-p','s-sin-fecha-p','s-id-p'].forEach(id => document.getElementById(id).textContent = lbl);
-  document.getElementById('sol-period').textContent = lbl;
-  const _fs1 = document.getElementById('footer-sol'); if (_fs1) _fs1.textContent = 'Solicitudes: '+fmt(total)+' registros';
-
-  // Barras productos
-  const maxProd = Math.max(...Object.values(productos), 1);
-  document.getElementById('prod-bars').innerHTML = Object.entries(productos).map(([k,v]) => `
-    <div class="prog-item">
-      <div class="prog-hdr"><span class="prog-lbl">${k.charAt(0)+k.slice(1).toLowerCase()}</span><span class="prog-val">${v} pedido${v!==1?'s':''}</span></div>
-      <div class="prog-track"><div class="prog-fill" style="width:${(v/maxProd*100)}%;background:var(--navy)"></div></div>
-    </div>`).join('');
-
-  // Tabla pagos
-  document.getElementById('tbody-pagos').innerHTML = Object.entries(pagos).length > 0
-    ? Object.entries(pagos).sort((a,b)=>b[1]-a[1]).map(([p,n],i) => `<tr><td class="${i===0?'bold':''}">${p}</td><td class="num">${n}</td></tr>`).join('')
-    : '<tr><td colspan="2" class="empty">Sin registros</td></tr>';
-
-  // Tabla solicitudes
-  document.getElementById('tbody-sol').innerHTML = filtered.length === 0
-    ? '<tr><td colspan="7" class="empty">Sin registros para el periodo seleccionado</td></tr>'
-    : filtered.slice().reverse().slice(0,30).map(r => {
-        const v = parseFloat((r['PRECIO ACORDADO (CON DESCUENTO)']||r['VALOR A PAGAR']||'0').toString().replace(/[^0-9.]/g,'')) || 0;
-        return `<tr>
-          <td>${r['FECHA SOLICITUD']||r['Marca temporal']||'—'}</td>
-          <td class="bold">${r['NOMBRE DEL CLIENTE O EMPRESA']||'—'}</td>
-          <td>${r['IDENTIFICACION DEL CLIENTE']||'—'} ${r['NUMERO IDENTIFICACION CLIENTE']||''}</td>
-          <td>${r['METODO DE PAGO']||'—'}</td>
-          <td>${r['RESPONSABLE COMERCIAL QUE GENERA EL PEDIDO']||'—'}</td>
-          <td class="price">${v>0?'$ '+fmt(v):'—'}</td>
-          <td>${r['FECHA DE ENTREGA']||'<span class="badge b-red">Pendiente</span>'}</td>
-        </tr>`;
-      }).join('');
-}
 
 // ── OPERACIONES ───────────────────────────────────
 const OPS = [
@@ -4376,7 +4374,6 @@ const OPS = [
 ];
 
 // Paleta de colores de acento por posición
-const OPS_ACCENT = ['var(--navy)','var(--green)','var(--gold)','var(--blue)','#7b5ea7','#c0392b','#16a085','#e67e22','#2980b9','#27ae60'];
 
 // ── LISTA DE PROVEEDORES CONSTRUIDA DESDE EL SHEET ──────────
 // Antes esta pestaña dependia SOLO de la lista fija OPS del codigo, asi que un
@@ -5322,16 +5319,6 @@ function renderClientes(data, filter) {
     </div>`;
   }).join('') || '<div style="font-size:11px;color:var(--ink-l);padding:8px">Sin datos</div>';
 
-  // Leyenda
-  const leyenda = document.getElementById('leyenda-clientes');
-  const coloresUsados = [...new Set(sorted.map(([op]) => op))];
-  leyenda.innerHTML = coloresUsados.map(op => {
-    const color = getClientColor(op);
-    return `<div style="display:flex;align-items:center;gap:8px;">
-      <div style="width:14px;height:14px;border-radius:2px;background:${color};flex-shrink:0"></div>
-      <span style="font-size:11px;font-weight:600;color:var(--ink-m);letter-spacing:.3px">${op}</span>
-    </div>`;
-  }).join('');
 
   // KPIs resumen
   const totalReg = filtered.length;
@@ -5373,120 +5360,10 @@ function renderClientes(data, filter) {
 
   // Cards por cliente
   if (sorted.length === 0) {
-    document.getElementById('cards-clientes').innerHTML = '<div class="card"><div class="empty">Sin registros para el periodo seleccionado</div></div>';
     renderChartClientes([]);
     return;
   }
 
-  document.getElementById('cards-clientes').innerHTML = sorted.map(([op, registros]) => {
-    const color = getClientColor(op);
-    const bgColor = hexToRgba(color, 0.04);
-
-    let pesoE = 0, pesoS = 0, tiqOk = 0;
-    const placas = new Set(), conductores = new Set(), residuos = new Set();
-
-    registros.forEach(r => {
-      const e = getPesoNeto(r);
-      const s = 0;
-      pesoE += e; pesoS += s;
-      const tiq = r['NUMERO TIQUETE'] || '';
-      if (tiq.replace(/\s/g,'').length > 4) tiqOk++;
-      if (r['PLACA']) placas.add(r['PLACA']);
-      const cond = r['CONDUCTOR - PRIME NOMBRE Y PRIMER APELLIDO'] || r['CONDUCTOR'] || '';
-      if (cond) conductores.add(cond);
-      if (r['RESIDUO']) residuos.add(r['RESIDUO']);
-    });
-
-    const pesoNeto = pesoE - pesoS;
-    const pctTiq = registros.length > 0 ? Math.round((tiqOk/registros.length)*100) : 0;
-    const tiqBadge = pctTiq === 100
-      ? `<span style="background:#e8f5ee;color:#1a5c35;font-size:10px;font-weight:700;padding:2px 8px;letter-spacing:.5px;text-transform:uppercase">${pctTiq}% Completos</span>`
-      : pctTiq >= 80
-      ? `<span style="background:#f5eed8;color:#8b6914;font-size:10px;font-weight:700;padding:2px 8px;letter-spacing:.5px;text-transform:uppercase">${pctTiq}% Completos</span>`
-      : `<span style="background:#f5e8e8;color:#8b1a1a;font-size:10px;font-weight:700;padding:2px 8px;letter-spacing:.5px;text-transform:uppercase">${pctTiq}% Completos</span>`;
-
-    // Tabla de ultimos registros
-    const filas = registros.slice().reverse().slice(0,5).map(r => {
-      const pe = getPesoNeto(r);
-      const ps = 0;
-      const tiq = r['NUMERO TIQUETE'] || '—';
-      const tiqOk2 = tiq.replace(/\s/g,'').length > 4;
-      return `<tr>
-        <td style="padding:7px 12px;font-size:11px;color:var(--ink-m);border-bottom:1px solid var(--rule-l)">${r['FECHA DISPOSICION PLANTA']||'—'}</td>
-        <td style="padding:7px 12px;font-size:11px;color:var(--ink);font-weight:600;border-bottom:1px solid var(--rule-l)">${tiq} ${!tiqOk2&&tiq!=='—'?'<span style="color:#8b1a1a;font-size:9px">(incompleto)</span>':''}</td>
-        <td style="padding:7px 12px;font-size:11px;color:var(--ink-m);border-bottom:1px solid var(--rule-l)">${r['PLACA']||'—'}</td>
-        <td style="padding:7px 12px;font-size:11px;color:var(--ink-m);border-bottom:1px solid var(--rule-l)">${r['RESIDUO']||'—'}</td>
-        <td style="padding:7px 12px;font-size:11px;text-align:right;color:var(--ink);font-weight:600;border-bottom:1px solid var(--rule-l)">${pe>0?fmt(Math.round(pe))+' kg':'—'}</td>
-        <td style="padding:7px 12px;font-size:11px;text-align:right;color:var(--green);font-weight:700;border-bottom:1px solid var(--rule-l)">${pesoNeto>0?fmt(Math.round(ps>0?pe-ps:pe))+' kg neto':'—'}</td>
-      </tr>`;
-    }).join('');
-
-    return `
-    <div style="margin-bottom:24px;background:var(--white);border:1px solid var(--rule);border-left:5px solid ${color};transition:box-shadow .2s" onmouseover="this.style.boxShadow='0 6px 24px rgba(0,0,0,.08)'" onmouseout="this.style.boxShadow='none'">
-
-      <!-- Header cliente -->
-      <div style="padding:22px 28px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--rule-l);background:${bgColor}">
-        <div style="display:flex;align-items:center;gap:20px">
-          ${(()=>{const logo=getClientLogo(op);return logo?`<img src="${logo}" alt="${op}" style="width:120px;height:120px;object-fit:contain;border-radius:6px;background:white;padding:6px;border:1px solid var(--rule-l);flex-shrink:0" onerror="this.style.display='none'">`:`<div style="width:120px;height:120px;border-radius:6px;background:${hexToRgba(color,.15)};flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-size:32px;font-weight:700;color:${color}">${op.charAt(0)}</div>`;})()}
-          <div>
-            <div style="font-size:9px;font-weight:800;letter-spacing:2.5px;text-transform:uppercase;color:${color};margin-bottom:5px">Cliente · Operación</div>
-            <div style="font-family:'Playfair Display',serif;font-size:32px;font-weight:700;color:var(--ink);line-height:1;letter-spacing:-.5px">${op}</div>
-          </div>
-        </div>
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-          ${tiqBadge}
-          <div style="text-align:right">
-            <div style="font-family:'Libre Baskerville',serif;font-size:38px;font-weight:700;color:${color};line-height:1;font-variant-numeric:lining-nums tabular-nums">${fmt(registros.length)}</div>
-            <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l)">viajes</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- KPIs de la card -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:1px;background:var(--rule);border-bottom:1px solid var(--rule)">
-        <div style="background:var(--white);padding:18px 20px">
-          <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);margin-bottom:8px">Peso Neto</div>
-          <div style="font-family:'Libre Baskerville',serif;font-size:28px;font-weight:700;color:var(--green);line-height:1;font-variant-numeric:lining-nums tabular-nums">${fmtPeso(pesoNeto)}</div>
-          <div style="font-size:10px;color:var(--ink-l);margin-top:4px">material dispuesto</div>
-        </div>
-        <div style="background:var(--white);padding:18px 20px">
-          <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);margin-bottom:8px">Vehículos</div>
-          <div style="font-family:'Libre Baskerville',serif;font-size:28px;font-weight:700;color:var(--navy);line-height:1;font-variant-numeric:lining-nums tabular-nums">${fmt(placas.size)}</div>
-          <div style="font-size:10px;color:var(--ink-l);margin-top:4px">${[...placas].slice(0,3).join(', ')+(placas.size>3?' +':'')}</div>
-        </div>
-        <div style="background:var(--white);padding:18px 20px">
-          <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);margin-bottom:8px">Conductores</div>
-          <div style="font-family:'Libre Baskerville',serif;font-size:28px;font-weight:700;color:var(--navy);line-height:1;font-variant-numeric:lining-nums tabular-nums">${fmt(conductores.size)}</div>
-          <div style="font-size:10px;color:var(--ink-l);margin-top:4px">distintos en el periodo</div>
-        </div>
-        <div style="background:var(--white);padding:18px 20px">
-          <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);margin-bottom:8px">Tiquetes OK</div>
-          <div style="font-family:'Libre Baskerville',serif;font-size:28px;font-weight:700;color:${pctTiq===100?'var(--green)':pctTiq>=80?'var(--gold)':'var(--red)'};line-height:1;font-variant-numeric:lining-nums tabular-nums">${pctTiq}%</div>
-          <div style="font-size:10px;color:var(--ink-l);margin-top:4px">${tiqOk} de ${registros.length} completos</div>
-        </div>
-        <div style="background:var(--white);padding:18px 20px;grid-column:span 2">
-          <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);margin-bottom:8px">Materiales / Residuos</div>
-          <div style="font-size:12px;color:var(--ink-m);font-weight:400;line-height:1.6">${[...residuos].join(' · ')||'—'}</div>
-        </div>
-      </div>
-
-      ${filas ? `
-      <div style="overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse">
-          <thead><tr style="border-bottom:2px solid var(--rule)">
-            <th style="padding:10px 14px;font-size:9px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);text-align:left">Fecha</th>
-            <th style="padding:10px 14px;font-size:9px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);text-align:left">Tiquete</th>
-            <th style="padding:10px 14px;font-size:9px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);text-align:left">Placa</th>
-            <th style="padding:10px 14px;font-size:9px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);text-align:left">Residuo</th>
-            <th style="padding:10px 14px;font-size:9px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);text-align:right">Peso Entrada</th>
-            <th style="padding:10px 14px;font-size:9px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);text-align:right">Peso Neto</th>
-          </tr></thead>
-          <tbody>${filas}</tbody>
-        </table>
-        ${registros.length > 5 ? `<div style="padding:8px 12px;font-size:10px;color:var(--ink-l);text-align:right;border-top:1px solid var(--rule-l)">Mostrando los 5 mas recientes de ${fmt(registros.length)} registros</div>` : ''}
-      </div>` : ''}
-    </div>`;
-  }).join('');
 
   // Graficos al final cuando el DOM ya tiene las cards
   renderChartClientes(filtered);
@@ -5977,8 +5854,6 @@ function renderChartClientes(data) {
   const coloresPeso    = sortedPesos.map(([op]) => getClientColor(op));
 
   setTimeout(() => {
-    drawHBars('hbar-clientes-viajes', sortedGrupos, coloresCliente, 'count');
-    drawHBars('hbar-clientes-peso', sortedPesos.map(([k,v])=>[k,Math.round(v)]), coloresPeso, 'kg');
     // Asignar colores únicos a residuos — sin repetir en la misma gráfica
   const coloresResiduos = (() => {
     const assigned = [];
@@ -6050,17 +5925,6 @@ function renderChartClientes(data) {
   }, 250);
 }
 
-function renderChartHE(data) {
-  const actHoras = {};
-  data.forEach(r => {
-    const act = r['Actividad'] || '—';
-    actHoras[act] = (actHoras[act]||0) + calcHoras(r['Hora de inicio'], r['Hora Final']);
-  });
-  const sorted = Object.entries(actHoras).sort((a,b)=>b[1]-a[1]);
-  setTimeout(() => {
-    drawHBars('hbar-he-actividades', sorted.map(([k,v])=>[k,parseFloat(v.toFixed(1))]), CHART_COLORS, 'h');
-  }, 100);
-}
 
 /*
   RENDER HORAS EXTRAS
@@ -6078,163 +5942,10 @@ function calcHoras(inicio, final) {
   return mins / 60;
 }
 
-function renderHE(data, filter) {
-  const filtered = data.filter(r => inPeriod(r['Fecha'] || getMarcaTemporal(r), filter));
-  const lbl = { ayer:'Ayer', hoy:'Hoy', semana:'Esta semana', mes:'Este mes', total:'Total acumulado' }[filter];
-
-  let totalHoras = 0;
-  const colaboradores = {}, actividades = {};
-  filtered.forEach(r => {
-    const h = calcHoras(r['Hora de inicio'], r['Hora Final']);
-    totalHoras += h;
-    const emp = r['Nombre '] || r['Nombre'] || '—';
-    const ced = r['Cedula'] || '—';
-    const cargo = r['Cargo'] || '—';
-    if (!colaboradores[emp]) colaboradores[emp] = { horas:0, count:0, cedula:ced, cargo };
-    colaboradores[emp].horas += h;
-    colaboradores[emp].count++;
-    const act = r['Actividad'] || '—';
-    actividades[act] = (actividades[act]||0) + h;
-  });
-
-  // Horas mes actual
-  const horasMes = data.filter(r => {
-    const d = parseDate(r['Fecha'] || '');
-    if (!d) return false;
-    const now = new Date();
-    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-  }).reduce((s,r) => s + calcHoras(r['Hora de inicio'], r['Hora Final']), 0);
-
-  document.getElementById('he-total').textContent = fmt(filtered.length);
-  document.getElementById('he-horas').textContent = totalHoras.toLocaleString('es-CO',{minimumFractionDigits:1,maximumFractionDigits:1}) + 'h';
-  document.getElementById('he-emp').textContent = fmt(Object.keys(colaboradores).length);
-  document.getElementById('he-prom').textContent = filtered.length > 0 ? (totalHoras/filtered.length).toLocaleString('es-CO',{minimumFractionDigits:1,maximumFractionDigits:1})+'h' : '—';
-  document.getElementById('he-acts').textContent = fmt(Object.keys(actividades).length);
-  document.getElementById('he-mes').textContent = horasMes.toLocaleString('es-CO',{minimumFractionDigits:1,maximumFractionDigits:1}) + 'h';
-  ['he-total-p','he-horas-p','he-emp-p','he-prom-p','he-acts-p'].forEach(id => {
-    const el = document.getElementById(id); if(el) el.textContent = lbl;
-  });
-  document.getElementById('he-period').textContent = lbl;
-
-  // Barras actividad
-  const maxAct = Math.max(...Object.values(actividades), 1);
-  document.getElementById('he-act-bars') && (document.getElementById('he-act-bars').innerHTML = Object.entries(actividades)
-    .sort((a,b)=>b[1]-a[1])
-    .map(([act,h]) => `
-      <div class="prog-item">
-        <div class="prog-hdr"><span class="prog-lbl">${act}</span><span class="prog-val">${h.toFixed(1)} h</span></div>
-        <div class="prog-track"><div class="prog-fill" style="width:${(h/maxAct*100)}%;background:var(--navy)"></div></div>
-      </div>`).join('') || '<div class="empty">Sin registros</div>');
-
-  renderChartHE(filtered);
-
-  // Top colaboradores
-  const topEmp = Object.entries(colaboradores).sort((a,b)=>b[1].horas-a[1].horas).slice(0,10);
-  document.getElementById('tbody-he-emp').innerHTML = topEmp.length === 0
-    ? '<tr><td colspan="5" class="empty">Sin registros</td></tr>'
-    : topEmp.map(([nombre, d]) => `<tr>
-        <td class="bold">${nombre}</td>
-        <td>${d.cedula}</td>
-        <td>${d.cargo}</td>
-        <td class="num">${d.horas.toFixed(1)} h</td>
-        <td class="num">${d.count}</td>
-      </tr>`).join('');
-
-  // Tabla detalle
-  document.getElementById('tbody-he').innerHTML = filtered.length === 0
-    ? '<tr><td colspan="9" class="empty">Sin registros para el periodo seleccionado</td></tr>'
-    : filtered.slice().reverse().slice(0,50).map(r => {
-        const h = calcHoras(r['Hora de inicio'], r['Hora Final']);
-        return `<tr>
-          <td>${r['Fecha']||'—'}</td>
-          <td class="bold">${r['Nombre ']||r['Nombre']||'—'}</td>
-          <td>${r['Cedula']||'—'}</td>
-          <td>${r['Cargo']||'—'}</td>
-          <td>${r['Area']||'—'}</td>
-          <td>${r['Actividad']||'—'}</td>
-          <td class="num">${r['Hora de inicio']||'—'}</td>
-          <td class="num">${r['Hora Final']||'—'}</td>
-          <td class="num">${h>0?h.toFixed(1)+' h':'—'}</td>
-        </tr>`;
-      }).join('');
-}
 
 // ── COLABORADORS ─────────────────────────────────────
-const COLABORADORS_DB = [
-  {cedula:'1075680310',nombres:'Alejandra',apellidos:'Sierra Alarcón',cargo:'Analista contable',area:'Administrativa',contrato:'Quincenal',eps:''},
-  {cedula:'35419984',nombres:'Licet Nayive',apellidos:'Sánchez Camargo',cargo:'Auditor Interno',area:'Administrativa',contrato:'Quincenal',eps:''},
-  {cedula:'1075685374',nombres:'Dilan',apellidos:'Archila',cargo:'Operario',area:'Bavaria',contrato:'Quincenal',eps:''},
-  {cedula:'1001058237',nombres:'Johan Ferney',apellidos:'Rojas Tirado',cargo:'Operario',area:'Bavaria',contrato:'Quincenal',eps:''},
-  {cedula:'1070304480',nombres:'Johana Lucia',apellidos:'Poveda Rodríguez',cargo:'Coordinador SST',area:'Bavaria',contrato:'Quincenal',eps:''},
-  {cedula:'3102961',nombres:'Orlando',apellidos:'Guzmán forero',cargo:'Operario',area:'Bavaria',contrato:'Quincenal',eps:''},
-  {cedula:'11339970',nombres:'Victor Emilio',apellidos:'Rodriguez Navarrete',cargo:'Conductor',area:'Planta',contrato:'Quincenal',eps:''},
-  {cedula:'18951787',nombres:'Antony René',apellidos:'López piñango',cargo:'Operario de cargador',area:'Planta',contrato:'Contratista',eps:'X'},
-  {cedula:'3027070',nombres:'Elbert Alirio',apellidos:'Beltrán Reyes',cargo:'Operario ganaderia',area:'Finca',contrato:'Contratista',eps:'SURA Subsidiado'},
-  {cedula:'83088335',nombres:'Eleuterio',apellidos:'Cruz Pastrana',cargo:'Operario de huerta',area:'Finca',contrato:'Quincenal',eps:''},
-  {cedula:'11343383',nombres:'Henry',apellidos:'Otalora Martinez',cargo:'Conductor',area:'Planta',contrato:'Contratista',eps:'Famisanar Beneficiario'},
-  {cedula:'52890786',nombres:'Lina Paola',apellidos:'Scholl Barbosa',cargo:'Subgerente',area:'Administrativa',contrato:'Quincenal',eps:''},
-  {cedula:'79303801',nombres:'Luis Alfonso',apellidos:'Achury',cargo:'Operario',area:'Planta',contrato:'Contratista',eps:'Salud Total Cotizante'},
-  {cedula:'35414575',nombres:'Luz Maribel',apellidos:'Rodríguez Ortiz',cargo:'Servicios generales',area:'Administrativa',contrato:'Contratista',eps:'SURA Beneficiario'},
-  {cedula:'1237439828',nombres:'Maikol',apellidos:'Vislan Torres',cargo:'Operario',area:'Planta',contrato:'Contratista',eps:'Mutual ser Subsidiado'},
-  {cedula:'91102164',nombres:'Saúl',apellidos:'García Sandoval',cargo:'Operario-recepción',area:'Planta',contrato:'Contratista',eps:'Nueva Eps Beneficiario'},
-  {cedula:'13066934',nombres:'Edgar Alfredo',apellidos:'Benavides Riascos',cargo:'Operario',area:'Planta',contrato:'Quincenal',eps:''},
-  {cedula:'1073599904',nombres:'Hugo Alejandro',apellidos:'Herrera Cubillos',cargo:'Operario-liquidos',area:'Planta',contrato:'Quincenal',eps:''},
-  {cedula:'6622980',nombres:'Jesús David',apellidos:'Becerra Rivero',cargo:'Operario-molino',area:'Planta',contrato:'Quincenal',eps:''},
-  {cedula:'1075668423',nombres:'Leidy Yuliana',apellidos:'Cuéllar Gómez',cargo:'Coordinador ambiental',area:'Administrativa',contrato:'Contratista',eps:'SURA cotizante'},
-  {cedula:'12233361',nombres:'Oliverio',apellidos:'Hoyos Muñoz',cargo:'Operario-guadaña',area:'Planta',contrato:'Quincenal',eps:''},
-  {cedula:'1003252591',nombres:'Deivi José',apellidos:'Oliveros Peinado',cargo:'Operario-recepción',area:'Planta',contrato:'Quincenal',eps:''},
-  {cedula:'79772208',nombres:'Jorge Alexander',apellidos:'Velásquez Benavides',cargo:'Operario-recepción',area:'Planta',contrato:'Quincenal',eps:''},
-  {cedula:'1005087171',nombres:'Michael Estiven',apellidos:'Medina Benavides',cargo:'Operario de cargador',area:'Planta',contrato:'Quincenal',eps:''},
-  {cedula:'3196703',nombres:'Jorge Eliecer',apellidos:'Angarita Garzon',cargo:'Conductor',area:'Planta',contrato:'Quincenal',eps:''},
-  {cedula:'9289620',nombres:'Idaldo',apellidos:'Madrid Lara',cargo:'Operario-recepción',area:'Planta',contrato:'Quincenal',eps:''},
-  {cedula:'83224775',nombres:'Edgar',apellidos:'Medina Barrios',cargo:'Supervisor y mantenimiento',area:'Planta',contrato:'Quincenal',eps:''},
-  {cedula:'1075654715',nombres:'Manuel Antonio',apellidos:'Camacho',cargo:'Operario de cargador',area:'Planta',contrato:'Quincenal',eps:''},
-  {cedula:'80549640',nombres:'Carlos Arturo',apellidos:'Tunjo Ballen',cargo:'Operario de tractor',area:'Planta',contrato:'Quincenal',eps:''},
-  {cedula:'1003880411',nombres:'Diego Alexis',apellidos:'Cañon Garzon',cargo:'Conductor',area:'Planta',contrato:'Quincenal',eps:''},
-  {cedula:'1077295963',nombres:'Juan David',apellidos:'Lote Garzon',cargo:'Conductor',area:'Planta',contrato:'Quincenal',eps:''},
-  {cedula:'1075681451',nombres:'Angie Ximena',apellidos:'Vargas Rodriguez',cargo:'Coordinador SST',area:'Administrativa',contrato:'Quincenal',eps:''},
-  {cedula:'1070306047',nombres:'Jheison Fabian',apellidos:'Castro Castiblanco',cargo:'Lider Cadena de suministro',area:'Administrativa',contrato:'Quincenal',eps:''},
-  {cedula:'1002769870',nombres:'Juan Sebastian',apellidos:'Castiilo Araque',cargo:'Operario',area:'Planta',contrato:'Contratista',eps:'Nueva Eps Retirado'},
-  {cedula:'1237439831',nombres:'Luis Efrain',apellidos:'Vislan Torres',cargo:'Operario',area:'Planta',contrato:'Contratista',eps:'Mutual ser Subsidiado'},
-  {cedula:'1069432118',nombres:'Wilson',apellidos:'Rodriguez Cano',cargo:'Operario',area:'Planta',contrato:'Contratista',eps:'Salud Total Cotizante'},
-  {cedula:'11519195',nombres:'Orlando',apellidos:'Herrera',cargo:'Operario',area:'Planta',contrato:'Contratista',eps:'Famisanar Beneficiario'},
-  {cedula:'27696742',nombres:'Fran David',apellidos:'Amaya Paz',cargo:'Operario',area:'Planta',contrato:'Contratista',eps:''},
-  {cedula:'24815560',nombres:'Lina',apellidos:'Benavides',cargo:'Servicios generales',area:'Planta',contrato:'Contratista',eps:'Salud Total Beneficiario'},
-  {cedula:'1075678015',nombres:'Estefania',apellidos:'Medina',cargo:'Servicios generales',area:'Planta',contrato:'Contratista',eps:'Nueva Eps Beneficiario'},
-  {cedula:'1076907192',nombres:'Jhon Eduar',apellidos:'Castiblanco',cargo:'Operario',area:'Planta',contrato:'Contratista',eps:''},
-];
 
-function renderTablaEmp(lista) {
-  const quin = lista.filter(e=>e.contrato==='Quincenal').length;
-  const cont = lista.filter(e=>e.contrato==='Contratista').length;
-  document.getElementById('emp-quin').textContent = quin;
-  document.getElementById('emp-cont').textContent = cont;
-  document.getElementById('emp-total').textContent = fmt(COLABORADORS_DB.length);
-  document.getElementById('tbody-colaboradores').innerHTML = lista.length === 0
-    ? '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--ink-l);font-style:italic">Sin resultados</td></tr>'
-    : lista.map((e,i) => `<tr>
-        <td style="font-family:'DM Mono',monospace;font-size:11px">${e.cedula}</td>
-        <td class="bold">${e.nombres}</td>
-        <td>${e.apellidos}</td>
-        <td>${e.cargo}</td>
-        <td><span style="padding:2px 8px;font-size:10px;font-weight:700;text-transform:uppercase;background:${e.area==='Planta'?'var(--blue-l)':e.area==='Administrativa'?'var(--gold-l)':e.area==='Bavaria'?'var(--green-l)':'var(--rule-l)'};color:${e.area==='Planta'?'var(--blue)':e.area==='Administrativa'?'var(--gold)':e.area==='Bavaria'?'var(--green)':'var(--ink-l)'}">${e.area}</span></td>
-        <td>${e.contrato}</td>
-        <td style="font-size:11px;color:var(--ink-l)">${e.eps||'—'}</td>
-      </tr>`).join('');
-}
 
-function filtrarTablaEmp(q) {
-  const area = document.getElementById('emp-filtro-area').value;
-  const contrato = document.getElementById('emp-filtro-contrato').value;
-  const qLow = (q||'').toLowerCase();
-  const lista = COLABORADORS_DB.filter(e => {
-    const matchQ = !qLow || (e.nombres+' '+e.apellidos+' '+e.cargo+' '+e.cedula).toLowerCase().includes(qLow);
-    const matchA = !area || e.area === area;
-    const matchC = !contrato || e.contrato === contrato;
-    return matchQ && matchA && matchC;
-  });
-  renderTablaEmp(lista);
-}
 
 /*
   RENDER KPI OPERARIOS
@@ -6311,212 +6022,6 @@ function coachingBarInfo(valorRaw, tipo) {
   return { pct:0, color:'var(--rule)', label: valorRaw ? valorRaw.toString().trim() : 'Sin dato' };
 }
 
-function renderKPI(data) {
-  const total = data.length;
-  const ops   = new Set(data.map(r=>normEmpresa(r['OPERACION'])).filter(Boolean));
-  const vehs  = new Set(data.map(r=>r['PLACA']).filter(Boolean));
-  let pesoTotal = 0, tiqOkTotal = 0, alertTotal = 0, ahtTotal = [];
-
-  data.forEach(r => {
-    const e = getPesoNeto(r);
-    pesoTotal += e;
-    if ((r['NUMERO TIQUETE']||'').replace(/\s/g,'').length > 4) tiqOkTotal++;
-    const al = r['ALERTAS '] || r['ALERTAS'] || '';
-    if (al.trim()) alertTotal++;
-    const ahtV = parseFloat((r['AHT_SEGUNDOS']||r['AHT SEGUNDOS']||'').toString().replace(/[^0-9.]/g,''));
-    if (!isNaN(ahtV) && ahtV > 0) ahtTotal.push(ahtV);
-  });
-
-  const promAHTGen = ahtTotal.length > 0 ? Math.round(ahtTotal.reduce((a,b)=>a+b,0)/ahtTotal.length) : null;
-  const fmtAHTGen  = s => { if (s===null) return '—'; const m=Math.floor(s/60); const ss=Math.round(s%60); return m+'m '+String(ss).padStart(2,'0')+'s'; };
-
-  document.getElementById('kpi-gen-total').textContent = fmt(data.length);
-  document.getElementById('kpi-gen-tiq').textContent   = fmt(tiqOkTotal);
-  document.getElementById('kpi-gen-alert').textContent = fmt(alertTotal);
-  document.getElementById('kpi-gen-ops').textContent   = fmt(ops.size);
-  document.getElementById('kpi-gen-peso').textContent  = fmtPeso(pesoTotal);
-  document.getElementById('kpi-gen-veh').textContent   = fmt(vehs.size);
-  const ahtEl = document.getElementById('kpi-gen-aht');
-  if (ahtEl) ahtEl.textContent = fmtAHTGen(promAHTGen);
-
-  const grid = document.getElementById('kpi-operarios-grid');
-  grid.innerHTML = OPERARIOS_DEF.map(op => { try {
-    const filas = data.filter(r => {
-      const reg = (r['OPERARIO registra']||r['OPERARIO']||'').toLowerCase();
-      return reg.includes(op.key);
-    });
-
-    if (filas.length === 0) {
-      return `<div class="card" style="border-left:4px solid ${op.color};opacity:.6">
-        <div class="card-hdr" style="color:${op.color}">${op.label}</div>
-        <div class="empty" style="padding:16px">Sin registros en el periodo</div>
-      </div>`;
-    }
-
-    // Calcular KPIs del operario
-    let pesoNeto = 0, tiqOk = 0, alertas = 0;
-    let fechas = [], minutos = [], ahtSegundos = [];
-
-    filas.forEach(r => {
-      const e = getPesoNeto(r);
-      const s = 0;
-      pesoNeto += (e-s);
-      if ((r['NUMERO TIQUETE']||'').replace(/\s/g,'').length > 4) tiqOk++;
-      const al = r['ALERTAS '] || r['ALERTAS'] || '';
-      if (al.trim()) alertas++;
-
-      // AHT desde columna T
-      const ahtRaw = parseFloat((r['AHT_SEGUNDOS']||r['AHT SEGUNDOS']||'').toString().replace(/[^0-9.]/g,''));
-      if (!isNaN(ahtRaw) && ahtRaw > 0) ahtSegundos.push(ahtRaw);
-
-      // Tiempo de disposicion: diferencia entre Marca temporal y FECHA+HORA DISPOSICION
-      const ts = parseDateTime(getMarcaTemporal(r));
-      const fd = r['FECHA DISPOSICION PLANTA']||'';
-      const hd = r['HORA DISPOSICION PLANTA']||'';
-      if (ts && fd && hd) {
-        const dispStr = fd + ' ' + hd;
-        const disp = parseDateTime(dispStr);
-        if (disp && ts > disp) {
-          const diffMin = Math.round((ts - disp) / 60000);
-          if (diffMin >= 0 && diffMin < 240) minutos.push(diffMin);
-        }
-      }
-      if (ts) fechas.push(ts);
-    });
-
-    const pctTiq  = filas.length > 0 ? Math.round((tiqOk/filas.length)*100) : 0;
-    const promMin = minutos.length > 0 ? Math.round(minutos.reduce((a,b)=>a+b,0)/minutos.length) : null;
-    const promAHT = ahtSegundos.length > 0 ? Math.round(ahtSegundos.reduce((a,b)=>a+b,0)/ahtSegundos.length) : null;
-    const fmtAHT  = s => { if (s===null) return '—'; const m=Math.floor(s/60); const ss=Math.round(s%60); return m+'m '+String(ss).padStart(2,'0')+'s'; };
-    fechas.sort((a,b)=>a-b);
-    const primero = fechas.length > 0 ? fechas[0].toLocaleDateString('es-CO') + ' ' + fechas[0].toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}) : '—';
-    const ultimo  = fechas.length > 0 ? fechas[fechas.length-1].toLocaleDateString('es-CO') + ' ' + fechas[fechas.length-1].toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}) : '—';
-
-    // Operaciones del operario
-    const opsOp = {};
-    filas.forEach(r => { const o = normEmpresa(r['OPERACION'])||'Sin op'; opsOp[o]=(opsOp[o]||0)+1; });
-    const topOps = Object.entries(opsOp).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k,v])=>k+' ('+v+')').join(' · ');
-
-    const tiqColor = pctTiq===100?'var(--green)':pctTiq>=80?'var(--gold)':'var(--red)';
-
-    // Histograma de viajes por hora (hora militar 0-23). Una sola barra por hora,
-    // en el color del operario. Si el periodo cubre varios dias (ej. resumen de
-    // semana), se muestra el PROMEDIO diario de esa hora en vez de la suma total,
-    // para que "semana" no infle las barras frente a "hoy"/"ayer".
-    const horaCounts = new Array(24).fill(0);
-    const diasDistintosSet = new Set();
-    fechas.forEach(d => {
-      if (!d || isNaN(d)) return;
-      const dow = d.getDay();
-      if (dow >= 1 && dow <= 5) {
-        horaCounts[d.getHours()]++;
-        diasDistintosSet.add(d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate());
-      }
-    });
-    const numDiasHora = diasDistintosSet.size || 1;
-    const horaProm = horaCounts.map(c => c / numDiasHora);
-    const maxHoraProm = Math.max(...horaProm, 0.0001);
-    // Eje Y con escala "redonda" (0, 25%, 50%, 75%, 100% de un maximo agradable)
-    const horaNiceMax = (() => {
-      const mag = Math.pow(10, Math.floor(Math.log10(maxHoraProm||1)));
-      const norm = (maxHoraProm||1) / mag;
-      const niceNorm = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
-      return niceNorm * mag;
-    })();
-    const fmtTick = v => v === 0 ? '0' : (numDiasHora > 1 ? v.toFixed(1) : Math.round(v).toString());
-    const horaTicksHtml = [1, 0.75, 0.5, 0.25, 0].map(f => `<div>${fmtTick(horaNiceMax*f)}</div>`).join('');
-    const horaGridHtml = [0,1,2,3,4].map(() => `<div style="border-top:1px dashed var(--rule)"></div>`).join('');
-    // Solo se muestran las horas que si tuvieron registros en el periodo filtrado
-    // (hoy/ayer/semana): asi el grafico no queda lleno de huecos vacios cuando
-    // el rango es corto y el operario solo tuvo viajes en unas pocas horas.
-    const horasConDatosIdx = reordenarHorasCircular(horaCounts.map((t,h)=>h).filter(h => horaCounts[h] > 0));
-    const horaBarsHtml = horasConDatosIdx.map(h => {
-      const prom = horaProm[h];
-      const pctH = horaNiceMax > 0 ? Math.min(prom/horaNiceMax*100, 100) : 0;
-      const promLbl = numDiasHora > 1 ? prom.toFixed(1)+' viajes/dia (prom.)' : horaCounts[h]+' viaje'+(horaCounts[h]!==1?'s':'');
-      return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%" title="${String(h).padStart(2,'0')}:00h — ${promLbl}">
-        <div style="width:100%;max-width:38px;height:${Math.max(pctH,5)}%;background:${op.color};border-radius:4px 4px 0 0"></div>
-      </div>`;
-    }).join('');
-    const horaLabelsHtml = horasConDatosIdx.map(h => `<div style="flex:1;text-align:center;font-size:9px;font-weight:600;color:var(--ink-l)">${String(h).padStart(2,'0')}</div>`).join('');
-    const horaPicoIdx = horaCounts.indexOf(Math.max(...horaCounts));
-    const horaPicoOp = horaCounts[horaPicoIdx] > 0 ? [horaPicoIdx, horaCounts[horaPicoIdx], numDiasHora] : null;
-
-    // Coaching: evaluaciones de este operario en el periodo activo, mas recientes primero
-    window._coachingCache = window._coachingCache || {};
-    window._coachingCache[op.key] = { filas: getCoachingFilasParaOperario(op), color: op.color };
-
-    // Tabla de registros del operario
-    const tablaFilas = filas.slice().sort((a,b)=>{
-      const da = parseDateTime(getMarcaTemporal(a));
-      const db = parseDateTime(getMarcaTemporal(b));
-      return (db||0)-(da||0);
-    }).slice(0,20).map(r => {
-      const ts  = getMarcaTemporal(r);
-      const fecha = ts.split(' ')[0]||'—';
-      const hora  = (ts.split(' ')[1]||'').slice(0,5)||'—';
-      const e = getPesoNeto(r);
-      const neto = e;
-      const ahtV = parseFloat((r['AHT_SEGUNDOS']||r['AHT SEGUNDOS']||'').toString().replace(/[^0-9.]/g,''));
-      const ahtStr = !isNaN(ahtV) && ahtV > 0 ? fmtAHT(ahtV) : '—';
-      return `<tr>
-        <td style="padding:6px 8px;border-bottom:1px solid var(--rule-l);font-size:11px">${fecha}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid var(--rule-l);font-size:11px">${hora}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid var(--rule-l);font-size:11px;font-weight:600">${r['NUMERO TIQUETE']||'—'}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid var(--rule-l);font-size:11px">${r['PLACA']||'—'}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid var(--rule-l);font-size:11px">${normEmpresa(r['OPERACION'])||'—'}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid var(--rule-l);font-size:11px;text-align:right;font-weight:600;color:var(--navy)">${neto>0?Math.round(neto).toLocaleString('es-CO')+' kg':'—'}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid var(--rule-l);font-size:11px;text-align:right;color:var(--gold);font-weight:600">${ahtStr}</td>
-      </tr>`;
-    }).join('');
-
-    return `<div class="card" style="border-left:4px solid ${op.color}">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--rule-l);gap:14px">
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <div style="font-family:'Playfair Display',serif;font-size:18px;font-weight:600;color:var(--ink)">${op.label}</div>
-          <img src="${op.foto}" alt="${op.label}" onerror="this.style.display='none'" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid ${op.color};background:var(--s2)">
-        </div>
-        <div style="text-align:right;flex-shrink:0">
-          <div style="font-family:'Playfair Display',serif;font-size:32px;font-weight:700;color:${op.color};line-height:1">${fmt(filas.length)}</div>
-          <div style="font-size:10px;color:var(--ink-l)">registros</div>
-        </div>
-      </div>
-
-      <div style="background:var(--white);padding:16px 16px 10px;border:1px solid var(--rule-l);margin-bottom:12px">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;flex-wrap:wrap;gap:6px">
-          <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">Horario de viajes · hora militar${numDiasHora>1?' (promedio diario)':''}</div>
-          <div style="font-size:11px;color:var(--ink-m);font-weight:600">${horaPicoOp ? 'Pico: '+String(horaPicoOp[0]).padStart(2,'0')+':00h ('+horaPicoOp[1]+(horaPicoOp[2]>1?' en '+horaPicoOp[2]+' dias':' viajes')+')' : 'Sin datos'}</div>
-        </div>
-        ${horasConDatosIdx.length > 0 ? `
-        <div style="display:flex;gap:8px">
-          <div style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:8px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:flex;align-items:center;justify-content:center;padding:2px 0;flex-shrink:0">${numDiasHora>1?'Viajes/dia':'Viajes'}</div>
-          <div style="display:flex;flex-direction:column;justify-content:space-between;height:190px;text-align:right;font-size:9px;font-weight:600;color:var(--ink-l);min-width:22px;flex-shrink:0">${horaTicksHtml}</div>
-          <div style="position:relative;flex:1;min-width:0">
-            <div style="position:absolute;inset:0;display:flex;flex-direction:column;justify-content:space-between;pointer-events:none">${horaGridHtml}</div>
-            <div style="position:relative;display:flex;align-items:flex-end;gap:5px;height:190px">${horaBarsHtml}</div>
-            <div style="display:flex;gap:5px;margin-top:5px;padding-top:4px">${horaLabelsHtml}</div>
-          </div>
-        </div>
-        ` : `<div style="padding:20px 0;text-align:center;color:var(--ink-l);font-size:11px;font-style:italic">Sin viajes registrados en el periodo seleccionado</div>`}
-      </div>
-
-      <div style="background:var(--white);padding:14px 16px;border:1px solid var(--rule-l);margin-bottom:12px">
-        <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:10px">Coaching · última evaluación</div>
-        <div id="coaching-bars-${op.key}"></div>
-      </div>
-
-    </div>`;
-  } catch (errOp) {
-    console.error('Error renderizando tarjeta de operario', op.key, errOp);
-    return `<div class="card" style="border-left:4px solid ${op.color};padding:16px">
-      <div style="font-family:'Playfair Display',serif;font-size:16px;font-weight:600;color:var(--ink);margin-bottom:6px">${op.label}</div>
-      <div style="font-size:11px;color:var(--red)">No se pudo generar la tarjeta de este operario. Revisa la consola para mas detalle.</div>
-    </div>`;
-  } }).join('');
-
-  // Pintar las barras de coaching (criterio por defecto: el primero) para cada operario
-  OPERARIOS_DEF.forEach(op => { try { renderCoachingBars(op.key); } catch(e) { console.error('Error pintando coaching de', op.key, e); } });
-}
 
 // ── COACHING: pinta las barras del criterio seleccionado para un operario ──
 // Recalcula la lista de evaluaciones de coaching de un operario para el
@@ -6589,7 +6094,6 @@ function renderCoachingBars(opKey) {
 // Apps Script PROPIO de vehiculos (sheet aparte del de Ingreso de Material)
 const VEHICULOS_API = "https://script.google.com/macros/s/AKfycbwf1gu_r2HhyzrtFhYJUjcnu4e5Naksauk-Cn1nplh94rKH_Ha3dhTtiDqmPZzRhDEB/exec";
 
-const VERSION_DASH = 'v114 · fotos programación contain';
 let _vehiculos = [];
 let _mantenimientos = [];
 let _vehiculosCargados = false;
@@ -6705,8 +6209,16 @@ function renderVehiculos() {
     return;
   }
 
-  cont.innerHTML = lista.map(v => {
+  cont.innerHTML = lista.map((v, iVeh) => {
     const alerta = _vehTieneAlerta(v);
+    /* Verde intercalado: una tarjeta si y otra no lleva un fondo verde muy
+       tenue. Con varios vehiculos seguidos y todas las tarjetas iguales es
+       facil creer que se sigue mirando el mismo; la franja alterna marca
+       donde termina uno y empieza el otro sin necesidad de leer la placa.
+       El tinte es muy claro a proposito: tiene que separar, no competir
+       con las bandas de seccion ni con la alerta roja. */
+    const parVeh = iVeh % 2 === 1;
+    const fondoVeh = parVeh ? '#f2f8f4' : '#fff';
     const mantsV = _mantsDeVehiculo(v.placa);
     const fotoHtml = v.foto
       ? `<img src="${urlFotoDrive(v.foto)}" data-alt="${urlFotoDriveAlt(v.foto)}" alt="${v.placa}" onclick="abrirFotoBaucher('${(v.foto||'').replace(/'/g,'')}','${(v.placa||'').replace(/'/g,'')}')" onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src=this.dataset.alt;}else{this.style.display='none';}" style="width:130px;height:100px;object-fit:cover;border-radius:5px;border:1px solid var(--rule);cursor:zoom-in;flex-shrink:0">`
@@ -6720,7 +6232,7 @@ function renderVehiculos() {
     const ultComb = (combDeVehiculo(v.placa) || [])[0] || null;
     const ultMantV = mantsV[0] || null;
 
-    return `<div class="card" style="padding:20px;background:#fff;border:3px solid ${alerta ? 'var(--red)' : VERDE_REPORTE};border-radius:12px;margin-bottom:18px">
+    return `<div class="card" style="padding:20px;background:${fondoVeh};border:3px solid ${alerta ? 'var(--red)' : (parVeh ? '#24784a' : VERDE_REPORTE)};border-radius:12px;margin-bottom:18px">
 
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;
         border-bottom:2px dotted var(--rule);padding-bottom:14px;margin-bottom:16px">
@@ -8897,7 +8409,6 @@ function verHistorialVehiculo(placa) {
 const HUMUS_API = 'https://script.google.com/macros/s/AKfycbypCbXLf03WHeq9hwQh3Jt0DrLv5hCMzqc2sGqChyVsawIwt70YDeWytRMhKpg35diXjw/exec';
 
 // Meta diaria y a qué referencia aplica
-const HUM_META_DIARIA = 300;
 const HUM_META_LINEA = 'humus solido';
 const HUM_META_PRESENTACION = '50';   // se busca "50" dentro del nombre de la presentación
 
@@ -9147,20 +8658,6 @@ function switchResTab(tab) {
   if (bP) { bP.style.background = viajes ? 'transparent' : 'var(--navy)'; bP.style.color = viajes ? 'var(--ink-m)' : 'white'; }
 }
 
-function switchPieTab(tab) {
-  const viajes = tab === 'viajes';
-  // Mostrar/ocultar las barras horizontales según tab
-  const hbarV = document.getElementById('hbar-clientes-viajes');
-  const hbarP = document.getElementById('hbar-clientes-peso');
-  if (hbarV) hbarV.style.display = viajes ? '' : 'none';
-  if (hbarP) hbarP.style.display = viajes ? 'none' : '';
-  const titleEl = document.getElementById('pie-title');
-  if (titleEl) titleEl.textContent = viajes ? 'Registros (viajes)' : 'Peso neto por cliente';
-  const btnV = document.getElementById('pie-tab-viajes');
-  const btnP = document.getElementById('pie-tab-peso');
-  if (btnV) { btnV.style.background = viajes ? 'var(--navy)' : 'transparent'; btnV.style.color = viajes ? 'white' : 'var(--ink-m)'; }
-  if (btnP) { btnP.style.background = viajes ? 'transparent' : 'var(--navy)'; btnP.style.color = viajes ? 'var(--ink-m)' : 'white'; }
-}
 
 /*
   GRÁFICA COMPARATIVA DE PICOS (Panel Ingreso)
@@ -14758,87 +14255,6 @@ function barraSimple(label, count, max, color) {
   </div>`;
 }
 
-function renderPedidos(data) {
-  if (!data || data.length === 0) {
-    document.getElementById('ped-total').textContent = '0';
-    return;
-  }
-
-  // KPIs
-  const clientes = new Set(data.map(r => (r['NOMBRE DEL CLIENTE O EMPRESA']||'').trim()).filter(Boolean));
-  const responsables = new Set(data.map(r => (r['RESPONSABLE COMERCIAL QUE GENERA EL PEDIDO']||'').trim()).filter(Boolean));
-  const valores = data.map(r => parsePrecio(r['PRECIO ACORDADO (CON DESCUENTO)']));
-  const totalValor = valores.reduce((a,b)=>a+b,0);
-  const sinFecha = data.filter(r => !(r['FECHA DE ENTREGA']||'').trim()).length;
-  const promedio = data.length > 0 ? totalValor / data.length : 0;
-
-  document.getElementById('ped-total').textContent       = fmt(data.length);
-  document.getElementById('ped-clientes').textContent    = fmt(clientes.size);
-  document.getElementById('ped-valor').textContent       = fmtCOP(totalValor);
-  document.getElementById('ped-promedio').textContent    = fmtCOP(promedio);
-  document.getElementById('ped-sin-fecha').textContent   = fmt(sinFecha);
-  document.getElementById('ped-responsables').textContent = fmt(responsables.size);
-
-  // Barras productos
-  const prodMap = {};
-  PEDIDOS_PRODUCTOS.forEach(p => {
-    const cnt = data.filter(r => (r[p]||'').toString().trim() !== '').length;
-    if (cnt > 0) prodMap[p] = cnt;
-  });
-  const prodSorted = Object.entries(prodMap).sort((a,b)=>b[1]-a[1]);
-  const maxProd = prodSorted[0]?.[1] || 1;
-  document.getElementById('ped-productos').innerHTML = prodSorted.length
-    ? prodSorted.map(([p,c]) => barraSimple(p.charAt(0)+p.slice(1).toLowerCase(), c, maxProd, 'var(--green)')).join('')
-    : '<div class="empty">Sin datos</div>';
-
-  // Métodos de pago
-  const pagosMap = {};
-  data.forEach(r => {
-    const p = (r['METODO DE PAGO']||'Sin especificar').trim() || 'Sin especificar';
-    pagosMap[p] = (pagosMap[p]||0) + 1;
-  });
-  const pagosSorted = Object.entries(pagosMap).sort((a,b)=>b[1]-a[1]);
-  const maxPago = pagosSorted[0]?.[1] || 1;
-  document.getElementById('ped-pagos').innerHTML = pagosSorted
-    .map(([p,c]) => barraSimple(p, c, maxPago, 'var(--navy)')).join('');
-
-  // Responsable comercial
-  const comMap = {};
-  data.forEach(r => {
-    const p = (r['RESPONSABLE COMERCIAL QUE GENERA EL PEDIDO']||'Sin asignar').trim() || 'Sin asignar';
-    comMap[p] = (comMap[p]||0) + 1;
-  });
-  const comSorted = Object.entries(comMap).sort((a,b)=>b[1]-a[1]);
-  const maxCom = comSorted[0]?.[1] || 1;
-  document.getElementById('ped-comercial').innerHTML = comSorted
-    .map(([p,c]) => barraSimple(p, c, maxCom, 'var(--gold)')).join('');
-
-  // Condiciones de pago
-  const condMap = {};
-  data.forEach(r => {
-    const p = (r['CONDICIONES DE PAGO']||'Sin especificar').trim() || 'Sin especificar';
-    condMap[p] = (condMap[p]||0) + 1;
-  });
-  const condSorted = Object.entries(condMap).sort((a,b)=>b[1]-a[1]);
-  const maxCond = condSorted[0]?.[1] || 1;
-  document.getElementById('ped-condiciones').innerHTML = condSorted
-    .map(([p,c]) => barraSimple(p, c, maxCond, 'var(--blue)')).join('');
-
-  // Tabla detalle
-  const tbody = document.getElementById('tbody-ped');
-  tbody.innerHTML = data.slice(0,60).map(r => {
-    const valor = parsePrecio(r['PRECIO ACORDADO (CON DESCUENTO)']);
-    const sinFch = !(r['FECHA DE ENTREGA']||'').trim();
-    return `<tr>
-      <td>${r['FECHA SOLICITUD']||''}</td>
-      <td><strong>${r['NOMBRE DEL CLIENTE O EMPRESA']||'—'}</strong></td>
-      <td>${r['RESPONSABLE COMERCIAL QUE GENERA EL PEDIDO']||'—'}</td>
-      <td>${r['METODO DE PAGO']||'—'}</td>
-      <td ${sinFch ? 'style="color:var(--red);font-weight:600"' : ''}>${r['FECHA DE ENTREGA']||'Pendiente'}</td>
-      <td class="price">${valor > 0 ? fmtCOP(valor) : '—'}</td>
-    </tr>`;
-  }).join('');
-}
 </script>
 <script>
 /* ════════ DALAS SOLUTIONS — indicadores en vivo ════════ */
@@ -16449,14 +15865,10 @@ function vozBotonPeriodo(nombre){
 }
 
 const VOZ_CONTROLES = {
-  clientes_ver_viajes: {
-    desc: 'en Ingreso por Cliente, cambiar la vista a "Viajes"',
-    hacer: function(){ if (typeof switchPieTab !== 'function') return false; switchPieTab('viajes'); return true; }
-  },
-  clientes_ver_peso: {
-    desc: 'en Ingreso por Cliente, cambiar la vista a "Peso (kg)"',
-    hacer: function(){ if (typeof switchPieTab !== 'function') return false; switchPieTab('peso'); return true; }
-  },
+  // Aca vivian clientes_ver_viajes y clientes_ver_peso, que alternaban las
+  // pestañas Viajes / Peso de la tarjeta "Registros (viajes)". Esa tarjeta
+  // se quito de Ingreso por Cliente, asi que los controles no tenian nada
+  // que accionar y el asistente los habria ofrecido para nada.
   clientes_limpiar_filtros: {
     desc: 'en Ingreso por Cliente, limpiar los filtros de fecha y operación',
     hacer: function(){ if (typeof limpiarFiltrosCliente !== 'function') return false; limpiarFiltrosCliente(); return true; }
@@ -17476,7 +16888,6 @@ const USUARIOS_LOCALES = [
   { usuario: 'Horti', clave: 'Horti123*', nombre: 'Horti' }
 ];
 
-const MODO_LOGIN   = 'directo';
 const HOJA_USUARIOS = '1qTonHCPcWYct2E9PJt2tI27jAfXf5k9W7TB7gl7kM6I';
 const HOJA_USUARIOS_GID = '0';
 const COL_USUARIO = 0;   // A
@@ -17841,7 +17252,7 @@ async function cargar(){
     pedirComentarios();
     cargarFavoritos();
     estado('ok', 'Conectado');
-    $('pieVersion').textContent = 'Auditoría v2.2 · ' + (res.version || '');
+    $('pieVersion').textContent = 'Operaciones v2.2 · ' + (res.version || '');
     if(res.truncado) aviso('La hoja es muy grande: se trajeron las últimas ' + S.filas.length + ' filas.');
     aviso(S.filas.length + ' registros cargados de ' + res.total + ' en la hoja.');
   }catch(err){
