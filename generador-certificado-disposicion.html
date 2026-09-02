@@ -1524,6 +1524,11 @@
 
   function recolectarDatos(){
     return {
+      // Si este certificado se cargó desde "Explorar certificados guardados" (certCodigo
+      // ya tiene un valor), se manda ese código para que el backend ACTUALICE esa misma
+      // fila en vez de crear una nueva (ver Code-v15.gs). Si es un certificado nuevo,
+      // certCodigo está vacío y el backend crea una fila con un código nuevo, como siempre.
+      codigo: certCodigo || '',
       acta: document.getElementById('actaNo').value,
       pagina: document.getElementById('pagina').value,
       empresa: document.getElementById('empresaReceptora').value,
@@ -1590,13 +1595,20 @@
       });
       const data = await res.json().catch(() => ({ok:true}));
       if (data.ok === false) throw new Error(data.error || 'Error desconocido');
+      const fueActualizacion = !!data.actualizado;
       certCodigo = data.codigo || '';
       renderVerificacion();
 
       const acta = document.getElementById('actaNo').value || 'SIN-ACTA';
       const marcado = await marcarViajesComoCertificados(acta + ' / ' + certCodigo);
 
-      let msg = 'Certificado guardado. Código de verificación: ' + (certCodigo || '—');
+      // Si se cargó un certificado ya guardado y se cambió algo (por ejemplo, el
+      // itemizado), esto actualiza esa MISMA fila en la hoja en vez de crear una fila
+      // nueva — el código de verificación no cambia, así que el QR ya impreso sigue
+      // sirviendo igual.
+      let msg = fueActualizacion
+        ? 'Certificado actualizado (misma fila). Código de verificación: ' + (certCodigo || '—')
+        : 'Certificado guardado. Código de verificación: ' + (certCodigo || '—');
       if (marcado.omitido) msg += ' (sin conectar con la base de ingresos: configura INGRESO_SCRIPT_URL)';
       else if (marcado.conflictos > 0) msg += ' — Aviso: ' + marcado.conflictos + ' viaje(s) ya estaban certificados y no se volvieron a marcar.';
       setStatus(msg, 'ok');
@@ -1644,12 +1656,29 @@
     cont.innerHTML = '<div class="saved-empty">Cargando...</div>';
     try{
       const res = await fetch(APPS_SCRIPT_URL, { method: 'GET' });
-      const data = await res.json();
+      // Se lee como texto primero (no .json() directo): si Apps Script devuelve una
+      // página HTML en vez del JSON esperado (por ejemplo un aviso de "inicia sesión" o un
+      // error de Google), esto permite mostrar una pista útil en vez de solo
+      // "Unexpected token '<'", que no dice nada de qué pasó realmente.
+      const texto = await res.text();
+      let data;
+      try {
+        data = JSON.parse(texto);
+      } catch (parseErr) {
+        const pareceHtml = /^\s*</.test(texto);
+        const pista = pareceHtml
+          ? ' El servidor respondió una página en vez de datos — probablemente hace falta iniciar sesión con la cuenta de Google dueña del Apps Script en este navegador, o el despliegue no está configurado como "Cualquier usuario" en Acceso. Revisa también que no estés abriendo este archivo como file:// (ábrelo desde una carpeta/servidor, no con doble clic).'
+          : '';
+        throw new Error('el servidor no devolvió JSON válido.' + pista + ' (' + texto.slice(0, 120) + '...)');
+      }
+      if (!res.ok || data.ok === false) {
+        throw new Error(data.error || ('HTTP ' + res.status));
+      }
       registrosGuardados = (data.records || []).slice().reverse();
       buscador.value = '';
       renderListaGuardados('');
     }catch(err){
-      cont.innerHTML = '<div class="saved-empty">Error al consultar: ' + err.message + '</div>';
+      cont.innerHTML = '<div class="saved-empty">Error al consultar: ' + escapeHtml(err.message) + '</div>';
     }finally{
       btn.disabled = false;
     }
