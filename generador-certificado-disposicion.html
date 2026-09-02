@@ -125,6 +125,7 @@
     font-family:inherit;
   }
   .saved-card{
+    position:relative;
     background:#fff;
     border:1px solid var(--border);
     border-radius:10px;
@@ -141,6 +142,30 @@
   .saved-card.selected{
     border-color:var(--green);
     box-shadow:0 0 0 2px var(--green);
+  }
+  .card-delete{
+    position:absolute;
+    top:5px;
+    right:5px;
+    z-index:2;
+    width:22px;
+    height:22px;
+    padding:0;
+    border:none;
+    border-radius:50%;
+    background:rgba(255,255,255,0.9);
+    color:#b23b3b;
+    font-size:11px;
+    line-height:1;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    box-shadow:0 1px 3px rgba(0,0,0,0.2);
+  }
+  .card-delete:hover{
+    background:#fff;
+    color:#8a1f1f;
   }
   .saved-card .card-imagen{
     width:100%;
@@ -1501,6 +1526,7 @@
         : formatKg(total) + ' kg';
 
       div.innerHTML =
+        '<button type="button" class="card-delete" title="Eliminar este certificado">🗑</button>' +
         imagenHtml +
         '<div class="card-body">' +
           '<div class="card-acta">Acta ' + (rec.Acta || '—') + (rec.Codigo ? ' · ' + rec.Codigo : '') + '</div>' +
@@ -1517,11 +1543,45 @@
         registroSeleccionadoCodigo = rec.Codigo || null;
         aplicarRegistro(rec);
       };
+      div.querySelector('.card-delete').addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        eliminarCertificadoGuardado(rec);
+      });
       cont.appendChild(div);
     });
   }
 
   document.getElementById('buscarGuardados').addEventListener('input', e => renderListaGuardados(e.target.value));
+
+  // Elimina definitivamente un certificado guardado (acción irreversible: pide
+  // confirmación antes de borrar la fila en la hoja "Certificados").
+  async function eliminarCertificadoGuardado(rec){
+    if (!rec.Codigo){
+      alert('Este certificado no tiene código guardado, no se puede eliminar desde aquí.');
+      return;
+    }
+    const ok = window.confirm(
+      '¿Eliminar el certificado Acta ' + (rec.Acta || '—') + ' (' + (rec['Empresa Receptora'] || 'sin empresa') + ')?\n\nEsta acción no se puede deshacer.'
+    );
+    if (!ok) return;
+
+    try{
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'eliminar', codigo: rec.Codigo })
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Error desconocido');
+
+      registrosGuardados = registrosGuardados.filter(r => r.Codigo !== rec.Codigo);
+      if (registroSeleccionadoCodigo === rec.Codigo) registroSeleccionadoCodigo = null;
+      renderListaGuardados(document.getElementById('buscarGuardados').value);
+      setStatus('Certificado Acta ' + (rec.Acta || '—') + ' eliminado.', 'ok');
+    }catch(err){
+      alert('No se pudo eliminar: ' + err.message);
+    }
+  }
 
   function aplicarRegistro(rec){
     document.getElementById('actaNo').value = rec.Acta || '';
