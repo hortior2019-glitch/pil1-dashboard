@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Verificar Certificado - HORTI ORGANIC SAS CI BIC</title>
+<style>
+  :root{--green:#3f9142;--green-dark:#2c5e28;--border:#ddd;}
+  *{box-sizing:border-box;}
+  body{font-family:'Segoe UI',Arial,sans-serif;margin:0;background:#f2f4f2;color:#222;display:flex;justify-content:center;padding:40px 16px;}
+  .box{width:100%;max-width:440px;background:#fff;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,0.1);padding:28px;}
+  h1{font-size:17px;color:var(--green-dark);margin:0 0 4px;text-align:center;}
+  p.sub{font-size:12px;color:#888;text-align:center;margin:0 0 22px;}
+  label{display:block;font-size:12px;font-weight:600;color:#555;margin-bottom:6px;}
+  input{width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:14px;text-transform:uppercase;letter-spacing:1px;text-align:center;}
+  button{width:100%;margin-top:12px;padding:11px;border:none;border-radius:6px;background:var(--green);color:#fff;font-size:14px;font-weight:600;cursor:pointer;}
+  button:hover{background:var(--green-dark);}
+  button:disabled{background:#9bbf9c;cursor:default;}
+  .resultado{margin-top:20px;border-radius:8px;padding:16px;font-size:13px;line-height:1.6;display:none;}
+  .resultado.ok{background:#eaf6ec;border:1px solid #b8dfc0;}
+  .resultado.err{background:#fbeaea;border:1px solid #eabcbc;}
+  .resultado h2{font-size:14px;margin:0 0 10px;}
+  .resultado.ok h2{color:var(--green-dark);}
+  .resultado.err h2{color:#a13a3a;}
+  .resultado dt{font-weight:600;color:#555;font-size:11px;margin-top:8px;}
+  .resultado dd{margin:0;}
+  .config-warning{margin-top:20px;border-radius:8px;padding:14px;font-size:12px;line-height:1.6;background:#fff8e6;border:1px solid #f0dca0;color:#7a5c00;display:none;}
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>Verificación de Certificado</h1>
+  <p class="sub">HORTI ORGANIC SAS CI BIC</p>
+
+  <form id="formVerificar">
+    <label>Código de verificación</label>
+    <input id="inputCodigo" placeholder="XXXX-XXXX" autocomplete="off">
+    <button id="btnVerificar" type="submit">Verificar</button>
+  </form>
+
+  <div id="resultado" class="resultado"></div>
+  <div id="configWarning" class="config-warning">
+    Esta página aún no está configurada: falta poner la URL real de tu Apps Script en la
+    constante <code>APPS_SCRIPT_URL</code> dentro de este archivo (verificar.html).
+  </div>
+</div>
+
+<script>
+  // ⚠️ CONFIGURACIÓN OBLIGATORIA ANTES DE USAR ESTA PÁGINA:
+  // Reemplaza el texto de abajo por la URL /exec de tu Apps Script desplegado
+  // (la misma URL que usa el generador en APPS_SCRIPT_URL).
+  // Ejemplo: 'https://script.google.com/macros/s/AKfycb.../exec'
+  const APPS_SCRIPT_URL = 'PEGA_AQUI_LA_URL_DE_TU_APPS_SCRIPT';
+
+  const form = document.getElementById('formVerificar');
+  const input = document.getElementById('inputCodigo');
+  const boton = document.getElementById('btnVerificar');
+  const resultadoEl = document.getElementById('resultado');
+  const configWarningEl = document.getElementById('configWarning');
+
+  function escaparHtml(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function mostrarResultado(html, tipo){
+    resultadoEl.className = 'resultado ' + tipo;
+    resultadoEl.innerHTML = html;
+    resultadoEl.style.display = 'block';
+  }
+
+  // Si alguien abrió esta página con ?codigo=XXXX-XXXX (por ejemplo desde un QR),
+  // verifica automáticamente al cargar.
+  const params = new URLSearchParams(window.location.search);
+  const codigoInicial = params.get('codigo');
+  if (codigoInicial){
+    input.value = codigoInicial.toUpperCase();
+  }
+
+  async function verificar(codigo){
+    if (!codigo){
+      mostrarResultado('<h2>⚠️ Escribe un código</h2>Ingresa el código de verificación que aparece en el certificado.', 'err');
+      return;
+    }
+    if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.indexOf('PEGA_AQUI') !== -1){
+      configWarningEl.style.display = 'block';
+      return;
+    }
+    configWarningEl.style.display = 'none';
+    boton.disabled = true;
+    boton.textContent = 'Verificando...';
+    resultadoEl.style.display = 'none';
+
+    try{
+      const url = APPS_SCRIPT_URL + '?verificarJson=' + encodeURIComponent(codigo);
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (!data.found){
+        mostrarResultado(
+          '<h2>⚠️ Código no encontrado</h2>Este código no corresponde a ningún certificado emitido por HORTI ORGANIC SAS CI BIC. El documento podría ser falso o el código fue transcrito incorrectamente.',
+          'err'
+        );
+      } else if (data.legado){
+        mostrarResultado('<h2>✅ Documento auténtico</h2>Este código corresponde a un certificado emitido por HORTI ORGANIC SAS CI BIC.', 'ok');
+      } else {
+        const rec = data.record || {};
+        let materiales = [];
+        try { materiales = JSON.parse(rec.Materiales || '[]'); } catch(e){}
+        const materialesHtml = materiales.map(function(m){
+          return escaparHtml(m.descripcion || '') + ': ' + escaparHtml(m.cantidad || '0') + ' kg';
+        }).join('<br>') || '—';
+
+        mostrarResultado(
+          '<h2>✅ Documento auténtico</h2><dl>' +
+          '<dt>Acta</dt><dd>' + escaparHtml(rec.Acta) + '</dd>' +
+          '<dt>Empresa receptora</dt><dd>' + escaparHtml(rec['Empresa Receptora']) + '</dd>' +
+          '<dt>NIT</dt><dd>' + escaparHtml(rec.NIT) + '</dd>' +
+          '<dt>Materiales</dt><dd>' + materialesHtml + '</dd>' +
+          '<dt>Periodo</dt><dd>' + escaparHtml(rec.Periodo) + '</dd>' +
+          '<dt>Fecha de expedición</dt><dd>' + escaparHtml(rec['Fecha Expedicion']) + '</dd>' +
+          '</dl>',
+          'ok'
+        );
+      }
+    }catch(err){
+      mostrarResultado('<h2>⚠️ Error al verificar</h2>No se pudo consultar el servidor de verificación. Intenta de nuevo en un momento.<br><br><small>' + escaparHtml(err.message) + '</small>', 'err');
+    }finally{
+      boton.disabled = false;
+      boton.textContent = 'Verificar';
+    }
+  }
+
+  form.addEventListener('submit', function(ev){
+    ev.preventDefault();
+    verificar(input.value.trim().toUpperCase());
+  });
+
+  if (codigoInicial){
+    verificar(codigoInicial.trim().toUpperCase());
+  }
+</script>
+</body>
+</html>
