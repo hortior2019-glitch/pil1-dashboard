@@ -381,6 +381,12 @@ input.campo-error-resaltado,select.campo-error-resaltado,textarea.campo-error-re
   #login-cargando.viendose{animation:none}
 }
 
+/* Placa incompleta: borde rojo mientras no tenga 3 letras y 3 numeros.
+   Sin esto el campo se ve igual con "XXX12" que con "ABC123". */
+#placa.placa-incompleta{
+  border-color:#c0392b !important;
+  background:#fdecea !important;
+}
 </style>
 </head>
 <body>
@@ -1156,14 +1162,24 @@ function formatPlaca(input) {
   var letras = raw.replace(/[^A-Z]/g, '').slice(0, 3);
   var numeros = raw.replace(/[^0-9]/g, '').slice(0, 3);
   input.value = letras + numeros;
-  // Show hint based on progress
+
+  /* El aviso dice cuanto falta, y el borde queda en rojo mientras la placa
+     este incompleta. Antes el mensaje desaparecia al llegar a 6 caracteres
+     de cualquier forma, asi que "XXX12" no se veia mal por ningun lado y se
+     guardaba igual. */
+  var completa = letras.length === 3 && numeros.length === 3;
+  input.classList.toggle('placa-incompleta', input.value.length > 0 && !completa);
+
   var hint = document.getElementById('placa-flota-hint');
-  if (input.value.length > 0 && letras.length < 3) {
-    hint.textContent = 'Ingrese 3 letras primero (Ej: ABC)';
+  if (!hint) return;
+  if (input.value.length === 0) {
+    hint.textContent = '';
+  } else if (letras.length < 3) {
+    hint.textContent = 'Faltan ' + (3 - letras.length) + ' letra(s) — la placa va con 3 letras y 3 números (Ej: ABC123)';
     hint.style.color = 'var(--orange)';
-  } else if (letras.length === 3 && numeros.length < 3) {
-    hint.textContent = 'Ahora ingrese 3 números (Ej: 123)';
-    hint.style.color = 'var(--blue)';
+  } else if (numeros.length < 3) {
+    hint.textContent = 'Faltan ' + (3 - numeros.length) + ' número(s) — Ej: ABC123';
+    hint.style.color = 'var(--orange)';
   } else {
     hint.textContent = '';
   }
@@ -2794,6 +2810,21 @@ async function enviarFormulario() {
   if (!fecha)     { mostrarStatus('error','Campo requerido','Seleccione la fecha.'); marcarCampoConError('#fecha_disposicion'); return; }
   if (fecha > fechaLocalYYYYMMDD(new Date())) { mostrarStatus('error','Fecha inválida','La fecha de disposición no puede ser posterior a hoy.'); marcarCampoConError('#fecha_disposicion'); return; }
   if (!placa)     { mostrarStatus('error','Campo requerido','Ingrese la placa del vehiculo.'); marcarCampoConError('#placa'); return; }
+  /* La placa tiene que estar COMPLETA: 3 letras y 3 numeros.
+     Antes aqui solo se comprobaba que no estuviera vacia, asi que pasaban
+     registros con "PPQ" o "XXX12". Una placa a medias no identifica ningun
+     vehiculo: rompe los limites de peso por placa, los cortes al proveedor y
+     cualquier consulta posterior, y no hay forma de saber despues cual era.
+     El formato lo confirman los datos: de 140 placas distintas registradas,
+     137 ya son 3+3; las 3 que no, son dos registros truncados y un "SR0051"
+     que en realidad es "SRO051" escrito con un cero en vez de la letra O
+     (esta validacion tambien atrapa ese caso). */
+  if (!/^[A-Z]{3}[0-9]{3}$/.test(placa.toUpperCase())) {
+    mostrarStatus('error','Placa incompleta',
+      'La placa debe tener 3 letras y 3 numeros (ejemplo: ABC123). Se escribio: ' + placa);
+    marcarCampoConError('#placa');
+    return;
+  }
   // Conductor y celular ya NO son obligatorios (a pedido).
   var conductorCelular = (document.getElementById('conductor_celular')||{value:''}).value.trim();
   if (!pesoE)     { mostrarStatus('error','Campo requerido','Ingrese el peso del vehiculo cargado.'); marcarCampoConError('#peso_entrada'); return; }
