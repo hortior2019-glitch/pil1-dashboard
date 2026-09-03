@@ -2300,11 +2300,16 @@ html.solo-panel #salir-solo-panel{display:block}
   #panel-certificado table.cert-table tfoot td, #panel-certificado table.cert-table .total-row td{
     font-weight:700;
   }
-  /* La columna FECHA solo aparece si alguna fila tiene fecha. Un
-     certificado sin fechas se imprime exactamente como antes, sin una
-     columna vacia al lado del total. */
-  #panel-certificado table.cert-table:not(.con-fecha) .col-fecha{display:none}
+  /* EN PANTALLA la columna FECHA esta siempre: si se escondiera cuando
+     no hay fechas, no habria forma de saber que la columna existe — que
+     es justo lo que paso la primera vez.
+     AL IMPRIMIR se va si ninguna fila tiene fecha: un certificado que no
+     usa fechas no debe salir hacia el cliente con una columna vacia al
+     lado del total. La marca .con-fecha la pone update(). */
   #panel-certificado table.cert-table .col-fecha{white-space:nowrap}
+  @media print{
+    #panel-certificado table.cert-table:not(.con-fecha) .col-fecha{display:none}
+  }
 
   #panel-certificado .cert-date{
     font-size:12.5px;
@@ -21520,37 +21525,184 @@ window.operacionesCargar = function(){
   let registrosGuardados = [];
   let registroSeleccionadoCodigo = null; // marca visual de cuál certificado guardado se está viendo
 
+/* ══════════════════════════════════════════════════════════════════
+   UNA SOLA PUERTA A LA HOJA DE CERTIFICADOS
+   ------------------------------------------------------------------
+   Medido el 3 de septiembre de 2026 contra el Apps Script real:
+
+     · primera consulta del día:  29 s   (arranque en frío de Google)
+     · las siguientes:           ~2,2 s
+     · tamaño de la respuesta:  223 KB para 38 certificados
+     · de esos 223 KB, 128 KB (57%) son las MINIATURAS de referencia,
+       que no salen en el documento impreso: solo sirven para reconocer
+       la tarjeta en la galería.
+
+   Esos 29 s son de Google y no se pueden borrar desde acá. Lo que sí se
+   puede es que no tumben la consulta:
+
+   1) NO PEDIR DOS VECES LO MISMO. La galería y el asistente pedían cada
+      uno su propia copia de los mismos 223 KB — dos arranques en frío en
+      vez de uno. Ahora comparten una única petición: si ya hay una en
+      vuelo, el segundo se cuelga de ella.
+   2) REINTENTAR. Cuando Google se satura no devuelve un error de red:
+      devuelve una PÁGINA suya, que al intentar leerse como JSON revienta.
+      Eso es exactamente lo que se veía. Se reintenta dos veces más,
+      esperando 2 s y 6 s; para entonces el script ya está caliente.
+   3) GUARDAR LA ÚLTIMA COPIA BUENA en el navegador. La galería abre al
+      instante con lo último que se vio mientras el servidor responde, y
+      si el servidor falla del todo se sigue trabajando con esa copia,
+      avisando de cuándo es. Antes quedaba una pantalla de error y nada.
+   ══════════════════════════════════════════════════════════════════ */
+  const CERT_CACHE_KEY  = 'horti_certificados_v1';
+  const CERT_ESPERAS    = [2000, 6000];   // esperas entre reintentos
+  const CERT_TIMEOUT_MS = 60000;          // el arranque en frío medido fue 29 s
+
+  let _certPeticion  = null;   // petición en vuelo, para no duplicarla
+  let _certRegistros = null;   // última respuesta buena del servidor
+  let _certCuando    = 0;      // cuándo se obtuvo (epoch ms)
+  let _certEsCache   = false;  // lo que hay salió del navegador, no del servidor
+
+  function _certLeerCache(){
+    try{
+      const crudo = localStorage.getItem(CERT_CACHE_KEY);
+      if (!crudo) return null;
+      const g = JSON.parse(crudo);
+      return (g && Array.isArray(g.records)) ? g : null;
+    }catch(e){ return null; }
+  }
+
+  function _certGuardarCache(records){
+    try{
+      localStorage.setItem(CERT_CACHE_KEY, JSON.stringify({ cuando: Date.now(), records: records }));
+    }catch(e){
+      // Sin espacio: se reintenta sin las miniaturas, que son el 57% del bulto.
+      try{
+        const livianos = records.map(r => Object.assign({}, r, { ImagenRef: '' }));
+        localStorage.setItem(CERT_CACHE_KEY, JSON.stringify({ cuando: Date.now(), records: livianos, sinImagenes: true }));
+      }catch(e2){ /* el cache es una ayuda, no un requisito */ }
+    }
+  }
+
+  /* Traduce lo que devolvió el servidor a una causa entendible. Google
+     manda su propia página HTML en tres situaciones muy distintas y la
+     diferencia importa: una se arregla reintentando y las otras no. */
+  function _certDiagnostico(texto){
+    const t = (texto || '').slice(0, 4000);
+    if (/accounts\.google\.com|ServiceLogin|Iniciar sesión|Sign in/i.test(t)){
+      return { reintentable:false, msg:'Google pidió iniciar sesión. Abre el Apps Script con la cuenta dueña del script, o revisa que el despliegue esté como "Cualquier usuario" en Acceso.' };
+    }
+    if (/quota|límite|limit exceeded|too many/i.test(t)){
+      return { reintentable:false, msg:'Se agotó la cuota diaria del Apps Script. Vuelve a intentar más tarde.' };
+    }
+    if (/^\s*</.test(t)){
+      return { reintentable:true, msg:'Google respondió con una página de error en vez de los datos: casi siempre es el servidor saturado o tardando de más en despertar.' };
+    }
+    return { reintentable:true, msg:'La respuesta no era JSON: ' + t.slice(0, 90) };
+  }
+
+  async function _certUnIntento(){
+    const ctl = (typeof AbortController === 'function') ? new AbortController() : null;
+    const reloj = ctl ? setTimeout(() => ctl.abort(), CERT_TIMEOUT_MS) : null;
+    try{
+      const res = await fetch(APPS_SCRIPT_URL, ctl ? { method:'GET', signal: ctl.signal } : { method:'GET' });
+      const texto = await res.text();
+      let data;
+      try { data = JSON.parse(texto); }
+      catch(e){
+        const d = _certDiagnostico(texto);
+        const err = new Error(d.msg); err.reintentable = d.reintentable; throw err;
+      }
+      if (!res.ok || data.ok === false){
+        const err = new Error(data.error || ('HTTP ' + res.status));
+        err.reintentable = (res.status >= 500 || res.status === 429);
+        throw err;
+      }
+      return data.records || [];
+    } finally {
+      if (reloj) clearTimeout(reloj);
+    }
+  }
+
+  /* Devuelve los certificados. Una sola petición aunque la pidan varios
+     a la vez; reintenta lo que valga la pena reintentar; si todo falla,
+     lanza el error para que quien llamó decida (la galería cae al cache,
+     el asistente se calla). */
+  function certPedirRegistros(forzar){
+    if (_certRegistros && !forzar) return Promise.resolve(_certRegistros);
+    if (_certPeticion) return _certPeticion;           // ya hay una en vuelo
+
+    _certPeticion = (async () => {
+      let ultimo = null;
+      for (let i = 0; i <= CERT_ESPERAS.length; i++){
+        try{
+          const recs = await _certUnIntento();
+          _certRegistros = recs; _certCuando = Date.now(); _certEsCache = false;
+          _certGuardarCache(recs);
+          return recs;
+        }catch(err){
+          ultimo = err;
+          const quedanIntentos = i < CERT_ESPERAS.length;
+          if (!quedanIntentos || err.reintentable === false) break;
+          await new Promise(r => setTimeout(r, CERT_ESPERAS[i]));
+        }
+      }
+      throw ultimo || new Error('No se pudo consultar el servidor.');
+    })();
+
+    _certPeticion.catch(() => {}).then(() => { _certPeticion = null; });
+    return _certPeticion;
+  }
+
+  function _certFechaCorta(ms){
+    try{ return new Date(ms).toLocaleString('es-CO', { dateStyle:'short', timeStyle:'short' }); }
+    catch(e){ return ''; }
+  }
+
   async function cargarGuardados(){
     const cont = document.getElementById('listaGuardados');
     const btn = document.getElementById('btnConsultar');
     const buscador = document.getElementById('buscarGuardados');
     btn.disabled = true;
-    cont.innerHTML = '<div class="saved-empty">Cargando...</div>';
+
+    /* Se pinta primero lo que ya se tenga —de esta misma sesión o de la
+       copia guardada en el navegador— y recién después se actualiza contra
+       el servidor. La galería no queda nunca en blanco esperando los
+       segundos que Google tarda en despertar, y volver a abrirla es
+       instantáneo. */
+    const cache = _certLeerCache();
+    let desdeCache = false;
+    if (!registrosGuardados.length && cache && cache.records.length){
+      registrosGuardados = cache.records.slice().reverse();
+      desdeCache = true;
+    }
+    if (registrosGuardados.length){
+      buscador.value = '';
+      renderListaGuardados('');
+      cont.insertAdjacentHTML('afterbegin',
+        '<div class="saved-empty">' + (desdeCache
+          ? 'Copia guardada del ' + escapeHtml(_certFechaCorta(cache.cuando)) + ' · actualizando…'
+          : 'Actualizando…') + '</div>');
+    } else {
+      cont.innerHTML = '<div class="saved-empty">Consultando el servidor… la primera consulta del día puede tardar hasta medio minuto.</div>';
+    }
+
     try{
-      const res = await fetch(APPS_SCRIPT_URL, { method: 'GET' });
-      // Se lee como texto primero (no .json() directo): si Apps Script devuelve una
-      // página HTML en vez del JSON esperado (por ejemplo un aviso de "inicia sesión" o un
-      // error de Google), esto permite mostrar una pista útil en vez de solo
-      // "Unexpected token '<'", que no dice nada de qué pasó realmente.
-      const texto = await res.text();
-      let data;
-      try {
-        data = JSON.parse(texto);
-      } catch (parseErr) {
-        const pareceHtml = /^\s*</.test(texto);
-        const pista = pareceHtml
-          ? ' El servidor respondió una página en vez de datos — probablemente hace falta iniciar sesión con la cuenta de Google dueña del Apps Script en este navegador, o el despliegue no está configurado como "Cualquier usuario" en Acceso. Revisa también que no estés abriendo este archivo como file:// (ábrelo desde una carpeta/servidor, no con doble clic).'
-          : '';
-        throw new Error('el servidor no devolvió JSON válido.' + pista + ' (' + texto.slice(0, 120) + '...)');
-      }
-      if (!res.ok || data.ok === false) {
-        throw new Error(data.error || ('HTTP ' + res.status));
-      }
-      registrosGuardados = (data.records || []).slice().reverse();
+      const recs = await certPedirRegistros(true);
+      registrosGuardados = recs.slice().reverse();
       buscador.value = '';
       renderListaGuardados('');
     }catch(err){
-      cont.innerHTML = '<div class="saved-empty">Error al consultar: ' + escapeHtml(err.message) + '</div>';
+      if (registrosGuardados.length){
+        // Hay copia local: se sigue trabajando con ella, pero se dice.
+        renderListaGuardados(buscador.value || '');
+        cont.insertAdjacentHTML('afterbegin',
+          '<div class="saved-empty" style="color:#8a6d1f;background:#fdf3d8;border-radius:6px;">' +
+          'No se pudo consultar el servidor (' + escapeHtml(err.message) + ')<br>' +
+          'Vuelve a abrir la galería para reintentar. Mientras tanto estás viendo la copia guardada' +
+          (cache ? ' del ' + escapeHtml(_certFechaCorta(cache.cuando)) : '') + '</div>');
+      } else {
+        cont.innerHTML = '<div class="saved-empty">Error al consultar: ' + escapeHtml(err.message) + '</div>';
+      }
     }finally{
       btn.disabled = false;
     }
@@ -21691,6 +21843,10 @@ window.operacionesCargar = function(){
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || 'Error desconocido');
 
+      // La copia local queda vieja apenas se borra algo: se invalida para
+      // que la próxima consulta vaya de verdad al servidor.
+      _certRegistros = null; _certCache = null; _certPeticion = null;
+      try{ localStorage.removeItem(CERT_CACHE_KEY); }catch(e){}
       registrosGuardados = registrosGuardados.filter(r => r.Codigo !== rec.Codigo);
       if (registroSeleccionadoCodigo === rec.Codigo) registroSeleccionadoCodigo = null;
       renderListaGuardados(document.getElementById('buscarGuardados').value);
@@ -22145,30 +22301,43 @@ let _certCache = null;
 window.certificadosGenerados = async function(forzar){
   if (_certCache && !forzar) return _certCache;
   try{
-    const res = await fetch(APPS_SCRIPT_URL, { method:'GET' });
-    const txt = await res.text();
-    const data = JSON.parse(txt);
-    if (!res.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + res.status));
-    _certCache = (data.records || []).map(function(r){
-      const m = totalYResumenMateriales(r);
-      return {
-        'ACTA':        r['Acta No'] || r.Acta || r['Acta No.'] || '',
-        'EMPRESA':     r['Empresa Receptora'] || r.Empresa || '',
-        'NIT':         r['NIT Receptora'] || r.NIT || '',
-        'PERIODO':     r.Periodo || r['Mes'] || '',
-        'FECHA':       r['Fecha Expedicion'] || r.Fecha || '',
-        'MATERIALES':  m.nombres,
-        'CANTIDAD_KG': m.total,
-        'CODIGO':      r['Codigo'] || r['Codigo Verificacion'] || '',
-        'ID':          r.ID || r.Id || ''
-      };
-    });
+    /* Antes esto abría su propia consulta al Apps Script: el asistente y
+       la galería pedían por separado los mismos 223 KB, y con un arranque
+       en frío de 29 s eso significaba esperarlo dos veces. Ahora los dos
+       se cuelgan de la misma petición, con sus reintentos y su copia
+       local incluidos. */
+    _certCache = (await certPedirRegistros(forzar)).map(_certParaAsistente);
     return _certCache;
   }catch(e){
+    /* El asistente no interrumpe con un error: si el servidor no responde
+       se contesta con la última copia guardada, y si tampoco hay, con una
+       lista vacía. La galería es la que muestra el problema. */
     console.warn('No se pudieron leer los certificados guardados:', e.message);
+    const guardado = _certLeerCache();
+    if (guardado && guardado.records.length){
+      _certCache = guardado.records.map(_certParaAsistente);
+      return _certCache;
+    }
     return [];
   }
 };
+
+/* Del registro crudo de la hoja a lo que ve el asistente: nombres planos
+   y en mayúsculas, sin las miniaturas ni los párrafos completos. */
+function _certParaAsistente(r){
+  const m = totalYResumenMateriales(r);
+  return {
+    'ACTA':        r['Acta No'] || r.Acta || r['Acta No.'] || '',
+    'EMPRESA':     r['Empresa Receptora'] || r.Empresa || '',
+    'NIT':         r['NIT Receptora'] || r.NIT || '',
+    'PERIODO':     r.Periodo || r['Mes'] || '',
+    'FECHA':       r['Fecha Expedicion'] || r.Fecha || '',
+    'MATERIALES':  m.nombres,
+    'CANTIDAD_KG': m.total,
+    'CODIGO':      r['Codigo'] || r['Codigo Verificacion'] || '',
+    'ID':          r.ID || r.Id || ''
+  };
+}
 
 /* Versión sincrónica para el asistente: devuelve lo que ya esté en
    memoria. Si está vacío, el asistente llama primero a su "cargar". */
@@ -22183,8 +22352,14 @@ window.certificadosEnMemoria = function(){ return _certCache || []; };
 window.certificadoAbrirPantallaCompleta = async function(texto){
   const q = (texto || '').toString().trim().toLowerCase();
   try{
-    if (!registrosGuardados.length) await cargarGuardados();
-  }catch(e){}
+    if (!registrosGuardados.length){
+      registrosGuardados = (await certPedirRegistros(false)).slice().reverse();
+    }
+  }catch(e){
+    // Sin servidor se intenta con la copia guardada en el navegador
+    const g = _certLeerCache();
+    if (g && g.records.length) registrosGuardados = g.records.slice().reverse();
+  }
   if (!registrosGuardados.length) return { ok:false, error:'No se pudieron leer los certificados guardados.' };
 
   let rec = null;
