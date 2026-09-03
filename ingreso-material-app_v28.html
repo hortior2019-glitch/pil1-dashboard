@@ -4643,7 +4643,10 @@ function intentarLogin() {
   btn.disabled = true;
   loginEsperando(true);
 
-  authPost('login', { usuario: usuario, password: contrasena })
+  /* El "app: ingreso" no es decorativo: le dice al servidor que esta
+     sesion es de jornada (8 h) y no la corta de 45 min. Sin ese dato el
+     operario vuelve a quedarse afuera a media mañana. */
+  authPost('login', { usuario: usuario, password: contrasena, app: 'ingreso' })
     .catch(function(e){
       console.error('Login: el servicio no respondio JSON.', e);
       return { ok:false, error:'No se pudo verificar el ingreso. Intente de nuevo.' };
@@ -4952,6 +4955,12 @@ function abrirConsulta() {
 
 function cerrarSesion() {
   cerrarModalesFotoResiduales();
+  /* Antes esto solo borraba pil1_sesion: el token seguia guardado en el
+     equipo Y vivo en el servidor, asi que "cerrar sesion" no cerraba nada.
+     Ahora se invalida de los dos lados. */
+  var _t = _authToken;
+  _guardarToken(null);
+  if (_t) { authPost("logout", {}).catch(function(){}); }
   sesionUsuario = null;
   desactivarConfirmacionSalida();
   localStorage.removeItem('pil1_sesion');
