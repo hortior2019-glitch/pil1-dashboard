@@ -1927,6 +1927,13 @@ html.solo-panel #salir-solo-panel{display:block}
   }
   #panel-certificado .material-row .mat-desc{flex:2;}
   #panel-certificado .material-row .mat-cant{flex:1;}
+  /* La fecha necesita mas ancho que la cantidad: "01/08/2026" son diez
+     caracteres. Se le da 1.25 de reparto y se ajustan letra y relleno de
+     las dos casillas cortas, para que el texto entre sin recortarse en el
+     menu de 380px. */
+  #panel-certificado .material-row .mat-fecha{flex:1.25;min-width:0;}
+  #panel-certificado .material-row .mat-cant,
+  #panel-certificado .material-row .mat-fecha{padding-left:6px;padding-right:6px;font-size:12px;}
   #panel-certificado .material-row .mat-remove{
     flex:0 0 auto;
     width:30px;
@@ -2127,6 +2134,8 @@ html.solo-panel #salir-solo-panel{display:block}
     padding:14px 20px 0;
     display:flex;
     justify-content:center;
+    gap:8px;
+    flex-wrap:wrap;
   }
   #panel-certificado .explorer-left-bar button{
     width:auto;
@@ -2291,6 +2300,11 @@ html.solo-panel #salir-solo-panel{display:block}
   #panel-certificado table.cert-table tfoot td, #panel-certificado table.cert-table .total-row td{
     font-weight:700;
   }
+  /* La columna FECHA solo aparece si alguna fila tiene fecha. Un
+     certificado sin fechas se imprime exactamente como antes, sin una
+     columna vacia al lado del total. */
+  #panel-certificado table.cert-table:not(.con-fecha) .col-fecha{display:none}
+  #panel-certificado table.cert-table .col-fecha{white-space:nowrap}
 
   #panel-certificado .cert-date{
     font-size:12.5px;
@@ -2987,7 +3001,15 @@ html.solo-panel #salir-solo-panel{display:block}
         <label>Cantidades (una por línea, o separadas por espacio)</label>
         <textarea id="cantidadesIndividuales" placeholder="20580&#10;18540&#10;20230&#10;..." style="min-height:80px;"></textarea>
       </div>
+      <!-- Las fechas van en su propia casilla y NO se mezclan con las
+           cantidades: se pegan las dos columnas por separado desde la hoja
+           y se emparejan por posicion (la 1a fecha con la 1a cantidad). -->
+      <div class="field" style="margin-bottom:8px;">
+        <label>Fechas (opcional, una por línea, en el mismo orden)</label>
+        <textarea id="fechasIndividuales" placeholder="01/08/2026&#10;02/08/2026&#10;03/08/2026&#10;..." style="min-height:80px;"></textarea>
+      </div>
       <button class="btn-list" type="button" onclick="aplicarCantidadesIndividuales()" style="width:100%;">📋 Crear una fila por cada cantidad</button>
+      <div class="status-msg" id="itemizarStatus"></div>
 
       <label style="display:block;font-size:12px;font-weight:600;color:var(--gray);margin:14px 0 8px;border-top:1px solid var(--border);padding-top:12px;">O cargar un archivo JSON con el material y las cantidades</label>
       <input type="file" id="jsonMaterialesInput" accept="application/json,.json">
@@ -3001,7 +3023,7 @@ html.solo-panel #salir-solo-panel{display:block}
 
     <div class="field">
       <label>Fecha de expedición</label>
-      <input id="fechaExpedicion" value="3 de julio de 2026">
+      <input id="fechaExpedicion" value="">
     </div>
 
     <div class="field cert-sec sec-p2" data-sec="6 · Segundo párrafo">
@@ -3065,7 +3087,7 @@ html.solo-panel #salir-solo-panel{display:block}
              como última fila del tbody solo aparece una vez, al final de verdad. -->
         <table class="cert-table">
           <thead>
-            <tr><th>ÍTEM</th><th>DESCRIPCIÓN</th><th id="thCantidad">CANTIDAD KG</th></tr>
+            <tr><th>ÍTEM</th><th>DESCRIPCIÓN</th><th id="thCantidad">CANTIDAD KG</th><th class="col-fecha">FECHA</th></tr>
           </thead>
           <tbody id="tMaterialesBody"></tbody>
         </table>
@@ -3130,6 +3152,7 @@ html.solo-panel #salir-solo-panel{display:block}
   <div class="explorer-left" id="explorerLeft">
     <div class="explorer-left-bar" id="explorerLeftBar" style="display:none;">
       <input type="file" id="imagenReferenciaInputExplorer" accept="image/*" style="display:none;">
+      <button type="button" class="btn-print" onclick="exportarDesdeExplorador()" title="Cierra la galería, manda el certificado a la impresora o a PDF, y vuelve a abrirla">🖨 Exportar este certificado a PDF</button>
       <button type="button" class="btn-list" onclick="document.getElementById('imagenReferenciaInputExplorer').click()">📷 Cambiar imagen de referencia de este certificado</button>
     </div>
   </div>
@@ -20676,7 +20699,12 @@ window.operacionesCargar = function(){
     'empresaOrigen','nitOrigen','direccionOrigen','empresaIntermediaria','nitIntermediaria','direccionIntermediaria','telIntermediaria'];
 
   // ---- Materiales certificados (uno o varios, con descripción editable a nombre técnico) ----
-  let materiales = [ { descripcion: '', cantidad: '' } ];
+  /* Cada fila del certificado es { descripcion, cantidad, fecha }. La
+     fecha es opcional y se guarda TAL CUAL se escribe o se pega: es un
+     dato de documento, no una cuenta, y asi respeta el formato que use
+     la hoja de origen (01/08/2026, 2026-08-01, "1 de agosto", …) sin
+     reinterpretarlo ni correrlo un dia por zona horaria. */
+  let materiales = [ { descripcion: '', cantidad: '', fecha: '' } ];
 
   // ---- Código de verificación (huella digital) + QR ----
   let certCodigo = '';
@@ -20692,16 +20720,18 @@ window.operacionesCargar = function(){
       row.innerHTML =
         '<input class="mat-desc" placeholder="Ej: Residuos Orgánicos / nombre técnico" value="' + (m.descripcion || '').replace(/"/g,'&quot;') + '">' +
         '<input class="mat-cant" placeholder="' + placeholderCant + '" value="' + (m.cantidad || '') + '">' +
+        '<input class="mat-fecha" placeholder="Fecha" value="' + (m.fecha || '').replace(/"/g,'&quot;') + '">' +
         '<button type="button" class="mat-remove" title="Quitar">&times;</button>';
-      const [descInput, cantInput, removeBtn] = row.children;
+      const [descInput, cantInput, fechaInput, removeBtn] = row.children;
       // Cualquier edición manual de los materiales invalida el vínculo con los viajes de
       // la base de datos: así, si el certificado ya no coincide exactamente con lo que se
       // buscó, no se deja marca en la columna AG (evita marcar algo que no se certificó).
       descInput.addEventListener('input', () => { materiales[i].descripcion = descInput.value; idsEnvioMaterialesActuales = []; update(); });
       cantInput.addEventListener('input', () => { materiales[i].cantidad = cantInput.value; idsEnvioMaterialesActuales = []; update(); });
+      fechaInput.addEventListener('input', () => { materiales[i].fecha = fechaInput.value; update(); });
       removeBtn.addEventListener('click', () => {
         materiales.splice(i, 1);
-        if (materiales.length === 0) materiales.push({ descripcion:'', cantidad:'' });
+        if (materiales.length === 0) materiales.push({ descripcion:'', cantidad:'', fecha:'' });
         idsEnvioMaterialesActuales = [];
         renderMateriales();
         update();
@@ -20711,14 +20741,18 @@ window.operacionesCargar = function(){
   }
 
   function agregarMaterialVacio(){
-    materiales.push({ descripcion: '', cantidad: '' });
+    materiales.push({ descripcion: '', cantidad: '', fecha: '' });
     idsEnvioMaterialesActuales = [];
     renderMateriales();
     update();
   }
 
   function setMateriales(nuevaLista){
-    materiales = nuevaLista.length ? nuevaLista : [{ descripcion:'', cantidad:'' }];
+    // Los certificados guardados antes de que existiera la fecha no traen
+    // el campo: se completa vacio para que el editor no muestre "undefined".
+    materiales = nuevaLista.length
+      ? nuevaLista.map(m => ({ descripcion: m.descripcion || '', cantidad: m.cantidad || '', fecha: m.fecha || '' }))
+      : [{ descripcion:'', cantidad:'', fecha:'' }];
     renderMateriales();
     update();
   }
@@ -20754,9 +20788,36 @@ window.operacionesCargar = function(){
       return;
     }
 
-    const nuevaLista = numeros.map(n => ({ descripcion: descripcion, cantidad: String(n) }));
+    /* Las fechas se separan SOLO por salto de línea o punto y coma, nunca
+       por espacios: una fecha escrita "1 de agosto de 2026" es UNA sola y
+       partirla por espacios la volvería seis filas. Se emparejan por
+       posición con las cantidades y se guardan tal cual se pegaron. */
+    const fechasCrudas = (document.getElementById('fechasIndividuales') || {}).value || '';
+    const fechas = fechasCrudas.split(/[\n;]+/).map(s => s.trim()).filter(Boolean);
+
+    const nuevaLista = numeros.map((n, i) => ({
+      descripcion: descripcion,
+      cantidad: String(n),
+      fecha: fechas[i] || ''
+    }));
     idsEnvioMaterialesActuales = [];
     setMateriales(nuevaLista);
+
+    /* Si las dos listas no miden lo mismo, casi seguro se pegó de más o de
+       menos y las fechas quedaron corridas de fila. Vale más decirlo que
+       dejar un certificado con cada peso en la fecha equivocada. */
+    const est = document.getElementById('itemizarStatus');
+    if (est){
+      if (fechas.length && fechas.length !== numeros.length){
+        est.textContent = 'Aviso: ' + numeros.length + ' cantidad(es) y ' + fechas.length +
+          ' fecha(s). Se emparejaron por orden; revisa que cada fecha haya quedado en su fila.';
+        est.className = 'status-msg err';
+      } else {
+        est.textContent = numeros.length + ' fila(s) creada(s)' +
+          (fechas.length ? ', cada una con su fecha.' : '. Sin fechas: la columna no se imprime.');
+        est.className = 'status-msg ok';
+      }
+    }
   }
 
   // ---- Cargar materiales desde un archivo JSON (una fila por cada cantidad) ----
@@ -20767,15 +20828,22 @@ window.operacionesCargar = function(){
   //     [ { "descripcion": "...", "cantidad": "20580" }, ... ]
   //     o { "materiales": [ {...}, ... ] }
   function materialesDesdeJson(datos){
+    const fila = m => ({
+      descripcion: String(m.descripcion || m.material || ''),
+      cantidad: String(m.cantidad ?? m.cantidad_kg ?? ''),
+      fecha: String(m.fecha ?? '')
+    });
     if (Array.isArray(datos)) {
-      return datos.map(m => ({ descripcion: String(m.descripcion || m.material || ''), cantidad: String(m.cantidad ?? m.cantidad_kg ?? '') }));
+      return datos.map(fila);
     }
     if (datos && Array.isArray(datos.materiales)) {
-      return datos.materiales.map(m => ({ descripcion: String(m.descripcion || m.material || ''), cantidad: String(m.cantidad ?? m.cantidad_kg ?? '') }));
+      return datos.materiales.map(fila);
     }
     if (datos && Array.isArray(datos.cantidades)) {
       const desc = String(datos.material || datos.descripcion || '');
-      return datos.cantidades.map(c => ({ descripcion: desc, cantidad: String(c) }));
+      // El formato compacto acepta una lista "fechas" en paralelo
+      const fechas = Array.isArray(datos.fechas) ? datos.fechas : [];
+      return datos.cantidades.map((c, i) => ({ descripcion: desc, cantidad: String(c), fecha: String(fechas[i] ?? '') }));
     }
     return null;
   }
@@ -20867,6 +20935,16 @@ window.operacionesCargar = function(){
   window.addEventListener('afterprint', () => {
     document.title = tituloOriginal;
   });
+
+  /* "3 de septiembre de 2026". Se arma con los campos locales de Date,
+     no con toISOString(), que pasa a UTC y en Colombia (UTC-5) devuelve
+     el día anterior toda la tarde. */
+  const MESES_LARGOS = ['enero','febrero','marzo','abril','mayo','junio',
+                        'julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  function fechaLargaHoy(){
+    const d = new Date();
+    return d.getDate() + ' de ' + MESES_LARGOS[d.getMonth()] + ' de ' + d.getFullYear();
+  }
 
   function formatKg(valor){
     const num = parseFloat(String(valor).replace(/,/g, '')) || 0;
@@ -21103,6 +21181,13 @@ window.operacionesCargar = function(){
     const unidad = document.getElementById('unidadCertificacion').value;
     document.getElementById('thCantidad').textContent = unidad === 'viajes' ? 'N° DE VIAJES' : 'CANTIDAD KG';
 
+    // La columna FECHA solo se muestra si alguna fila la tiene: un
+    // certificado sin fechas se imprime igual que siempre, sin una columna
+    // vacía al lado del total.
+    const hayFechas = materiales.some(m => (m.fecha || '').trim());
+    const tabla = document.querySelector('#panel-certificado table.cert-table');
+    if (tabla) tabla.classList.toggle('con-fecha', hayFechas);
+
     // Filas de la tabla, una por material
     const tbody = document.getElementById('tMaterialesBody');
     tbody.innerHTML = '';
@@ -21117,9 +21202,13 @@ window.operacionesCargar = function(){
       tdDesc.textContent = m.descripcion || '';
       const tdCant = document.createElement('td');
       tdCant.textContent = formatCantidad(m.cantidad);
+      const tdFecha = document.createElement('td');
+      tdFecha.className = 'col-fecha';
+      tdFecha.textContent = (m.fecha || '').trim();
       tr.appendChild(tdItem);
       tr.appendChild(tdDesc);
       tr.appendChild(tdCant);
+      tr.appendChild(tdFecha);
       tbody.appendChild(tr);
     });
 
@@ -21138,8 +21227,13 @@ window.operacionesCargar = function(){
     const tdTotalValor = document.createElement('td');
     tdTotalValor.id = 'tCantidadTotal';
     tdTotalValor.textContent = formatCantidad(total);
+    // Celda vacía bajo FECHA, para que la fila del total no quede corta
+    // cuando la columna está visible. Se esconde con el resto si no lo está.
+    const tdTotalFecha = document.createElement('td');
+    tdTotalFecha.className = 'col-fecha';
     trTotal.appendChild(tdTotalLabel);
     trTotal.appendChild(tdTotalValor);
+    trTotal.appendChild(tdTotalFecha);
     tbody.appendChild(trTotal);
   }
 
@@ -21178,6 +21272,12 @@ window.operacionesCargar = function(){
     }
   });
 
+  /* La fecha de expedición arranca en HOY.
+     Estaba escrita en el archivo ("3 de julio de 2026") y quedaba igual
+     hasta que alguien se acordara de cambiarla: un certificado firmado
+     con la fecha de otro mes. Se sigue pudiendo escribir a mano, y al
+     cargar un certificado guardado manda la que tenía él. */
+  document.getElementById('fechaExpedicion').value = fechaLargaHoy();
   _p1Auto = generarParrafo1Texto();
   document.getElementById('parrafo1').value = _p1Auto;
   renderMateriales();
@@ -21469,6 +21569,29 @@ window.operacionesCargar = function(){
   function cerrarExplorador(){
     document.querySelector('.app').appendChild(document.getElementById('previewWrap'));
     document.getElementById('explorerOverlay').classList.remove('show');
+  }
+
+  /* Exportar sin salir de la galería.
+     No alcanza con llamar a imprimir estando el explorador abierto: la
+     hoja (#previewWrap) esta MOVIDA dentro del overlay mientras la
+     galeria esta abierta, y la regla de impresion esconde el overlay
+     entero — saldria una hoja en blanco. Asi que se cierra primero (lo
+     que devuelve la hoja a su lugar), se imprime, y al terminar se vuelve
+     a abrir donde estaba, para poder exportar varios seguidos.
+     El certificado ya esta cargado en el formulario: al elegirlo en la
+     galeria se aplico con aplicarRegistro(). */
+  function exportarDesdeExplorador(){
+    const estabaAbierto = document.getElementById('explorerOverlay').classList.contains('show');
+    const busqueda = document.getElementById('buscarGuardados').value;
+    if (estabaAbierto) cerrarExplorador();
+    if (estabaAbierto){
+      window.addEventListener('afterprint', function volver(){
+        document.getElementById('explorerLeft').appendChild(document.getElementById('previewWrap'));
+        document.getElementById('explorerOverlay').classList.add('show');
+        renderListaGuardados(busqueda);   // se conserva el filtro que tenia
+      }, { once:true });
+    }
+    imprimirCertificado();
   }
 
   function totalYResumenMateriales(rec){
@@ -22007,6 +22130,7 @@ window.operacionesCargar = function(){
   window.aplicarCantidadesIndividuales = aplicarCantidadesIndividuales;
   window.agregarMaterialVacio = agregarMaterialVacio;
   window.abrirExplorador = abrirExplorador;
+  window.exportarDesdeExplorador = exportarDesdeExplorador;
 
 
 /* ── LO QUE EL CERTIFICADO LE PRESTA AL ASISTENTE ───────────────────
