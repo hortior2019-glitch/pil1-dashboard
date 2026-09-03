@@ -2347,12 +2347,26 @@ html.solo-panel #salir-solo-panel{display:block}
        altura fija, y el margen de página (18mm/14mm) se pone en la propia @page en vez de
        como padding del certificado — así cada página nueva respeta el margen igual,
        recorra el contenido donde recorra. */
-    @page{ size: A4; margin: 14mm 18mm 12mm 18mm; }
+    /* ⚠ EL MARGEN DE PAGINA VA EN CERO, Y NO ES UN DESCUIDO.
+       El navegador dibuja SU PROPIO encabezado y pie dentro del margen de
+       @page: el titulo del documento arriba y la URL completa abajo. Por eso
+       en el PDF salia la ruta del sistema y el nombre del archivo — datos
+       internos en un documento que se le entrega al cliente.
+       No hay forma desde CSS de pedirle a Chrome que no los dibuje; lo unico
+       que funciona es no dejarle margen donde hacerlo. El espacio del papel
+       se mueve al padding del certificado, mas abajo. */
+    @page{ size: A4; margin: 0; }
     #panel-certificado, #panel-certificado{width:auto; height:auto;}
     #panel-certificado{background:#fff;}
     #panel-certificado .panel{display:none;}
     #panel-certificado .preview-wrap{padding:0; margin:0; justify-content:flex-start; align-items:flex-start; display:block;}
-    #panel-certificado .certificate{box-shadow:none;width:auto;min-height:auto;margin:0;padding:0;display:block;}
+    /* El margen que antes ponia @page ahora es padding del certificado.
+       Los laterales (18mm) se repiten en todas las paginas, que es como
+       deben comportarse. El de arriba y el de abajo aplican una sola vez:
+       si un certificado se va a mas de una hoja, la segunda arranca mas
+       pegada al borde. Es el precio de sacar la URL del PDF. */
+    #panel-certificado .certificate{box-shadow:none;width:auto;min-height:auto;margin:0;
+      padding:14mm 18mm 12mm 18mm;display:block;}
     #panel-certificado .watermark{ width:120mm; }
     #panel-certificado .cert-footer{margin-top:24px; margin-left:-18mm; margin-right:-18mm;}
     #panel-certificado table.cert-table{ break-inside:auto; }
@@ -7328,7 +7342,8 @@ function renderVehiculos() {
         <div>
           ${_rpBanda('Información general')}
           <div style="border:1.5px solid var(--rule);border-radius:10px;padding:6px 14px 10px">
-            ${_rpFila('mantenimiento', 'Kilometraje', fmt(parseInt(v.km||0,10)||0) + ' km')}
+            ${(function(){ const k=_kmVehiculo(v); return _rpFila('mantenimiento', 'Kilometraje',
+                fmt(k.km) + ' km' + (k.origen==='tanqueo' ? ' · del tanqueo del ' + _fmtFechaVeh(k.fecha) : '')); })()}
             ${_rpFila('combustible', 'Último tanqueo', ultComb ? _fmtPesos(ultComb.valor) + ' · ' + _fmtFechaVeh(ultComb.fecha) : 'sin registros')}
             ${_rpFila('preop', 'Última inspección', est.u ? _fmtFechaVeh(est.u.fecha) + (est.u.conductor ? ' · ' + _escVeh(est.u.conductor) : '') : 'sin registros')}
             ${_rpFila('mantenimiento', 'Último mantenimiento', ultMantV ? _escVeh(ultMantV.titulo||'—') + ' · ' + _fmtFechaVeh(ultMantV.fecha) : 'sin registros')}
@@ -7399,6 +7414,31 @@ function _progDeVehiculo(placa) {
    así el dashboard funciona igual antes y después de actualizar el script. */
 
 // Todas las fotos de un mantenimiento, venga de v2 o de v3
+/* ── KILOMETRAJE DEL VEHICULO ───────────────────────────────────────
+   Se toma del ultimo tanqueo, no del campo guardado en la ficha.
+
+   Por que: el km de la ficha se escribe a mano y llego corrupto. En la
+   hoja de Combustible los kilometrajes vienen con separador de miles
+   ("4,006,579"), y al guardarlos en la ficha se leyeron con parseInt,
+   que corta en la primera coma y devuelve 4. Por eso SRM179 mostraba
+   "4 km" teniendo 4.009.872, y UZN152, QVK124 y MA65917 mostraban 0.
+
+   El lector de combustible (_numComb) si entiende ambos formatos, el
+   colombiano y el estadounidense, asi que ese dato es el confiable.
+   Ademas es el que de verdad se actualiza: se registra en cada tanqueo.
+
+   Si el vehiculo no tiene tanqueos se usa el de la ficha, para no dejar
+   la casilla vacia. */
+function _kmVehiculo(v) {
+  if (!v) return { km: 0, origen: 'sin dato', fecha: '' };
+  try {
+    const t = (combDeVehiculo(v.placa) || [])[0];   // el mas reciente
+    if (t && Number(t.km) > 0) return { km: Number(t.km), origen: 'tanqueo', fecha: t.fecha || '' };
+  } catch (e) {}
+  const propio = parseInt(v.km, 10) || 0;
+  return { km: propio, origen: propio ? 'ficha' : 'sin dato', fecha: '' };
+}
+
 function _fotosDeMant(m) {
   if (Array.isArray(m.fotos) && m.fotos.length) return m.fotos;
   return (m.foto ? [m.foto] : []);
@@ -8610,7 +8650,8 @@ function verReporteVehiculo(placa) {
         ${_rpBanda('Información general')}
         <div style="border:1.5px solid var(--rule);border-radius:10px;padding:6px 14px 10px">
           ${_rpFila('documentos', 'Placa', _escVeh(v.placa))}
-          ${_rpFila('mantenimiento', 'Kilometraje', fmt(parseInt(v.km || 0, 10) || 0) + ' km')}
+          ${(function(){ const k=_kmVehiculo(v); return _rpFila('mantenimiento', 'Kilometraje',
+              fmt(k.km) + ' km' + (k.origen==='tanqueo' ? ' · del tanqueo del ' + _fmtFechaVeh(k.fecha) : '')); })()}
           ${_rpFila('programacion', 'Km actualizado', v.kmActualizado ? _fmtFechaVeh(v.kmActualizado) : '—')}
           ${_rpFila('combustible', 'Último tanqueo', ultComb ? _fmtPesos(ultComb.valor) + ' · ' + _fmtFechaVeh(ultComb.fecha) : 'sin registros')}
           ${_rpFila('preop', 'Última inspección', u ? _fmtFechaVeh(u.fecha) + (u.conductor ? ' · ' + _escVeh(u.conductor) : '') : 'sin registros')}
@@ -9248,7 +9289,7 @@ async function guardarVehiculo(esEdicion) {
 function abrirFormKm(placa) {
   const v = _vehiculos.find(x => (x.placa||'').toUpperCase() === placa.toUpperCase());
   if (!v) return;
-  const actual = parseInt(v.km||0, 10) || 0;
+  const actual = _kmVehiculo(v).km;   // parte del ultimo tanqueo si lo hay
   _modalVeh(`
     <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">Actualizar kilometraje · ${v.placa}</div>
     <div style="font-size:12px;color:var(--ink-l);margin-bottom:16px">Kilometraje actual registrado: <strong style="color:var(--ink)">${fmt(actual)} km</strong>. El nuevo valor no puede ser menor.</div>
@@ -9403,13 +9444,38 @@ async function guardarMantenimiento(placa) {
   const n = _mantFotosTmp.length;
   if (btn) { btn.disabled = true; btn.textContent = n ? ('Subiendo ' + n + ' foto' + (n !== 1 ? 's' : '') + '...') : 'Guardando...'; }
   const autor = (window._usuarioActual && _usuarioActual.nombre) || '';
-  const d = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body: JSON.stringify({ accion:'guardarMantenimiento', placa, fecha, titulo, descripcion: desc,
-                           fotos: _mantFotosTmp, esAceite, km, autor }) });
+
+  const cuerpo = JSON.stringify({ accion:'guardarMantenimiento', placa, fecha, titulo, descripcion: desc,
+                                  fotos: _mantFotosTmp, esAceite, km, autor });
+  const kb = Math.round(cuerpo.length / 1024);
+
+  /* Se envia con fetch directo y NO con fetchJSONTolerante.
+     Ese ayudante reintenta una vez cuando la respuesta no se puede leer,
+     y aca eso es peligroso: guardar un mantenimiento ESCRIBE. Si el
+     primer intento llega al servidor pero la respuesta se pierde, el
+     reintento crea el registro dos veces. Para leer, reintentar es
+     gratis; para escribir, no.
+     El tamaño y el error real quedan en consola: sin eso, un guardado que
+     falla por peso o por tiempo se veia igual que uno que nunca salio. */
+  let d = null, motivo = '';
+  try {
+    const res  = await fetch(VEHICULOS_API, { method:'POST', redirect:'follow',
+      headers:{'Content-Type':'text/plain;charset=utf-8'}, body: cuerpo });
+    const txt  = (await res.text() || '').trim();
+    if (txt.startsWith('{')) { try { d = JSON.parse(txt); } catch(e) { motivo = 'respuesta ilegible'; } }
+    else motivo = 'el servidor no devolvio JSON';
+    if (!d) console.error('Mantenimiento: ' + motivo + '. Envio de ' + kb + ' KB con ' + n + ' foto(s). Respuesta:', txt.slice(0,200));
+  } catch (e) {
+    motivo = e.message || 'error de red';
+    console.error('Mantenimiento: no se pudo enviar (' + kb + ' KB, ' + n + ' foto(s)):', e);
+  }
+
   if (!d || !d.success) {
     if (err) {
       err.textContent = (d && d.error) ? d.error
-        : 'No se pudo guardar. Si adjuntaste varias fotos, verifica que el Apps Script esté en la versión v3.';
+        : (n > 0
+            ? 'No se pudo guardar el envio de ' + kb + ' KB con ' + n + ' foto(s). Intenta con menos fotos: si asi si guarda, el problema es el peso.'
+            : 'No se pudo guardar. Revisa la consola (F12) para ver el detalle.');
       err.style.display='block';
     }
     if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
