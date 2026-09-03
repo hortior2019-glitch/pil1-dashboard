@@ -2365,6 +2365,34 @@ html.solo-panel #salir-solo-panel{display:block}
 /* El generador venia de una pagina propia, donde su .app ocupaba la
    ventana entera y aparecia con una clase .show tras el login. Aca es un
    panel mas: se muestra siempre que la pestaña este activa. */
+/* ── IMPRESION DEL CERTIFICADO ──────────────────────────────────────
+   El generador traia sus reglas de impresion pensadas para una pagina
+   suelta: ocultaban su propio menu lateral y nada mas, porque no habia
+   nada mas. Dentro del dashboard eso no alcanza — salian tambien la
+   cabecera, el menu de pestañas, la barra de periodo y la de estado.
+
+   La marca .imprimiendo-cert la pone imprimirCertificado() justo antes
+   de llamar a print() y la quita despues. Va marcada a proposito: el
+   reporte de vehiculos usa el mismo window.print() y no debe cambiar de
+   comportamiento por esto. */
+@media print{
+  html.imprimiendo-cert .topbar,
+  html.imprimiendo-cert .nav-wrap,
+  html.imprimiendo-cert .filter-bar,
+  html.imprimiendo-cert .status-bar,
+  html.imprimiendo-cert #voz-fab,
+  html.imprimiendo-cert #dash-login,
+  html.imprimiendo-cert #salir-solo-panel{display:none !important}
+
+  /* El wrapper centra y limita a 1280px: en papel eso deja el
+     certificado corrido a un lado y con margenes de mas. */
+  html.imprimiendo-cert .wrapper{padding:0 !important;margin:0 !important;max-width:none !important}
+  html.imprimiendo-cert #panel-certificado.active{margin:0 !important;width:auto !important}
+
+  /* El explorador de guardados no debe salir impreso si quedo abierto. */
+  html.imprimiendo-cert .explorer-overlay{display:none !important}
+}
+
 #panel-certificado{display:none}
 #panel-certificado.active{display:block}
 
@@ -4980,7 +5008,6 @@ const SHEETS = {
   preopCar:   "https://docs.google.com/spreadsheets/d/e/2PACX-1vT7jlTWFp85CfMimM71gXUysc5zVcMU9PW-5RLtikP3aBDKXAFF4lgg5olu3_F0kARUxiEdDz0TDD5c/pub?gid=910474309&single=true&output=csv",
   viajes:     "https://docs.google.com/spreadsheets/d/e/2PACX-1vQfJ3w0m6ulvnQuosQllRg9mozlPZjPq4a_xlOD6t2kB21ShbW_qnFsMZ9r_I2METGWv2hZIEKL-RRN/pub?gid=1700187693&single=true&output=csv",
   ProduccionHumus: "https://docs.google.com/spreadsheets/d/1RIL3EvKasEdh9PgqZs24sO13ucS2sit0ncnQt14rV0o/export?format=csv&gid=85759097",
-  coaching: "https://docs.google.com/spreadsheets/d/1-erGdKH9NLSuMNtJdBcvNk6K084hgGj0fG-FDjuOv90/export?format=csv&gid=848770587",
   // Hoja "Combustible". Se usa la forma export?format=csv con el ID real del
   // archivo: a diferencia de /pub, no exige publicar la pestaña en la web,
   // basta con que el Sheet sea visible para cualquiera con el enlace.
@@ -5065,7 +5092,7 @@ let currentFilter = 'hoy'; // Filtro de periodo activo ('hoy','semana','mes','to
   - Cada array contiene objetos donde las keys son los encabezados del Sheet
   - Ejemplo: dataIngreso[0]['PLACA'] → valor de la columna PLACA de la fila 1
 */
-let dataIngreso = [], dataSolicitudes = [], dataHE = [], dataPreopVol = [], dataPreopCar = [], dataViajes = [], dataProduccionHumus = [], dataCoaching = [];
+let dataIngreso = [], dataSolicitudes = [], dataHE = [], dataPreopVol = [], dataPreopCar = [], dataViajes = [], dataProduccionHumus = [];
 let dataCombustible = [];   // hoja "Combustible": tanqueos por placa
 
 /*
@@ -5674,15 +5701,6 @@ async function loadAllData() {
 
   let ok = 0, errors = [];
 
-  // Coaching se carga EN PARALELO, sin bloquear el resto (no se usa "await" aqui):
-  // si esa hoja esta lenta, caida, o sin permisos publicos, ya no retrasa nada
-  // mas del dashboard. Cuando (si) termine, repinta solo las barras de coaching.
-  (async () => {
-    try {
-      dataCoaching = await fetchCSV(SHEETS.coaching);
-      if (typeof refrescarCoachingAsync === 'function') refrescarCoachingAsync();
-    } catch(e) { console.error('Coaching fetch error (no bloqueante):', e); }
-  })();
 
   try {
     const rawIngreso = await fetchIngreso();
@@ -7128,115 +7146,6 @@ function reordenarHorasCircular(horasArr) {
   return sorted.slice(startIdx).concat(sorted.slice(0, startIdx));
 }
 
-const OPERARIOS_DEF = [
-  { key: 'alexander', label: 'Alexander Velásquez',  color: '#1fa855', foto: 'https://raw.githubusercontent.com/hortior2019-glitch/pil1-dashboard/main/ALEXANDER.png' },
-  { key: 'deivi',     label: 'Deivi José Oliveros',  color: '#1976d2', foto: 'https://raw.githubusercontent.com/hortior2019-glitch/pil1-dashboard/main/DEIVI.png' },
-  { key: 'saul',      label: 'Saúl García Sandoval', color: '#e0a800', foto: 'https://raw.githubusercontent.com/hortior2019-glitch/pil1-dashboard/main/SAUL.png' },
-  { key: 'german',    label: 'German Rodriguez',     color: '#e8590c', foto: 'https://raw.githubusercontent.com/hortior2019-glitch/pil1-dashboard/main/GERMAN.png' },
-];
-
-// ── COACHING: normalizacion de encabezados y criterios evaluables ──
-// Los encabezados del formulario son oraciones largas; en vez de depender del
-// texto exacto (que puede variar en tildes/espacios), se busca por una palabra
-// clave distintiva dentro de cada encabezado ya normalizado.
-function normalizarHeaderCoaching(s) {
-  return (s||'').toString().toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-    .replace(/[^a-z0-9]+/g,' ').trim();
-}
-function getCampoCoaching(row, keyword) {
-  const kw = normalizarHeaderCoaching(keyword);
-  for (const k in row) {
-    if (normalizarHeaderCoaching(k).includes(kw)) return (row[k]||'').toString().trim();
-  }
-  return '';
-}
-const COACHING_CRITERIOS = [
-  { key:'manifiesto', label:'Consulta si el proveedor envía manifiesto/ticket/baucher', kw:'consulta si el proveedor envia', tipo:'sino' },
-  { key:'diligencia',  label:'Diligencia el sistema oportunamente', kw:'diligencia el sistema oportunamente', tipo:'sino' },
-  { key:'material',   label:'Identifica el material que relaciona la operación', kw:'identifica el material que relaciona', tipo:'sino' },
-  { key:'placa',      label:'Digita o selecciona correctamente la placa', kw:'digita o selecciona correctamente la placa', tipo:'sino' },
-  { key:'conductor',  label:'Identifica el conductor y verifica su información', kw:'identifica el conductor del vehiculo', tipo:'parcial' },
-  { key:'pesovacio',  label:'Ingresa correctamente el peso VACIO', kw:'ingresa correctamente el peso vacio', tipo:'sino' },
-  { key:'pesolleno',  label:'Ingresa correctamente el peso LLENO', kw:'ingresa correctamente el peso lleno', tipo:'sino' },
-  { key:'zona',       label:'Indica la zona en que realizó el descargue', kw:'indica la zona en que realizo', tipo:'sino' },
-  { key:'fototicket', label:'Captura la foto del ticket/baucher/manifiesto', kw:'captura la foto del', tipo:'sino' },
-  { key:'fotoplaca',  label:'Captura la evidencia fotográfica de la PLACA', kw:'evidencia fotografica de la placa', tipo:'sino' },
-  { key:'fotoTara',   label:'Captura la evidencia fotográfica de la TARA', kw:'evidencia fotografica de la tara', tipo:'sino' },
-];
-function coachingBarInfo(valorRaw, tipo) {
-  const v = normalizarHeaderCoaching(valorRaw).toUpperCase();
-  if (tipo === 'parcial') {
-    if (v === 'SI') return { pct:100, color:'#1a9c4a', label:'SI' };
-    if (v === 'PARCIAL 2') return { pct:75, color:'#e0a800', label:'PARCIAL 2' };
-    if (v === 'PARCIAL 1') return { pct:25, color:'#e0a800', label:'PARCIAL 1' };
-    if (v === 'NO') return { pct:100, color:'#b91c1c', label:'NO' };
-  } else {
-    if (v === 'SI') return { pct:100, color:'#1a9c4a', label:'SI' };
-    if (v === 'NO') return { pct:100, color:'#b91c1c', label:'NO' };
-  }
-  return { pct:0, color:'var(--rule)', label: valorRaw ? valorRaw.toString().trim() : 'Sin dato' };
-}
-
-
-// ── COACHING: pinta las barras del criterio seleccionado para un operario ──
-// Recalcula la lista de evaluaciones de coaching de un operario para el
-// periodo activo (hoy/ayer/semana/mes/total). Se usa tanto en el render
-// inicial como cuando la hoja de coaching termina de cargar en segundo plano.
-function getCoachingFilasParaOperario(op) {
-  return (dataCoaching||[]).filter(r => {
-    const nombre = normalizarHeaderCoaching(getCampoCoaching(r,'nombre completo del colaborador'));
-    if (!nombre.includes(op.key)) return false;
-    const mt = getCampoCoaching(r,'marca temporal');
-    return inPeriod(mt||'', currentFilter);
-  }).sort((a,b) => {
-    const da = parseDateTime(getCampoCoaching(a,'marca temporal'));
-    const db = parseDateTime(getCampoCoaching(b,'marca temporal'));
-    return (db||0)-(da||0);
-  });
-}
-
-// Se llama cuando la hoja de Coaching (cargada en paralelo, sin bloquear el
-// resto del dashboard) termina de responder: repinta solo las barras de
-// coaching de cada operario, respetando el criterio que tuviera seleccionado.
-function refrescarCoachingAsync() {
-  window._coachingCache = window._coachingCache || {};
-  OPERARIOS_DEF.forEach(op => {
-    try {
-      window._coachingCache[op.key] = { filas: getCoachingFilasParaOperario(op), color: op.color };
-      renderCoachingBars(op.key);
-    } catch(e) { console.error('Error refrescando coaching de', op.key, e); }
-  });
-}
-
-function renderCoachingBars(opKey) {
-  const cont = document.getElementById('coaching-bars-'+opKey);
-  if (!cont) return;
-  const cache = (window._coachingCache||{})[opKey];
-  if (!cache || cache.filas.length === 0) {
-    cont.innerHTML = '<div style="padding:10px 0;text-align:center;color:var(--ink-l);font-size:11px;font-style:italic">Sin evaluaciones de coaching en el periodo seleccionado</div>';
-    return;
-  }
-  // cache.filas ya viene ordenado descendente por fecha: la primera es la mas reciente.
-  const ultima = cache.filas[0];
-  const mt = getCampoCoaching(ultima, 'marca temporal');
-  const fechaLbl = (mt||'').trim() || '—';
-  const barsHtml = COACHING_CRITERIOS.map(c => {
-    const valor = getCampoCoaching(ultima, c.kw);
-    const info = coachingBarInfo(valor, c.tipo);
-    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-      <div style="font-size:10px;color:var(--ink-m);flex:0 0 44%;max-width:44%;line-height:1.3">${c.label}</div>
-      <div style="flex:1;background:var(--rule-l);border-radius:3px;height:14px;position:relative;overflow:hidden">
-        <div style="height:100%;width:${info.pct}%;background:${info.color};border-radius:3px"></div>
-      </div>
-      <div style="font-size:9px;font-weight:700;color:${info.color};min-width:64px;flex-shrink:0;text-align:right">${info.label}</div>
-    </div>`;
-  }).join('');
-  cont.innerHTML = `
-    <div style="font-size:10px;color:var(--ink-m);margin-bottom:8px">Evaluado: ${fechaLbl} · ${cache.filas.length} evaluacion${cache.filas.length!==1?'es':''} en el periodo</div>
-    ${barsHtml}
-  `;
-}
 
 
 /*
@@ -16744,6 +16653,54 @@ function vozFechaGenerica(r){
 }
 
 const VOZ_FUENTES = {
+  /* ── OPERACIONES (registro maestro auditado) ─────────────────────
+     Es la MISMA hoja que "ingreso", pero vista desde la grilla de
+     Operaciones, que trae algo que el CSV no tiene: el color de las
+     celdas. Por eso va como fuente aparte en vez de fundirse con
+     ingreso — quien pregunta "¿ya auditaron el baucher 1234?" necesita
+     el color, y quien pregunta por toneladas del mes no. */
+  operaciones: {
+    label:'Operaciones · registro maestro con auditoría',
+    panel:'auditoria',
+    desc:'auditoría, registros auditados o sin auditar, baucher, bauchers, manifiesto, tiquete, numero de tiquete, buscar un viaje puntual, celdas marcadas con color, revision de registros',
+    obtener: () => vozArr(() => (typeof operacionesFilas === 'function' ? operacionesFilas() : [])),
+    fecha:   r => (r && (r['FECHA DISPOSICION PLANTA'] || r['Marca temporal'])) || '',
+    cargar: async () => {
+      if (typeof operacionesCargar === 'function') { try { await operacionesCargar(); } catch(e){} }
+    },
+    resumen: () => {
+      try {
+        const r = operacionesResumen();
+        if (!r.cargadas) return '';
+        return 'Operaciones: ' + r.cargadas + ' registros cargados · ' + r.auditadas +
+               ' auditados · ' + r.sinAuditar + ' sin auditar. ' + r.nota;
+      } catch(e){ return ''; }
+    }
+  },
+
+  /* ── CERTIFICADOS DE DISPOSICION ─────────────────────────────────
+     Los que se generaron y guardaron desde el sistema. */
+  certificados: {
+    label:'Certificados de disposición generados',
+    panel:'certificado',
+    desc:'certificados de disposicion, actas, certificados generados, actas emitidas, a que empresa se le certifico, cuanto se certifico, codigo de verificacion',
+    obtener: () => vozArr(() => (typeof certificadosEnMemoria === 'function' ? certificadosEnMemoria() : [])),
+    fecha:   r => (r && (r['FECHA'] || r['PERIODO'])) || '',
+    cargar: async () => {
+      if (typeof certificadosGenerados === 'function') { try { await certificadosGenerados(); } catch(e){} }
+    },
+    resumen: () => {
+      try {
+        const c = certificadosEnMemoria();
+        if (!c.length) return '';
+        const kg = c.reduce((s,x)=>s+(Number(x['CANTIDAD_KG'])||0),0);
+        const emp = new Set(c.map(x=>x['EMPRESA']).filter(Boolean));
+        return 'Certificados: ' + c.length + ' generados · ' + emp.size +
+               ' empresa(s) receptora(s) · ' + Math.round(kg).toLocaleString('es-CO') + ' kg certificados en total.';
+      } catch(e){ return ''; }
+    }
+  },
+
   ingreso: {
     label:'Ingreso de Material / Ingreso por Cliente',
     panel:'clientes',
@@ -16813,14 +16770,6 @@ const VOZ_FUENTES = {
       try { renderPreopUnificado(dataPreopCar.filter(esCargador), dataPreopCar.filter(esTractor), currentFilter); } catch(e){}
     }
   },
-  coaching: {
-    label:'Coaching / KPIs de Operarios',
-    panel:'',   // la pestaña se quito del dashboard; los datos siguen disponibles
-    desc:'coaching, evaluaciones de desempeño, kpis de operarios',
-    obtener: () => vozArr(() => dataCoaching),
-    fecha:   vozFechaGenerica,
-    cargar: async () => { dataCoaching = await fetchCSV(SHEETS.coaching); }
-  },
   accesos: {
     label:'Control de Accesos',
     panel:'accesos',
@@ -16858,7 +16807,6 @@ const VOZ_GLOBALES = [
   { clave:'viajes',          etq:'Viajes',                                   get:()=>dataViajes },
   { clave:'combustible',     etq:'Combustible y tanqueos',                   get:()=>dataCombustible },
   { clave:'humus',           etq:'Producción de humus',                      get:()=>dataProduccionHumus },
-  { clave:'coaching',        etq:'Coaching y KPIs de operarios',             get:()=>dataCoaching },
   { clave:'accesos',         etq:'Control de accesos (entradas y salidas)',  get:()=>rawAccesos },
   { clave:'vehiculos',       etq:'Vehículos de la flota (placas, SOAT, tecnomecánica, km)', get:()=>_vehiculos },
   { clave:'mantenimientos',  etq:'Mantenimientos de vehículos: incluye cuáles fueron cambio de aceite, el kilometraje y cuántas fotos tiene cada uno', get:()=>_mantenimientos },
@@ -17306,14 +17254,12 @@ const VOZ_PANEL_FUENTE = {
   ingreso:         ['ingreso'],
   vehiculos:       ['vehiculos', 'combustible'],
   ProduccionHumus: ['humus'],
-  horasextras:     ['horasExtras'],
-  solicitudes:     ['solicitudes'],
-  pedidos:         ['solicitudes'],
   preopequipo:     ['preopEquipo', 'preopVolquetas'],
   accesos:         ['accesos'],
-  kpi:             ['coaching'],
   cortes:          ['ingreso'],
-  operaciones:     ['ingreso']
+  operaciones:     ['ingreso'],
+  auditoria:       ['operaciones'],
+  certificado:     ['certificados']
 };
 
 /* ══════════════════════════════════════════════════════════════
@@ -20280,6 +20226,57 @@ window.abrirAuditoria = function(){
   cargar();
 };
 
+
+/* ── LO QUE OPERACIONES LE PRESTA AL ASISTENTE ──────────────────────
+   El asistente vive fuera de este IIFE, así que necesita una puerta.
+   Se expone SOLO lectura y en forma de objetos planos: nada de entregar
+   S, que es mutable y dejaría al asistente capaz de escribir en la hoja.
+
+   La marca de auditado sale del color de fondo de la columna H.
+   No hay que inventar la regla: el propio editor ya la aplica. Cuando
+   alguien pinta una celda de blanco, guarda `delete f.b[c]` en vez de
+   '#ffffff' — o sea que en f.b SOLO existen los colores distintos del
+   predeterminado. Por eso basta con preguntar si la clave existe. */
+const COL_AUDITADO = 7;   // H, contando A=0
+
+window.operacionesFilas = function(limite){
+  if (!S || !S.cargado || !S.filas || !S.filas.length) return [];
+  const enc = (S.headers || []).map(h => (h || '').toString().trim());
+  const n = Math.min(S.filas.length, limite || S.filas.length);
+  const out = [];
+  for (let i = S.filas.length - n; i < S.filas.length; i++) {
+    const f = S.filas[i];
+    if (!f || f.borrada) continue;
+    const o = {};
+    enc.forEach((h, c) => { if (h) o[h] = (f.v && f.v[c] != null) ? String(f.v[c]) : ''; });
+    const color = f.b ? f.b[COL_AUDITADO] : '';
+    o['AUDITADO']       = color ? 'si' : 'no';
+    o['COLOR_AUDITORIA'] = color || '';
+    o['FILA_HOJA']      = f.r || '';
+    out.push(o);
+  }
+  return out;
+};
+
+/* Cuántas filas hay cargadas y cuántas auditadas: sirve para responder
+   "¿cuántos quedan por auditar?" sin mandar las 300 filas al modelo. */
+window.operacionesResumen = function(){
+  const filas = window.operacionesFilas();
+  const aud = filas.filter(f => f['AUDITADO'] === 'si').length;
+  return {
+    cargadas: filas.length,
+    auditadas: aud,
+    sinAuditar: filas.length - aud,
+    nota: 'Auditado = la celda de la columna H tiene un color distinto al predeterminado.'
+  };
+};
+
+/* Carga la grilla si el usuario nunca abrió la pestaña. Devuelve una
+   promesa para que el asistente pueda esperarla. */
+window.operacionesCargar = function(){
+  if (S && S.cargado) return Promise.resolve();
+  try { return cargar(); } catch(e) { return Promise.resolve(); }
+};
 })();
 </script>
 <!-- ═══ PESTAÑA CERTIFICADO · logica ═══ -->
@@ -20455,6 +20452,14 @@ window.abrirAuditoria = function(){
 
   function imprimirCertificado(){
     document.title = nombreArchivoCertificado();
+    const raiz = document.documentElement;
+    raiz.classList.add('imprimiendo-cert');
+    /* Se quita por dos vias: afterprint (lo normal) y un temporizador de
+       respaldo, porque en algunos navegadores afterprint no llega si el
+       usuario cancela el dialogo, y la marca quedaria pegada. */
+    const limpiar = () => raiz.classList.remove('imprimiendo-cert');
+    window.addEventListener('afterprint', limpiar, { once:true });
+    setTimeout(limpiar, 4000);
     window.print();
   }
 
@@ -21510,6 +21515,47 @@ window.abrirAuditoria = function(){
   window.agregarMaterialVacio = agregarMaterialVacio;
   window.abrirExplorador = abrirExplorador;
 
+
+/* ── LO QUE EL CERTIFICADO LE PRESTA AL ASISTENTE ───────────────────
+   Igual que en Operaciones: solo lectura y en objetos planos.
+   La lista viene del mismo endpoint que usa "Explorar certificados
+   guardados", así que el asistente ve exactamente lo mismo que la
+   pantalla; no hay dos verdades posibles.
+   Se guarda en memoria tras la primera consulta: son pocos registros y
+   el Apps Script tarda varios segundos en responder. */
+let _certCache = null;
+
+window.certificadosGenerados = async function(forzar){
+  if (_certCache && !forzar) return _certCache;
+  try{
+    const res = await fetch(APPS_SCRIPT_URL, { method:'GET' });
+    const txt = await res.text();
+    const data = JSON.parse(txt);
+    if (!res.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + res.status));
+    _certCache = (data.records || []).map(function(r){
+      const m = totalYResumenMateriales(r);
+      return {
+        'ACTA':        r['Acta No'] || r.Acta || r['Acta No.'] || '',
+        'EMPRESA':     r['Empresa Receptora'] || r.Empresa || '',
+        'NIT':         r['NIT Receptora'] || r.NIT || '',
+        'PERIODO':     r.Periodo || r['Mes'] || '',
+        'FECHA':       r['Fecha Expedicion'] || r.Fecha || '',
+        'MATERIALES':  m.nombres,
+        'CANTIDAD_KG': m.total,
+        'CODIGO':      r['Codigo'] || r['Codigo Verificacion'] || '',
+        'ID':          r.ID || r.Id || ''
+      };
+    });
+    return _certCache;
+  }catch(e){
+    console.warn('No se pudieron leer los certificados guardados:', e.message);
+    return [];
+  }
+};
+
+/* Versión sincrónica para el asistente: devuelve lo que ya esté en
+   memoria. Si está vacío, el asistente llama primero a su "cargar". */
+window.certificadosEnMemoria = function(){ return _certCache || []; };
 })();
 </script>
 </body>
