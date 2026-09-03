@@ -2409,7 +2409,7 @@ html.solo-panel #salir-solo-panel{display:block}
    editarlo y consultarlo. Se le devuelve el display con mas especificidad.
    Si algun dia se agregan mas clases .panel dentro de esta pestaña, tienen
    que quedar cubiertas por esta regla. */
-#panel-certificado .panel{display:block}
+@media screen{ #panel-certificado .panel{display:block} }
 
 /* Sus capas flotantes (explorador de registros) por encima de la cabecera
    fija del dashboard, igual que en Operaciones. */
@@ -20454,12 +20454,27 @@ window.operacionesCargar = function(){
     document.title = nombreArchivoCertificado();
     const raiz = document.documentElement;
     raiz.classList.add('imprimiendo-cert');
-    /* Se quita por dos vias: afterprint (lo normal) y un temporizador de
-       respaldo, porque en algunos navegadores afterprint no llega si el
-       usuario cancela el dialogo, y la marca quedaria pegada. */
-    const limpiar = () => raiz.classList.remove('imprimiendo-cert');
+    /* La marca se quita SOLO cuando la impresion termino. Antes habia un
+       setTimeout de 4 s de respaldo y era el error: el dialogo sigue
+       abierto mucho mas que eso mientras uno elige impresora o carpeta, la
+       vista previa se redibuja en vivo, y reaparecian la cabecera y el
+       menu justo antes de guardar.
+       Se usan dos señales, las dos posteriores al cierre del dialogo:
+         · afterprint, que en los navegadores actuales llega tambien
+           cuando se cancela;
+         · el cambio del medio 'print' a falso, por si afterprint faltara. */
+    let listo = false;
+    const limpiar = () => {
+      if (listo) return;
+      listo = true;
+      raiz.classList.remove('imprimiendo-cert');
+    };
     window.addEventListener('afterprint', limpiar, { once:true });
-    setTimeout(limpiar, 4000);
+    try {
+      const medio = window.matchMedia('print');
+      const alCambiar = (ev) => { if (!ev.matches) { medio.removeEventListener('change', alCambiar); limpiar(); } };
+      medio.addEventListener('change', alCambiar);
+    } catch(e) { /* navegador viejo: queda afterprint */ }
     window.print();
   }
 
