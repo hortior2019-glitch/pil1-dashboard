@@ -15937,6 +15937,28 @@ const API = {
     applyState(r);
     return r;
   },
+  /* Editar y eliminar un articulo del inventario.
+     Los dos exigen servidor. En modo demo se niegan a proposito: guardar
+     el cambio en memoria daria la falsa impresion de que quedo hecho, y
+     al recargar el articulo volveria como estaba — o peor, reaparecerian
+     los que se creyeron borrados. Con existencias reales eso es peor que
+     un error visible. */
+  editarInventario: async (datos)=>{
+    if(MODO!=='remoto') throw new Error('Se necesita conexion con el servidor para modificar el inventario.');
+    await saveChain;
+    const r = await remote('editarInventario', Object.assign({ responsable:(session&&session.nombre)||'' }, datos));
+    if(!r || r.ok===false) throw new Error((r&&r.error) || 'No se pudo guardar el cambio');
+    applyState(r);
+    return r;
+  },
+  eliminarInventario: async (datos)=>{
+    if(MODO!=='remoto') throw new Error('Se necesita conexion con el servidor para eliminar del inventario.');
+    await saveChain;
+    const r = await remote('eliminarInventario', Object.assign({ responsable:(session&&session.nombre)||'' }, datos));
+    if(!r || r.ok===false) throw new Error((r&&r.error) || 'No se pudo eliminar');
+    applyState(r);
+    return r;
+  },
   invMove: async (inv,tipo,cant,motivo)=>{
     if(MODO==='remoto'){ await saveChain; applyState(await remote('invMove',{invId:inv.id,tipo,cantidad:cant,motivo})); return; }
     inv.stock = tipo==='entrada'? inv.stock+cant : Math.max(0,inv.stock-cant);
@@ -16215,10 +16237,12 @@ function viewInventario(){
         <div class="stock-bar"><i class="${low?'low':''}" style="width:${pct}%"></i></div></td>
       <td>${i.minimo.toLocaleString('es-CO')}</td>
       <td>${low?'<span class="tag tag-state bad">Reponer</span>':'<span class="tag tag-state ok">OK</span>'}</td>
-      ${['almacen','admin'].includes(session.rol)?`<td style="text-align:right">
+      ${['almacen','admin'].includes(session.rol)?`<td style="text-align:right;white-space:nowrap">
         ${i.stock>0
           ?`<button class="btn btn-ghost btn-sm act" data-a="invout" data-id="${i.id}">Registrar salida</button>`
-          :`<button class="btn btn-ghost btn-sm" disabled style="opacity:.4;cursor:not-allowed" title="Sin stock disponible">Sin stock</button>`}</td>`:''}
+          :`<button class="btn btn-ghost btn-sm" disabled style="opacity:.4;cursor:not-allowed" title="Sin stock disponible">Sin stock</button>`}
+        <button class="btn btn-ghost btn-sm act" data-a="invedit" data-id="${i.id}" title="Corregir los datos de este artículo">Editar</button>
+        <button class="btn btn-ghost btn-sm act" data-a="invdel" data-id="${i.id}" title="Sacar este artículo del inventario" style="color:#b23b3b">Eliminar</button></td>`:''}
     </tr>`;
   }).join('');
   return `<div class="page-head"><div><div class="eyebrow">Bodega</div>
@@ -16268,6 +16292,8 @@ async function handleAction(a,id){
     case 'detail': openDetail(it); break;
     case 'invout': openInvOut(findInv(id)); break;
     case 'invin':  openInvIn(); break;
+    case 'invedit': openInvEdit(findInv(id)); break;
+    case 'invdel':  openInvDel(findInv(id)); break;
   }
 }
 function refresh(){ render(); }
@@ -16808,6 +16834,133 @@ function openInvOut(inv){
     if(c<=0){toast('Cantidad inválida','bad');return;}
     if(c>Number(inv.stock)){toast('No puedes sacar más de '+inv.stock+' '+inv.unidad,'bad');return;}
     await API.invMove(inv,'salida',c,$('#o-mot').value.trim()); toast('Salida registrada'); closeModal(); render(); };
+}
+
+/* ---------- EDITAR UN ARTICULO DEL INVENTARIO (almacen) ---------- */
+/* Corregir lo que se cargo mal: el nombre, la unidad, la ubicacion, el
+   minimo, la categoria y —con motivo obligatorio— el stock.
+   El stock se trata aparte del resto a proposito: cambiar un nombre es
+   una correccion de forma, pero cambiar la cantidad es decir que en la
+   bodega hay algo distinto de lo que el sistema creia. Eso siempre deja
+   un movimiento de ajuste con quien lo hizo y por que; si no, el stock
+   seria un numero que cambia solo. */
+function openInvEdit(inv){
+  if(!inv){ toast('No se encontró el artículo','bad'); return; }
+  const cats = Object.entries(CAT).map(([k,v])=>
+    `<option value="${k}" ${k===inv.categoria?'selected':''}>${k} · ${v.label}</option>`).join('');
+  modal(`<div class="modal-head"><button class="modal-close" data-close>×</button>
+      <h3>Editar artículo</h3>
+      <p>${esc(inv.item)} · ${inv.stock.toLocaleString('es-CO')} ${esc(inv.unidad)} en ${esc(inv.ubicacion)}</p></div>
+    <div class="modal-body">
+      <div class="field"><label>Nombre del artículo</label>
+        <input id="e-item" value="${esc(inv.item)}"></div>
+      <div class="row2">
+        <div class="field"><label>Categoría</label><select id="e-cat">${cats}</select></div>
+        <div class="field"><label>Unidad</label><input id="e-uni" value="${esc(inv.unidad)}"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Stock actual</label>
+          <input id="e-stock" type="number" min="0" step="1" value="${Number(inv.stock)||0}">
+          <div class="help" id="e-stock-help">Cambiarlo deja un movimiento de ajuste.</div></div>
+        <div class="field"><label>Stock mínimo</label>
+          <input id="e-min" type="number" min="0" step="1" value="${Number(inv.minimo)||0}"></div>
+      </div>
+      <div class="field"><label>Ubicación</label><input id="e-ubi" value="${esc(inv.ubicacion)}"></div>
+      <div class="field"><label>Motivo del cambio</label>
+        <input id="e-mot" placeholder="Recuento físico, se cargó mal el nombre, cambio de bodega…">
+        <div class="help">Obligatorio si cambias la cantidad. Queda en el historial del artículo.</div></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>Cancelar</button>
+      <button class="btn btn-primary" id="e-do">Guardar cambios</button></div>`);
+
+  // Aviso en vivo de la diferencia de stock: el que ajusta ve el delta
+  // antes de guardar, no después en el historial.
+  const stockEl = $('#e-stock'), ayuda = $('#e-stock-help');
+  const previo = Number(inv.stock)||0;
+  stockEl.oninput = ()=>{
+    const n = Number(stockEl.value);
+    if(!isFinite(n) || n===previo){ ayuda.textContent = 'Cambiarlo deja un movimiento de ajuste.'; return; }
+    const d = n - previo;
+    ayuda.innerHTML = 'Queda un ajuste de <b>' + (d>0?'+':'') + d.toLocaleString('es-CO') + ' ' + esc(inv.unidad) + '</b> (de ' + previo.toLocaleString('es-CO') + ' a ' + n.toLocaleString('es-CO') + ').';
+  };
+
+  $('#e-do').onclick = async ()=>{
+    const nombre = ($('#e-item').value||'').trim();
+    const stock  = Number($('#e-stock').value);
+    const motivo = ($('#e-mot').value||'').trim();
+    if(!nombre){ toast('El artículo necesita un nombre','bad'); return; }
+    if(!isFinite(stock) || stock<0){ toast('El stock no puede ser negativo','bad'); return; }
+    if(stock!==previo && !motivo){
+      toast('Escribe el motivo del cambio de cantidad','bad'); $('#e-mot').focus(); return;
+    }
+    const btn = $('#e-do'); btn.disabled=true; btn.textContent='Guardando…';
+    try{
+      await API.editarInventario({
+        invId: inv.id, item: nombre,
+        categoria: $('#e-cat').value,
+        unidad: ($('#e-uni').value||'und').trim(),
+        stock: stock,
+        minimo: Number($('#e-min').value)||0,
+        ubicacion: ($('#e-ubi').value||'').trim(),
+        motivo: motivo
+      });
+      closeModal();
+      toast('Artículo actualizado');
+      render();
+    }catch(e){
+      btn.disabled=false; btn.textContent='Guardar cambios';
+      toast(e.message||'No se pudo guardar','bad');
+    }
+  };
+}
+
+/* ---------- ELIMINAR UN ARTICULO DEL INVENTARIO (almacen) ---------- */
+/* Se pide escribir el nombre del articulo. No es un tramite: un articulo
+   con stock que se borra por un clic de mas es existencia que desaparece
+   de los numeros de la bodega sin que nadie se entere. Escribir el nombre
+   obliga a mirar cual es el que se va.
+   El servidor saca la fila del Inventario y deja un movimiento de baja
+   con lo que habia: el articulo desaparece de la lista, pero queda dicho
+   que existio, cuanto tenia y quien lo saco. */
+function openInvDel(inv){
+  if(!inv){ toast('No se encontró el artículo','bad'); return; }
+  const conStock = Number(inv.stock) > 0;
+  modal(`<div class="modal-head"><button class="modal-close" data-close>×</button>
+      <h3>Eliminar del inventario</h3>
+      <p>${esc(inv.item)} · ${inv.stock.toLocaleString('es-CO')} ${esc(inv.unidad)}</p></div>
+    <div class="modal-body">
+      ${conStock ? `<div class="note" style="border-left:3px solid #b23b3b">
+        Este artículo todavía tiene <b>${inv.stock.toLocaleString('es-CO')} ${esc(inv.unidad)}</b> en bodega.
+        Si lo que se acabó fue la existencia, usa <b>Registrar salida</b>: eso deja la cuenta
+        y conserva el artículo. Eliminar es para lo que nunca debió estar en la lista.
+      </div>` : ''}
+      <div class="field"><label>Motivo</label>
+        <input id="d-mot" placeholder="Se cargó duplicado, ya no se maneja, error de registro…"></div>
+      <div class="field"><label>Escribe el nombre del artículo para confirmar</label>
+        <input id="d-conf" placeholder="${esc(inv.item)}" autocomplete="off">
+        <div class="help">Es irreversible: el artículo sale de la lista de inventario.</div></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>Cancelar</button>
+      <button class="btn btn-primary" id="d-do" style="background:#b23b3b;border-color:#b23b3b">Eliminar</button></div>`);
+
+  $('#d-do').onclick = async ()=>{
+    const escrito = ($('#d-conf').value||'').trim().toLowerCase();
+    const motivo  = ($('#d-mot').value||'').trim();
+    if(escrito !== String(inv.item).trim().toLowerCase()){
+      toast('Escribe el nombre exacto del artículo','bad'); $('#d-conf').focus(); return;
+    }
+    if(!motivo){ toast('Escribe el motivo','bad'); $('#d-mot').focus(); return; }
+    const btn = $('#d-do'); btn.disabled=true; btn.textContent='Eliminando…';
+    try{
+      await API.eliminarInventario({ invId: inv.id, motivo: motivo });
+      closeModal();
+      toast('"' + inv.item + '" eliminado del inventario');
+      render();
+    }catch(e){
+      btn.disabled=false; btn.textContent='Eliminar';
+      toast(e.message||'No se pudo eliminar','bad');
+    }
+  };
 }
 
 /* ---------- DETALLE ---------- */
