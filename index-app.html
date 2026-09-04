@@ -15775,7 +15775,7 @@ function barraSimple(label, count, max, color) {
    ║  Si la dejas VACÍA, el sistema corre en modo demo con datos locales  ║
    ║  (no guarda nada). Es lo único que necesitas cambiar para conectar.  ║
    ╚════════════════════════════════════════════════════════════════════╝ */
-const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbxONa24Up3cfsc1Gcnn6kuIEiEpIRJoNlT7u5M8BCkWbS9f-kLZ0E_QXBDfQtXPygGs7Q/exec';   // ej: 'https://script.google.com/macros/s/AKfy.../exec'
+const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbz6OvMI5muB683I7TWTirRlp-sl_II95tCEx47GmKmEdI4dmFALf-TWZODRRLHNdkFJ/exec';   // ej: 'https://script.google.com/macros/s/AKfy.../exec'
 const MODO = BACKEND_URL ? 'remoto' : 'demo';
 
 async function remote(action, payload){
@@ -15889,7 +15889,13 @@ function seed(){
     {id:uid('IN-'),categoria:'AF',item:'Báscula industrial 500kg',unidad:'und',stock:1,minimo:1,ubicacion:'Despacho'},
   ];
 }
-seed();
+/* Los datos de demostracion (guantes, bolsas, compost, bascula) solo
+   tienen sentido sin servidor. Con servidor NO se cargan: si la consulta
+   falla, la pantalla tiene que quedar vacia y decirlo, no mostrar cuatro
+   articulos inventados con stock como si fueran de la bodega. Comprobado
+   el 4 de septiembre de 2026: con la hoja vacia y el backend lento, la
+   pestaña mostraba esas cuatro existencias falsas. */
+if (MODO === 'demo') seed();
 
 const API = {
   login:(u,p)=>{ const x=DB.usuarios.find(x=>x.usuario===u&&x.pass===p); return x?{usuario:x.usuario,nombre:x.nombre,rol:x.rol}:null; },
@@ -15949,6 +15955,16 @@ const API = {
     const r = await remote('editarInventario', Object.assign({ responsable:(session&&session.nombre)||'' }, datos));
     if(!r || r.ok===false) throw new Error((r&&r.error) || 'No se pudo guardar el cambio');
     applyState(r);
+    // Por si la respuesta no trajo la lista: lo editado se refleja igual
+    const local = DB.inventario.find(function(x){ return String(x.id) === String(datos.invId); });
+    if (local) {
+      if (datos.item !== undefined)      local.item = datos.item;
+      if (datos.categoria !== undefined) local.categoria = datos.categoria;
+      if (datos.unidad !== undefined)    local.unidad = datos.unidad;
+      if (datos.ubicacion !== undefined) local.ubicacion = datos.ubicacion;
+      if (r.stockNuevo !== undefined)    local.stock = Number(r.stockNuevo);
+      if (datos.minimo !== undefined)    local.minimo = Number(datos.minimo);
+    }
     return r;
   },
   eliminarInventario: async (datos)=>{
@@ -15957,6 +15973,14 @@ const API = {
     const r = await remote('eliminarInventario', Object.assign({ responsable:(session&&session.nombre)||'' }, datos));
     if(!r || r.ok===false) throw new Error((r&&r.error) || 'No se pudo eliminar');
     applyState(r);
+    /* Comprobado el 4 de septiembre de 2026 contra el servidor real: el
+       borrado quedaba bien en la hoja, pero el articulo seguia en pantalla
+       hasta recargar. Sea porque la respuesta llego sin la lista o porque
+       el repintado ocurrio antes, el resultado para quien lo usa es el
+       peor posible: cree que no se borro y lo vuelve a intentar.
+       Se saca tambien de la lista local. Es redundante cuando la respuesta
+       viene completa, y es lo unico que hay cuando no. */
+    DB.inventario = DB.inventario.filter(function(x){ return String(x.id) !== String(datos.invId); });
     return r;
   },
   invMove: async (inv,tipo,cant,motivo)=>{
@@ -16055,10 +16079,32 @@ function renderNav(){
 }
 
 /* ---------- ROUTER ---------- */
+/* Estado de la conexion con el servidor. Vacio = todo bien. */
+let cscErrorCarga = '';
+let cscCargado = false;
+
+/* Lo que se muestra en vez de una tabla cuando no hubo datos. Es
+   deliberadamente un cartel y no una tabla vacia: una tabla vacia se lee
+   como "no hay nada en bodega", que es una afirmacion, y falsa. */
+function viewSinDatos(){
+  return '<div class="page-head"><div><div class="eyebrow">Cadena de Abastecimiento</div>' +
+    '<h2>No se pudo consultar el servidor</h2>' +
+    '<p>No se pudieron traer los datos, así que no se muestra ninguno: lo que ves ' +
+    'en pantalla no seria la bodega real.</p></div></div>' +
+    '<div class="note" style="border-left:3px solid #b23b3b">' +
+      '<b>Detalle:</b> ' + esc(cscErrorCarga) + '<br><br>' +
+      'La primera consulta del dia puede tardar hasta medio minuto porque el ' +
+      'servidor de Google arranca en frio. Si sigue fallando, revisa que el ' +
+      'despliegue del Apps Script este publicado con acceso "Cualquier usuario".' +
+    '</div>' +
+    '<div style="margin-top:16px"><button class="btn btn-primary" onclick="cscReintentar()">Reintentar</button></div>';
+}
+
 function render(){
   const v=document.getElementById(CSC_MOUNT); if(!v) return; v.style.opacity='0';
   setTimeout(()=>{
-    if(activeTab==='dash') v.innerHTML=viewDash();
+    if(cscErrorCarga) v.innerHTML=viewSinDatos();
+    else if(activeTab==='dash') v.innerHTML=viewDash();
     else if(activeTab==='lider') v.innerHTML=viewQueue('lider');
     else if(activeTab==='gerente') v.innerHTML=viewQueue('gerente');
     else if(activeTab==='conta') v.innerHTML=viewQueue('conta');
@@ -16993,11 +17039,32 @@ async function cscEnsureSession(){
   try { u = (typeof _usuarioActual !== 'undefined') ? _usuarioActual : null; } catch(e) { u = null; }
   session = { usuario: (u && u.usuario) || 'usuario', nombre: (u && u.nombre) || (u && u.usuario) || 'Usuario', rol: 'admin' };
   if (MODO === 'remoto') {
-    try { await loadAll(); } catch(e) { console.error('Cadena de Abastecimiento: error cargando datos remotos', e); }
+    try {
+      cscErrorCarga = '';
+      await loadAll();
+      cscCargado = true;
+    } catch(e) {
+      /* Se deja constancia para que las vistas lo muestren. Antes esto solo
+         se anotaba en la consola y la pantalla seguia como si nada: con los
+         datos de demostracion cargados, eso era mostrar existencias falsas;
+         sin ellos, una tabla vacia que parece una bodega sin nada. Las dos
+         lecturas son peores que decir "no se pudo consultar". */
+      cscErrorCarga = e.message || 'No se pudo consultar el servidor';
+      console.error('Cadena de Abastecimiento: error cargando datos remotos', e);
+    }
   } else {
     try { seed(); } catch(e) {}
   }
 }
+
+/* Vuelve a intentar la consulta desde el aviso de error. */
+window.cscReintentar = async function(){
+  cscErrorCarga = '';
+  render();
+  try { await loadAll(); cscCargado = true; }
+  catch(e){ cscErrorCarga = e.message || 'No se pudo consultar el servidor'; }
+  render();
+};
 
 window.cscActivar = function(mountId, tab){
   cscEnsureSession().then(function(){
