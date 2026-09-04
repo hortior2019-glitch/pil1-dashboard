@@ -11897,6 +11897,18 @@ function urlFotoDrive(url) {
 // Segunda via para la misma imagen: el endpoint /thumbnail de Drive a veces
 // responde vacio o con error aunque el archivo sea publico. Este otro host suele
 // funcionar en esos casos, y solo si ambos fallan se muestra el enlace.
+/* Miniatura chica, para listas. urlFotoDrive() pide sz=w1600 porque esta
+   pensada para ver la foto en grande; en una tabla eso es traer 675x900 px
+   para un recuadro de 40, y con varias filas la pagina parece no tener
+   fotos hasta que terminan de bajar todas. */
+function urlFotoDriveMini(url, ancho) {
+  const id = driveIdDesdeUrl(url);
+  return id ? 'https://drive.google.com/thumbnail?id=' + id + '&sz=w' + (ancho || 160) : (url||'');
+}
+function urlFotoDriveMiniAlt(url, ancho) {
+  const id = driveIdDesdeUrl(url);
+  return id ? 'https://lh3.googleusercontent.com/d/' + id + '=w' + (ancho || 160) : (url||'');
+}
 function urlFotoDriveAlt(url) {
   const id = driveIdDesdeUrl(url);
   return id ? 'https://lh3.googleusercontent.com/d/' + id + '=w1600' : (url||'');
@@ -15782,8 +15794,21 @@ async function remote(action, payload){
   const r = await fetch(BACKEND_URL, { method:'POST', body: JSON.stringify(Object.assign({action}, payload||{})) });
   return r.json();
 }
+/* Estado de la conexion con el servidor. Vacio = todo bien. Se declara
+   aca arriba porque applyState() la toca, y applyState corre antes que
+   cualquier render. */
+let cscErrorCarga = '';
+let cscCargado = false;
+
 function applyState(d){
   if(!d) return;
+  /* Una respuesta buena del servidor cancela el aviso de error. Sin esto
+     el cartel de "no se pudo consultar" quedaba pegado: si la PRIMERA
+     consulta del dia fallaba por el arranque en frio de Google, todo lo
+     que se cargara despues entraba bien a la hoja pero la pantalla seguia
+     mostrando el error, sin lista. Se subia y no se veia. */
+  cscErrorCarga = '';
+  cscCargado = true;
   if(d.items) DB.items = d.items;
   if(d.receptores) DB.receptores = d.receptores;
   if(d.inventario) DB.inventario = d.inventario;
@@ -16079,10 +16104,6 @@ function renderNav(){
 }
 
 /* ---------- ROUTER ---------- */
-/* Estado de la conexion con el servidor. Vacio = todo bien. */
-let cscErrorCarga = '';
-let cscCargado = false;
-
 /* Lo que se muestra en vez de una tabla cuando no hubo datos. Es
    deliberadamente un cartel y no una tabla vacia: una tabla vacia se lee
    como "no hay nada en bodega", que es una afirmacion, y falsa. */
@@ -16271,9 +16292,11 @@ function viewInventario(){
       <td>
         <div style="display:flex;align-items:center;gap:10px">
           ${i.foto
-            ? `<img src="${esc(i.foto)}" alt="" loading="lazy"
-                 onerror="this.style.display='none'"
-                 style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--csc-line);flex-shrink:0">`
+            ? `<img src="${urlFotoDriveMini(i.foto,160)}" data-alt="${urlFotoDriveMiniAlt(i.foto,160)}" alt=""
+                 title="Ver la foto en grande"
+                 onclick="abrirFotoBaucher('${String(i.foto).replace(/'/g,'')}','${String(i.item).replace(/'/g,'')}')"
+                 onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src=this.dataset.alt;}else{this.replaceWith(Object.assign(document.createElement('span'),{title:'La foto no se pudo cargar'}))}"
+                 style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--csc-line);flex-shrink:0;cursor:zoom-in">`
             : '<span style="width:40px;height:40px;border-radius:6px;border:1px dashed var(--csc-line);flex-shrink:0"></span>'}
           <div style="min-width:0"><b>${esc(i.item)}</b><div class="help">${esc(i.ubicacion)}</div></div>
         </div>
