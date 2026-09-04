@@ -1292,6 +1292,29 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-auditoria .men small{display:block;color:var(--tinta-suave);font-size:11px;margin-top:1px}
 #panel-auditoria table.grid td.sel{box-shadow:inset 0 0 0 1px var(--verde)}
 #panel-auditoria table.grid td.foco{box-shadow:inset 0 0 0 2px var(--verde);z-index:2}
+
+/* ── CUANDO SE TRABAJA EN EL PANEL, LA GRILLA SE APAGA ──────────────
+   El recuadro verde de la celda enfocada se veía igual de encendido
+   mientras uno estaba leyendo o copiando algo del panel de la derecha.
+   Da a entender que esa celda sigue siendo "lo activo", y de ahí salen
+   las equivocaciones: se pulsa una tecla creyendo que se está en el
+   panel y se termina escribiendo en la celda.
+   Con el foco en el panel el recuadro pasa a gris punteado: sigue
+   marcando dónde estaba uno, pero ya no aparenta estar vivo. Vuelve al
+   verde en cuanto se hace clic en la grilla. */
+#panel-auditoria.foco-fuera table.grid td.sel{box-shadow:inset 0 0 0 1px var(--linea)}
+#panel-auditoria.foco-fuera table.grid td.foco{
+  box-shadow:inset 0 0 0 2px var(--tinta-suave);
+  outline:1px dashed var(--tinta-suave);outline-offset:-4px;
+}
+/* Y el panel se marca como lo que está activo */
+#panel-auditoria.foco-fuera .panel{box-shadow:inset 3px 0 0 var(--oro)}
+
+/* El texto del panel se selecciona y se ve seleccionado. La grilla usa
+   user-select:none para poder arrastrar rangos; el panel es lo
+   contrario: está para leer y copiar de ahí. */
+#panel-auditoria .panel, #panel-auditoria .panel *{user-select:text}
+#panel-auditoria .panel ::selection{background:var(--oro-tenue);color:var(--tinta)}
 #panel-auditoria table.grid td.rango{background-image:linear-gradient(rgba(28,86,54,.10),rgba(28,86,54,.10))}
 #panel-auditoria table.grid td.pendiente::before{
   content:'';position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--oro);
@@ -2155,11 +2178,13 @@ html.solo-panel #salir-solo-panel{display:block}
     align-items:center;
     margin-bottom:14px;
   }
-  #panel-certificado .explorer-right-header #btnCerrarExplorador{
+  #panel-certificado .explorer-right-header #btnCerrarExplorador,
+  #panel-certificado .explorer-right-header #btnRefrescarGuardados{
     flex:0 0 auto;
     width:auto;
     padding:8px 14px;
   }
+  #panel-certificado .explorer-right-header #btnRefrescarGuardados{font-size:15px;line-height:1}
   #panel-certificado .explorer-right-header input{
     flex:1;
     padding:8px;
@@ -2300,16 +2325,14 @@ html.solo-panel #salir-solo-panel{display:block}
   #panel-certificado table.cert-table tfoot td, #panel-certificado table.cert-table .total-row td{
     font-weight:700;
   }
-  /* EN PANTALLA la columna FECHA esta siempre: si se escondiera cuando
-     no hay fechas, no habria forma de saber que la columna existe — que
-     es justo lo que paso la primera vez.
-     AL IMPRIMIR se va si ninguna fila tiene fecha: un certificado que no
-     usa fechas no debe salir hacia el cliente con una columna vacia al
-     lado del total. La marca .con-fecha la pone update(). */
+  /* La columna FECHA la decide la casilla "Mostrar la columna FECHA"
+     que está junto a los materiales, y vale igual en pantalla y en
+     papel: lo que se ve es lo que se imprime. Antes se deducía sola —
+     aparecía si alguna fila tenía fecha — y adivinar no alcanzaba: hay
+     certificados con las fechas cargadas que no las quieren mostrar, y
+     al revés. La marca .con-fecha la pone update(). */
   #panel-certificado table.cert-table .col-fecha{white-space:nowrap}
-  @media print{
-    #panel-certificado table.cert-table:not(.con-fecha) .col-fecha{display:none}
-  }
+  #panel-certificado table.cert-table:not(.con-fecha) .col-fecha{display:none}
 
   #panel-certificado .cert-date{
     font-size:12.5px;
@@ -2903,7 +2926,10 @@ html.solo-panel #salir-solo-panel{display:block}
 
     <div class="field">
       <label style="display:flex;align-items:center;gap:8px;font-weight:400;cursor:pointer;">
-        <input type="checkbox" id="mostrarActa" checked style="width:auto;">
+        <!-- Arranca DESMARCADO: por defecto el documento sale sin el
+             "Acta No.". Los certificados ya guardados no cambian: al
+             cargarlos manda lo que quedó grabado en cada uno. -->
+        <input type="checkbox" id="mostrarActa" style="width:auto;">
         Mostrar "Acta No." en el documento
       </label>
     </div>
@@ -2991,6 +3017,10 @@ html.solo-panel #salir-solo-panel{display:block}
     </div>
 
     <div class="field cert-sec sec-mat" data-sec="4 · Materiales y cantidades">
+      <label style="display:flex;align-items:center;gap:8px;font-weight:400;cursor:pointer;margin-bottom:10px;">
+        <input type="checkbox" id="mostrarFechaItems" style="width:auto;">
+        Mostrar la columna FECHA en los ítems
+      </label>
       <label>Materiales certificados</label>
       <div id="materialesList"></div>
       <button class="btn-list" type="button" onclick="agregarMaterialVacio()" style="width:100%;margin-top:4px;">+ Agregar material</button>
@@ -3164,6 +3194,7 @@ html.solo-panel #salir-solo-panel{display:block}
   <div class="explorer-right">
     <div class="explorer-right-header">
       <button class="btn-list" id="btnCerrarExplorador" onclick="cerrarExplorador()">✕ Cerrar</button>
+      <button class="btn-list" id="btnRefrescarGuardados" onclick="cargarGuardados(true)" title="Volver a leer la hoja de certificados">⟳</button>
       <input id="buscarGuardados" placeholder="Buscar por acta, empresa o código...">
     </div>
     <div class="saved-list" id="listaGuardados"><div class="saved-empty">Cargando...</div></div>
@@ -3308,7 +3339,7 @@ html.solo-panel #salir-solo-panel{display:block}
   <span id="pieSel"></span>
   <span class="sep"></span>
   <span id="pieStats"></span>
-  <span id="pieAtajos" style="cursor:help" title="Ctrl+C copiar · Ctrl+X cortar · Ctrl+V pegar · Ctrl+A seleccionar todo · Ctrl+I pintar el fondo · Ctrl+Shift+I color de letra · Ctrl+B negrilla · Ctrl+Espacio columna · Shift+Espacio fila · Ctrl+Z deshacer · Ctrl+S guardar · Ctrl+F abre y cierra las fotos · arrastre el encabezado para reordenar">Atajos ⌨</span>
+  <span id="pieAtajos" style="cursor:help" title="Ctrl+C copiar · Ctrl+X cortar · Ctrl+V pegar · Ctrl+A seleccionar todo · Ctrl+I pintar el fondo · Ctrl+Shift+I color de letra · Ctrl+O pintar con el color de la celda de arriba · Shift+O (o Ctrl+Shift+O) abre la barra de colores · Ctrl+B negrilla · Ctrl+Espacio columna · Shift+Espacio fila · Ctrl+Z deshacer · Ctrl+S guardar · Ctrl+P abre y cierra las fotos · Ctrl+F queda para la búsqueda del navegador · Ctrl+Tab cambia de pestaña · arrastre el encabezado para reordenar">Atajos ⌨</span>
   <span id="pieVersion">Operaciones v2.2</span>
 </footer>
 
@@ -6051,6 +6082,50 @@ document.addEventListener('DOMContentLoaded', function(){
   });
 });
 
+/* ── CTRL+TAB: PASAR DE PESTAÑA ────────────────────────────────────
+   Recorre solo las pestañas que este usuario tiene permitidas (las que
+   no lo están quedan con display:none, y saltarlas es lo que hace que
+   el atajo sea útil y no lleve a una pantalla vacía). Da la vuelta al
+   llegar al final.
+
+   OJO: Ctrl+Tab es un atajo que algunos navegadores se reservan para
+   cambiar de PESTAÑA DEL NAVEGADOR y no dejan que la página lo tome. Por
+   eso queda también Ctrl+Alt+→ / Ctrl+Alt+← haciendo exactamente lo
+   mismo: ese ningún navegador lo reclama. */
+function _pestanasVisibles(){
+  return Array.from(document.querySelectorAll('.nav-tab[data-panel]'))
+    .filter(function(t){ return getComputedStyle(t).display !== 'none'; });
+}
+
+function moverDePestana(paso){
+  const tabs = _pestanasVisibles();
+  if (tabs.length < 2) return false;
+  let i = tabs.findIndex(function(t){ return t.classList.contains('active'); });
+  if (i < 0) i = 0;
+  const destino = tabs[(i + paso + tabs.length) % tabs.length];
+  const id = destino.getAttribute('data-panel');
+  try{
+    showPanel(id, destino);
+    destino.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
+  }catch(err){ return false; }
+  return true;
+}
+
+document.addEventListener('keydown', function(e){
+  // Dentro de un campo de texto, Tab sigue sirviendo para pasar de campo
+  const t = e.target;
+  const enCampo = t && ['INPUT','TEXTAREA','SELECT'].indexOf(t.tagName) > -1;
+
+  const esCtrlTab = (e.ctrlKey || e.metaKey) && e.key === 'Tab' && !e.altKey;
+  const esCtrlAlt = (e.ctrlKey || e.metaKey) && e.altKey &&
+                    (e.key === 'ArrowRight' || e.key === 'ArrowLeft');
+  if (!esCtrlTab && !esCtrlAlt) return;
+  if (esCtrlTab && enCampo) return;
+
+  const paso = (e.key === 'ArrowLeft' || e.shiftKey) ? -1 : 1;
+  if (moverDePestana(paso)) { e.preventDefault(); e.stopPropagation(); }
+}, true);   // en captura: la grilla de Operaciones también escucha Tab
+
 document.addEventListener('keydown', function(e){
   if (e.key === 'Escape' && document.documentElement.classList.contains('solo-panel')) {
     // No se sale si hay un cuadro abierto encima: ese Escape es para cerrarlo.
@@ -6086,6 +6161,11 @@ function showPanel(id, el) {
     restaurarBotonesPeriodo();
   }
   if (id === 'accesos') renderAccesos();
+  // Los logos del certificado se piden acá y no al cargar el dashboard:
+  // son 12 peticiones en cadena que no le sirven a ninguna otra pestaña.
+  if (id === 'certificado' && typeof window.certificadoCargarLogos === 'function'){
+    window.certificadoCargarLogos();
+  }
   if (id === 'dalas') { try { cargarDalasIndicadores(); } catch(e){} }
   if (id !== 'auditoria' && id !== 'certificado' && document.documentElement.classList.contains('solo-panel')) {
     alternarSoloPanel(false);   // cambiar de pestaña siempre devuelve el dashboard
@@ -19371,9 +19451,39 @@ function enCampoDeTexto(){
   return !!a && ['INPUT','TEXTAREA','SELECT'].indexOf(a.tagName) > -1;
 }
 
+/* ── DÓNDE ESTÁ EL FOCO: ¿LA GRILLA O EL PANEL? ────────────────────
+   Un <div> del panel no recibe foco del navegador, así que al pulsar
+   una tecla después de hacer clic ahí el "target" sigue siendo el body
+   y los atajos de la grilla se disparaban igual. Se recuerda dónde fue
+   el último clic y con eso se decide quién manda. */
+let focoEnPanel = false;
+
+_audDocOn('mousedown', ev=>{
+  const panelAud = document.getElementById('panel-auditoria');
+  if(!panelAud) return;
+  const enPanel  = !!ev.target.closest('#panel-auditoria #panel');
+  const enGrilla = !!ev.target.closest('#panel-auditoria #gridWrap');
+  if(!enPanel && !enGrilla) return;      // toolbar, popups: no cambian de dueño
+  focoEnPanel = enPanel;
+  panelAud.classList.toggle('foco-fuera', enPanel);
+});
+
+/* Hay una selección de texto de verdad (la del navegador), no un rango
+   de celdas. Si la hay, mandan los atajos del navegador: es lo que el
+   usuario acaba de marcar con el mouse. */
+function haySeleccionDeTexto(){
+  try{
+    const s = window.getSelection();
+    return !!s && !s.isCollapsed && String(s).trim().length > 0;
+  }catch(e){ return false; }
+}
+
 _audDocOn('keydown', ev=>{
   if(S.editando) return;
   if(['INPUT','TEXTAREA','SELECT'].indexOf(ev.target.tagName) > -1) return;  // dentro de un campo mandan los atajos del navegador
+  // Trabajando en el panel: la grilla no recibe teclas. Escape sí, para
+  // poder cerrar lo que haya abierto.
+  if(focoEnPanel && ev.key !== 'Escape') return;
 
   if(ev.ctrlKey || ev.metaKey){
     const k = ev.key.toLowerCase();
@@ -19387,11 +19497,33 @@ _audDocOn('keydown', ev=>{
       else            aplicarColor(ultimo.fondo,  'fondo');
       return;
     }
-    if(k === 'f'){ ev.preventDefault(); alternarVisorFila(); return; }
+    if(k === 'o' && ev.shiftKey){
+      ev.preventDefault();
+      abrirColor('fondo', document.getElementById('btnFondo'));
+      return;
+    }
+    /* Las fotos pasaron de Ctrl+F a Ctrl+P. Ctrl+F le queda al
+       navegador: su búsqueda rápida sirve para encontrar un tiquete
+       dentro de lo que hay en pantalla, y quitársela costaba más de lo
+       que valía el atajo. */
+    if(k === 'p'){ ev.preventDefault(); alternarVisorFila(); return; }
+    if(k === 'o'){ ev.preventDefault(); copiarColorDeArriba(); return; }
     if(ev.code === 'Space'){ ev.preventDefault(); if(S.foco) seleccionarColumna(focoCol()); return; }
     return;   // Ctrl+C, Ctrl+X y Ctrl+V los atienden los eventos copy/cut/paste
   }
   if(ev.shiftKey && ev.code === 'Space'){ ev.preventDefault(); if(S.foco) seleccionarFila(S.foco.vr); return; }
+  /* Shift+O abre la barra de colores.
+     Va ANTES del bloque que empieza a escribir con la primera tecla, si
+     no la "O" mayúscula entraría a la celda. El precio: ya no se puede
+     ARRANCAR a escribir una celda con O mayúscula (por ejemplo
+     "ORGANICO") tecleando de una; hay que entrar con Enter o F2 y
+     escribirla ahí. Ctrl+Shift+O hace lo mismo, por si se prefiere
+     dejar libre el Shift+O. */
+  if(ev.shiftKey && ev.code === 'KeyO'){
+    ev.preventDefault();
+    abrirColor('fondo', document.getElementById('btnFondo'));
+    return;
+  }
   if(!S.foco) return;
 
   const nav = {ArrowUp:[-1,0],ArrowDown:[1,0],ArrowLeft:[0,-1],ArrowRight:[0,1]}[ev.key];
@@ -19464,6 +19596,10 @@ function pegarTexto(txt){
 
 _audDocOn('copy', ev=>{
   if(S.editando || enCampoDeTexto()) return;
+  // Texto marcado con el mouse (típicamente en el panel): se copia ESO,
+  // no el rango de celdas. Antes se copiaba la grilla y lo marcado se
+  // perdía sin que nada lo dijera.
+  if(focoEnPanel || haySeleccionDeTexto()) return;
   const t = textoSeleccion();
   if(!t) return;
   ev.preventDefault();
@@ -19474,6 +19610,7 @@ _audDocOn('copy', ev=>{
 
 _audDocOn('cut', ev=>{
   if(S.editando || enCampoDeTexto()) return;
+  if(focoEnPanel || haySeleccionDeTexto()) return;   // no se corta la grilla desde el panel
   const t = textoSeleccion();
   if(!t) return;
   ev.preventDefault();
@@ -19483,6 +19620,7 @@ _audDocOn('cut', ev=>{
 
 _audDocOn('paste', ev=>{
   if(S.editando || enCampoDeTexto()) return;
+  if(focoEnPanel) return;                            // no se pega en la grilla desde el panel
   const t = (ev.clipboardData || window.clipboardData).getData('text');
   if(!t) return;
   ev.preventDefault();
@@ -19821,6 +19959,42 @@ function aplicarColor(color, tipo){
   if(n > 50) aviso(n + ' celdas pintadas.');
 }
 
+/* Ctrl+O — pinta lo seleccionado con el color de la celda de ARRIBA.
+   Sirve para el trabajo real de auditar: se marca un registro y los
+   siguientes de la misma tanda quedan igual sin volver a abrir la
+   paleta ni acordarse de cuál tono era.
+   Se copia el fondo Y el color de la letra, que es lo que uno ve como
+   "el color de esa celda". La referencia es la celda inmediatamente
+   arriba de la ESQUINA de la selección, en el orden en que la grilla
+   está mostrada; si está en la primera fila no hay de dónde copiar. */
+function copiarColorDeArriba(){
+  if(!S.foco){ aviso('Seleccione primero una celda.', true); return; }
+  const {r1, c1} = normalizar(S.sel || {r1:S.foco.vr, c1:S.foco.pos, r2:S.foco.vr, c2:S.foco.pos});
+  if(r1 <= 0){ aviso('No hay una fila arriba de la que copiar el color.', true); return; }
+
+  const arriba = S.filas[S.vista[r1 - 1]];
+  if(!arriba){ aviso('No se encontró la fila de arriba.', true); return; }
+  const cArriba = colDe(c1);
+  const fondo = arriba.b[cArriba] || '';
+  const letra = arriba.f[cArriba] || '';
+
+  if(!fondo && !letra){ aviso('La celda de arriba no tiene color.', true); return; }
+
+  const celdas = celdasSeleccionadas().filter(x => esEditable(x.c));
+  if(!celdas.length){ aviso('Las celdas seleccionadas son de solo lectura.', true); return; }
+
+  const n = enLote(celdas, ({idx,c}, g) => {
+    cambiar(idx, c, 'fondo',  fondo, { grupo:g, diferido:true });
+    cambiar(idx, c, 'fuente', letra, { grupo:g, diferido:true });
+  }, 'color de la celda de arriba');
+
+  if(fondo) ultimo.fondo = fondo;
+  if(letra) ultimo.fuente = letra;
+  const mf = document.getElementById('muestraFondo'); if(mf && fondo) mf.style.background = fondo;
+  const ml = document.getElementById('muestraLetra'); if(ml && letra) ml.style.background = letra;
+  if(n > 50) aviso(n + ' celdas pintadas con el color de arriba.');
+}
+
 // Negrilla: si todo lo seleccionado ya está en negrilla, la quita.
 function alternarNegrilla(){
   const celdas = celdasSeleccionadas().filter(x => esEditable(x.c));
@@ -20050,7 +20224,7 @@ $('veloVisor').addEventListener('click', ev=>{ if(ev.target.id === 'veloVisor' |
 _audDocOn('keydown', ev=>{
   if(!VISOR.abierto) return;
   const ctrl = ev.ctrlKey || ev.metaKey;
-  if(ctrl && ev.key.toLowerCase() === 'f'){ ev.preventDefault(); ev.stopPropagation(); cerrarVisor(); }
+  if(ctrl && ev.key.toLowerCase() === 'p'){ ev.preventDefault(); ev.stopPropagation(); cerrarVisor(); }
   else if(ev.key === 'Escape'){ ev.preventDefault(); ev.stopPropagation(); cerrarVisor(); }
   else if(ev.key === 'ArrowLeft'){ ev.preventDefault(); ev.stopPropagation(); moverVisor(-1); }
   else if(ev.key === 'ArrowRight'){ ev.preventDefault(); ev.stopPropagation(); moverVisor(1); }
@@ -20806,6 +20980,9 @@ window.operacionesCargar = function(){
       fecha: fechas[i] || ''
     }));
     idsEnvioMaterialesActuales = [];
+    // Pegar una lista de fechas es pedir que se muestren: se enciende la
+    // casilla. Apagarla después sigue siendo decisión de quien la usa.
+    if (fechas.length) document.getElementById('mostrarFechaItems').checked = true;
     setMateriales(nuevaLista);
 
     /* Si las dos listas no miden lo mismo, casi seguro se pegó de más o de
@@ -20819,7 +20996,9 @@ window.operacionesCargar = function(){
         est.className = 'status-msg err';
       } else {
         est.textContent = numeros.length + ' fila(s) creada(s)' +
-          (fechas.length ? ', cada una con su fecha.' : '. Sin fechas: la columna no se imprime.');
+          (fechas.length
+            ? ', cada una con su fecha. Se activó la columna FECHA.'
+            : '. Sin fechas pegadas: la columna FECHA la enciendes con su casilla.');
         est.className = 'status-msg ok';
       }
     }
@@ -21186,12 +21365,10 @@ window.operacionesCargar = function(){
     const unidad = document.getElementById('unidadCertificacion').value;
     document.getElementById('thCantidad').textContent = unidad === 'viajes' ? 'N° DE VIAJES' : 'CANTIDAD KG';
 
-    // La columna FECHA solo se muestra si alguna fila la tiene: un
-    // certificado sin fechas se imprime igual que siempre, sin una columna
-    // vacía al lado del total.
-    const hayFechas = materiales.some(m => (m.fecha || '').trim());
+    // La columna FECHA se muestra si la casilla lo pide, y punto.
+    const conFecha = !!(document.getElementById('mostrarFechaItems') || {}).checked;
     const tabla = document.querySelector('#panel-certificado table.cert-table');
-    if (tabla) tabla.classList.toggle('con-fecha', hayFechas);
+    if (tabla) tabla.classList.toggle('con-fecha', conFecha);
 
     // Filas de la tabla, una por material
     const tbody = document.getElementById('tMaterialesBody');
@@ -21257,6 +21434,7 @@ window.operacionesCargar = function(){
   document.getElementById('parrafo1').addEventListener('input', _p1PintarAviso);
 
   document.getElementById('mostrarActa').addEventListener('change', update);
+  document.getElementById('mostrarFechaItems').addEventListener('change', update);
 
   document.getElementById('tipoParrafo1').addEventListener('change', () => {
     const esIntermediario = document.getElementById('tipoParrafo1').value === 'intermediario';
@@ -21290,32 +21468,86 @@ window.operacionesCargar = function(){
   renderVerificacion();
 
   // ---- Carga de logos probando varias extensiones (png, jpg, jpeg, mayúsculas) ----
-  function loadImageWithFallback(img, base, exts){
+/* ══════════════════════════════════════════════════════════════════
+   LOS LOGOS DEL CERTIFICADO
+   ------------------------------------------------------------------
+   Esto probaba seis extensiones por logo (png, jpg, jpeg y las tres en
+   mayúsculas) hasta dar con la buena, EN CADENA: cada intento espera a
+   que falle el anterior. Con los dos logos son 12 peticiones seguidas.
+
+   Cuando el generador era una página aparte eso pasaba al abrirla y
+   nadie lo notaba. Ahora el certificado vive dentro del index, así que
+   las 12 peticiones salían al cargar el DASHBOARD, cada vez, aunque
+   nadie fuera a mirar un certificado. Y como los archivos logo1/logo2
+   hoy no están en el repositorio, las 12 terminan en 404 — se paga la
+   espera completa para no encontrar nada. Es la única pestaña que hace
+   algo así, que es justo lo que se notaba.
+
+   Dos cambios:
+     · No se piden al cargar el dashboard, sino la PRIMERA VEZ que se
+       entra a la pestaña Certificado.
+     · Se recuerda el resultado por un día. Si se encontró "logo1.png",
+       la próxima vez se pide esa y ya; si no se encontró ninguna, no se
+       pide nada y se muestra el texto de respaldo. Se vuelve a probar al
+       día siguiente, para que subir los logos al repositorio surta
+       efecto sin tener que borrar nada a mano.
+   ══════════════════════════════════════════════════════════════════ */
+  const LOGO_MEMORIA_KEY = 'horti_cert_logos_v1';
+  const LOGO_MEMORIA_MS  = 24 * 60 * 60 * 1000;
+  const LOGO_EXTENSIONES = ['png','jpg','jpeg','PNG','JPG','JPEG'];
+  let _logosPedidos = false;
+
+  function _logoRendirse(img){
+    img.style.display = 'none';
+    const fb = img.nextElementSibling;
+    if (fb) fb.style.display = 'flex';
+  }
+
+  // avisar(ext) recibe la extensión que funcionó, o false si ninguna
+  function loadImageWithFallback(img, base, exts, avisar){
     let i = 0;
     function attempt(){
       if (i >= exts.length){
-        img.style.display = 'none';
-        const fb = img.nextElementSibling;
-        if (fb) fb.style.display = 'flex';
+        _logoRendirse(img);
+        if (avisar) avisar(false);
         return;
       }
       img.src = base + '.' + exts[i];
       i++;
     }
     img.onerror = attempt;
+    img.onload = () => { if (avisar) avisar(exts[i - 1]); };
     attempt();
   }
 
-  loadImageWithFallback(
-    document.getElementById('imgLogo1'),
-    'logo1',
-    ['png','jpg','jpeg','PNG','JPG','JPEG']
-  );
-  loadImageWithFallback(
-    document.getElementById('imgLogo2'),
-    'logo2',
-    ['png','jpg','jpeg','PNG','JPG','JPEG']
-  );
+  function cargarLogosCertificado(){
+    if (_logosPedidos) return;
+    _logosPedidos = true;
+
+    let memoria = {};
+    try{
+      const g = JSON.parse(localStorage.getItem(LOGO_MEMORIA_KEY) || '{}');
+      if (g && (Date.now() - (g.cuando || 0)) < LOGO_MEMORIA_MS) memoria = g;
+    }catch(e){}
+
+    const recordar = (base, ext) => {
+      memoria[base] = ext;
+      memoria.cuando = memoria.cuando || Date.now();
+      try{ localStorage.setItem(LOGO_MEMORIA_KEY, JSON.stringify(memoria)); }catch(e){}
+    };
+
+    [['imgLogo1','logo1'], ['imgLogo2','logo2']].forEach(function(par){
+      const img = document.getElementById(par[0]);
+      if (!img) return;
+      const sabido = memoria[par[1]];
+      if (sabido === false){ _logoRendirse(img); return; }   // ayer no estaba: no se vuelve a pedir hoy
+      const lista = sabido ? [sabido] : LOGO_EXTENSIONES;
+      loadImageWithFallback(img, par[1], lista, ext => recordar(par[1], ext));
+    });
+  }
+
+  // La pestaña la enciende showPanel la primera vez que se entra
+  window.certificadoCargarLogos = cargarLogosCertificado;
 
   // ---- Guardar / consultar en Google Sheets vía Apps Script ----
   const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzq4P0XvEDXAKAPti3B_JL_J1CjogE60bn6TOdiNf69WVmvaRLdpkxabkGTsEX3_7ogwA/exec';
@@ -21335,6 +21567,7 @@ window.operacionesCargar = function(){
       texto: document.getElementById('parrafo1').value,
       unidad: document.getElementById('unidadCertificacion').value,
       mostrarActa: document.getElementById('mostrarActa').checked,
+      mostrarFechaItems: document.getElementById('mostrarFechaItems').checked,
       empresaOrigen: document.getElementById('empresaOrigen').value,
       nitOrigen: document.getElementById('nitOrigen').value,
       direccionOrigen: document.getElementById('direccionOrigen').value,
@@ -21352,6 +21585,14 @@ window.operacionesCargar = function(){
     // Si el dato no existe (certificados guardados antes de esta función), se asume que sí
     // se mostraba el Acta, que era el comportamiento de siempre.
     document.getElementById('mostrarActa').checked = datos.mostrarActa !== false;
+    /* Los certificados guardados antes de que existiera esta casilla no
+       traen el dato. Para ellos se decide como se venían viendo: con la
+       columna si alguna fila tiene fecha, sin ella si ninguna la tiene.
+       Así ninguno cambia de aspecto al abrirlo. */
+    document.getElementById('mostrarFechaItems').checked =
+      (typeof datos.mostrarFechaItems === 'boolean')
+        ? datos.mostrarFechaItems
+        : materiales.some(m => (m.fecha || '').trim().length > 0);
     document.getElementById('empresaOrigen').value = datos.empresaOrigen || '';
     document.getElementById('nitOrigen').value = datos.nitOrigen || '';
     document.getElementById('direccionOrigen').value = datos.direccionOrigen || '';
@@ -21472,6 +21713,12 @@ window.operacionesCargar = function(){
       const fueActualizacion = !!data.actualizado;
       certCodigo = data.codigo || '';
       renderVerificacion();
+
+      /* Se acaba de escribir en la hoja, así que lo que hubiera en memoria
+         quedó viejo: se descarta para que la próxima vez que se abra la
+         galería vaya de verdad al servidor y aparezca este certificado. */
+      _certRegistros = null; _certCache = null; _certPeticion = null;
+      try{ localStorage.removeItem(CERT_CACHE_KEY); }catch(e){}
 
       const acta = document.getElementById('actaNo').value || 'SIN-ACTA';
       const marcado = await marcarViajesComoCertificados(acta + ' / ' + certCodigo);
@@ -21658,10 +21905,29 @@ window.operacionesCargar = function(){
     catch(e){ return ''; }
   }
 
-  async function cargarGuardados(){
+  /* Cuánto vale lo ya consultado antes de volver a preguntar. Dentro de
+     una jornada de trabajo la hoja de certificados casi no cambia, y el
+     único que la cambia desde acá es este mismo navegador — que invalida
+     la copia al guardar o al borrar. Diez minutos es de sobra. */
+  const CERT_FRESCO_MS = 10 * 60 * 1000;
+
+  async function cargarGuardados(forzar){
     const cont = document.getElementById('listaGuardados');
     const btn = document.getElementById('btnConsultar');
     const buscador = document.getElementById('buscarGuardados');
+
+    /* Volver a entrar a la galería NO vuelve a consultar. Si ya se leyó la
+       hoja en esta sesión y sigue siendo reciente, se muestra eso y punto:
+       no tiene sentido esperar de nuevo al servidor por unos datos que ya
+       están en pantalla. Se vuelve a leer cuando se pide con el botón ⟳,
+       cuando pasaron los diez minutos, o cuando algo cambió (guardar o
+       borrar un certificado limpia la copia). */
+    if (!forzar && registrosGuardados.length && _certRegistros &&
+        (Date.now() - _certCuando) < CERT_FRESCO_MS){
+      renderListaGuardados(buscador.value || '');
+      return;
+    }
+
     btn.disabled = true;
 
     /* Se pinta primero lo que ya se tenga —de esta misma sesión o de la
@@ -22287,6 +22553,7 @@ window.operacionesCargar = function(){
   window.agregarMaterialVacio = agregarMaterialVacio;
   window.abrirExplorador = abrirExplorador;
   window.exportarDesdeExplorador = exportarDesdeExplorador;
+  window.cargarGuardados = cargarGuardados;
 
 
 /* ── LO QUE EL CERTIFICADO LE PRESTA AL ASISTENTE ───────────────────
