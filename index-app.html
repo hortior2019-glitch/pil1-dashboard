@@ -11901,6 +11901,44 @@ function urlFotoDrive(url) {
    pensada para ver la foto en grande; en una tabla eso es traer 675x900 px
    para un recuadro de 40, y con varias filas la pagina parece no tener
    fotos hasta que terminan de bajar todas. */
+/* Que una miniatura falle NO puede dejar el hueco vacio para siempre.
+   Drive limita las peticiones cuando llegan muchas seguidas —abrir la
+   bodega con veinte articulos es justo eso— y devuelve error en algunas.
+   Antes el manejador borraba la imagen al segundo fallo: un tropiezo de
+   un segundo se veia igual que "este articulo no tiene foto", y no se
+   recuperaba hasta recargar la pagina.
+   Ahora: primero se prueba la otra via (lh3), despues se reintenta la
+   original a los 2 segundos, y recien ahi se muestra el recuadro de "sin
+   foto" — sin sacar la imagen del documento, para que un render
+   posterior pueda mostrarla. */
+function cscFotoFallo(img) {
+  const paso = Number(img.dataset.paso || 0) + 1;
+  img.dataset.paso = String(paso);
+
+  if (paso === 1 && img.dataset.alt) { img.src = img.dataset.alt; return; }
+  if (paso === 2 && img.dataset.orig) {
+    setTimeout(function () { img.src = img.dataset.orig + '&r=' + Date.now(); }, 2000);
+    return;
+  }
+  // Se agotaron los intentos: se muestra el hueco, con el mismo tamaño
+  img.style.visibility = 'hidden';
+  const caja = img.parentNode;
+  if (caja && !caja.querySelector('.sin-foto')) {
+    const s = document.createElement('span');
+    s.className = 'sin-foto';
+    s.title = 'La foto no se pudo cargar. Vuelve a entrar a la pestaña para reintentar.';
+    s.textContent = 'sin foto';
+    s.style.cssText = 'width:92px;height:92px;margin-left:-92px;border-radius:8px;' +
+      'border:1px dashed var(--csc-line);flex-shrink:0;display:flex;align-items:center;' +
+      'justify-content:center;font-size:10px;color:#8a8f8a;text-align:center';
+    caja.insertBefore(s, img.nextSibling);
+  }
+}
+
+/* OJO con el ancho: el servicio de miniaturas de Drive NO acepta
+   cualquiera. Comprobado el 4 de septiembre de 2026 con las fotos de la
+   bodega: 160 y 400 responden, 320 da error y la imagen no carga. Si vas a
+   cambiar este numero, probalo antes. */
 function urlFotoDriveMini(url, ancho) {
   const id = driveIdDesdeUrl(url);
   return id ? 'https://drive.google.com/thumbnail?id=' + id + '&sz=w' + (ancho || 160) : (url||'');
@@ -16290,15 +16328,15 @@ function viewInventario(){
     const low=i.stock<i.minimo, pct=Math.min(100,i.minimo?Math.round(i.stock/Math.max(i.minimo*1.5,1)*100):100);
     return `<tr>
       <td>
-        <div style="display:flex;align-items:center;gap:10px">
+        <div style="display:flex;align-items:center;gap:14px;padding:6px 0">
           ${i.foto
-            ? `<img src="${urlFotoDriveMini(i.foto,160)}" data-alt="${urlFotoDriveMiniAlt(i.foto,160)}" alt=""
+            ? `<img src="${urlFotoDriveMini(i.foto,400)}" data-orig="${urlFotoDriveMini(i.foto,400)}" data-alt="${urlFotoDriveMiniAlt(i.foto,400)}" alt=""
                  title="Ver la foto en grande"
                  onclick="abrirFotoBaucher('${String(i.foto).replace(/'/g,'')}','${String(i.item).replace(/'/g,'')}')"
-                 onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src=this.dataset.alt;}else{this.replaceWith(Object.assign(document.createElement('span'),{title:'La foto no se pudo cargar'}))}"
-                 style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--csc-line);flex-shrink:0;cursor:zoom-in">`
-            : '<span style="width:40px;height:40px;border-radius:6px;border:1px dashed var(--csc-line);flex-shrink:0"></span>'}
-          <div style="min-width:0"><b>${esc(i.item)}</b><div class="help">${esc(i.ubicacion)}</div></div>
+                 onerror="cscFotoFallo(this)"
+                 style="width:92px;height:92px;object-fit:cover;border-radius:8px;border:1px solid var(--csc-line);flex-shrink:0;cursor:zoom-in;background:var(--csc-bg,#f4f6f4)">`
+            : '<span style="width:92px;height:92px;border-radius:8px;border:1px dashed var(--csc-line);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--csc-ink-l,#8a8f8a);text-align:center">sin foto</span>'}
+          <div style="min-width:0"><b style="font-size:14px">${esc(i.item)}</b><div class="help">${esc(i.ubicacion)}</div></div>
         </div>
       </td>
       <td>${catTag(i.categoria)}</td>
@@ -16314,7 +16352,14 @@ function viewInventario(){
         <button class="btn btn-ghost btn-sm act" data-a="invdel" data-id="${i.id}" title="Sacar este artículo del inventario" style="color:#b23b3b">Eliminar</button></td>`:''}
     </tr>`;
   }).join('');
-  return `<div class="page-head"><div><div class="eyebrow">Bodega</div>
+  return `<style>
+      /* Filas mas altas: la foto es el dato que mas rapido identifica un
+         articulo en bodega, y a 40px solo se veia que habia una foto, no
+         que era. Se alinea todo arriba para que la descripcion no quede
+         flotando a media altura de la imagen. */
+      #${CSC_MOUNT} tbody td{vertical-align:middle;padding-top:10px;padding-bottom:10px}
+    </style>
+    <div class="page-head"><div><div class="eyebrow">Bodega</div>
       <h2>Inventario</h2><p>El stock sube cuando ingresa una compra o cuando se carga una existencia de bodega, y baja cuando se entrega o se usa.</p></div></div>
     <div class="toolbar">
       <div class="search"><span class="ic">⌕</span><input id="search" placeholder="Buscar ítem…" value="${esc(search)}"></div>
