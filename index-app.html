@@ -178,6 +178,31 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 
 /* WRAPPER */
 .wrapper{padding:32px 40px;padding-top:277px;max-width:1280px;margin:0 auto}
+
+/* ══════════════════════════════════════════════════════════════════
+   iPHONE · POR QUE HABIA QUE ALEJAR SIEMPRE
+   ------------------------------------------------------------------
+   Safari en iOS ACERCA la pagina sola cuando uno toca un campo cuya
+   letra mide menos de 16 px — y despues no vuelve al tamaño anterior.
+   El sistema tenia 75 campos por debajo de ese limite, empezando por
+   usuario y contraseña (14 px): al primer toque en el login la pagina
+   quedaba acercada, y de ahi en mas habia que alejar a mano.
+   No es un problema de ancho: el documento mide exactamente lo que la
+   pantalla (375 = 375), no se desborda.
+   La regla vale solo en pantallas chicas, asi que en el escritorio no
+   cambia nada. Los campos se ven algo mas grandes en el telefono, que
+   ademas es lo que conviene para usarlos en planta.
+   ══════════════════════════════════════════════════════════════════ */
+@media (max-width:820px){
+  input, select, textarea,
+  input[type=text], input[type=password], input[type=number],
+  input[type=date], input[type=time], input[type=search], input[type=tel]{
+    font-size:16px !important;
+  }
+  /* Los de solo lectura o muy chicos no necesitan crecer tanto, pero
+     igual tienen que llegar a 16 para que iOS no acerque. */
+  .wrapper{padding-left:14px;padding-right:14px}
+}
 .panel{display:none}.panel.active{display:block}
 
 /* SECTION */
@@ -2646,9 +2671,64 @@ html.solo-panel #salir-solo-panel{display:block}
 #panel-mapa .mapa-guardar:hover{background:#123c25}
 #panel-mapa .mapa-cancelar{background:#f0f2f0;color:#54605a}
 
+/* Los botones de zoom, flotando sobre el plano */
+#panel-mapa .mapa-zoom{
+  position:absolute;top:14px;right:14px;z-index:3;
+  display:flex;flex-direction:column;gap:5px;
+}
+#panel-mapa .mapa-zoom button{
+  width:34px;height:34px;border:1px solid var(--rule,#dcdcdc);background:rgba(255,255,255,.94);
+  border-radius:7px;font-size:17px;font-weight:700;color:#2c5c42;cursor:pointer;line-height:1;
+  box-shadow:0 1px 3px rgba(0,0,0,.10);
+}
+#panel-mapa .mapa-zoom button:hover{background:#eef5f0}
+#panel-mapa .mapa-zoom button:active{transform:scale(.94)}
+
+/* El plano se arrastra: el cursor lo dice, y el navegador no debe hacer
+   su propio desplazamiento cuando el dedo esta sobre el mapa. */
+#panel-mapa svg.plano{cursor:grab;touch-action:none}
+#panel-mapa svg.plano:active{cursor:grabbing}
+
+/* ── EN CELULAR ────────────────────────────────────────────────────
+   Un vano de carpa mide dos o tres pixeles en un telefono. La pestaña
+   se reordena para que el plano ocupe todo el ancho, los botones de
+   zoom sean del tamaño de un dedo, y el panel quede debajo en vez de
+   robar un tercio de la pantalla. */
 @media (max-width:900px){
   #panel-mapa .mapa-area{flex-direction:column}
   #panel-mapa .mapa-panel{width:100%;max-height:none}
+}
+@media (max-width:760px){
+  #panel-mapa .mapa-kpis{gap:8px}
+  #panel-mapa .mapa-kpi{min-width:calc(50% - 4px);padding:9px 11px}
+  #panel-mapa .mapa-kpi .v{font-size:20px}
+
+  /* La barra de acciones se desplaza en horizontal en vez de apilarse
+     en cuatro renglones que empujan el plano fuera de la pantalla. */
+  #panel-mapa .mapa-barra{
+    flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;
+    -webkit-overflow-scrolling:touch;scrollbar-width:none;
+  }
+  #panel-mapa .mapa-barra::-webkit-scrollbar{display:none}
+  #panel-mapa .mapa-btn{flex:0 0 auto;padding:9px 14px;font-size:12.5px}
+  #panel-mapa .mapa-ver{flex:0 0 auto}
+
+  #panel-mapa .mapa-lienzo{padding:6px}
+  /* Alto fijo: si no, el plano completo en un telefono queda de 3 cm y
+     no se distingue nada. Con esto se ve grande y se navega con el dedo. */
+  #panel-mapa svg.plano{height:56vh;min-height:280px}
+
+  #panel-mapa .mapa-zoom{top:10px;right:10px;gap:7px}
+  #panel-mapa .mapa-zoom button{width:44px;height:44px;font-size:20px}
+
+  #panel-mapa .mapa-panel{margin-top:10px;padding:13px}
+  #panel-mapa .mapa-panel h3{font-size:19px}
+  /* Botones y campos mas altos: se usan con guantes y en movimiento. */
+  #panel-mapa .mapa-acciones button{padding:12px;font-size:13px}
+  #panel-mapa .mapa-campo input,
+  #panel-mapa .mapa-campo select,
+  #panel-mapa .mapa-campo textarea{padding:10px;font-size:15px}
+  #panel-mapa .mapa-linea{padding:8px 0;font-size:13px}
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -3380,6 +3460,12 @@ html.solo-panel #salir-solo-panel{display:block}
 
   <div class="mapa-area">
     <div class="mapa-lienzo" id="mapaLienzo">
+      <div class="mapa-zoom">
+        <button id="mapaMas"   title="Acercar" aria-label="Acercar">+</button>
+        <button id="mapaMenos" title="Alejar"  aria-label="Alejar">−</button>
+        <button id="mapaTodo"  title="Ver todo el plano" aria-label="Ver todo">⤢</button>
+      </div>
+      <div id="mapaSvg"></div>
       <div class="mapa-cargando" id="mapaCargando">Cargando el mapa…</div>
     </div>
     <aside class="mapa-panel" id="mapaPanel">
@@ -5143,6 +5229,33 @@ function _guardarToken(t) {
 /* Todo va por POST con text/plain: en GET la clave quedaria en la URL, en
    el historial y en los registros de cualquier intermediario; y text/plain
    evita el preflight de CORS que Apps Script no responde. */
+/* Traduce lo que responde el servidor de autenticacion. Cada caso dice
+   que hacer, no solo que paso. */
+function _mensajeLogin(bruto) {
+  var e = (bruto || '').toString();
+  if (!e) return 'Usuario o contraseña incorrectos.';
+
+  if (/no disponible/i.test(e)) {
+    return 'La solicitud no llegó bien al servidor. Recarga la página con Ctrl+Shift+R ' +
+           '(en el celular, cerrá y volvé a abrir la pestaña) e intentá de nuevo.';
+  }
+  if (/demasiados intentos/i.test(e)) {
+    return 'Esta cuenta quedó bloqueada por intentos fallidos. Se desbloquea sola en 15 minutos, ' +
+           'o pedile al administrador que la libere.';
+  }
+  if (/demasiadas peticiones/i.test(e)) {
+    return 'Demasiadas consultas seguidas desde esta sesión. Esperá unos minutos.';
+  }
+  if (/no autorizado|inactivo/i.test(e)) {
+    return 'Tu usuario no tiene el acceso habilitado. Pedíselo al administrador.';
+  }
+  if (/error interno/i.test(e)) {
+    return 'El servidor tuvo un problema al procesar el ingreso. Volvé a intentar en un minuto; ' +
+           'si sigue, avisale al administrador.';
+  }
+  return e;   /* mensajes que ya son claros, como el de usuario o clave */
+}
+
 async function authPost(accion, extra) {
   const cuerpo = Object.assign({ accion: accion, token: _authToken || '' }, extra || {});
   const res = await fetch(AUTH_API, {
@@ -5151,7 +5264,20 @@ async function authPost(accion, extra) {
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(cuerpo)
   });
-  return await res.json();
+  /* Se lee como texto primero. Google devuelve una PAGINA suya cuando el
+     servicio esta saturado o cuando el redirect se pierde, y en ese caso
+     res.json() reventaba con "Unexpected token '<'" — un mensaje que no
+     le sirve a nadie. Comprobado el 8 de septiembre de 2026: el mismo
+     pedido, repetido, devolvio HTTP 404 con pagina de Google una vez y
+     JSON correcto las ocho siguientes. Es intermitente, no un error de
+     configuracion. */
+  const txt = await res.text();
+  try {
+    return JSON.parse(txt);
+  } catch (e) {
+    console.warn('Login · el servidor no devolvió JSON (HTTP ' + res.status + '):', txt.slice(0, 200));
+    return { ok: false, error: 'No disponible' };   // lo traduce _mensajeLogin
+  }
 }
 
 async function cargarUsuariosDash() {
@@ -5258,8 +5384,13 @@ async function intentarLoginDash() {
   }
 
   if (!r || !r.ok) {
-    errEl.textContent = (r && r.error) ? r.error : 'Usuario o contraseña incorrectos.';
+    /* El mensaje del servidor se traduce a algo que el operario pueda
+       hacer. Antes salia tal cual: a alguien que solo quiere entrar a
+       registrar un viaje, "No disponible" no le dice nada y no puede
+       hacer nada con eso. El texto tecnico queda en la consola. */
+    errEl.textContent = _mensajeLogin(r && r.error);
     errEl.style.display = 'block';
+    if (r && r.error) console.warn('Login · respuesta del servidor:', r.error);
     return;
   }
 
@@ -21655,6 +21786,68 @@ window.operacionesCargar = function(){
 var M = { zonas:[], pilas:[], actividades:[], terminos:[], cargado:false, cargando:false };
 var SEL = { zona:null, vano:null };
 
+/* ── ZOOM Y ARRASTRE ───────────────────────────────────────────────
+   Se mueve el viewBox del SVG y no un transform de CSS: asi el dibujo
+   queda nitido a cualquier acercamiento, que es lo que hace falta en un
+   plano. Ademas los vanos siguen siendo del tamaño real en pantalla, y
+   por eso se pueden tocar con el dedo.
+
+   En un telefono un vano de una carpa mide dos o tres pixeles: sin
+   acercar no hay forma de darle. Por eso esto no es un adorno.       */
+var VISTA_COMPLETA = { x:0, y:0, w:1000, h:740 };
+var VIS = { x:0, y:0, w:1000, h:740 };
+var ZOOM_MIN = 60;      /* ancho minimo del viewBox: no se puede acercar mas */
+var ZOOM_MAX = 1400;    /* y no se puede alejar mas alla del plano entero */
+
+function aplicarVista(){
+  var svg = document.querySelector('#panel-mapa svg.plano');
+  if(svg) svg.setAttribute('viewBox', VIS.x + ' ' + VIS.y + ' ' + VIS.w + ' ' + VIS.h);
+}
+
+/* Acerca o aleja manteniendo quieto el punto (fx, fy), en fracciones del
+   lienzo. Sin eso, acercar con la rueda "se lleva" el plano y uno pierde
+   lo que estaba mirando. */
+function zoomEn(factor, fx, fy){
+  var nw = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, VIS.w * factor));
+  var nh = nw * (VISTA_COMPLETA.h / VISTA_COMPLETA.w);
+  if(fx === undefined) fx = 0.5;
+  if(fy === undefined) fy = 0.5;
+  VIS.x += (VIS.w - nw) * fx;
+  VIS.y += (VIS.h - nh) * fy;
+  VIS.w = nw; VIS.h = nh;
+  limitarVista();
+  aplicarVista();
+}
+
+/* No se deja escapar el plano fuera de la pantalla: al alejar del todo
+   vuelve a encuadrar, y al arrastrar no se puede perder de vista. */
+function limitarVista(){
+  var margen = 80;
+  VIS.x = Math.max(VISTA_COMPLETA.x - margen, Math.min(VIS.x, VISTA_COMPLETA.w - VIS.w + margen));
+  VIS.y = Math.max(VISTA_COMPLETA.y - margen, Math.min(VIS.y, VISTA_COMPLETA.h - VIS.h + margen));
+}
+
+function verTodo(){
+  VIS = { x:VISTA_COMPLETA.x, y:VISTA_COMPLETA.y, w:VISTA_COMPLETA.w, h:VISTA_COMPLETA.h };
+  aplicarVista();
+}
+
+/* Encuadra un area. Se usa al tocar una carpa desde el telefono: sin
+   esto habria que acercar a mano cada vez para poder darle a un vano. */
+function encuadrarZona(z, holgura){
+  if(!z || !z.w || !z.h) return;
+  holgura = holgura === undefined ? 1.9 : holgura;
+  var w = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z.w * holgura));
+  var h = w * (VISTA_COMPLETA.h / VISTA_COMPLETA.w);
+  if(h < z.h * holgura){ h = z.h * holgura; w = h * (VISTA_COMPLETA.w / VISTA_COMPLETA.h); }
+  VIS = { x: z.x + z.w/2 - w/2, y: z.y + z.h/2 - h/2, w:w, h:h };
+  limitarVista();
+  aplicarVista();
+}
+
+/* ¿Estamos en un telefono? Decide si tocar una carpa acerca sola. */
+function esPantallaChica(){ return window.innerWidth < 760; }
+
 function $m(id){ return document.getElementById(id); }
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
@@ -21696,7 +21889,7 @@ async function cargarMapa(forzar){
     M.cargado = true;
     pintar();
   }catch(err){
-    var c = $m('mapaLienzo');
+    var c = $m('mapaSvg');
     if(c) c.innerHTML = '<div class="mapa-cargando" style="color:#b23b3b">No se pudo cargar el mapa.<br><br>' +
       esc(err.message) + '<br><br><button class="mapa-btn" onclick="mapaRecargarForzado()">Reintentar</button></div>';
   }finally{ M.cargando = false; }
@@ -21770,8 +21963,10 @@ function repartir(nombre, ancho, alto){
 }
 
 function pintar(){
-  var cont = $m('mapaLienzo');
+  var cont = $m('mapaSvg');
   if(!cont) return;
+  var aviso = $m('mapaCargando');
+  if(aviso) aviso.style.display = 'none';
   var verPilas = $m('mapaVerPilas') ? $m('mapaVerPilas').checked : true;
   var verItems = $m('mapaVerItems') ? $m('mapaVerItems').checked : true;
 
@@ -21908,8 +22103,9 @@ function pintar(){
   }).join('');
   indice += '<text class="leyenda tit" x="800" y="583">Índice</text>';
 
-  cont.innerHTML = '<svg class="plano" viewBox="0 0 1000 740" preserveAspectRatio="xMidYMid meet">' +
-                   partes.join('') + indice + '</svg>';
+  cont.innerHTML = '<svg class="plano" viewBox="' + VIS.x + ' ' + VIS.y + ' ' + VIS.w + ' ' + VIS.h +
+                   '" preserveAspectRatio="xMidYMid meet">' + partes.join('') + indice + '</svg>';
+  engancharGestos(cont.querySelector('svg.plano'));
 
   cont.querySelectorAll('.vano').forEach(function(r){
     r.addEventListener('click', function(ev){
@@ -21920,12 +22116,97 @@ function pintar(){
   });
   cont.querySelectorAll('.z').forEach(function(g){
     g.addEventListener('click', function(){
-      SEL.zona = g.dataset.zona; SEL.vano = null;
+      var id = g.dataset.zona;
+      var z = zonaPorId(id);
+      /* En un telefono los vanos miden dos o tres pixeles: tocar la carpa
+         la encuadra para que despues se pueda dar a una pila. En pantalla
+         grande no hace falta y seria molesto. */
+      if(esPantallaChica() && z && z.tipo === 'almacen' && SEL.zona !== id) encuadrarZona(z);
+      SEL.zona = id; SEL.vano = null;
       pintar(); verZona();
+      if(esPantallaChica()){
+        var p = $m('mapaPanel');
+        if(p) p.scrollIntoView({ behavior:'smooth', block:'start' });
+      }
     });
   });
 
   pintarKpis();
+}
+
+/* Rueda, arrastre y pellizco. Se distingue arrastrar de tocar: si el dedo
+   se movio mas de 6 px no se toma como clic, si no arrastrar el mapa
+   terminaria seleccionando cualquier area por accidente. */
+function engancharGestos(svg){
+  if(!svg || svg.dataset.gestos) return;
+  svg.dataset.gestos = '1';
+
+  var arrastrando = false, movio = 0, ini = null, punteros = {}, distIni = 0, visIni = null;
+
+  function aFraccion(ev){
+    var r = svg.getBoundingClientRect();
+    return { fx: (ev.clientX - r.left) / r.width, fy: (ev.clientY - r.top) / r.height };
+  }
+
+  svg.addEventListener('wheel', function(ev){
+    ev.preventDefault();
+    var f = aFraccion(ev);
+    zoomEn(ev.deltaY > 0 ? 1.18 : 0.85, f.fx, f.fy);
+  }, { passive:false });
+
+  svg.addEventListener('pointerdown', function(ev){
+    punteros[ev.pointerId] = ev;
+    if(Object.keys(punteros).length === 2){
+      var p = Object.keys(punteros).map(function(k){ return punteros[k]; });
+      distIni = Math.hypot(p[0].clientX - p[1].clientX, p[0].clientY - p[1].clientY);
+      visIni = { w:VIS.w };
+      arrastrando = false;
+      return;
+    }
+    arrastrando = true; movio = 0; ini = { x:ev.clientX, y:ev.clientY, vx:VIS.x, vy:VIS.y };
+    try{ svg.setPointerCapture(ev.pointerId); }catch(e){}
+  });
+
+  svg.addEventListener('pointermove', function(ev){
+    if(punteros[ev.pointerId]) punteros[ev.pointerId] = ev;
+
+    /* Pellizco */
+    var ids = Object.keys(punteros);
+    if(ids.length === 2 && distIni){
+      var a = punteros[ids[0]], b = punteros[ids[1]];
+      var d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      if(d > 0){
+        var nw = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, visIni.w * (distIni / d)));
+        var cx = VIS.x + VIS.w/2, cy = VIS.y + VIS.h/2;
+        VIS.w = nw; VIS.h = nw * (VISTA_COMPLETA.h / VISTA_COMPLETA.w);
+        VIS.x = cx - VIS.w/2; VIS.y = cy - VIS.h/2;
+        limitarVista(); aplicarVista();
+      }
+      return;
+    }
+
+    if(!arrastrando || !ini) return;
+    var r = svg.getBoundingClientRect();
+    var dx = (ev.clientX - ini.x) / r.width  * VIS.w;
+    var dy = (ev.clientY - ini.y) / r.height * VIS.h;
+    movio = Math.max(movio, Math.hypot(ev.clientX - ini.x, ev.clientY - ini.y));
+    VIS.x = ini.vx - dx; VIS.y = ini.vy - dy;
+    limitarVista(); aplicarVista();
+  });
+
+  function soltar(ev){
+    delete punteros[ev.pointerId];
+    if(Object.keys(punteros).length < 2){ distIni = 0; visIni = null; }
+    arrastrando = false;
+  }
+  svg.addEventListener('pointerup', soltar);
+  svg.addEventListener('pointercancel', soltar);
+  svg.addEventListener('pointerleave', soltar);
+
+  /* El clic solo cuenta si no fue un arrastre */
+  svg.addEventListener('click', function(ev){
+    if(movio > 6){ ev.stopPropagation(); ev.preventDefault(); movio = 0; }
+  }, true);
 }
 
 function pintarKpis(){
@@ -22247,6 +22528,9 @@ document.addEventListener('DOMContentLoaded', function(){
   var a = $m('mapaNuevaAct');  if(a) a.onclick = function(){ formActividad(zonaPorId(SEL.zona), null); };
   var u = $m('mapaUbicar');    if(u) u.onclick = formUbicar;
   var nz = $m('mapaNuevaZona'); if(nz) nz.onclick = formZonaNueva;
+  var bm = $m('mapaMas');   if(bm) bm.onclick = function(){ zoomEn(0.72); };
+  var bn = $m('mapaMenos'); if(bn) bn.onclick = function(){ zoomEn(1.4); };
+  var bt = $m('mapaTodo');  if(bt) bt.onclick = verTodo;
   var vp = $m('mapaVerPilas'); if(vp) vp.onchange = pintar;
   var vi = $m('mapaVerItems'); if(vi) vi.onchange = pintar;
 });
