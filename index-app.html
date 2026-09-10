@@ -2628,6 +2628,17 @@ html.solo-panel #salir-solo-panel{display:block}
 #panel-mapa .vano.e-lista     {fill:rgba(47,143,82,.30)}
 #panel-mapa .vano.sel{stroke:var(--gold,#c08a2e);stroke-width:2.5;stroke-dasharray:none}
 
+/* ── EL LUGAR ELEGIDO PARA UNA ACTIVIDAD NUEVA ─────────────────────
+   Verde lleno, mientras se está creando la actividad. Se distingue del
+   dorado, que es la selección normal del panel, y del verde de las
+   actividades ya cumplidas, que es un borde y no un relleno.        */
+#panel-mapa .z.elegida rect,
+#panel-mapa .z.elegida polygon{fill:rgba(47,143,82,.30);stroke:#1c5636;stroke-width:2.6}
+/* Cuando la actividad va sobre un tramo de pilas, el área se marca
+   apenas y el verde fuerte queda para los vanos. */
+#panel-mapa .z.elegida-zona rect{stroke:#1c5636;stroke-width:2.4}
+#panel-mapa .vano.elegido{fill:rgba(47,143,82,.48);stroke:#1c5636;stroke-width:1.6;stroke-dasharray:none}
+
 /* Marcas de articulos ubicados en una zona */
 #panel-mapa .leyenda{font-size:9px;fill:#54605a;pointer-events:none}
 #panel-mapa .leyenda.tit{font-size:9.5px;font-weight:800;letter-spacing:1px;fill:#8a8f8a}
@@ -3573,8 +3584,6 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <div class="sec-title">Mapa de planta</div>
     <div class="sec-sub">Dónde está cada cosa y qué se hizo en cada pila</div>
   </div>
-
-  <div id="mapa-kpis" class="mapa-kpis"></div>
 
   <div class="mapa-barra">
     <button class="mapa-btn" id="mapaRecargar">↻ Actualizar</button>
@@ -22240,10 +22249,7 @@ var MAPA_BASE = [
   {id:'Z-PERFIL2',nombre:'Lote oriental',tipo:'perfil',parales:0,color:'',x:0,y:0,w:0,h:0,orientacion:'vertical',activa:true,puntos:'681,13 1000,82 1000,206 897,323 692,375 681,375'},
   {id:'Z-PORT2',nombre:'Portería Vehicular II',tipo:'acceso',parales:0,color:'',x:540,y:14,w:103,h:34,orientacion:'vertical',activa:true,puntos:''},
   {id:'Z-PORT1',nombre:'Portería Vehicular I',tipo:'acceso',parales:0,color:'',x:81,y:540,w:66,h:38,orientacion:'vertical',activa:true,puntos:''},
-  {id:'Z-BASC',nombre:'Báscula',tipo:'servicio',parales:0,color:'',x:684,y:172,w:72,h:50,orientacion:'vertical',activa:true,puntos:''},
   {id:'Z-RESER',nombre:'Reservorio',tipo:'servicio',parales:0,color:'',x:684,y:244,w:72,h:69,orientacion:'vertical',activa:true,puntos:''},
-  {id:'Z-PTAR',nombre:'PTAR',tipo:'servicio',parales:0,color:'',x:795,y:89,w:111,h:65,orientacion:'vertical',activa:true,puntos:''},
-  {id:'Z-SOLAR',nombre:'Páneles solares',tipo:'servicio',parales:0,color:'',x:795,y:172,w:94,h:65,orientacion:'vertical',activa:true,puntos:''},
   {id:'Z-CABAL',nombre:'Caballeriza',tipo:'produccion',parales:0,color:'',x:506,y:157,w:161,h:36,orientacion:'vertical',activa:true,puntos:''},
   {id:'Z-LIQ',nombre:'Área líquidos',tipo:'produccion',parales:0,color:'',x:585,y:213,w:82,h:58,orientacion:'vertical',activa:true,puntos:''},
   {id:'Z-LOMB',nombre:'Lombricultivo',tipo:'lombriz',parales:0,color:'',x:448,y:213,w:202,h:103,orientacion:'vertical',activa:true,puntos:''},
@@ -22257,6 +22263,8 @@ var MAPA_BASE = [
   {id:'Z-SEC2',nombre:'Secadero (molino)',tipo:'secado',parales:0,color:'',x:393,y:564,w:99,h:96,orientacion:'vertical',activa:true,puntos:''},
   {id:'Z-EMPAQ',nombre:'Zona de empaque',tipo:'produccion',parales:0,color:'',x:253,y:612,w:75,h:34,orientacion:'vertical',activa:true,puntos:''},
   {id:'Z-COMPRE',nombre:'Bodega inventarios',tipo:'servicio',parales:0,color:'',x:339,y:616,w:51,h:38,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-COMEDOR',nombre:'Comedor',tipo:'servicio',parales:0,color:'',x:330,y:660,w:44,h:32,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-TALLER',nombre:'Taller',tipo:'servicio',parales:0,color:'',x:378,y:660,w:44,h:32,orientacion:'vertical',activa:true,puntos:''},
   {id:'Z-CHORIZ',nombre:'Z2',tipo:'secado',parales:0,color:'',x:636,y:567,w:144,h:93,orientacion:'vertical',activa:true,puntos:''},
   {id:'Z-OFIC',nombre:'Oficina admin.',tipo:'admin',parales:0,color:'',x:14,y:413,w:65,h:62,orientacion:'vertical',activa:true,puntos:''},
   {id:'Z-CASA',nombre:'Casa quinta',tipo:'admin',parales:0,color:'',x:14,y:331,w:33,h:54,orientacion:'vertical',activa:true,puntos:''},
@@ -22514,6 +22522,8 @@ function pintar(){
   var verPilas = $m('mapaVerPilas') ? $m('mapaVerPilas').checked : true;
   var verItems = $m('mapaVerItems') ? $m('mapaVerItems').checked : true;
   var verActs  = $m('mapaVerActs')  ? $m('mapaVerActs').checked  : true;
+  /* Lo que se está por marcar como lugar de una actividad nueva. */
+  var elegida  = (BORRADOR && BORRADOR.zonaId) ? BORRADOR : null;
 
   var partes = [];
 
@@ -22535,7 +22545,14 @@ function pintar(){
     .sort(function(a,b){ return (b.w*b.h) - (a.w*a.h); })
     .forEach(function(z){
     var sel = SEL.zona === z.id ? ' sel' : '';
-    var g = ['<g class="z t-' + esc(z.tipo) + sel + '" data-zona="' + esc(z.id) + '">'];
+    /* El lugar elegido para la actividad que se está creando se pinta de
+       verde mientras se llena el formulario. Sin esto había que confiar
+       en la memoria: se tocaba un área, el panel volvía al formulario y
+       el plano quedaba igual que antes, sin decir cuál se había tocado. */
+    var eleg = (elegida && elegida.zonaId === z.id)
+             ? (elegida.alcance === 'pila' ? ' elegida-zona' : ' elegida')
+             : '';
+    var g = ['<g class="z t-' + esc(z.tipo) + sel + eleg + '" data-zona="' + esc(z.id) + '">'];
     if(z.puntos){
       g.push('<polygon points="' + esc(z.puntos) + '"></polygon>');
     } else {
@@ -22553,25 +22570,9 @@ function pintar(){
         y += paso;
       }
     }
-    if(z.tipo === 'lombriz'){
-      /* Las camas del lombricultivo, en las proporciones del recinto: tres
-         arriba y dos abajo, como en el plano. Se dibujan en fracciones del
-         alto y del ancho y no en pixeles fijos, asi que siguen bien puestas
-         si el area se agranda o se mueve. La esquina superior derecha se
-         deja libre a proposito: ahi va el Área líquidos. */
-      var camas = [[0.16,0.28],[0.38,0.28],[0.60,0.28],[0.22,0.72],[0.55,0.72]];
-      camas.forEach(function(c){
-        g.push('<ellipse class="monticulo" cx="' + (z.x + z.w*c[0]) + '" cy="' + (z.y + z.h*c[1]) +
-               '" rx="' + Math.min(13, z.w*0.07) + '" ry="' + Math.min(9, z.h*0.09) + '"></ellipse>');
-      });
-      /* La reja del recinto: las divisiones entre camas */
-      [0.27, 0.49, 0.72].forEach(function(f){
-        g.push('<line class="trama" x1="' + (z.x + z.w*f) + '" y1="' + (z.y+2) +
-               '" x2="' + (z.x + z.w*f) + '" y2="' + (z.y+z.h-2) + '"></line>');
-      });
-      g.push('<line class="trama" x1="' + (z.x+2) + '" y1="' + (z.y + z.h*0.5) +
-             '" x2="' + (z.x+z.w-2) + '" y2="' + (z.y + z.h*0.5) + '"></line>');
-    }
+    /* El lombricultivo va como edificio, sin camas ni divisiones
+       dibujadas adentro: el plano se lee mejor y el area sigue siendo
+       clickeable de punta a punta. */
 
     /* ── LA ETIQUETA, AJUSTADA A SU CAJA ──────────────────────────
        Hay recuadros de 25 px de ancho con nombres de quince letras. Si
@@ -22616,8 +22617,14 @@ function pintar(){
              que poder ver cuál sin abrir el panel. */
           var actsV = verActs ? actsDeVano(z.id, v).filter(function(a){
                         return a.estado !== 'cerrada' && a.alcance === 'pila'; }) : [];
+          /* El tramo de pilas elegido también: verde, vano por vano.
+             Es la única forma de ver "de la 2 a la 4" sin contar parales
+             con el dedo en la pantalla. */
+          var vanoEleg = (elegida && elegida.zonaId === z.id && elegida.alcance === 'pila' &&
+                          v >= elegida.vanoDesde && v <= elegida.vanoHasta) ? ' elegido' : '';
           var cls = 'vano' + (pl ? ' con-pila e-' + esc(pl.estado) : '') +
                     (actsV.length ? ' con-act s-' + semaforo(actsV) : '') +
+                    vanoEleg +
                     (SEL.zona === z.id && SEL.vano === v ? ' sel' : '');
           g.push('<rect class="' + cls + '" x="' + vx + '" y="' + (z.y+3) + '" width="' + paso +
                  '" height="' + (z.h-6) + '" data-zona="' + esc(z.id) + '" data-vano="' + v +
@@ -22657,22 +22664,8 @@ function pintar(){
     partes.push(g.join(''));
   });
 
-  /* Indice, como el del plano en papel: sin el, los colores de las carpas
-     no dicen nada a quien no armo el mapa. */
-  var indice = [
-    ['#8fd14f', 'Almacenamiento orgánicos'],
-    ['#2f5fa8', 'Almacenamiento lodo papelero'],
-    ['#2f7d32', 'Almacenamiento tromel']
-  ].map(function(t, i){
-    var yy = 600 + i * 20;
-    return '<line class="paral" x1="800" y1="' + yy + '" x2="826" y2="' + yy +
-           '" stroke="' + t[0] + '" stroke-width="2.6"></line>' +
-           '<text class="leyenda" x="834" y="' + (yy+3) + '">' + esc(t[1]) + '</text>';
-  }).join('');
-  indice += '<text class="leyenda tit" x="800" y="583">Índice</text>';
-
   cont.innerHTML = '<svg class="plano" viewBox="' + VIS.x + ' ' + VIS.y + ' ' + VIS.w + ' ' + VIS.h +
-                   '" preserveAspectRatio="xMidYMid meet">' + partes.join('') + indice + '</svg>';
+                   '" preserveAspectRatio="xMidYMid meet">' + partes.join('') + '</svg>';
   engancharGestos(cont.querySelector('svg.plano'));
 
   cont.querySelectorAll('.vano').forEach(function(r){
@@ -22703,7 +22696,6 @@ function pintar(){
     });
   });
 
-  pintarKpis();
 }
 
 /* Rueda, arrastre y pellizco. Se distingue arrastrar de tocar: si el dedo
@@ -22781,34 +22773,9 @@ function engancharGestos(svg){
   }, true);
 }
 
-function pintarKpis(){
-  var cont = $m('mapa-kpis');
-  if(!cont) return;
-  var activas = M.pilas.filter(function(p){ return p.estado === 'llenando' || p.estado === 'en_proceso'; }).length;
-  var listas  = M.pilas.filter(function(p){ return p.estado === 'lista'; }).length;
-  var hoy = new Date().toISOString().slice(0,10);
-  var abiertas   = M.actividades.filter(function(a){ return a.activa && a.estado !== 'cerrada'; });
-  var sinRevisar = abiertas.filter(function(a){ return !ultimaEval(a.id); }).length;
-  var evalsHoy   = M.evaluaciones.filter(function(e){ return (e.fecha||'').slice(0,10) === hoy; }).length;
-  var totalEv    = M.evaluaciones.length;
-  var cumplen    = M.evaluaciones.filter(function(e){ return e.resultado === 'cumple'; }).length;
-  var carpas = M.zonas.filter(function(z){ return z.activa && z.tipo === 'almacen'; });
-  var vanos = carpas.reduce(function(s,z){ return s + vanosDe(z); }, 0);
-
-  cont.innerHTML =
-    kpi('Pilas en proceso', activas, activas + ' de ' + vanos + ' espacios') +
-    kpi('Pilas listas', listas, 'Terminadas, sin retirar') +
-    kpi('Actividades abiertas', abiertas.length,
-        sinRevisar ? sinRevisar + ' sin revisar todavía' : (abiertas.length ? 'Todas revisadas' : 'Ninguna abierta')) +
-    kpi('Cumplimiento', totalEv ? Math.round(cumplen * 100 / totalEv) + '%' : '—',
-        totalEv ? 'de ' + (totalEv === 1 ? '1 evaluación' : totalEv + ' evaluaciones') +
-                  ' · ' + evalsHoy + ' hoy' : 'Sin evaluaciones todavía') +
-    kpi('Carpas', carpas.length, vanos + ' espacios para pila');
-}
-function kpi(l, v, d){
-  return '<div class="mapa-kpi"><div class="l">' + esc(l) + '</div><div class="v">' + v +
-         '</div><div class="d">' + esc(d) + '</div></div>';
-}
+/* La fila de cajas de arriba se quitó a pedido. Los mismos números
+   siguen a mano en «📋 Ver actividades», que los muestra con la lista
+   al lado — que es donde sirven para hacer algo con ellos. */
 
 /* ── PANEL: UNA ZONA ──────────────────────────────────────────────── */
 function zonaPorId(id){
@@ -23026,14 +22993,14 @@ function pintarActividadForm(){
   var b = BORRADOR;
   var z = b.zonaId ? zonaPorId(b.zonaId) : null;
   var vanos = z ? vanosDe(z) : 0;
+  /* Al cambiar de área el tramo puede quedar fuera de rango: la anterior
+     tenía ocho pilas y esta tiene cuatro. Se recorta antes de dibujar. */
+  if(vanos){
+    b.vanoDesde = Math.min(Math.max(1, b.vanoDesde || 1), vanos);
+    b.vanoHasta = Math.min(Math.max(b.vanoDesde, b.vanoHasta || b.vanoDesde), vanos);
+  }
 
-  var lugar = !z
-    ? '<div class="act-lugar vacio">Todavía no elegiste dónde. Tocá el botón y después el área en el plano.</div>'
-    : '<div class="act-lugar"><b>' + esc(z.nombre) + '</b>' +
-      (b.alcance === 'pila'
-        ? ' · ' + (b.vanoDesde === b.vanoHasta ? 'pila ' + b.vanoDesde
-                                               : 'pilas ' + b.vanoDesde + ' a ' + b.vanoHasta)
-        : ' · sección entera') + '</div>';
+  var lugar = textoLugar();
 
   var alcance = (z && vanos)
     ? '<div class="mapa-campo"><label>¿Sobre qué?</label>' +
@@ -23081,12 +23048,48 @@ function pintarActividadForm(){
 
   var sel = $m('acAlcance');
   if(sel) sel.onchange = function(){
-    BORRADOR.alcance = sel.value;
+    guardarBorrador();
     $m('acTramo').style.display = sel.value === 'pila' ? '' : 'none';
+    refrescarLugar();               /* la etiqueta dice lo mismo que el plano */
+    pintar();                       /* el verde pasa del área a los vanos */
   };
+  /* Mover los números del tramo repinta el plano: se ve al instante qué
+     pilas quedan tomadas. */
+  ['acDesde','acHasta'].forEach(function(id){
+    var c = $m(id);
+    if(!c) return;
+    c.oninput = function(){ guardarBorrador(); refrescarLugar(); pintar(); };
+  });
+  pintar();                          /* muestra el verde donde corresponda */
   $m('acElegir').onclick = function(){ guardarBorrador(); entrarEnEleccion(); };
   $m('acCancelar').onclick = function(){ BORRADOR = null; ELIGIENDO = false; pintar(); limpiarPanel(); };
   $m('acGuardar').onclick = crearActividad;
+}
+
+/* La línea que dice dónde va la actividad. Vive aparte porque cambia sin
+   que se repinte el formulario entero: al mover los números del tramo, o
+   al pasar de "sección entera" a "un tramo de pilas".
+   Antes se armaba una sola vez al dibujar el formulario, y por eso podía
+   quedar diciendo "sección entera" con tres pilas ya pintadas de verde
+   abajo: la etiqueta y el plano decían cosas distintas. */
+function textoLugar(){
+  var b = BORRADOR;
+  var z = (b && b.zonaId) ? zonaPorId(b.zonaId) : null;
+  if(!z) return '<div class="act-lugar vacio">Todavía no elegiste dónde. ' +
+                'Tocá el botón y después el área en el plano.</div>';
+  return '<div class="act-lugar"><b>' + esc(z.nombre) + '</b>' +
+    (b.alcance === 'pila'
+      ? ' · ' + (b.vanoDesde === b.vanoHasta ? 'pila ' + b.vanoDesde
+                                             : 'pilas ' + b.vanoDesde + ' a ' + b.vanoHasta)
+      : ' · sección entera') + '</div>';
+}
+
+function refrescarLugar(){
+  var vieja = document.querySelector('#mapaPanel .act-lugar');
+  if(!vieja) return;
+  var caja = document.createElement('div');
+  caja.innerHTML = textoLugar();
+  vieja.parentNode.replaceChild(caja.firstChild, vieja);
 }
 
 /* Se lee el formulario antes de salir a tocar el mapa. Sin esto, elegir
@@ -23098,8 +23101,15 @@ function guardarBorrador(){
   if($m('acDesc'))     BORRADOR.descripcion = $m('acDesc').value;
   if($m('acLimite'))   BORRADOR.fechaLimite = $m('acLimite').value;
   if($m('acAlcance'))  BORRADOR.alcance     = $m('acAlcance').value;
-  if($m('acDesde'))    BORRADOR.vanoDesde   = parseInt($m('acDesde').value,10) || 1;
-  if($m('acHasta'))    BORRADOR.vanoHasta   = parseInt($m('acHasta').value,10) || 1;
+  if($m('acDesde') && $m('acHasta')){
+    /* Se ordena acá. Escribir "de la 4 a la 2" es normal, y sin ordenarlo
+       el verde del plano no se dibujaba y la etiqueta decía "pilas 4 a 2":
+       lo que se veía no era lo que se iba a guardar. */
+    var d  = parseInt($m('acDesde').value, 10) || 1;
+    var ha = parseInt($m('acHasta').value, 10) || d;
+    BORRADOR.vanoDesde = Math.min(d, ha);
+    BORRADOR.vanoHasta = Math.max(d, ha);
+  }
 }
 
 function entrarEnEleccion(){
