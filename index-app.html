@@ -22388,16 +22388,62 @@ function urlCadena(){
   catch(e){ return window.__cscUrl || ''; }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   HABLAR CON EL SERVIDOR
+   ------------------------------------------------------------------
+   Apps Script contesta un POST con un 302 a script.googleusercontent, y
+   de vez en cuando ESA segunda dirección devuelve una página de Google
+   en vez de la respuesta. No es un error de configuración ni del
+   código: es intermitente. Comprobado el 10 de septiembre de 2026, el
+   mismo pedido repetido tres veces devolvió JSON las tres, minutos
+   después de que en pantalla saliera "el servidor no devolvió datos"
+   con un <!DOCTYPE html> adentro.
+
+   Por eso las LECTURAS se reintentan solas: al usuario no le sirve
+   enterarse de un tropiezo que se arregla insistiendo.
+
+   Las ESCRITURAS no se reintentan, nunca. Si la primera llegó y lo que
+   se perdió fue la respuesta, reintentar crearía la actividad dos
+   veces. Ante la duda, es mejor un error que un duplicado silencioso.
+   ══════════════════════════════════════════════════════════════════ */
+var ACCIONES_LECTURA = ['mapa', 'bootstrap', 'estado'];
+
+function esLectura(cuerpo){
+  return ACCIONES_LECTURA.indexOf((cuerpo && cuerpo.action) || '') > -1;
+}
+
+async function pedirUnaVez(u, cuerpo){
+  var r = await fetch(u, { method:'POST', body: JSON.stringify(cuerpo) });
+  var t = await r.text();
+  try { return JSON.parse(t); }
+  catch(e){
+    var err = new Error('El servidor no devolvió datos. ' + t.slice(0,90));
+    err.noEsJson = true;      /* esto sí conviene reintentarlo */
+    throw err;
+  }
+}
+
 async function pedir(cuerpo){
   var u = urlCadena();
   if(!u) throw new Error('Falta la URL del servicio de Cadena de Abastecimiento.');
-  var r = await fetch(u, { method:'POST', body: JSON.stringify(cuerpo) });
-  var t = await r.text();
-  var d;
-  try { d = JSON.parse(t); }
-  catch(e){ throw new Error('El servidor no devolvió datos. ' + t.slice(0,90)); }
-  if(!d || d.ok === false) throw new Error((d && d.error) || 'No se pudo completar.');
-  return d;
+
+  var intentos = esLectura(cuerpo) ? 3 : 1;
+  var ultimo = null;
+  for(var i = 0; i < intentos; i++){
+    try{
+      var d = await pedirUnaVez(u, cuerpo);
+      if(!d || d.ok === false) throw new Error((d && d.error) || 'No se pudo completar.');
+      return d;
+    }catch(e){
+      ultimo = e;
+      /* Solo se insiste cuando la respuesta no fue JSON. Un error del
+         propio servidor —"No existe la zona"— va a decir lo mismo las
+         tres veces. */
+      if(!e.noEsJson || i === intentos - 1) throw e;
+      await new Promise(function(r){ setTimeout(r, 700 * (i + 1)); });
+    }
+  }
+  throw ultimo;
 }
 
 function quienSoy(){
@@ -22604,8 +22650,13 @@ async function cargarMapa(forzar){
   }catch(err){
     /* El plano YA esta en pantalla: un servidor caido no lo borra. Lo
        unico que falta son las pilas y las actividades, y eso se dice. */
-    estadoMapa('No se pudo hablar con el servidor: el plano se ve igual, pero las pilas y ' +
-               'las actividades pueden estar desactualizadas. ' + err.message, true);
+    /* El mensaje va SIN el volcado de la página de Google: no le dice
+       nada a nadie y tapaba lo único accionable, que es reintentar. El
+       detalle queda en la consola para cuando haga falta. */
+    estadoMapa('No se pudo hablar con el servidor después de tres intentos. El plano se ve ' +
+               'igual, pero las pilas y las actividades pueden estar desactualizadas. ' +
+               'Tocá «Actualizar» para volver a intentar.', true);
+    console.warn('Mapa · el servidor no respondió:', err.message);
   }finally{ M.cargando = false; }
 }
 window.mapaRecargarForzado = function(){ cargarMapa(true); };
@@ -22653,13 +22704,16 @@ async function traerInventario(forzar){
   if(!forzar && inventario().length) return inventario();
   if(M.invCargando) return inventario();
   M.invCargando = true;
+  M.invFallo = '';
   try{
     var d = await pedir({ action:'bootstrap' });
     M.inventario = d.inventario || [];
     pintar();          /* ahora sí se pueden dibujar las marcas de artículos */
   }catch(e){
-    /* El mapa funciona igual sin esto: lo único que falta son las marcas
-       y la lista de "ubicar". No se rompe nada. */
+    /* Se guarda el motivo. "No hay artículos" y "no pude preguntar" son
+       cosas distintas, y decir la primera cuando pasó la segunda manda a
+       buscar el problema al lugar equivocado. */
+    M.invFallo = e.message || 'no se pudo consultar';
   }finally{ M.invCargando = false; }
   return inventario();
 }
@@ -23894,8 +23948,13 @@ async function verInventario(){
   }
   if(!inv.length){
     p.innerHTML = '<h3>Dónde está cada cosa</h3><div class="mapa-vacio">' +
-      'El inventario está vacío.<br><br>Los artículos se cargan desde ' +
-      '<b>Cadena · Inventario</b>, con «Ingreso a bodega».</div>';
+      (M.invFallo
+        ? 'No se pudo consultar el inventario: ' + esc(M.invFallo) +
+          '<br><br>Suele ser un tropiezo pasajero del servidor de Google. Probá de nuevo.'
+        : 'El inventario está vacío.<br><br>Los artículos se cargan desde ' +
+          '<b>Cadena · Inventario</b>, con «Ingreso a bodega».') +
+      '<br><br><button class="mapa-btn" id="invReintentar">Volver a buscar</button></div>';
+    if($m('invReintentar')) $m('invReintentar').onclick = function(){ verInventario(); };
     return;
   }
   pintarInventario();
@@ -24002,8 +24061,11 @@ async function formUbicar(idElegido){
   }
   if(!inv.length){
     p.innerHTML = '<h3>Ubicar un artículo</h3><div class="mapa-vacio">' +
-      'El inventario está vacío: no hay ningún artículo para ubicar.<br><br>' +
-      'Los artículos se cargan desde <b>Cadena · Inventario</b>, con «Ingreso a bodega».' +
+      (M.invFallo
+        ? 'No se pudo consultar el inventario: ' + esc(M.invFallo) +
+          '<br><br>Suele ser un tropiezo pasajero del servidor de Google. Probá de nuevo.'
+        : 'El inventario está vacío: no hay ningún artículo para ubicar.<br><br>' +
+          'Los artículos se cargan desde <b>Cadena · Inventario</b>, con «Ingreso a bodega».') +
       '<br><br><button class="mapa-btn" id="ubReintentar">Volver a buscar</button></div>';
     if($m('ubReintentar')) $m('ubReintentar').onclick = function(){ formUbicar(); };
     return;
