@@ -144,6 +144,11 @@ self.addEventListener('fetch',e=>{
 .mf-dif{font-size:12px;font-weight:700;padding:7px 9px;margin-top:9px;border:1px solid var(--orange);background:var(--orange-l);color:var(--orange)}
 .mf-dif.ok{border-color:var(--green);background:var(--green-l);color:var(--green)}
 .mf-cierre .mf-btn{margin-top:10px}
+/* Mientras falten viajes por revisar, en lugar del formulario va este
+   aviso con lo que falta y el atajo para seguir. */
+.mf-espera{font-size:12px;line-height:1.5;padding:10px 11px;margin-top:8px;border:1px dashed var(--rule);background:var(--s2);color:var(--ink-m)}
+.mf-espera b{color:var(--ink)}
+.mf-espera .mf-btn{margin-top:9px}
 @media(max-width:560px){
   .mf-ficha{flex-direction:column}
   .mf-ficha-foto,.mf-ficha-foto img,.mf-ficha-foto .mf-sinfoto{width:100%;flex:1 1 auto}
@@ -619,22 +624,34 @@ input.campo-error-resaltado,select.campo-error-resaltado,textarea.campo-error-re
         <!-- EL VIAJE QUE SE ESTA VERIFICANDO -->
         <div id="mf-lead"></div>
 
-        <!-- CIERRE DE LA OPERACION -->
+        <!-- ══════════════════════════════════════════════════════════
+             CIERRE DE LA OPERACION
+             El conteo de papeles es lo ULTIMO: se cuenta lo que quedó en
+             la mano cuando ya no falta ninguno por revisar. Mientras haya
+             viajes pendientes el formulario ni siquiera aparece — un
+             número escrito a mitad de camino no cuadra contra nada y
+             ensuciaría el registro de faltantes.
+             ══════════════════════════════════════════════════════════ -->
         <div class="mf-cierre">
           <div class="mf-cierre-t">Cierre de la operación</div>
           <div class="mf-cierre-d" id="mf-cierre-datos">—</div>
-          <div class="mf-fila">
-            <div class="mf-campo">
-              <label for="mf-contados">Bauchers físicos que tiene en la mano</label>
-              <input type="number" id="mf-contados" inputmode="numeric" placeholder="Ej: 12">
+
+          <div id="mf-cierre-espera" class="mf-espera" style="display:none"></div>
+
+          <div id="mf-cierre-form" style="display:none">
+            <div class="mf-fila">
+              <div class="mf-campo">
+                <label for="mf-contados">Bauchers físicos que tiene en la mano</label>
+                <input type="number" id="mf-contados" inputmode="numeric" placeholder="Ej: 12">
+              </div>
+              <div class="mf-campo">
+                <label for="mf-cierre-nota">Observación del cuadre</label>
+                <input type="text" id="mf-cierre-nota" placeholder="Opcional: qué faltó y por qué">
+              </div>
             </div>
-            <div class="mf-campo">
-              <label for="mf-cierre-nota">Observación del cuadre</label>
-              <input type="text" id="mf-cierre-nota" placeholder="Opcional: qué faltó y por qué">
-            </div>
+            <div class="mf-dif" id="mf-dif" style="display:none"></div>
+            <button class="mf-btn mf-btn-sec" id="mf-btn-cierre" onclick="mfGuardarCierre()">Guardar el cuadre</button>
           </div>
-          <div class="mf-dif" id="mf-dif" style="display:none"></div>
-          <button class="mf-btn mf-btn-sec" id="mf-btn-cierre" onclick="mfGuardarCierre()">Guardar el cuadre</button>
         </div>
 
       </div>
@@ -5453,9 +5470,13 @@ function mfPintarLead() {
         ? '<img src="' + MF.foto + '" alt="Manifiesto" onclick="inspeccionarFoto(document.querySelector(\'#mf-foto-zona img\').src)">' +
           '<div style="flex:1 1 120px;font-size:11px;color:var(--ink-l)">Foto del manifiesto lista para enviar.</div>' +
           '<button type="button" class="mf-btn mf-btn-ghost" onclick="mfQuitarFoto()">Cambiar</button>'
-        : '<button type="button" class="mf-btn" onclick="abrirCamara(\'manifiesto-fisico\')">📷 Foto del manifiesto</button>' +
-          '<button type="button" class="mf-btn mf-btn-ghost" onclick="document.getElementById(\'input-galeria-manifiesto\').click()">🖼️ De la galería</button>' +
-          '<div style="flex:1 1 120px;font-size:11px;color:var(--ink-l)">Es la prueba de que el papel está acá.</div>') +
+        /* SOLO CÁMARA, no galería. La foto es la prueba de que el papel
+           está físicamente en la mano en este momento: de la galería
+           podría salir una foto vieja, la de otro viaje o una captura de
+           pantalla, y entonces el certificado no certifica nada. El botón
+           abre la cámara del teléfono directamente. */
+        : '<button type="button" class="mf-btn" onclick="abrirCamara(\'manifiesto-fisico\')">📷 Tomar foto del manifiesto</button>' +
+          '<div style="flex:1 1 120px;font-size:11px;color:var(--ink-l)">Tomala ahora, con el papel a la vista: es la prueba de que está acá.</div>') +
     '</div>' +
 
     '<label class="mf-check">' +
@@ -5471,18 +5492,33 @@ function mfPintarLead() {
 
     '<div id="mf-dif-aviso"></div>' +
 
+    /* No hay "saltar". Del viaje se sale de una sola manera: resolviéndolo
+       —con la foto del papel, o marcándolo como no disponible cuando el
+       papel no existe—. Saltear era la forma de que un viaje quedara sin
+       revisar y nadie se enterara hasta el cuadre. */
     '<div class="mf-acciones">' +
       '<button type="button" class="mf-btn" id="mf-btn-guardar" onclick="mfGuardar()">' +
-        (MF.noDisp ? 'Guardar como no disponible' : 'Guardar y siguiente') + '</button>' +
-      '<button type="button" class="mf-btn mf-btn-ghost" onclick="mfSaltar()">Saltar este</button>' +
+        (MF.noDisp ? 'Guardar como no disponible'
+                   : (mfPendiente(r) ? 'Guardar y siguiente' : 'Guardar de nuevo')) + '</button>' +
     '</div>';
+
+  /* Para atrás siempre se puede: es revisar lo ya hecho. Para adelante,
+     solo si este viaje ya está resuelto — si no, sería saltearlo. */
+  var quedan = 0;
+  MF.lista.forEach(function (x) { if (mfPendiente(x)) quedan++; });
+  var trabado = mfPendiente(r);
 
   caja.innerHTML =
     '<div class="mf-paso">' +
-      '<span class="mf-paso-n">Viaje ' + (MF.i + 1) + ' de ' + MF.lista.length + '</span>' +
+      '<span class="mf-paso-n">Viaje ' + (MF.i + 1) + ' de ' + MF.lista.length +
+        (quedan ? ' · quedan ' + quedan : ' · no queda ninguno') + '</span>' +
       '<span class="mf-nav">' +
-        '<button type="button" onclick="mfMover(-1)"' + (MF.i <= 0 ? ' disabled' : '') + ' title="Anterior">◀</button>' +
-        '<button type="button" onclick="mfMover(1)"' + (MF.i >= MF.lista.length - 1 ? ' disabled' : '') + ' title="Siguiente">▶</button>' +
+        '<button type="button" onclick="mfMover(-1)"' + (MF.i <= 0 ? ' disabled' : '') +
+          ' title="Ver el anterior">◀</button>' +
+        '<button type="button" onclick="mfMover(1)"' +
+          ((trabado || MF.i >= MF.lista.length - 1) ? ' disabled' : '') +
+          ' title="' + (trabado ? 'Primero resolvé este viaje: con la foto del manifiesto, o marcándolo como no disponible'
+                                : 'Ver el siguiente') + '">▶</button>' +
       '</span>' +
     '</div>' + ficha + formulario;
 
@@ -5537,26 +5573,14 @@ function mfQuitarFoto() {
   var z = mfEl('mf-foto-zona');
   if (!z) return;
   z.innerHTML =
-    '<button type="button" class="mf-btn" onclick="abrirCamara(\'manifiesto-fisico\')">📷 Foto del manifiesto</button>' +
-    '<button type="button" class="mf-btn mf-btn-ghost" onclick="document.getElementById(\'input-galeria-manifiesto\').click()">🖼️ De la galería</button>' +
-    '<div style="flex:1 1 120px;font-size:11px;color:var(--ink-l)">Es la prueba de que el papel está acá.</div>';
+    '<button type="button" class="mf-btn" onclick="abrirCamara(\'manifiesto-fisico\')">📷 Tomar foto del manifiesto</button>' +
+    '<div style="flex:1 1 120px;font-size:11px;color:var(--ink-l)">Tomala ahora, con el papel a la vista: es la prueba de que está acá.</div>';
 }
 
 function mfMover(paso) {
   var n = MF.i + paso;
   if (n < 0 || n >= MF.lista.length) return;
   MF.i = n;
-  MF.clave = mfMarca(MF.lista[MF.i]);
-  MF.foto = null; MF.noDisp = false; MF.difAceptada = false;
-  mfAviso('');
-  mfPintarLead();
-}
-
-function mfSaltar() {
-  var siguiente = -1;
-  for (var k = MF.i + 1; k < MF.lista.length; k++) if (mfPendiente(MF.lista[k])) { siguiente = k; break; }
-  if (siguiente === -1) siguiente = Math.min(MF.i + 1, MF.lista.length - 1);
-  MF.i = siguiente;
   MF.clave = mfMarca(MF.lista[MF.i]);
   MF.foto = null; MF.noDisp = false; MF.difAceptada = false;
   mfAviso('');
@@ -5675,16 +5699,50 @@ async function mfGuardar() {
 }
 
 /* ── CIERRE DE LA OPERACION ─────────────────────────────────────────── */
+/* El cuadre solo se habilita cuando la operación terminó: ni un viaje
+   pendiente. Contar los papeles a mitad de camino no serviría —el número
+   no se puede comparar contra nada— y dejaría guardada una diferencia que
+   no es un faltante real, sino trabajo sin hacer. */
 function mfPintarCierre(pend, cert, nd) {
-  var d = mfEl('mf-cierre-datos');
+  var d      = mfEl('mf-cierre-datos');
+  var espera = mfEl('mf-cierre-espera');
+  var form   = mfEl('mf-cierre-form');
+  var listo  = MF.lista.length > 0 && pend === 0;
+
   if (d) {
     d.innerHTML = 'Ingresos en el filtro: <b>' + MF.lista.length + '</b> · ' +
                   'certificados: <b>' + cert + '</b> · no disponibles: <b>' + nd + '</b> · ' +
-                  'por verificar: <b>' + pend + '</b>.<br>' +
-                  'Contá los papeles que tenés en la mano y escribí cuántos son. ' +
-                  'Si no cuadra, se guarda igual con la diferencia: así queda registrado el faltante.';
+                  'por verificar: <b>' + pend + '</b>.';
   }
+
+  if (form)   form.style.display   = listo ? 'block' : 'none';
+  if (espera) espera.style.display = listo ? 'none'  : 'block';
+
+  if (!listo && espera) {
+    espera.innerHTML = MF.lista.length === 0
+      ? 'No hay viajes en el filtro de arriba, así que todavía no hay nada que cuadrar.'
+      : ('Falta' + (pend === 1 ? '' : 'n') + ' <b>' + pend + '</b> viaje' + (pend === 1 ? '' : 's') +
+         ' por revisar. Cuando no quede ninguno, acá vas a poder contar los papeles ' +
+         'que te quedaron en la mano y cerrar la operación.' +
+         '<br><button type="button" class="mf-btn mf-btn-ghost" onclick="mfIrAlPendiente()">' +
+         'Ir al primero que falta</button>');
+    return;
+  }
+
   mfCalcularDif();
+}
+
+/* Atajo del aviso de arriba: lleva al primer viaje sin revisar. */
+function mfIrAlPendiente() {
+  var k = mfPrimerPendiente(0);
+  if (k < 0) return;
+  MF.i = k;
+  MF.clave = mfMarca(MF.lista[MF.i]);
+  MF.foto = null; MF.noDisp = false; MF.difAceptada = false;
+  mfAviso('');
+  mfPintarLead();
+  var caja = mfEl('mf-lead');
+  if (caja) caja.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function mfCalcularDif() {
@@ -5697,15 +5755,28 @@ function mfCalcularDif() {
   var dif = n - MF.lista.length;
   caja.style.display = 'block';
   caja.className = 'mf-dif' + (dif === 0 ? ' ok' : '');
+  var d = Math.abs(dif);
+  var papeles = d + (d === 1 ? ' baucher' : ' bauchers');
+  var enMano = n + (n === 1 ? ' baucher' : ' bauchers') + ' en la mano para ' +
+               MF.lista.length + (MF.lista.length === 1 ? ' ingreso' : ' ingresos') + '.';
   caja.textContent = dif === 0
-    ? 'Cuadra: ' + n + ' bauchers para ' + MF.lista.length + ' ingresos.'
+    ? 'Cuadra: ' + enMano
     : (dif < 0
-        ? 'Faltan ' + Math.abs(dif) + ' bauchers: ' + n + ' en la mano para ' + MF.lista.length + ' ingresos.'
-        : 'Sobran ' + dif + ' bauchers: ' + n + ' en la mano para ' + MF.lista.length + ' ingresos.');
+        ? (d === 1 ? 'Falta ' : 'Faltan ') + papeles + ': ' + enMano
+        : (d === 1 ? 'Sobra ' : 'Sobran ') + papeles + ': ' + enMano);
 }
 
 async function mfGuardarCierre() {
   var btn = mfEl('mf-btn-cierre');
+  /* Segunda barrera: el formulario está escondido hasta terminar, pero el
+     botón podría dispararse igual si el filtro cambió entre medio. */
+  var faltan = 0;
+  MF.lista.forEach(function (r) { if (mfPendiente(r)) faltan++; });
+  if (!MF.lista.length || faltan) {
+    mfAviso('El cuadre es lo último: primero revisá los ' + faltan + ' viajes que faltan.');
+    mfRender();
+    return;
+  }
   var v = (mfEl('mf-contados') || {}).value;
   if (v === '' || v == null || isNaN(parseInt(v, 10))) {
     mfAviso('Escribí cuántos bauchers físicos tenés en la mano.');
@@ -5761,9 +5832,6 @@ document.addEventListener('input', function (ev) {
 
 </script>
 </div><!-- /pantalla-app -->
-
-<!-- Foto del manifiesto fisico desde la galeria (el boton de camara usa la camara nativa) -->
-<input type="file" id="input-galeria-manifiesto" accept="image/*" style="display:none" onchange="subirDesdeGaleria(this,'manifiesto-fisico')">
 
 <!-- Input oculto para "subir baucher posterior" desde la planilla (camara o galeria) -->
 <input type="file" id="input-baucher-posterior" accept="image/*" style="display:none" onchange="onArchivoBaucherPosterior(this)">
