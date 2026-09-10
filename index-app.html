@@ -2602,7 +2602,10 @@ html.solo-panel #salir-solo-panel{display:block}
 #panel-mapa .z{cursor:pointer}
 #panel-mapa .z rect{stroke:#2b3a31;stroke-width:1.6;fill:#fff;transition:fill .12s}
 #panel-mapa .z:hover rect{fill:#eef5f0}
-#panel-mapa .z.sel rect{stroke:var(--gold,#c08a2e);stroke-width:3}
+/* El verde de la sección tocada NO va acá: tiene que ir DESPUÉS de los
+   colores por tipo de área (.t-produccion, .t-secado…), que tienen la
+   misma especificidad y ganarían por ir después. Está más abajo, junto
+   al verde del área elegida. */
 #panel-mapa .z text{font-size:9.5px;font-weight:700;fill:#2b3a31;pointer-events:none;text-anchor:middle}
 #panel-mapa .z.t-produccion rect{fill:#f2f9f4}
 #panel-mapa .z.t-secado     rect{fill:#fdf8ee}
@@ -2626,14 +2629,24 @@ html.solo-panel #salir-solo-panel{display:block}
 #panel-mapa .vano.e-llenando  {fill:rgba(184,137,31,.28)}
 #panel-mapa .vano.e-en_proceso{fill:rgba(47,111,158,.26)}
 #panel-mapa .vano.e-lista     {fill:rgba(47,143,82,.30)}
-#panel-mapa .vano.sel{stroke:var(--gold,#c08a2e);stroke-width:2.5;stroke-dasharray:none}
+#panel-mapa .vano.sel{fill:rgba(47,143,82,.48);stroke:#1c5636;stroke-width:2.2;stroke-dasharray:none}
 
-/* ── EL LUGAR ELEGIDO PARA UNA ACTIVIDAD NUEVA ─────────────────────
-   Verde lleno, mientras se está creando la actividad. Se distingue del
-   dorado, que es la selección normal del panel, y del verde de las
-   actividades ya cumplidas, que es un borde y no un relleno.        */
+/* ── VERDE: "ES ACÁ" ───────────────────────────────────────────────
+   Dos casos con el mismo significado y por eso el mismo color: la
+   sección que se acaba de tocar, y la que se está eligiendo como lugar
+   de una actividad nueva.
+
+   OJO CON EL ORDEN: esto tiene que quedar DESPUÉS de los rellenos por
+   tipo de área. Tienen la misma especificidad —un id y dos clases— así
+   que gana el que se escribe último. Puesto antes, en un área de
+   producción o de secado el verde no se veía: es lo que pasaba al tocar
+   el lombricultivo, que se quedaba con su propio beige.               */
+#panel-mapa .z.sel rect,
+#panel-mapa .z.sel polygon,
 #panel-mapa .z.elegida rect,
-#panel-mapa .z.elegida polygon{fill:rgba(47,143,82,.30);stroke:#1c5636;stroke-width:2.6}
+#panel-mapa .z.elegida polygon{fill:rgba(47,143,82,.30);stroke:#1c5636;stroke-width:2.7}
+#panel-mapa .z.sel:hover rect,
+#panel-mapa .z.elegida:hover rect{fill:rgba(47,143,82,.38)}
 /* Cuando la actividad va sobre un tramo de pilas, el área se marca
    apenas y el verde fuerte queda para los vanos. */
 #panel-mapa .z.elegida-zona rect{stroke:#1c5636;stroke-width:2.4}
@@ -23334,9 +23347,13 @@ function lineaActividad(a){
     '<div class="act-item-b">' +
       '<button type="button" class="mapa-guardar" data-eval="' + esc(a.id) + '">Evaluar actividad</button>' +
       '<button type="button" class="mapa-cancelar" data-hist="' + esc(a.id) + '">Historial</button>' +
+      /* Terminar no exige evaluar antes: hay actividades que se dan por
+         cumplidas sin ir a mirar, y hay otras que se cancelan porque ya
+         no aplican. Lo que no se pierde es el rastro — queda cerrada, no
+         borrada, y se puede reabrir. */
       (a.estado === 'cerrada'
         ? '<button type="button" class="mapa-cancelar" data-reabrir="' + esc(a.id) + '">Reabrir</button>'
-        : '') +
+        : '<button type="button" class="mapa-cancelar" data-terminar="' + esc(a.id) + '">Dar por terminada</button>') +
     '</div></div>';
 }
 
@@ -23350,14 +23367,30 @@ function engancharActividades(cont){
     b.onclick = function(){ verHistorial(b.dataset.hist); };
   });
   cont.querySelectorAll('[data-reabrir]').forEach(function(b){
-    b.onclick = async function(){
-      try{
-        await pedir({ action:'cerrarActividad', id:b.dataset.reabrir, estado:'abierta', responsable:quienSoy() });
-        await cargarMapa(true);
-        if(SEL.vano) verPila(); else verZona();
-      }catch(e){ alert(e.message); }
-    };
+    b.onclick = function(){ cambiarEstadoActividad(b, b.dataset.reabrir, 'abierta'); };
   });
+  cont.querySelectorAll('[data-terminar]').forEach(function(b){
+    b.onclick = function(){ cambiarEstadoActividad(b, b.dataset.terminar, 'cerrada'); };
+  });
+}
+
+/* Abrir o cerrar una actividad. Se repinta lo que esté en pantalla: la
+   lista de un área, la de una pila o el tablero general. */
+async function cambiarEstadoActividad(boton, id, estado){
+  var antes = boton ? boton.textContent : '';
+  if(boton){ boton.disabled = true; boton.textContent = '…'; }
+  try{
+    await pedir({ action:'cerrarActividad', id:id, estado:estado, responsable:quienSoy() });
+    await cargarMapa(true);
+    if(document.querySelector('#mapaPanel h3') &&
+       document.querySelector('#mapaPanel h3').textContent === 'Actividades') verTablero();
+    else if(SEL.vano) verPila();
+    else if(SEL.zona) verZona();
+    else verTablero();
+  }catch(e){
+    if(boton){ boton.disabled = false; boton.textContent = antes; }
+    alert(e.message);
+  }
 }
 
 /* El historial de una actividad: todas sus evaluaciones, con la foto. Es
