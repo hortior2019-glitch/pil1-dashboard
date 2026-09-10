@@ -22026,7 +22026,7 @@ window.operacionesCargar = function(){
 (function(){
 "use strict";
 
-var M = { zonas:[], pilas:[], actividades:[], evaluaciones:[], terminos:[],
+var M = { zonas:[], pilas:[], actividades:[], evaluaciones:[], terminos:[], inventario:[],
           dibujado:false,   // el plano ya esta en pantalla (sale del codigo)
           cargado:false,    // el servidor ya contesto (nombres, pilas, actividades)
           cargando:false };
@@ -22257,7 +22257,7 @@ var MAPA_BASE = [
   {id:'Z-SEC2',nombre:'Secadero (molino)',tipo:'secado',parales:0,color:'',x:393,y:564,w:99,h:96,orientacion:'vertical',activa:true,puntos:''},
   {id:'Z-EMPAQ',nombre:'Zona de empaque',tipo:'produccion',parales:0,color:'',x:253,y:612,w:75,h:34,orientacion:'vertical',activa:true,puntos:''},
   {id:'Z-COMPRE',nombre:'Bodega inventarios',tipo:'servicio',parales:0,color:'',x:339,y:616,w:51,h:38,orientacion:'vertical',activa:true,puntos:''},
-  {id:'Z-CHORIZ',nombre:'Chorizos',tipo:'secado',parales:0,color:'',x:636,y:567,w:144,h:93,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-CHORIZ',nombre:'Z2',tipo:'secado',parales:0,color:'',x:636,y:567,w:144,h:93,orientacion:'vertical',activa:true,puntos:''},
   {id:'Z-OFIC',nombre:'Oficina admin.',tipo:'admin',parales:0,color:'',x:14,y:413,w:65,h:62,orientacion:'vertical',activa:true,puntos:''},
   {id:'Z-CASA',nombre:'Casa quinta',tipo:'admin',parales:0,color:'',x:14,y:331,w:33,h:54,orientacion:'vertical',activa:true,puntos:''},
   {id:'Z-COCIN',nombre:'Cocineta',tipo:'admin',parales:0,color:'',x:47,y:318,w:25,h:26,orientacion:'vertical',activa:true,puntos:''},
@@ -22396,6 +22396,9 @@ async function cargarMapa(forzar){
     M.cargado = true;
     estadoMapa('');
     pintar();
+    /* Sin await: el mapa ya está en pantalla y esto solo agrega las
+       marcas de artículos cuando llegue. */
+    traerInventario(forzar);
   }catch(err){
     /* El plano YA esta en pantalla: un servidor caido no lo borra. Lo
        unico que falta son las pilas y las actividades, y eso se dice. */
@@ -22426,10 +22429,42 @@ function pilaDe(zonaId, vano){
   }
   return null;
 }
+/* ── EL INVENTARIO ─────────────────────────────────────────────────
+   Los artículos viven en Cadena, no en el mapa. Si esa pestaña ya los
+   cargó se usan los suyos, que son los más frescos; si no, el mapa los
+   pide por su cuenta.
+
+   Antes no los pedía: dependía de que alguien hubiera entrado antes a
+   Cadena. Por eso "Ubicar un artículo" decía "no hay artículos
+   cargados" aunque el inventario tuviera cosas — comprobado el 10 de
+   septiembre de 2026 contra producción: cinco artículos en la hoja y el
+   mapa mostrando que no había ninguno. Lo que faltaba era la consulta,
+   no los datos. Y por lo mismo tampoco aparecían las marcas de cuántos
+   artículos hay en cada área.                                        */
+function inventario(){
+  var deCadena = [];
+  try{ deCadena = (typeof window.cscInventario === 'function') ? window.cscInventario() : []; }catch(e){}
+  return deCadena.length ? deCadena : (M.inventario || []);
+}
+
+async function traerInventario(forzar){
+  if(!forzar && inventario().length) return inventario();
+  if(M.invCargando) return inventario();
+  M.invCargando = true;
+  try{
+    var d = await pedir({ action:'bootstrap' });
+    M.inventario = d.inventario || [];
+    pintar();          /* ahora sí se pueden dibujar las marcas de artículos */
+  }catch(e){
+    /* El mapa funciona igual sin esto: lo único que falta son las marcas
+       y la lista de "ubicar". No se rompe nada. */
+  }finally{ M.invCargando = false; }
+  return inventario();
+}
+
 function itemsEn(nombreZona){
   try{
-    var inv = (typeof window.cscInventario === 'function') ? window.cscInventario() : [];
-    return inv.filter(function(i){ return (i.ubicacion||'') === nombreZona; });
+    return inventario().filter(function(i){ return (i.ubicacion||'') === nombreZona; });
   }catch(e){ return []; }
 }
 
@@ -23380,15 +23415,27 @@ function verTablero(){
 }
 
 /* ── UBICAR UN ARTICULO DEL INVENTARIO ────────────────────────────── */
-function formUbicar(){
+async function formUbicar(){
   var p = $m('mapaPanel');
-  var inv = [];
-  try{ inv = (typeof window.cscInventario === 'function') ? window.cscInventario() : []; }catch(e){}
+  var inv = inventario();
+
+  /* Si todavía no están, se piden acá mismo. Mandar a la persona a otra
+     pestaña "para que se carguen" era hacerle hacer el trabajo del
+     sistema. */
+  if(!inv.length){
+    p.innerHTML = '<h3>Ubicar un artículo</h3>' +
+                  '<div class="mapa-vacio">Buscando los artículos…</div>';
+    inv = await traerInventario(true);
+  }
   if(!inv.length){
     p.innerHTML = '<h3>Ubicar un artículo</h3><div class="mapa-vacio">' +
-      'No hay artículos cargados. Entrá primero a <b>Cadena · Inventario</b> para que se carguen, y volvé.</div>';
+      'El inventario está vacío: no hay ningún artículo para ubicar.<br><br>' +
+      'Los artículos se cargan desde <b>Cadena · Inventario</b>, con «Ingreso a bodega».' +
+      '<br><br><button class="mapa-btn" id="ubReintentar">Volver a buscar</button></div>';
+    if($m('ubReintentar')) $m('ubReintentar').onclick = function(){ formUbicar(); };
     return;
   }
+
   var zonas = M.zonas.filter(function(z){ return z.activa; });
   p.innerHTML =
     '<h3>Ubicar un artículo</h3>' +
@@ -23415,6 +23462,11 @@ function formUbicar(){
       /* El inventario de Cadena tambien cambio: se le avisa para que no
          quede mostrando la ubicacion vieja. */
       try{ if(typeof window.cscRefrescarInventario === 'function') window.cscRefrescarInventario(r); }catch(e){}
+      /* La copia del mapa también cambió: sin esto, la marca de artículos
+         seguiría contando el área vieja hasta la próxima recarga. */
+      (M.inventario || []).forEach(function(i){
+        if(i.id === r.invId) i.ubicacion = r.ubicacion;
+      });
       await cargarMapa(true);
       if(SEL.zona) verZona(); else limpiarPanel();
     }catch(e){ b.disabled=false; b.textContent='Ubicar'; alert(e.message); }
