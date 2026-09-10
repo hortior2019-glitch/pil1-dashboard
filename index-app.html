@@ -1364,6 +1364,10 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
   position:absolute;inset:-1px;width:calc(100% + 2px);border:2px solid var(--verde);
   padding:0 5px;outline:none;font:inherit;background:#fff;z-index:9;color:var(--tinta);
 }
+/* Enlaces de Drive: el editor se sale de la celda para que se lea entero */
+#panel-auditoria .editor.editor-ancho{
+  width:480px;max-width:70vw;box-shadow:0 2px 10px rgba(0,0,0,.18);z-index:12;
+}
 #panel-auditoria .vacio{
   padding:60px 20px;text-align:center;color:var(--tinta-suave);font-family:var(--serif);font-size:15px;
 }
@@ -2581,6 +2585,10 @@ html.solo-panel #salir-solo-panel{display:block}
   border-radius:8px;padding:10px;position:relative;
 }
 #panel-mapa .mapa-cargando{padding:60px 0;text-align:center;color:var(--ink-l,#8a8f8a);font-size:13px}
+/* Cuando el mapa ya esta dibujado esto es una linea de estado al pie, no
+   una pantalla de espera: ocupa lo que ocupa un renglon. */
+#panel-mapa .mapa-cargando.mapa-estado{padding:8px 10px;font-size:11.5px;line-height:1.45;text-align:left}
+#panel-mapa .mapa-cargando.mapa-estado.malo{color:#b23b3b}
 #panel-mapa svg.plano{width:100%;height:auto;display:block;touch-action:manipulation}
 
 /* Las zonas. El color dice para que sirve el area, de un vistazo. */
@@ -3435,10 +3443,12 @@ html.solo-panel #salir-solo-panel{display:block}
 </div>
 <!-- ═══════════════════════════════════════════════════════════════════
      PESTAÑA MAPA DE PLANTA
-     El dibujo NO esta escrito aca: las zonas, su posicion y su tamaño se
-     leen de la hoja "Zonas" del backend de Cadena. Mover un area, cambiar
-     los parales de una carpa o agregar un galpon nuevo se hace desde la
-     pantalla o desde la hoja, sin tocar este archivo.
+     El dibujo SI esta en este archivo: las zonas, su posicion y su tamaño
+     salen de MAPA_BASE, mas abajo, y por eso el mapa aparece de una sin
+     esperar al servidor. Lo que se consulta son los NOMBRES (que se
+     pueden cambiar desde la pantalla), las pilas y las actividades.
+     Un area nueva creada desde "+ Área nueva" vive en la hoja "Zonas"
+     del backend de Cadena y se dibuja con la forma que se le dio ahi.
      ═══════════════════════════════════════════════════════════════════ -->
 <div class="panel" id="panel-mapa">
   <div class="sec-hdr">
@@ -19482,10 +19492,35 @@ function aNumero(t){
 }
 function esEditable(c){
   if(S.borradas.has(c)) return false;             // columna borrada: primero hay que restaurarla
-  return c < S.colsEdit || c >= S.colsSistema;    // operativas A..U, o creadas por la auditoría
+  /* Operativas A..U, columnas de fotos V..Z, o creadas por la auditoría.
+     Las de fotos se corrigen porque un enlace mal puesto —la foto de otro
+     viaje, o un archivo que se movió— no tenía cómo arreglarse. */
+  return c < S.colsEdit || c >= S.colsSistema || esFoto(c);
 }
+/* Borrar la columna ENTERA es otra cosa: las de fotos NO. Vaciarlas de un
+   golpe se lleva la evidencia de todos los viajes. */
 function esBorrable(c){ return c < S.colsEdit || c >= S.colsSistema; }
 function filaEditable(idx){ return !(S.filas[idx] && S.filas[idx].bo); }
+/* ── UN ENLACE DE DRIVE ESCRITO A MANO ─────────────────────────────
+   Lo que se pega puede venir de tres lados: la barra del navegador, el
+   botón "compartir" de Drive, o el ID pelado. Los tres se aceptan y se
+   dejan guardados como enlace, que es lo que el visor sabe abrir.
+   Si no se parece a ninguno, igual se guarda —puede ser una anotación
+   deliberada— pero se avisa, porque esa celda ya no va a abrir foto. */
+function normalizarFoto(valor){
+  const t = String(valor == null ? '' : valor).trim();
+  if(t === '') return { valor:'', aviso:'' };
+  if(/^https?:\/\//i.test(t)){
+    return idDrive(t)
+      ? { valor:t, aviso:'' }
+      : { valor:t, aviso:'Se guardó, pero de ese enlace no se puede sacar el ID de Drive: la foto no se va a poder abrir desde acá.' };
+  }
+  if(/^[-\w]{20,}$/.test(t)){       // el ID pelado, sin la dirección alrededor
+    return { valor:'https://drive.google.com/file/d/' + t + '/view', aviso:'' };
+  }
+  return { valor:t, aviso:'Se guardó, pero eso no es un enlace de Drive: la celda deja de abrir la foto.' };
+}
+
 function motivoBloqueo(c){
   return S.borradas.has(c)
     ? 'La columna ' + letraCol(c+1) + ' está borrada. Restáurela antes de editarla (menú Columnas).'
@@ -20019,8 +20054,16 @@ function render(){
         const id = idDrive(val);
         const meta = id ? FOTOS.get(id) : null;
         if(!meta && id) porResolver.add(id);
-        const texto = (meta && meta.nombre) ? meta.nombre : (meta && meta.error ? '⚠ archivo no disponible' : 'Ver foto ↗');
-        titulo = esc((meta && meta.nombre ? meta.nombre + ' · ' : '') + val);
+        /* El nombre real si ya llego; si no, el armado con la fila. El
+           triangulo solo cuando Drive respondio que no pudo. */
+        const respaldo = (meta && meta.nombre) ? '' : nombreDesdeFila(f);
+        let texto;
+        if(meta && meta.nombre)   texto = meta.nombre;
+        else if(respaldo)         texto = (meta && meta.error ? '⚠ ' : '') + respaldo;
+        else                      texto = (meta && meta.error) ? '⚠ archivo no disponible' : 'Ver foto ↗';
+        titulo = esc(
+          (meta && meta.nombre ? meta.nombre + ' · '
+            : respaldo ? respaldo + ' · (armado con los datos de la fila) · ' : '') + val);
         contenido = `<a class="link foto-link" href="${esc(val)}" data-idx="${idxFila}" data-col="${c}" target="_blank" rel="noopener">${esc(texto)}</a>`;
       }else{
         contenido = esc(val);
@@ -20090,6 +20133,63 @@ function idDrive(url){
   let m = s.match(/\/d\/([-\w]{20,})/) || s.match(/[?&]id=([-\w]{20,})/) || s.match(/\/file\/d\/([-\w]{20,})/);
   return m ? m[1] : '';
 }
+/* ── NOMBRE DE RESPALDO CUANDO DRIVE NO CONTESTA ───────────────────
+   El nombre real del archivo lo arma el servidor al subirlo, pegando
+   tiquete, placa, material y peso neto:
+       Baucher1_117363_TFQ302_LODOPAPELERO_neto15170kg_1757...jpg
+   Esos cuatro datos estan en la misma fila de la hoja. Asi que cuando el
+   nombre todavia no llego de Drive — o Drive no lo quiso dar — se
+   reconstruye con la fila en vez de mostrar "Ver foto".
+   Para quien audita, "117363_TFQ302_LODOPAPELERO_neto15170kg" ubica el
+   baucher en la carpeta; "Ver foto" no dice nada.
+   No lleva la hora del final: esa la pone el servidor con el momento de
+   subida y no queda en la hoja. Lo demas coincide exactamente, incluido
+   el criterio de limpieza (solo letras y numeros, en mayuscula).       */
+function limpioNombre(t){
+  return String(t == null ? '' : t).replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+}
+
+/* Lee un peso de la hoja en kilos. No se usa aNumero() aca por dos
+   razones que se vieron probando:
+     · aNumero('') devuelve 0, no null — una celda de peso vacia habria
+       terminado escribiendo "neto0kg" como si el camion pesara cero;
+     · aNumero('15.170') devuelve 15.17, porque trata el punto como coma
+       decimal. Los pesos de bascula son kilos enteros y la hoja los puede
+       mostrar con separador de miles, asi que 15.170 son 15170 kg.
+   Se quitan solo los separadores seguidos de exactamente tres cifras,
+   que es lo que distingue un punto de miles de uno decimal.            */
+function _kilos(t){
+  let s = String(t == null ? '' : t).trim().replace(/\s/g, '');
+  if(s === '') return null;
+  s = s.replace(/[.,](?=\d{3}(\D|$))/g, '').replace(',', '.');
+  const n = Number(s);
+  return isNaN(n) ? null : n;
+}
+
+/* Ojo: el nombre se arma con la fila COMO ESTA AHORA. Si la auditoria
+   corrigio un peso despues de subir la foto, el nombre del archivo en
+   Drive conserva el valor viejo y este mostrara el corregido. Para
+   ubicar el baucher sirve igual, y el dato de la hoja es el bueno. */
+function nombreDesdeFila(f){
+  if(!f || !f.v) return '';
+  const tiquete = String(f.v[1] ?? '').trim();
+  const placa   = limpioNombre(f.v[4]);
+  const residuo = limpioNombre(f.v[9]);
+  let neto = _kilos(f.v[7]);
+  if(neto === null){                         // si H esta vacia, se saca de F - G
+    const lleno = _kilos(f.v[5]), vacio = _kilos(f.v[6]);
+    if(lleno !== null && vacio !== null) neto = lleno - vacio;
+  }
+  const partes = [];
+  partes.push(tiquete || 'sin_tiquete');
+  if(placa)   partes.push(placa);
+  if(residuo) partes.push(residuo);
+  if(neto !== null) partes.push('neto' + neto + 'kg');
+  /* Con solo el tiquete no vale la pena: no ubica nada mejor que el
+     enlace. Se exige al menos placa o material. */
+  return (placa || residuo) ? partes.join('_') : '';
+}
+
 function pedirNombresFotos(ids){
   ids.forEach(id => { if(!FOTOS.has(id)) colaFotos.add(id); });
   if(!colaFotos.size) return;
@@ -20242,7 +20342,12 @@ $('cuerpo').addEventListener('mouseover', ev=>{
 _audDocOn('mouseup', ()=>{ arrastrando = false; });
 $('cuerpo').addEventListener('dblclick', ev=>{
   const td = ev.target.closest('td.celda');
-  if(td) editarCelda(td);
+  if(!td) return;
+  /* En una celda de foto el primer clic del doble clic ya abrió el visor.
+     Se cierra antes de editar: si no, el editor queda escribiendo detrás
+     de la foto a pantalla completa. */
+  if(VISOR.abierto && esFoto(+td.dataset.c)) cerrarVisor();
+  editarCelda(td);
 });
 $('gridWrap').addEventListener('scroll', ()=>{ if(!S.editando) render(); });
 _audWinOn('resize', ()=>{ if(S.cargado) render(); });
@@ -20461,7 +20566,10 @@ function editarCelda(td, inicial){
 
   S.editando = true;
   const input = document.createElement('input');
-  input.className = 'editor';
+  /* La columna de fotos mide 110 px y una dirección de Drive tiene más de
+     cincuenta caracteres: sin ensanchar el editor no se ve lo que se pega. */
+  input.className = 'editor' + (esFoto(c) ? ' editor-ancho' : '');
+  if(esFoto(c)) input.placeholder = 'Pegá el enlace de Drive de la foto';
   input.value = inicial !== undefined ? inicial : actual;
   td.appendChild(input);
   input.focus();
@@ -20497,6 +20605,13 @@ function cambiar(idx, c, tipo, valor, op){
 
   let previo;
   if(tipo === 'valor'){
+    /* Vale para todos los caminos: escribir en la celda, pegar con
+       Ctrl+V o vaciar con Supr. */
+    if(esFoto(c)){
+      const norm = normalizarFoto(valor);
+      valor = norm.valor;
+      if(norm.aviso) aviso(norm.aviso, true);
+    }
     previo = f.v[c] ?? '';
     if(String(previo) === String(valor)) return;
     f.v[c] = valor;
@@ -20835,8 +20950,12 @@ function mostrarDetalle(){
     const id = idDrive(v);
     const meta = id ? FOTOS.get(id) : null;
     if(id && !meta) pendientes.add(id);
-    const nombre  = meta && meta.nombre ? meta.nombre : (meta && meta.error ? meta.error : 'Consultando el nombre…');
-    const detalle = meta && meta.nombre ? (meta.tam + ' KB · ' + meta.fecha) : '';
+    const respaldo = (meta && meta.nombre) ? '' : nombreDesdeFila(f);
+    const nombre  = meta && meta.nombre ? meta.nombre
+                  : (respaldo || (meta && meta.error ? meta.error : 'Consultando el nombre…'));
+    const detalle = meta && meta.nombre ? (meta.tam + ' KB · ' + meta.fecha)
+                  : (respaldo ? (meta && meta.error ? 'Drive: ' + meta.error
+                                                    : 'armado con los datos de la fila') : '');
     const mini    = id ? 'https://drive.google.com/thumbnail?id=' + id + '&sz=w400' : '';
     const idxF = S.vista[S.foco.vr];
     return `<div class="foto">
@@ -20960,7 +21079,8 @@ function pintarVisor(){
   const f = VISOR.fotos[VISOR.i];
   if(!f) return;
   const meta = f.id ? FOTOS.get(f.id) : null;
-  const nombre = (meta && meta.nombre) ? meta.nombre : f.etiqueta;
+  const nombre = (meta && meta.nombre) ? meta.nombre
+               : (nombreDesdeFila(VISOR.fila) || f.etiqueta);
 
   $('visorTitulo').textContent = nombre;
   $('visorSub').textContent = [
@@ -21783,7 +21903,10 @@ window.operacionesCargar = function(){
 (function(){
 "use strict";
 
-var M = { zonas:[], pilas:[], actividades:[], terminos:[], cargado:false, cargando:false };
+var M = { zonas:[], pilas:[], actividades:[], terminos:[],
+          dibujado:false,   // el plano ya esta en pantalla (sale del codigo)
+          cargado:false,    // el servidor ya contesto (nombres, pilas, actividades)
+          cargando:false };
 var SEL = { zona:null, vano:null };
 
 /* ── ZOOM Y ARRASTRE ───────────────────────────────────────────────
@@ -21875,23 +21998,205 @@ function quienSoy(){
   catch(e){ return ''; }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   EL PLANO VIVE EN EL CODIGO
+   ------------------------------------------------------------------
+   Antes el dibujo entero se le pedia al servidor cada vez que se abria
+   la pestaña, y hasta que contestaba no habia mapa: solo el cartel de
+   "Cargando…". Una consulta en frio a Apps Script pasa de los veinte
+   segundos, y medido el 10 de septiembre de 2026 la hoja de zonas ni
+   siquiera estaba sembrada — el servidor respondia una lista vacia, o
+   sea que la espera no traia absolutamente nada.
+
+   Y no tenia por que: las 33 areas, sus coordenadas y el contorno del
+   predio SON el plano de la planta. Eso no cambia de un dia para otro.
+   Asi que estan aca abajo y el mapa se dibuja de inmediato, sin red.
+
+   Al servidor se le sigue preguntando, pero despues y en segundo plano.
+   De su respuesta se toma SOLO lo que una persona puede cambiar desde
+   la pantalla: el nombre del area, para que se usa, cuantos parales
+   tiene y si sigue existiendo. La forma y la posicion son las de aca.
+   Un area renombrada cambia de titulo; el plano no se mueve.
+
+   Las areas creadas desde la pantalla no estan en esta lista, y esas si
+   vienen enteras del servidor: su forma tambien la puso alguien.
+
+   Si alguna vez se remodela de verdad — se corre una carpa, se levanta
+   un galpon donde no habia nada — hay dos caminos: crearla desde
+   "+ Área nueva", o corregir las coordenadas de aca. La cuadricula es
+   de 1000 x 740 y corresponde al dibujo del plano.
+
+   ESTA LISTA SE GENERA desde MAPA_ZONAS_SEMILLA del Apps Script de
+   Cadena, que es de donde salieron las medidas. Si se editan las de
+   alla, hay que volver a generarla; escribirlas a mano en los dos
+   lados es como terminan diciendo cosas distintas.
+   ══════════════════════════════════════════════════════════════════ */
+var MAPA_BASE = [
+  {id:'Z-PERFIL',nombre:'Predio',tipo:'perfil',parales:0,color:'',x:0,y:0,w:0,h:0,orientacion:'vertical',activa:true,puntos:'10,13 677,13 677,375 636,412 636,543 561,657 479,694 404,712 345,712 287,671 205,619 82,578 10,523'},
+  {id:'Z-PERFIL2',nombre:'Lote oriental',tipo:'perfil',parales:0,color:'',x:0,y:0,w:0,h:0,orientacion:'vertical',activa:true,puntos:'681,13 1000,82 1000,206 897,323 692,375 681,375'},
+  {id:'Z-PORT2',nombre:'Portería Vehicular II',tipo:'acceso',parales:0,color:'',x:540,y:14,w:103,h:34,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-PORT1',nombre:'Portería Vehicular I',tipo:'acceso',parales:0,color:'',x:81,y:540,w:66,h:38,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-BASC',nombre:'Báscula',tipo:'servicio',parales:0,color:'',x:684,y:172,w:72,h:50,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-RESER',nombre:'Reservorio',tipo:'servicio',parales:0,color:'',x:684,y:244,w:72,h:69,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-PTAR',nombre:'PTAR',tipo:'servicio',parales:0,color:'',x:795,y:89,w:111,h:65,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-SOLAR',nombre:'Páneles solares',tipo:'servicio',parales:0,color:'',x:795,y:172,w:94,h:65,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-CABAL',nombre:'Caballeriza',tipo:'produccion',parales:0,color:'',x:506,y:157,w:161,h:36,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-LIQ',nombre:'Área líquidos',tipo:'produccion',parales:0,color:'',x:585,y:213,w:82,h:58,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-LOMB',nombre:'Lombricultivo',tipo:'lombriz',parales:0,color:'',x:448,y:213,w:202,h:103,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-AMPL',nombre:'Área futura ampliación',tipo:'futura',parales:0,color:'',x:116,y:175,w:147,h:134,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-INV2',nombre:'Invernadero 2',tipo:'produccion',parales:0,color:'',x:274,y:175,w:154,h:134,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-HUERTA',nombre:'Huerta',tipo:'produccion',parales:0,color:'',x:116,y:318,w:147,h:67,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-SEC1',nombre:'Secadero (planchas)',tipo:'secado',parales:0,color:'',x:274,y:318,w:154,h:67,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-COMPOS',nombre:'Compostera',tipo:'compost',parales:0,color:'',x:445,y:329,w:205,h:56,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-NEBUL',nombre:'Área nebulización',tipo:'servicio',parales:0,color:'',x:448,y:398,w:62,h:80,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-LACTEO',nombre:'Área lácteo',tipo:'produccion',parales:0,color:'',x:505,y:495,w:42,h:55,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-MOLINO',nombre:'Molino',tipo:'produccion',parales:0,color:'',x:253,y:564,w:137,h:48,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-SEC2',nombre:'Secadero (molino)',tipo:'secado',parales:0,color:'',x:393,y:564,w:99,h:96,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-EMPAQ',nombre:'Zona de empaque',tipo:'produccion',parales:0,color:'',x:253,y:612,w:75,h:34,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-COMPRE',nombre:'Cuarto compresor',tipo:'servicio',parales:0,color:'',x:339,y:616,w:51,h:38,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-CHORIZ',nombre:'Chorizos',tipo:'secado',parales:0,color:'',x:636,y:567,w:144,h:93,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-OFIC',nombre:'Oficina admin.',tipo:'admin',parales:0,color:'',x:14,y:413,w:65,h:62,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-CASA',nombre:'Casa quinta',tipo:'admin',parales:0,color:'',x:14,y:331,w:33,h:54,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-COCIN',nombre:'Cocineta',tipo:'admin',parales:0,color:'',x:47,y:318,w:25,h:26,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-LODO-A',nombre:'Lodo papelero A',tipo:'almacen',parales:6,color:'#2f5fa8',x:219,y:398,w:51,h:80,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-LODO-B',nombre:'Lodo papelero B',tipo:'almacen',parales:9,color:'#2f5fa8',x:274,y:398,w:53,h:80,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-ORG-A',nombre:'Orgánicos A',tipo:'almacen',parales:6,color:'#8fd14f',x:330,y:398,w:94,h:80,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-ORG-B',nombre:'Orgánicos B',tipo:'almacen',parales:7,color:'#8fd14f',x:540,y:398,w:89,h:80,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-TROMEL',nombre:'Tromel',tipo:'almacen',parales:5,color:'#2f7d32',x:238,y:482,w:83,h:76,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-ORG-C',nombre:'Orgánicos C',tipo:'almacen',parales:5,color:'#8fd14f',x:328,y:482,w:96,h:76,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-ORG-D',nombre:'Orgánicos D',tipo:'almacen',parales:6,color:'#8fd14f',x:558,y:482,w:72,h:76,orientacion:'vertical',activa:true,puntos:''}
+];
+
+/* La matriz de terminologia. Alimenta las listas de tareas y materiales.
+   Tambien se pide al servidor —ahi se le pueden agregar palabras sin
+   tocar el codigo— pero mientras llega, o si no hay conexion, estas
+   permiten registrar una actividad igual. */
+var MAPA_TERMINOS_BASE = [
+  {termino:'Plancha',definicion:'Lugar donde se realiza el secado post lombricultivo, se combina con restos',tecnico:'Área de secado',familia:'lugar',activo:true},
+  {termino:'Tipos de lodos',definicion:'Lodos que provienen de diferentes empresas, base de PF',tecnico:'Papelero, suero lácteo, tromel, tierras filtrantes, lodos PTAR, aguas residuales',familia:'material',activo:true},
+  {termino:'Rallar',definicion:'Acción del operario del área de secado, haciendo surcos',tecnico:'Aireación para el correcto secado de la mezcla',familia:'tarea',activo:true},
+  {termino:'Chorizo',definicion:'Grupo de material puesto en línea recta después del conjunto de mezclas',tecnico:'Hilera longitudinal de gran cantidad para el secado',familia:'material',activo:true},
+  {termino:'Compostera',definicion:'Sistema diseñado que facilita la descomposición de los residuos',tecnico:'Área destinada al compostaje de residuos orgánicos',familia:'lugar',activo:true},
+  {termino:'Surcos',definicion:'Tarea para que se pueda secar más rápido en las planchas',tecnico:'Hendiduras longitudinales',familia:'tarea',activo:true},
+  {termino:'Equinaza',definicion:'Compuesto por las heces de los animales, líquido y sólido',tecnico:'Estiércol equino',familia:'material',activo:true},
+  {termino:'Riego para olores',definicion:'Producto para controlar los olores al momento de secar',tecnico:'Aplicación controlada mediante riego',familia:'tarea',activo:true},
+  {termino:'Lombricultivo',definicion:'Lugar donde las lombrices se alimentan y llenan de nutrientes la tierra',tecnico:'Sistema de producción a base de lombrices',familia:'lugar',activo:true},
+  {termino:'Mezclas',definicion:'Combinación de material que pasa entre áreas',tecnico:'Combinación de materiales para el compostaje',familia:'material',activo:true},
+  {termino:'Producto final (PF)',definicion:'Producto después de la pulverización de mezclas',tecnico:'Humus obtenido después del proceso completo',familia:'material',activo:true},
+  {termino:'Color deseado',definicion:'Se espera más un color café que negro, deseado por los clientes',tecnico:'Parámetro de coloración usado como criterio de calidad',familia:'criterio',activo:true},
+  {termino:'Tiempo máx x plancha',definicion:'Tiempo ideal 4 meses',tecnico:'Estándar promedio por tiempo para buen manejo de tiempo y espacios',familia:'criterio',activo:true},
+  {termino:'Molino',definicion:'Sección que realiza la pulverización de la mezcla',tecnico:'Equipo que reduce el tamaño del PF',familia:'lugar',activo:true},
+  {termino:'Piscina',definicion:'Lugar donde se deposita el suero',tecnico:'Espacio para el almacenamiento de líquidos',familia:'lugar',activo:true},
+  {termino:'Descomposición',definicion:'Proceso por el que pasan los materiales para convertirse en producto útil',tecnico:'Degradación de la materia orgánica',familia:'criterio',activo:true},
+  {termino:'Lonas',definicion:'Empaque en el cual se almacena el producto final',tecnico:'Material flexible para empaquetado',familia:'material',activo:true},
+  {termino:'Caballinaza',definicion:'Heces de caballo usadas como abono orgánico',tecnico:'Estiércol usado como materia prima',familia:'material',activo:true},
+  {termino:'Bultos',definicion:'Medida que usan para calcular la producción',tecnico:'Unidades de empaque',familia:'material',activo:true},
+  {termino:'Mezcla orgánicos con estiércol',definicion:'Mejor resultado, más solicitado pero menos inventario',tecnico:'Tipo de producto final agradable al cliente',familia:'material',activo:true},
+  {termino:'Coser',definicion:'Actividad final que consiste en sellar los bultos',tecnico:'Operación de sellado',familia:'tarea',activo:true},
+  {termino:'Carretear',definicion:'Mover mezcla de un área a otra mediante carretilla',tecnico:'Operación de transporte',familia:'tarea',activo:true},
+  {termino:'Destrampear',definicion:'Mover mezcla del área de lombrices a plancha',tecnico:'Traslado y descarga del lombricultivo al área de secado',familia:'tarea',activo:true}
+];
+
+var MAPA_CAMBIOS_KEY = 'horti_mapa_zonas_v1';
+
+function clonarZona(z){ var o = {}; for(var k in z) o[k] = z[k]; return o; }
+function zonasDeBase(){ return MAPA_BASE.map(clonarZona); }
+
+/* Aplica sobre el plano lo unico que se edita desde la pantalla. Todo lo
+   demas —forma, posicion, contorno— sale de MAPA_BASE y no se toca. */
+function fusionarZonas(cambios){
+  var salida = zonasDeBase();
+  var porId = {};
+  salida.forEach(function(z){ porId[z.id] = z; });
+
+  (cambios || []).forEach(function(c){
+    if(!c || !c.id) return;
+    var z = porId[c.id];
+    if(!z){
+      /* Area que no esta en el plano: la creo alguien desde la pantalla,
+         asi que se toma completa, con su forma y su posicion. */
+      var nueva = clonarZona(c);
+      if(nueva.activa === undefined) nueva.activa = true;
+      salida.push(nueva);
+      porId[nueva.id] = nueva;
+      return;
+    }
+    if(c.nombre) z.nombre = c.nombre;
+    if(c.tipo)   z.tipo   = c.tipo;
+    if(c.color)  z.color  = c.color;
+    if(c.parales !== undefined && c.parales !== null && c.parales !== '') z.parales = +c.parales || 0;
+    if(c.activa !== undefined) z.activa = !!c.activa;
+  });
+  return salida;
+}
+
+/* Lo que el servidor contesto se recuerda en el navegador: al volver a
+   entrar, un area renombrada ya sale con su nombre nuevo desde el primer
+   instante, sin esperar la respuesta. */
+function cambiosGuardados(){
+  try{
+    var g = JSON.parse(localStorage.getItem(MAPA_CAMBIOS_KEY) || '[]');
+    return Array.isArray(g) ? g : [];
+  }catch(e){ return []; }
+}
+function guardarCambios(zonas){
+  try{ localStorage.setItem(MAPA_CAMBIOS_KEY, JSON.stringify(zonas || [])); }
+  catch(e){ /* sin espacio: se sigue, solo que sin recordar */ }
+}
+
+/* La linea de estado debajo del mapa. El mapa ya esta dibujado, asi que
+   esto nunca es un "cargando" que tape nada: es un aviso al pie. */
+function estadoMapa(texto, malo){
+  var l = $m('mapaCargando');
+  if(!l) return;
+  if(!texto){ l.style.display = 'none'; return; }
+  l.textContent = texto;
+  l.className = 'mapa-cargando mapa-estado' + (malo ? ' malo' : '');
+  l.style.display = '';
+}
+
 /* ── CARGA ────────────────────────────────────────────────────────── */
 async function cargarMapa(forzar){
+  /* Primero el dibujo, sin esperar a nadie. */
+  if(!M.dibujado){
+    M.zonas = fusionarZonas(cambiosGuardados());
+    if(!M.terminos.length) M.terminos = MAPA_TERMINOS_BASE.slice();
+    M.dibujado = true;
+    pintar();
+  }
+
   if(M.cargando) return;
-  if(M.cargado && !forzar){ pintar(); return; }
+  if(M.cargado && !forzar) return;
+
   M.cargando = true;
-  var l = $m('mapaCargando');
-  if(l && !M.cargado) l.textContent = 'Cargando el mapa… la primera consulta del día puede tardar.';
+  estadoMapa('Buscando los nombres, las pilas y las actividades…');
   try{
     var d = await pedir({ action:'mapa' });
-    M.zonas = d.zonas || []; M.pilas = d.pilas || [];
-    M.actividades = d.actividades || []; M.terminos = d.terminos || [];
+    var zs = d.zonas || [];
+    /* Una respuesta VACIA no significa "no hay areas": significa que la
+       hoja de zonas todavia no se sembró, que es como esta hoy. En ese
+       caso se conserva lo ultimo que se supo, porque pisarlo devolveria
+       cada area a su nombre original y desharia los renombres en
+       pantalla. Solo se guarda cuando el servidor trae algo que decir. */
+    if(zs.length){
+      M.zonas = fusionarZonas(zs);
+      guardarCambios(zs);
+    }else{
+      M.zonas = fusionarZonas(cambiosGuardados());
+    }
+    M.pilas       = d.pilas || [];
+    M.actividades = d.actividades || [];
+    /* Si la hoja de terminos esta vacia se conservan los de aca: sin
+       ellos no se podria registrar una actividad. */
+    M.terminos = (d.terminos && d.terminos.length) ? d.terminos : MAPA_TERMINOS_BASE.slice();
     M.cargado = true;
+    estadoMapa('');
     pintar();
   }catch(err){
-    var c = $m('mapaSvg');
-    if(c) c.innerHTML = '<div class="mapa-cargando" style="color:#b23b3b">No se pudo cargar el mapa.<br><br>' +
-      esc(err.message) + '<br><br><button class="mapa-btn" onclick="mapaRecargarForzado()">Reintentar</button></div>';
+    /* El plano YA esta en pantalla: un servidor caido no lo borra. Lo
+       unico que falta son las pilas y las actividades, y eso se dice. */
+    estadoMapa('No se pudo hablar con el servidor: el plano se ve igual, pero las pilas y ' +
+               'las actividades pueden estar desactualizadas. ' + err.message, true);
   }finally{ M.cargando = false; }
 }
 window.mapaRecargarForzado = function(){ cargarMapa(true); };
@@ -22322,7 +22627,12 @@ async function guardarZonaPanel(){
   if(!nombre){ alert('El área necesita un nombre.'); $m('zNombre').focus(); return; }
 
   var tipo = ($m('zTipo')||{}).value || z.tipo;
-  var datos = { action:'guardarZona', id:z.id, nombre:nombre, tipo:tipo, responsable:quienSoy() };
+  /* Va tambien la forma. Si el area todavia no tiene fila en la hoja
+     —el caso normal: el plano vive en el codigo— el servidor la crea con
+     lo que le llegue, y sin esto quedaria una fila con tamaño cero. */
+  var datos = { action:'guardarZona', id:z.id, nombre:nombre, tipo:tipo, responsable:quienSoy(),
+                color:z.color, x:z.x, y:z.y, w:z.w, h:z.h,
+                orientacion:z.orientacion, puntos:z.puntos };
 
   if($m('zParales')){
     var n = parseInt($m('zParales').value, 10);
@@ -22352,7 +22662,9 @@ async function quitarZona(){
               'Deja de dibujarse, pero NO se borra: sus pilas, actividades y ' +
               'artículos siguen registrados. Se puede volver a mostrar desde la hoja Zonas.')) return;
   try{
-    await pedir({ action:'guardarZona', id:z.id, nombre:z.nombre, activa:false, responsable:quienSoy() });
+    await pedir({ action:'guardarZona', id:z.id, nombre:z.nombre, activa:false, responsable:quienSoy(),
+                  color:z.color, x:z.x, y:z.y, w:z.w, h:z.h,
+                  orientacion:z.orientacion, puntos:z.puntos });
     SEL.zona = null; SEL.vano = null;
     await cargarMapa(true);
     limpiarPanel();
