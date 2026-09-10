@@ -2844,9 +2844,10 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-mapa .inv-d{flex:1 1 auto;min-width:0}
 #panel-mapa .inv-d b{display:block;font-size:12.5px;color:var(--ink,#1f2a24);line-height:1.3}
 #panel-mapa .inv-d span{font-size:10.5px;color:var(--ink-l,#8a8f8a)}
+#panel-mapa .inv-b{display:flex;flex-direction:column;gap:5px;flex:0 0 auto}
 #panel-mapa .inv-fila button{
   flex:0 0 auto;padding:7px 10px;border-radius:6px;border:none;
-  font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;
+  font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;
 }
 /* ── FOTOS ─────────────────────────────────────────────────────────
    Mismo tamaño y mismo recuadro en el inventario, en las actividades y
@@ -2895,6 +2896,28 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   display:flex;align-items:center;justify-content:center;font-size:8.5px;
   color:var(--ink-l,#8a8f8a);border-style:dashed;text-decoration:none;text-align:center;padding:2px;
 }
+
+/* El visor va por encima de todo, incluido el panel a pantalla completa
+   del teléfono (1200) y las barras fijas del tablero (1000). */
+#panel-mapa .mapa-visor{
+  position:fixed;inset:0;z-index:1400;background:#131a15;
+  flex-direction:column;align-items:stretch;
+}
+#panel-mapa .mapa-visor-barra{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:12px 14px;color:#fff;font-size:12.5px;line-height:1.35;
+}
+#panel-mapa .mapa-visor-barra button{
+  flex:0 0 auto;padding:9px 14px;border:0;border-radius:6px;background:#fff;
+  color:#1f2a24;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;
+}
+#panel-mapa .mapa-visor-cuerpo{
+  flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:0 12px;
+}
+#panel-mapa .mapa-visor-cuerpo img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+#panel-mapa .mapa-visor-error{color:#fff;font-size:13px;text-align:center;line-height:1.5}
+#panel-mapa .mapa-visor-pie{padding:12px 14px;text-align:center}
+#panel-mapa .mapa-visor-pie a{color:#cfe6d6;font-size:12px;text-decoration:underline}
 
 #panel-mapa .zona-fotos{display:flex;flex-wrap:wrap;gap:8px;padding:4px 0 2px}
 #panel-mapa .zona-foto{width:78px}
@@ -3783,6 +3806,27 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
       <div id="mapaSvg"></div>
       <div class="mapa-cargando" id="mapaCargando">Cargando el mapa…</div>
     </div>
+    <!-- ══ VISOR DE FOTOS ═══════════════════════════════════════════
+         Las fotos se miran ACÁ, no en Drive. Abrir una pestaña de Drive
+         para ver una evidencia saca a la persona del sistema, tarda, y
+         desde el teléfono muchas veces pide iniciar sesión. El enlace a
+         Drive queda al pie, para cuando de verdad haga falta.        -->
+    <div class="mapa-visor" id="mapaVisor" style="display:none">
+      <div class="mapa-visor-barra">
+        <span id="mapaVisorTxt"></span>
+        <button type="button" id="mapaVisorX">Cerrar</button>
+      </div>
+      <div class="mapa-visor-cuerpo">
+        <img id="mapaVisorImg" alt="">
+        <div class="mapa-visor-error" id="mapaVisorErr" style="display:none">
+          No se pudo mostrar la foto acá.
+        </div>
+      </div>
+      <div class="mapa-visor-pie">
+        <a id="mapaVisorLink" target="_blank" rel="noopener">Abrir en Drive</a>
+      </div>
+    </div>
+
     <!-- La evidencia se toma con la cámara del teléfono: "capture" hace
          que el celular abra la cámara y no el explorador de archivos. -->
     <input type="file" id="mapaFotoInput" accept="image/*" capture="environment" style="display:none">
@@ -23710,10 +23754,64 @@ function cajaFoto(url, clase, titulo){
   if(!mini){
     return '<span class="' + clase + ' sin-foto" title="' + esc(titulo || 'sin foto') + '">sin foto</span>';
   }
-  return '<a class="' + clase + '" href="' + esc(url) + '" target="_blank" rel="noopener" title="' +
-         esc(titulo || 'Ver la foto') + '">' +
+  /* El enlace real queda en href por si alguien abre en pestaña nueva con
+     Ctrl+clic, pero el clic normal lo atrapa el visor de acá adentro. */
+  return '<a class="' + clase + '" href="' + esc(url) + '" data-foto="' + esc(url) + '" ' +
+         'data-txt="' + esc(titulo || '') + '" title="' + esc(titulo || 'Ver la foto') + '">' +
          '<img src="' + esc(mini) + '" alt="" loading="lazy" onerror="mapaFotoFallo(this)"></a>';
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   VER UNA FOTO SIN SALIR DEL SISTEMA
+   ------------------------------------------------------------------
+   Un solo visor para todas: inventario, actividades e historial. Pide la
+   imagen grande (sz=w1600, que Drive sí acepta) y deja el enlace a Drive
+   al pie, para el caso en que no se pueda mostrar acá.
+   ══════════════════════════════════════════════════════════════════ */
+function verFotoMapa(url, texto){
+  var v = $m('mapaVisor'), img = $m('mapaVisorImg'), err = $m('mapaVisorErr');
+  if(!v) return;
+  var id = idDriveMapa(url);
+  $m('mapaVisorTxt').textContent = texto || '';
+  $m('mapaVisorLink').href = url;
+  err.style.display = 'none';
+  img.style.display = '';
+  img.src = id ? 'https://drive.google.com/thumbnail?id=' + id + '&sz=w1600' : url;
+  v.style.display = 'flex';
+  document.body.style.overflow = 'hidden';   /* que no se mueva el fondo */
+}
+
+function cerrarFotoMapa(){
+  var v = $m('mapaVisor');
+  if(!v) return;
+  v.style.display = 'none';
+  $m('mapaVisorImg').src = '';
+  document.body.style.overflow = '';
+}
+
+(function engancharVisor(){
+  var v = $m('mapaVisor');
+  if(!v) return;
+  /* Delegado: las fotos se dibujan y se vuelven a dibujar todo el tiempo,
+     así que enganchar cada una sería enganchar de nuevo en cada repintado. */
+  var panel = $m('mapaPanel');
+  if(panel) panel.addEventListener('click', function(ev){
+    var a = ev.target.closest ? ev.target.closest('a[data-foto]') : null;
+    if(!a) return;
+    if(ev.ctrlKey || ev.metaKey || ev.shiftKey) return;   /* abrir en pestaña nueva */
+    ev.preventDefault();
+    verFotoMapa(a.dataset.foto, a.dataset.txt);
+  });
+  $m('mapaVisorX').onclick = cerrarFotoMapa;
+  v.addEventListener('click', function(ev){ if(ev.target === v) cerrarFotoMapa(); });
+  $m('mapaVisorImg').addEventListener('error', function(){
+    this.style.display = 'none';
+    $m('mapaVisorErr').style.display = '';
+  });
+  document.addEventListener('keydown', function(ev){
+    if(ev.key === 'Escape' && v.style.display !== 'none') cerrarFotoMapa();
+  });
+})();
 
 /* Si Drive no entrega la miniatura, queda el recuadro con el motivo en vez
    de un hueco: hay que poder distinguir "no hay foto" de "no cargó". */
@@ -23776,6 +23874,7 @@ function recibirFotoEval(input){
       c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
       var dataUrl = c.toDataURL('image/jpeg', 0.85);
       if(DESTINO_FOTO === 'avance'){ FOTO_AVANCE = dataUrl; pintarFotoAvance(); }
+      else if(DESTINO_FOTO === 'item'){ FOTO_ITEM = dataUrl; pintarFotoItem(); }
       else { FOTO_EVAL = dataUrl; pintarFotoEval(); }
     };
     img.src = ev.target.result;
@@ -24150,9 +24249,11 @@ function pintarInventario(){
       '<div class="inv-d"><b>' + esc(i.item) + '</b>' +
         '<span>' + esc(String(i.stock)) + ' ' + esc(i.unidad || '') +
         (i.estado && i.estado !== 'operativo' ? ' · ' + esc(i.estado.replace('_',' ')) : '') + '</span></div>' +
-      (z ? '<button type="button" class="mapa-cancelar" data-ir="' + esc(z.id) + '">Ver en el plano</button>'
-         : '<button type="button" class="mapa-cancelar" data-ubicar="' + esc(i.id) + '">Ubicar</button>') +
-      '</div>';
+      '<div class="inv-b">' +
+        (z ? '<button type="button" class="mapa-cancelar" data-ir="' + esc(z.id) + '">Ver en el plano</button>'
+           : '<button type="button" class="mapa-cancelar" data-ubicar="' + esc(i.id) + '">Ubicar</button>') +
+        '<button type="button" class="mapa-cancelar" data-estado="' + esc(i.id) + '">Estado y foto</button>' +
+      '</div></div>';
   }
 
   var h = '<h3>Dónde está cada cosa</h3>' +
@@ -24209,6 +24310,121 @@ function pintarInventario(){
   p.querySelectorAll('[data-ubicar]').forEach(function(bt){
     bt.onclick = function(){ formUbicar(bt.dataset.ubicar); };
   });
+  p.querySelectorAll('[data-estado]').forEach(function(bt){
+    bt.onclick = function(){ formEstadoItem(bt.dataset.estado); };
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   ESTADO Y FOTO DE UN ARTÍCULO
+   ------------------------------------------------------------------
+   Pensado para maquinaria y herramienta. Que una guadaña esté en
+   mantenimiento no cambia que haya una: cambia que hoy no se puede
+   contar con ella. Por eso el estado va aparte del stock.
+
+   Y la foto se ACTUALIZA. Cuando se le hace mantenimiento a una máquina,
+   lo que sirve ver en la lista es cómo está hoy, no la foto del día que
+   se compró. La anterior no se pierde: cada cambio de estado deja la
+   suya en su movimiento, así que el historial guarda la secuencia.
+
+   Sacar algo de servicio exige decir por qué: "fuera de servicio" sin
+   motivo no le sirve a quien lo lea la semana que viene.
+   ══════════════════════════════════════════════════════════════════ */
+var ESTADOS_ITEM = [
+  ['operativo',      'Operativo',       'Sirve, se puede usar'],
+  ['mantenimiento',  'En mantenimiento','Está en reparación o revisión'],
+  ['fuera_servicio', 'Fuera de servicio','No se puede usar']
+];
+var FOTO_ITEM = null;
+
+function formEstadoItem(invId){
+  var i = inventario().filter(function(x){ return x.id === invId; })[0];
+  if(!i) return;
+  FOTO_ITEM = null;
+  var p = $m('mapaPanel');
+
+  p.innerHTML =
+    '<h3>Estado y foto</h3>' +
+    '<div class="sub">' + esc(i.item) + ' · ' + esc(String(i.stock)) + ' ' + esc(i.unidad || '') + '</div>' +
+
+    '<div class="inv-fila" style="border:0">' + cajaFoto(i.foto, 'inv-foto', i.item) +
+      '<div class="inv-d"><b>Foto de ahora</b><span>' +
+      (i.foto ? 'La que se ve en la lista' : 'Todavía no tiene foto') + '</span></div></div>' +
+
+    '<div class="mapa-campo"><label>¿Cómo está?</label><select id="itEstado">' +
+      ESTADOS_ITEM.map(function(e){
+        return '<option value="' + e[0] + '"' + ((i.estado || 'operativo') === e[0] ? ' selected' : '') +
+               '>' + e[1] + '</option>';
+      }).join('') + '</select>' +
+      '<div class="ayuda" id="itAyuda"></div></div>' +
+
+    '<div class="mapa-campo"><label>Qué pasó</label>' +
+      '<textarea id="itNota" rows="3" placeholder="Qué se le hizo, qué le falta, quién lo revisó">' +
+      esc(i.estadoNota || '') + '</textarea>' +
+      '<div class="ayuda">Obligatorio si no queda operativo.</div></div>' +
+
+    '<div class="mapa-sec">Foto nueva</div>' +
+    '<div class="act-foto" id="itFotoZona"></div>' +
+
+    (i.estadoFecha ? '<div class="mapa-linea" style="color:var(--ink-l)">Último cambio: ' +
+      esc(cuando(i.estadoFecha)) + (i.estadoNota ? ' · ' + esc(i.estadoNota) : '') + '</div>' : '') +
+
+    '<div class="mapa-acciones">' +
+      '<button class="mapa-guardar" id="itGuardar">Guardar</button>' +
+      '<button class="mapa-cancelar" id="itCancelar">Cancelar</button></div>';
+
+  var sel = $m('itEstado');
+  function ayuda(){
+    var e = ESTADOS_ITEM.filter(function(x){ return x[0] === sel.value; })[0];
+    $m('itAyuda').textContent = e ? e[2] : '';
+  }
+  sel.onchange = ayuda; ayuda();
+
+  pintarFotoItem();
+  $m('itCancelar').onclick = function(){ FOTO_ITEM = null; verInventario(); };
+  $m('itGuardar').onclick = function(){ guardarEstadoItem(invId); };
+}
+
+function pintarFotoItem(){
+  var z = $m('itFotoZona');
+  if(!z) return;
+  z.innerHTML = FOTO_ITEM
+    ? '<img src="' + FOTO_ITEM + '" alt="">' +
+      '<div class="act-foto-txt">Va a reemplazar la foto de la lista.</div>' +
+      '<button type="button" class="mapa-cancelar" id="itOtra">Tomar otra</button>'
+    : '<button type="button" class="mapa-guardar" id="itFoto">Tomar la foto</button>' +
+      '<div class="act-foto-txt">Opcional. Si la tomás, pasa a ser la foto del artículo ' +
+      'y la anterior queda en el historial.</div>';
+  if($m('itFoto')) $m('itFoto').onclick = function(){
+    DESTINO_FOTO = 'item';
+    var inp = $m('mapaFotoInput'); if(inp){ inp.value=''; inp.click(); }
+  };
+  if($m('itOtra')) $m('itOtra').onclick = function(){ FOTO_ITEM = null; pintarFotoItem(); };
+}
+
+async function guardarEstadoItem(invId){
+  var estado = $m('itEstado').value;
+  var nota = (($m('itNota')||{}).value || '').trim();
+  if(estado !== 'operativo' && !nota){
+    alert('Para sacar un equipo de servicio hay que decir por qué.');
+    $m('itNota').focus();
+    return;
+  }
+  var b = $m('itGuardar'); b.disabled = true; b.textContent = 'Guardando…';
+  try{
+    var r = await pedir({ action:'estadoInventario', invId:invId, estado:estado,
+      nota:nota, foto: FOTO_ITEM || '', responsable: quienSoy() });
+    /* Las dos copias del inventario quedan al día sin volver a pedirlo. */
+    (M.inventario || []).forEach(function(x){
+      if(x.id !== invId) return;
+      x.estado = r.estado; x.estadoNota = nota; x.estadoFecha = new Date().toISOString();
+      if(r.foto && r.foto.indexOf('http') === 0) x.foto = r.foto;
+    });
+    try{ if(typeof window.cscRefrescarInventario === 'function') window.cscRefrescarInventario(r); }catch(e){}
+    FOTO_ITEM = null;
+    pintar();
+    verInventario();
+  }catch(e){ b.disabled=false; b.textContent='Guardar'; alert(e.message); }
 }
 
 /* ── UBICAR UN ARTICULO DEL INVENTARIO ────────────────────────────── */
