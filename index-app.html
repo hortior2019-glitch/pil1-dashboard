@@ -2629,23 +2629,32 @@ html.solo-panel #salir-solo-panel{display:block}
 #panel-mapa .vano.e-llenando  {fill:rgba(184,137,31,.28)}
 #panel-mapa .vano.e-en_proceso{fill:rgba(47,111,158,.26)}
 #panel-mapa .vano.e-lista     {fill:rgba(47,143,82,.30)}
-#panel-mapa .vano.sel{fill:rgba(47,143,82,.48);stroke:#1c5636;stroke-width:2.2;stroke-dasharray:none}
+/* La pila tocada, en naranja. La elegida para una actividad va en verde,
+   más abajo — y más abajo quiere decir que gana cuando son la misma. */
+#panel-mapa .vano.sel{fill:rgba(232,140,45,.46);stroke:#c2670f;stroke-width:2.2;stroke-dasharray:none}
 
-/* ── VERDE: "ES ACÁ" ───────────────────────────────────────────────
-   Dos casos con el mismo significado y por eso el mismo color: la
-   sección que se acaba de tocar, y la que se está eligiendo como lugar
-   de una actividad nueva.
+/* ── DOS COLORES, DOS COSAS DISTINTAS ──────────────────────────────
+   NARANJA = "estoy mirando esto". Es la sección tocada, sin más.
+   VERDE   = "acá va la actividad". Solo mientras se elige el lugar de
+             una actividad nueva.
+   Separarlos importa: en el momento de elegir dónde va una actividad,
+   el naranja de lo que se venía mirando no puede confundirse con el
+   verde de lo que se está señalando.
 
-   OJO CON EL ORDEN: esto tiene que quedar DESPUÉS de los rellenos por
-   tipo de área. Tienen la misma especificidad —un id y dos clases— así
-   que gana el que se escribe último. Puesto antes, en un área de
-   producción o de secado el verde no se veía: es lo que pasaba al tocar
-   el lombricultivo, que se quedaba con su propio beige.               */
+   OJO CON EL ORDEN, dos veces:
+   · Los dos bloques van DESPUÉS de los rellenos por tipo de área
+     (.t-produccion, .t-secado…). Misma especificidad —un id y dos
+     clases— así que gana el último. Puestos antes, al tocar el
+     lombricultivo se quedaba con su propio beige y no pasaba nada.
+   · El verde va después del naranja, para que al elegir el lugar de una
+     actividad sobre la misma sección que ya estaba tocada, gane el
+     verde, que es lo que importa en ese momento.                      */
 #panel-mapa .z.sel rect,
-#panel-mapa .z.sel polygon,
+#panel-mapa .z.sel polygon{fill:rgba(232,140,45,.34);stroke:#c2670f;stroke-width:2.7}
+#panel-mapa .z.sel:hover rect{fill:rgba(232,140,45,.44)}
+
 #panel-mapa .z.elegida rect,
 #panel-mapa .z.elegida polygon{fill:rgba(47,143,82,.30);stroke:#1c5636;stroke-width:2.7}
-#panel-mapa .z.sel:hover rect,
 #panel-mapa .z.elegida:hover rect{fill:rgba(47,143,82,.38)}
 /* Cuando la actividad va sobre un tramo de pilas, el área se marca
    apenas y el verde fuerte queda para los vanos. */
@@ -2665,6 +2674,8 @@ html.solo-panel #salir-solo-panel{display:block}
   border-radius:8px;padding:14px;max-height:640px;overflow:auto;
 }
 #panel-mapa .mapa-vacio{color:var(--ink-l,#8a8f8a);font-size:12.5px;line-height:1.5;padding:20px 4px}
+/* En el computador nunca se ve: el panel está siempre a la derecha */
+#panel-mapa .mapa-volver{display:none}
 #panel-mapa .mapa-panel h3{
   margin:0 0 3px;font-family:'Playfair Display',serif;font-size:17px;font-weight:700;color:var(--ink,#1f2a24);
 }
@@ -2788,6 +2799,19 @@ html.solo-panel #salir-solo-panel{display:block}
 }
 a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 
+/* La lista de "dónde está cada cosa" */
+#panel-mapa .inv-fila{
+  display:flex;align-items:center;gap:9px;padding:7px 0;
+  border-bottom:1px solid var(--rule-l,#f0efe9);
+}
+#panel-mapa .inv-d{flex:1 1 auto;min-width:0}
+#panel-mapa .inv-d b{display:block;font-size:12.5px;color:var(--ink,#1f2a24);line-height:1.3}
+#panel-mapa .inv-d span{font-size:10.5px;color:var(--ink-l,#8a8f8a)}
+#panel-mapa .inv-fila button{
+  flex:0 0 auto;padding:7px 10px;border-radius:6px;border:none;
+  font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;
+}
+
 #panel-mapa .mapa-campo{margin-bottom:10px}
 #panel-mapa .mapa-campo label{display:block;font-size:11px;font-weight:700;color:var(--ink-m,#54605a);margin-bottom:3px}
 #panel-mapa .mapa-campo input,#panel-mapa .mapa-campo select,#panel-mapa .mapa-campo textarea{
@@ -2828,6 +2852,33 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 @media (max-width:900px){
   #panel-mapa .mapa-area{flex-direction:column}
   #panel-mapa .mapa-panel{width:100%;max-height:none}
+
+  /* ── EN EL TELÉFONO EL PANEL TOMA LA PANTALLA ────────────────────
+     Debajo del plano el panel quedaba fuera de vista: se tocaba un área
+     y no pasaba nada visible sin bajar. Y para evaluar una actividad
+     —tres botones, un campo y la cámara— media pantalla no alcanza.
+     Se abre encima, con su barra para volver.
+     En el computador esto no aplica: ahí el panel vive a la derecha,
+     al lado del plano, que es donde se puede ver todo junto.        */
+  /* Los z-index tienen que superar a la cabecera del tablero: la barra
+     de arriba, el menú de pestañas y la barra de filtros están fijos
+     entre 997 y 1000. Con un número menor el panel ocupaba la pantalla
+     igual —medido: 375 x 812 desde la esquina— pero se dibujaba DEBAJO
+     de esas barras, y lo que se veía era la cabecera con el panel
+     asomando por atrás. Taparlas es lo correcto acá: es una pantalla
+     completa, y para volver está su propia barra. */
+  #panel-mapa.panel-abierto .mapa-panel{
+    position:fixed;inset:0;z-index:1200;width:auto;height:100%;max-height:none;
+    margin:0;border:0;border-radius:0;overflow-y:auto;
+    padding:60px 14px 28px;background:#fff;
+    -webkit-overflow-scrolling:touch;
+  }
+  #panel-mapa.panel-abierto .mapa-volver{
+    display:block;position:fixed;top:0;left:0;right:0;z-index:1201;
+    padding:16px 14px;border:0;background:#1c5636;color:#fff;
+    font-family:inherit;font-size:14px;font-weight:700;text-align:left;cursor:pointer;
+    box-shadow:0 1px 6px rgba(0,0,0,.25);
+  }
 }
 @media (max-width:760px){
   #panel-mapa .mapa-kpis{gap:8px}
@@ -2879,6 +2930,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   #panel-mapa .act-criterio{font-size:13px;padding:9px 11px}
   #panel-mapa .act-eval img,#panel-mapa .act-sinfoto{width:64px;height:64px;flex-basis:64px}
   #panel-mapa .act-check input{width:22px;height:22px;flex-basis:22px}
+  #panel-mapa .inv-d b{font-size:14px}
+  #panel-mapa .inv-fila button{padding:11px 13px;font-size:12.5px}
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -3602,6 +3655,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <button class="mapa-btn" id="mapaRecargar">↻ Actualizar</button>
     <button class="mapa-btn" id="mapaNuevaAct">+ Nueva actividad</button>
     <button class="mapa-btn" id="mapaTablero">📋 Ver actividades</button>
+    <button class="mapa-btn" id="mapaDonde">📦 Dónde está cada cosa</button>
     <button class="mapa-btn" id="mapaUbicar">📍 Ubicar un artículo</button>
     <button class="mapa-btn" id="mapaNuevaZona">+ Área nueva</button>
     <span style="flex:1"></span>
@@ -3623,6 +3677,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <!-- La evidencia se toma con la cámara del teléfono: "capture" hace
          que el celular abra la cámara y no el explorador de archivos. -->
     <input type="file" id="mapaFotoInput" accept="image/*" capture="environment" style="display:none">
+    <!-- Solo se ve en el teléfono, cuando el panel está a pantalla completa -->
+    <button type="button" class="mapa-volver" id="mapaVolver">← Volver al plano</button>
     <aside class="mapa-panel" id="mapaPanel">
       <div class="mapa-vacio">Toca una zona del plano para ver qué hay y qué se hizo ahí.</div>
     </aside>
@@ -22805,15 +22861,40 @@ function verZona(){
   var its  = itemsEn(z.nombre);
   var pilas = M.pilas.filter(function(x){ return x.zonaId === z.id; });
 
+  /* ── QUÉ VA PRIMERO ────────────────────────────────────────────
+     Tocar un área es preguntar "¿qué está pasando acá?". Eso son las
+     actividades: las que están en curso y las que ya se terminaron.
+     Antes el panel abría con el formulario para renombrar el área y
+     había que bajar por los artículos y las pilas para llegar a lo que
+     se venía a ver. Renombrar se hace una vez cada tanto; mirar qué se
+     está haciendo, todos los días. Por eso ahora va al final.        */
   var h = '<h3>' + esc(z.nombre) + '</h3><div class="sub">' + esc(z.tipo) +
           (z.tipo === 'almacen' ? ' · ' + z.parales + ' parales · ' + vanosDe(z) + ' espacios de pila' : '') + '</div>';
+
+  h += bloqueActividades(acts, 'esta área');
+
+  h += '<div class="mapa-acciones"><button class="mapa-guardar" id="zActividad">+ Actividad acá</button></div>';
+
+  h += '<div class="mapa-sec">Artículos ubicados acá (' + its.length + ')</div>';
+  h += its.length
+      ? its.map(function(i){ return '<div class="mapa-linea"><b>' + esc(i.item) + '</b> ' +
+          '<span>' + i.stock + ' ' + esc(i.unidad) + '</span></div>'; }).join('')
+      : '<div class="mapa-linea" style="color:var(--ink-l)">Ninguno asignado todavía.</div>';
+
+  if(pilas.length){
+    h += '<div class="mapa-sec">Pilas (' + pilas.length + ')</div>';
+    h += pilas.sort(function(a,b){ return a.vano - b.vano; }).map(function(x){
+      return '<div class="mapa-linea"><b>Pila ' + x.vano + '</b> ' + esc(x.material || 'sin material') +
+             ' <span class="cuando"><span class="et-estado et-' + esc(x.estado) + '">' + esc(x.estado.replace('_',' ')) + '</span></span></div>';
+    }).join('');
+  }
 
   /* ── EL AREA SE PUEDE RENOMBRAR ───────────────────────────────────
      La planta se remodela seguido: un area cambia de nombre, de uso o
      desaparece. Los nombres viven en la hoja, no en el codigo, asi que
      cambiarlos es escribir acá — no hay que tocar el sistema ni volver
      a publicar nada. */
-  h += '<div class="mapa-sec">Datos del área</div>' +
+  h += '<div class="mapa-sec">Editar el área</div>' +
        '<div class="mapa-campo"><label>Nombre</label>' +
        '<input id="zNombre" value="' + esc(z.nombre) + '" maxlength="40">' +
        '<div class="ayuda">Cambiarlo acá lo cambia en todo el sistema.</div></div>' +
@@ -22830,44 +22911,53 @@ function verZona(){
          'Si en la carpa hay otra cantidad, corregila acá: ' + z.parales + ' parales = ' + vanosDe(z) + ' pilas.</div></div>';
   }
 
+  /* Sin "quitar del mapa": un area del plano no se saca desde acá. El
+     boton estaba a un toque del de guardar y lo unico que hacia era
+     esconder un area con todo lo que tuviera registrado. */
   h += '<div class="mapa-acciones">' +
-       '<button class="mapa-guardar" id="zGuardar">Guardar cambios</button>' +
-       '<button class="mapa-cancelar" id="zQuitar" title="El área deja de verse en el mapa. No se borra: lo registrado sigue ahí.">Quitar del mapa</button></div>';
-
-  h += '<div class="mapa-sec">Artículos ubicados acá (' + its.length + ')</div>';
-  h += its.length
-      ? its.map(function(i){ return '<div class="mapa-linea"><b>' + esc(i.item) + '</b> ' +
-          '<span>' + i.stock + ' ' + esc(i.unidad) + '</span></div>'; }).join('')
-      : '<div class="mapa-linea" style="color:var(--ink-l)">Ninguno asignado todavía.</div>';
-
-  if(pilas.length){
-    h += '<div class="mapa-sec">Pilas (' + pilas.length + ')</div>';
-    h += pilas.sort(function(a,b){ return a.vano - b.vano; }).map(function(x){
-      return '<div class="mapa-linea"><b>Pila ' + x.vano + '</b> ' + esc(x.material || 'sin material') +
-             ' <span class="cuando"><span class="et-estado et-' + esc(x.estado) + '">' + esc(x.estado.replace('_',' ')) + '</span></span></div>';
-    }).join('');
-  }
-
-  var abiertas = acts.filter(function(a){ return a.estado !== 'cerrada'; });
-  var cerradas = acts.filter(function(a){ return a.estado === 'cerrada'; });
-
-  h += '<div class="mapa-sec">Actividades acá (' + abiertas.length + ' abierta' +
-       (abiertas.length === 1 ? '' : 's') + ')</div>';
-  h += abiertas.length
-      ? abiertas.map(lineaActividad).join('')
-      : '<div class="mapa-linea" style="color:var(--ink-l)">Ninguna abierta en esta área.</div>';
-  if(cerradas.length){
-    h += '<div class="mapa-sec">Terminadas (' + cerradas.length + ')</div>' +
-         cerradas.slice(0,5).map(lineaActividad).join('');
-  }
-
-  h += '<div class="mapa-acciones"><button class="mapa-guardar" id="zActividad">+ Actividad acá</button></div>';
+       '<button class="mapa-guardar" id="zGuardar">Guardar cambios</button></div>';
 
   p.innerHTML = h;
   if($m('zGuardar')) $m('zGuardar').onclick = guardarZonaPanel;
-  if($m('zQuitar'))  $m('zQuitar').onclick  = quitarZona;
   if($m('zActividad')) $m('zActividad').onclick = function(){ BORRADOR = null; formActividadNueva(z, null); };
   engancharActividades(p);
+  engancharVerTodas(p);
+}
+
+/* ── LAS DOS LISTAS ────────────────────────────────────────────────
+   Lo que se está llevando a cabo y lo que ya se terminó. Van siempre
+   las dos, aunque estén vacías: que un área no tenga nada abierto es
+   un dato, no un motivo para no mostrar la sección.
+   De las terminadas se muestran las seis más recientes; el resto está
+   en «Ver actividades», porque un área con dos años de historia haría
+   un panel de varios metros. */
+function bloqueActividades(acts, donde){
+  var abiertas = acts.filter(function(a){ return a.estado !== 'cerrada'; });
+  var cerradas = acts.filter(function(a){ return a.estado === 'cerrada'; });
+  var h = '';
+
+  h += '<div class="mapa-sec">En curso (' + abiertas.length + ')</div>';
+  h += abiertas.length
+      ? abiertas.map(lineaActividad).join('')
+      : '<div class="mapa-linea" style="color:var(--ink-l)">Nada en curso en ' + donde + '.</div>';
+
+  h += '<div class="mapa-sec">Historial · ya terminadas (' + cerradas.length + ')</div>';
+  if(cerradas.length){
+    h += cerradas.slice(0, 6).map(lineaActividad).join('');
+    if(cerradas.length > 6){
+      h += '<div class="mapa-linea"><button type="button" class="mapa-cancelar" id="verTodasAct" ' +
+           'style="padding:8px 12px;border-radius:6px;border:none;font-family:inherit;font-size:11.5px;' +
+           'font-weight:700;cursor:pointer">Ver las ' + cerradas.length + ' terminadas</button></div>';
+    }
+  }else{
+    h += '<div class="mapa-linea" style="color:var(--ink-l)">Todavía no se terminó ninguna.</div>';
+  }
+  return h;
+}
+
+function engancharVerTodas(cont){
+  var b = cont.querySelector('#verTodasAct');
+  if(b) b.onclick = verTablero;
 }
 
 /* Para que se usa cada area. Define el color y si tiene parales. */
@@ -22918,21 +23008,6 @@ async function guardarZonaPanel(){
   }catch(e){ b.disabled=false; b.textContent='Guardar cambios'; alert(e.message); }
 }
 
-async function quitarZona(){
-  var z = zonaPorId(SEL.zona);
-  if(!z) return;
-  if(!confirm('¿Quitar «' + z.nombre + '» del mapa?\n\n' +
-              'Deja de dibujarse, pero NO se borra: sus pilas, actividades y ' +
-              'artículos siguen registrados. Se puede volver a mostrar desde la hoja Zonas.')) return;
-  try{
-    await pedir({ action:'guardarZona', id:z.id, nombre:z.nombre, activa:false, responsable:quienSoy(),
-                  color:z.color, x:z.x, y:z.y, w:z.w, h:z.h,
-                  orientacion:z.orientacion, puntos:z.puntos });
-    SEL.zona = null; SEL.vano = null;
-    await cargarMapa(true);
-    limpiarPanel();
-  }catch(e){ alert(e.message); }
-}
 
 /* ── PANEL: UNA PILA ──────────────────────────────────────────────── */
 function verPila(){
@@ -22959,14 +23034,12 @@ function verPila(){
     '<div class="mapa-acciones">' +
       '<button class="mapa-guardar" id="plGuardar">Guardar pila</button>' +
       '<button class="mapa-cancelar" id="plActividad">+ Actividad acá</button></div>' +
-    '<div class="mapa-sec">Actividades sobre esta pila (' + acts.length + ')</div>' +
-    (acts.length ? acts.map(lineaActividad).join('')
-                 : '<div class="mapa-linea" style="color:var(--ink-l)">Ninguna. ' +
-                   'Las de la sección entera también valen acá.</div>');
+    bloqueActividades(acts, 'esta pila');
 
   $m('plGuardar').onclick = guardarPila;
   $m('plActividad').onclick = function(){ BORRADOR = null; formActividadNueva(z, SEL.vano); };
   engancharActividades(p);
+  engancharVerTodas(p);
 }
 
 async function guardarPila(){
@@ -23433,6 +23506,7 @@ function verHistorial(actId){
 function verTablero(){
   var p = $m('mapaPanel');
   var abiertas = M.actividades.filter(function(a){ return a.activa && a.estado !== 'cerrada'; });
+  var cerradas = M.actividades.filter(function(a){ return a.activa && a.estado === 'cerrada'; });
   var sinRevisar = abiertas.filter(function(a){ return !ultimaEval(a.id); });
   var total = M.evaluaciones.length;
   var cumple = M.evaluaciones.filter(function(e){ return e.resultado === 'cumple'; }).length;
@@ -23446,19 +23520,136 @@ function verTablero(){
                (total === 1 ? '1 evaluación' : total + ' evaluaciones') + ' se cumplió' : '') +
       '</div>' +
     '<div class="mapa-acciones"><button class="mapa-guardar" id="tbNueva">+ Nueva actividad</button></div>' +
+    '<div class="mapa-sec">En curso (' + abiertas.length + ')</div>' +
     (abiertas.length
-      ? '<div class="mapa-sec">Abiertas</div>' + abiertas.map(lineaActividad).join('')
+      ? abiertas.map(lineaActividad).join('')
       : '<div class="mapa-linea" style="color:var(--ink-l)">No hay ninguna. Creá la primera con el botón de arriba.</div>') +
-    (M.actividades.some(function(a){ return a.activa && a.estado === 'cerrada'; })
-      ? '<div class="mapa-sec">Terminadas</div>' +
-        M.actividades.filter(function(a){ return a.activa && a.estado === 'cerrada'; }).map(lineaActividad).join('')
-      : '');
+    /* Acá sí van TODAS las terminadas: este es el historial completo. */
+    '<div class="mapa-sec">Historial · ya terminadas (' + cerradas.length + ')</div>' +
+    (cerradas.length
+      ? cerradas.map(lineaActividad).join('')
+      : '<div class="mapa-linea" style="color:var(--ink-l)">Todavía no se terminó ninguna.</div>');
   $m('tbNueva').onclick = function(){ BORRADOR = null; formActividadNueva(null); };
   engancharActividades(p);
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   DÓNDE ESTÁ CADA COSA
+   ------------------------------------------------------------------
+   La pregunta de todos los días es "¿dónde quedó la carretilla?". El
+   inventario de Cadena dice CUÁNTAS hay; esto dice DÓNDE, que es la
+   parte que vive en el mapa.
+
+   Va agrupado por área y no como lista plana: así también responde la
+   pregunta al revés — "¿qué hay en el molino?" — sin buscar de a uno.
+   Cada artículo lleva el botón para saltar a su área en el plano.
+   ══════════════════════════════════════════════════════════════════ */
+var FILTRO_INV = '';
+
+async function verInventario(){
+  var p = $m('mapaPanel');
+  var inv = inventario();
+  if(!inv.length){
+    p.innerHTML = '<h3>Dónde está cada cosa</h3><div class="mapa-vacio">Buscando los artículos…</div>';
+    inv = await traerInventario(true);
+  }
+  if(!inv.length){
+    p.innerHTML = '<h3>Dónde está cada cosa</h3><div class="mapa-vacio">' +
+      'El inventario está vacío.<br><br>Los artículos se cargan desde ' +
+      '<b>Cadena · Inventario</b>, con «Ingreso a bodega».</div>';
+    return;
+  }
+  pintarInventario();
+}
+
+function pintarInventario(){
+  var p = $m('mapaPanel');
+  var inv = inventario();
+  var f = FILTRO_INV.trim().toLowerCase();
+  var lista = f ? inv.filter(function(i){
+    return ((i.item || '') + ' ' + (i.ubicacion || '')).toLowerCase().indexOf(f) > -1;
+  }) : inv;
+
+  /* Agrupado por el nombre del área. Lo que no tiene ubicación va junto
+     y primero: es lo que hay que resolver. */
+  var grupos = {}, sinUbicar = [];
+  lista.forEach(function(i){
+    var u = (i.ubicacion || '').trim();
+    if(!u || u.toLowerCase() === 'por asignar'){ sinUbicar.push(i); return; }
+    (grupos[u] = grupos[u] || []).push(i);
+  });
+  var nombres = Object.keys(grupos).sort();
+
+  function fila(i){
+    var u = (i.ubicacion || '').trim();
+    var z = u ? M.zonas.filter(function(x){ return x.nombre === u; })[0] : null;
+    return '<div class="inv-fila">' +
+      '<div class="inv-d"><b>' + esc(i.item) + '</b>' +
+        '<span>' + esc(String(i.stock)) + ' ' + esc(i.unidad || '') +
+        (i.estado && i.estado !== 'operativo' ? ' · ' + esc(i.estado.replace('_',' ')) : '') + '</span></div>' +
+      (z ? '<button type="button" class="mapa-cancelar" data-ir="' + esc(z.id) + '">Ver en el plano</button>'
+         : '<button type="button" class="mapa-cancelar" data-ubicar="' + esc(i.id) + '">Ubicar</button>') +
+      '</div>';
+  }
+
+  var h = '<h3>Dónde está cada cosa</h3>' +
+    '<div class="sub">El inventario dice cuántos hay; esto dice dónde.</div>' +
+    '<div class="mapa-campo"><input id="invBuscar" placeholder="Buscar un artículo o un área…" value="' +
+      esc(FILTRO_INV) + '"></div>';
+
+  if(sinUbicar.length){
+    h += '<div class="mapa-sec">Sin ubicar (' + sinUbicar.length + ')</div>' +
+         sinUbicar.map(fila).join('');
+  }
+
+  nombres.forEach(function(n){
+    var z = M.zonas.filter(function(x){ return x.nombre === n; })[0];
+    h += '<div class="mapa-sec">' + esc(n) + ' (' + grupos[n].length + ')' +
+         (z ? '' : ' · <span style="font-weight:400;text-transform:none;letter-spacing:0">' +
+              'ese nombre ya no está en el plano</span>') + '</div>' +
+         grupos[n].map(fila).join('');
+  });
+
+  if(!sinUbicar.length && !nombres.length){
+    h += '<div class="mapa-linea" style="color:var(--ink-l)">Ningún artículo coincide con la búsqueda.</div>';
+  }
+
+  h += '<div class="mapa-acciones">' +
+       '<button class="mapa-guardar" id="invUbicar">📍 Ubicar un artículo</button></div>';
+
+  p.innerHTML = h;
+
+  var b = $m('invBuscar');
+  if(b){
+    b.oninput = function(){
+      FILTRO_INV = b.value;
+      var pos = b.selectionStart;
+      pintarInventario();
+      var nb = $m('invBuscar');
+      if(nb){ nb.focus(); try{ nb.setSelectionRange(pos, pos); }catch(e){} }
+    };
+  }
+  $m('invUbicar').onclick = formUbicar;
+
+  p.querySelectorAll('[data-ir]').forEach(function(bt){
+    bt.onclick = function(){
+      var id = bt.dataset.ir;
+      SEL.zona = id; SEL.vano = null;
+      var z = zonaPorId(id);
+      if(z) encuadrarZona(z);
+      pintar();
+      verZona();
+      var l = $m('mapaLienzo');
+      if(esPantallaChica() && l) l.scrollIntoView({ behavior:'smooth', block:'start' });
+    };
+  });
+  p.querySelectorAll('[data-ubicar]').forEach(function(bt){
+    bt.onclick = function(){ formUbicar(bt.dataset.ubicar); };
+  });
+}
+
 /* ── UBICAR UN ARTICULO DEL INVENTARIO ────────────────────────────── */
-async function formUbicar(){
+async function formUbicar(idElegido){
   var p = $m('mapaPanel');
   var inv = inventario();
 
@@ -23495,6 +23686,9 @@ async function formUbicar(){
       '<button class="mapa-guardar" id="ubGuardar">Ubicar</button>' +
       '<button class="mapa-cancelar" id="ubCancelar">Cancelar</button></div>';
 
+  /* Cuando se llega desde "Dónde está cada cosa", el artículo ya viene
+     elegido: no hay que buscarlo otra vez en la lista. */
+  if(idElegido && $m('ubItem')) $m('ubItem').value = idElegido;
   if(SEL.zona) $m('ubZona').value = SEL.zona;
   $m('ubCancelar').onclick = function(){ if(SEL.zona) verZona(); else limpiarPanel(); };
   $m('ubGuardar').onclick = async function(){
@@ -23559,6 +23753,31 @@ function limpiarPanel(){
   if(p) p.innerHTML = '<div class="mapa-vacio">Toca una zona del plano para ver qué hay y qué se hizo ahí.</div>';
 }
 
+/* ── CUÁNDO EL PANEL ESTÁ "ABIERTO" ────────────────────────────────
+   En el teléfono el panel se muestra a pantalla completa, y para eso
+   hay que saber si tiene algo adentro. En vez de agregar la llamada en
+   las doce funciones que lo pintan —y olvidarse en la que se agregue
+   mañana— se vigila su contenido: todo panel de verdad empieza con un
+   <h3>; el aviso de "tocá una zona" no tiene ninguno.               */
+(function vigilarPanel(){
+  var p = $m('mapaPanel'), cont = document.getElementById('panel-mapa');
+  if(!p || !cont || !window.MutationObserver) return;
+  function revisar(){
+    var abierto = !!p.querySelector('h3');
+    var antes = cont.classList.contains('panel-abierto');
+    cont.classList.toggle('panel-abierto', abierto);
+    /* Cada pantalla nueva arranca desde arriba. Sin esto, al pasar de un
+       panel largo a otro quedaba mostrando el final del anterior. */
+    if(abierto) p.scrollTop = 0;
+  }
+  new MutationObserver(revisar).observe(p, { childList:true, subtree:true });
+  var v = $m('mapaVolver');
+  /* Volver NO borra la selección: al cerrar, el área tocada sigue
+     naranja en el plano y se ve de dónde se venía. */
+  if(v) v.onclick = function(){ limpiarPanel(); window.scrollTo({ top: cont.offsetTop, behavior:'smooth' }); };
+  revisar();
+})();
+
 /* ── ENGANCHES ────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', function(){
   var r = $m('mapaRecargar');  if(r) r.onclick = function(){ cargarMapa(true); };
@@ -23569,6 +23788,7 @@ document.addEventListener('DOMContentLoaded', function(){
   var tb = $m('mapaTablero');  if(tb) tb.onclick = verTablero;
   var fi = $m('mapaFotoInput'); if(fi) fi.onchange = function(){ recibirFotoEval(fi); };
   var u = $m('mapaUbicar');    if(u) u.onclick = formUbicar;
+  var dd = $m('mapaDonde');    if(dd) dd.onclick = verInventario;
   var nz = $m('mapaNuevaZona'); if(nz) nz.onclick = formZonaNueva;
   var bm = $m('mapaMas');   if(bm) bm.onclick = function(){ zoomEn(0.72); };
   var bn = $m('mapaMenos'); if(bn) bn.onclick = function(){ zoomEn(1.4); };
