@@ -1703,6 +1703,20 @@ html.solo-panel #panel-auditoria.active{
    explorador. Es lo que se muestra cuando alguien pide "mostrame el
    certificado de tal empresa" — no se le abre un editor, se le abre
    el documento. */
+/* ══ EL MAPA A PESTAÑA COMPLETA ═══════════════════════════════════
+   Sin encabezado ni barras, el plano usa todo el alto de la ventana.
+   Es la vista para mirar la planta, no para navegar el tablero: se sale
+   con Esc o con el botón Reducir.                                    */
+html.solo-panel #panel-mapa.active{padding:10px 12px}
+/* El encabezado de la pestaña y los KPI no se necesitan acá: lo que se
+   viene a hacer es mirar el plano. */
+html.solo-panel #panel-mapa .sec-hdr,
+html.solo-panel #panel-mapa .mapa-kpis{display:none}
+/* Sin las barras fijas queda todo el alto de la ventana. El tope sube; el
+   ancho lo da solo el wrapper, que en este modo va sin márgenes. */
+html.solo-panel #panel-mapa svg.plano{max-height:calc(100vh - 130px)}
+html.solo-panel #panel-mapa .mapa-panel{max-height:calc(100vh - 130px)}
+
 html.solo-panel #panel-certificado.active{
   position:fixed;inset:0;margin:0;width:auto;z-index:13000;
   overflow:auto;background:#e9e9e9;
@@ -2759,6 +2773,15 @@ html.solo-panel #salir-solo-panel{display:block}
   font-size:12.5px;padding:8px 10px;background:#eef5f0;border-left:3px solid #1c5636;border-radius:0 5px 5px 0;
 }
 #panel-mapa .act-lugar.vacio{background:#f6f6f4;border-left-color:#c9c9c2;color:var(--ink-l,#8a8f8a)}
+#panel-mapa .act-zona{
+  display:inline-flex;align-items:center;gap:5px;margin:2px 5px 2px 0;padding:3px 4px 3px 9px;
+  border-radius:12px;background:#fff;border:1px solid #1c5636;color:#1c5636;
+  font-size:11.5px;font-weight:700;
+}
+#panel-mapa .act-zona button{
+  border:0;background:none;color:#1c5636;font-size:14px;line-height:1;cursor:pointer;padding:0 4px;
+}
+#panel-mapa .act-lugar-d{font-size:10.5px;color:var(--ink-l,#8a8f8a);margin-top:4px}
 #panel-mapa .act-rango{display:flex;align-items:center;gap:8px}
 #panel-mapa .act-rango input{width:100%}
 #panel-mapa .act-rango span{font-size:12px;color:var(--ink-l,#8a8f8a)}
@@ -3783,6 +3806,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   </div>
 
   <div class="mapa-barra">
+    <button class="mapa-btn" id="mapaExpandir">Expandir</button>
     <button class="mapa-btn" id="mapaRecargar">Actualizar</button>
     <button class="mapa-btn" id="mapaNuevaAct">Nueva actividad</button>
     <button class="mapa-btn" id="mapaPendientes">Pendientes</button>
@@ -6712,6 +6736,10 @@ function alternarSoloPanel(forzar){
     const x = document.getElementById(id);
     if (x) x.textContent = activo ? '⛶ Reducir' : '⛶ Ampliar';
   });
+  /* El del mapa se actualiza también cuando se sale con Esc, que no pasa
+     por su propio onclick. */
+  const bm = document.getElementById('mapaExpandir');
+  if (bm) bm.textContent = activo ? 'Reducir' : 'Expandir';
 
   // Se reinicia la animacion del aviso cada vez que se entra
   const av = document.getElementById('salir-solo-panel');
@@ -6802,11 +6830,39 @@ document.addEventListener('keydown', function(e){
   }
 });
 
+/* ══════════════════════════════════════════════════════════════════
+   LLEVAR LA BARRA HASTA LA PESTAÑA ACTIVA
+   ------------------------------------------------------------------
+   La barra de pestañas mide más de 2.500 px con las veinte que hay. En
+   un teléfono de 375 px se ven dos. Al cambiar de pestaña la barra se
+   quedaba donde estaba: uno abría "Cadena · Inventario" —que está a
+   1.752 px del principio— y la barra seguía mostrando las primeras,
+   como si no hubiera pasado nada. Encima, para llegar a otra había que
+   arrastrar a ciegas por veinte pestañas.
+
+   Ahora la barra se corre sola hasta la pestaña activa y la deja
+   centrada, así que al lado quedan las vecinas y se ve dónde uno está.
+   ══════════════════════════════════════════════════════════════════ */
+function mostrarPestanaActiva(el){
+  try{
+    var nav = document.querySelector('.nav');
+    if(!nav || !el || !el.getBoundingClientRect) return;
+    var r = el.getBoundingClientRect(), n = nav.getBoundingClientRect();
+    if(!r.width || !n.width) return;
+    if(r.left >= n.left && r.right <= n.right) return;   /* ya se ve entera */
+    var destino = nav.scrollLeft + (r.left - n.left) - (n.width - r.width) / 2;
+    destino = Math.max(0, Math.min(destino, nav.scrollWidth - nav.clientWidth));
+    if(nav.scrollTo) nav.scrollTo({ left: destino, behavior: 'smooth' });
+    else nav.scrollLeft = destino;
+  }catch(e){ /* no poder desplazar la barra no puede romper el cambio de pestaña */ }
+}
+
 function showPanel(id, el) {
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('panel-'+id).classList.add('active');
   el.classList.add('active');
+  mostrarPestanaActiva(el);
   // Pestañas "Cadena de Abastecimiento": integradas directamente (sin iframe),
   // se activan/renderizan bajo demanda la primera vez que se abre cada una.
   const CSC_TAB_MAP = {
@@ -6835,7 +6891,7 @@ function showPanel(id, el) {
     window.certificadoCargarLogos();
   }
   if (id === 'dalas') { try { cargarDalasIndicadores(); } catch(e){} }
-  if (id !== 'auditoria' && id !== 'certificado' && document.documentElement.classList.contains('solo-panel')) {
+  if (id !== 'auditoria' && id !== 'certificado' && id !== 'mapa' && document.documentElement.classList.contains('solo-panel')) {
     alternarSoloPanel(false);   // cambiar de pestaña siempre devuelve el dashboard
   }
   if (id === 'auditoria') {
@@ -22285,6 +22341,9 @@ var SEL = { zona:null, vano:null };
    formulario porque para elegir el lugar hay que salir a tocar el mapa,
    y al volver lo escrito tiene que seguir estando. */
 var BORRADOR = null;
+/* Lo que se resalta sin estar creando nada: el área de la actividad que
+   se está evaluando o a la que se le registra un avance. */
+var RESALTE = null;
 /* Cuando esto está en true, tocar el mapa elige el lugar en vez de abrir
    el panel del área. */
 var ELIGIENDO = false;
@@ -22295,8 +22354,17 @@ var RESULTADOS = [
   ['no_cumple', 'No se hizo',         'mal']
 ];
 
+/* Las áreas de una actividad. El servidor manda la lista; si viniera una
+   sola (o de una versión anterior), se arma igual. */
+function zonasDe(a){
+  if(a.zonaIds && a.zonaIds.length) return a.zonaIds;
+  return a.zonaId ? String(a.zonaId).split(',').map(function(x){ return x.trim(); }).filter(Boolean) : [];
+}
+
 function actsDeZona(zonaId){
-  return M.actividades.filter(function(a){ return a.activa && a.zonaId === zonaId; });
+  return M.actividades.filter(function(a){
+    return a.activa && zonasDe(a).indexOf(zonaId) > -1;
+  });
 }
 function actsAbiertas(zonaId){
   return actsDeZona(zonaId).filter(function(a){ return a.estado !== 'cerrada'; });
@@ -22304,7 +22372,11 @@ function actsAbiertas(zonaId){
 /* Las de un vano: las de la sección entera valen para todos sus vanos. */
 function actsDeVano(zonaId, vano){
   return actsDeZona(zonaId).filter(function(a){
-    return a.alcance !== 'pila' || (vano >= a.vanoDesde && vano <= a.vanoHasta);
+    /* El tramo de pilas es de la carpa donde se definió: si la actividad
+       abarca varias áreas, en las otras vale como sección entera. */
+    if(a.alcance !== 'pila') return true;
+    if(a.zonaId !== zonaId) return true;
+    return vano >= a.vanoDesde && vano <= a.vanoHasta;
   });
 }
 function evalsDe(actId){
@@ -22336,8 +22408,10 @@ function semaforo(acts){
   return peor;
 }
 function dondeDice(a){
-  var z = zonaPorId(a.zonaId);
-  var n = z ? z.nombre : a.zonaId;
+  var ids = zonasDe(a);
+  var nombres = ids.map(function(id){ var z = zonaPorId(id); return z ? z.nombre : id; });
+  if(ids.length > 1) return nombres.join(' · ') + ' · ' + ids.length + ' áreas';
+  var n = nombres[0] || '';
   if(a.alcance === 'pila'){
     return n + ' · ' + (a.vanoDesde === a.vanoHasta
       ? 'pila ' + a.vanoDesde
@@ -22721,6 +22795,38 @@ function estadoMapa(texto, malo){
   l.style.display = '';
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   NO PREGUNTAR DOS VECES LO MISMO
+   ------------------------------------------------------------------
+   Cada escritura del mapa —crear una actividad, evaluarla, registrar un
+   avance, guardar una pila— ya devuelve el mapa ENTERO en su respuesta.
+   Aun así, después se llamaba a cargarMapa(true), que lo pedía de nuevo.
+
+   Medido contra producción el 11 de septiembre de 2026: una consulta al
+   Apps Script tarda entre 4 y 7 segundos, y el contenido son 605 bytes.
+   O sea que el tiempo no es de los datos: es el arranque del script más
+   el redirect que Google mete entre el POST y la respuesta. Hacer dos
+   viajes para guardar una línea costaba unos doce segundos.
+
+   Con esto queda uno solo. Si por lo que sea la respuesta no trajo el
+   mapa, se cae al camino de antes y se pide — más vale tardar que
+   quedarse con la pantalla desactualizada.
+   ══════════════════════════════════════════════════════════════════ */
+function aplicarEstadoMapa(d){
+  if(!d || (!d.actividades && !d.zonas && !d.pilas)) return false;
+
+  var zs = d.zonas || [];
+  if(zs.length){ M.zonas = fusionarZonas(zs); guardarCambios(zs); }
+  if(d.pilas)        M.pilas        = d.pilas;
+  if(d.actividades)  M.actividades  = d.actividades;
+  if(d.evaluaciones) M.evaluaciones = d.evaluaciones;
+  if(d.terminos && d.terminos.length) M.terminos = d.terminos;
+  M.cargado = true;
+  estadoMapa('');
+  pintar();
+  return true;
+}
+
 /* ── CARGA ────────────────────────────────────────────────────────── */
 async function cargarMapa(forzar){
   /* Primero el dibujo, sin esperar a nadie. */
@@ -22886,7 +22992,7 @@ function pintar(){
   var verItems = $m('mapaVerItems') ? $m('mapaVerItems').checked : true;
   var verActs  = $m('mapaVerActs')  ? $m('mapaVerActs').checked  : true;
   /* Lo que se está por marcar como lugar de una actividad nueva. */
-  var elegida  = (BORRADOR && BORRADOR.zonaId) ? BORRADOR : null;
+  var elegida  = (BORRADOR && BORRADOR.zonas && BORRADOR.zonas.length) ? BORRADOR : RESALTE;
 
   var partes = [];
 
@@ -22912,8 +23018,8 @@ function pintar(){
        verde mientras se llena el formulario. Sin esto había que confiar
        en la memoria: se tocaba un área, el panel volvía al formulario y
        el plano quedaba igual que antes, sin decir cuál se había tocado. */
-    var eleg = (elegida && elegida.zonaId === z.id)
-             ? (elegida.alcance === 'pila' ? ' elegida-zona' : ' elegida')
+    var eleg = (elegida && elegida.zonas && elegida.zonas.indexOf(z.id) > -1)
+             ? (elegida.alcance === 'pila' && elegida.zonas.length === 1 ? ' elegida-zona' : ' elegida')
              : '';
     var g = ['<g class="z t-' + esc(z.tipo) + sel + eleg + '" data-zona="' + esc(z.id) + '">'];
     if(z.puntos){
@@ -22983,7 +23089,8 @@ function pintar(){
           /* El tramo de pilas elegido también: verde, vano por vano.
              Es la única forma de ver "de la 2 a la 4" sin contar parales
              con el dedo en la pantalla. */
-          var vanoEleg = (elegida && elegida.zonaId === z.id && elegida.alcance === 'pila' &&
+          var vanoEleg = (elegida && elegida.zonas && elegida.zonas[0] === z.id &&
+                          elegida.alcance === 'pila' &&
                           v >= elegida.vanoDesde && v <= elegida.vanoHasta) ? ' elegido' : '';
           var cls = 'vano' + (pl ? ' con-pila e-' + esc(pl.estado) : '') +
                     (actsV.length ? ' con-act s-' + semaforo(actsV) : '') +
@@ -23362,8 +23469,8 @@ async function guardarZonaPanel(){
 
   var b = $m('zGuardar'); b.disabled = true; b.textContent = 'Guardando…';
   try{
-    await pedir(datos);
-    await cargarMapa(true);
+    var r = await pedir(datos);
+    if(!aplicarEstadoMapa(r)) await cargarMapa(true);
     verZona();
   }catch(e){ b.disabled=false; b.textContent='Guardar cambios'; alert(e.message); }
 }
@@ -23406,10 +23513,10 @@ async function guardarPila(){
   var z = zonaPorId(SEL.zona);
   var b = $m('plGuardar'); b.disabled = true; b.textContent = 'Guardando…';
   try{
-    await pedir({ action:'guardarPila', zonaId:z.id, vano:SEL.vano,
+    var r = await pedir({ action:'guardarPila', zonaId:z.id, vano:SEL.vano,
       material: $m('plMaterial').value, estado: $m('plEstado').value,
       observacion: $m('plObs').value, responsable: quienSoy() });
-    await cargarMapa(true);
+    if(!aplicarEstadoMapa(r)) await cargarMapa(true);
     verPila();
   }catch(e){ b.disabled=false; b.textContent='Guardar pila'; alert(e.message); }
 }
@@ -23425,9 +23532,10 @@ async function guardarPila(){
    ══════════════════════════════════════════════════════════════════ */
 function formActividadNueva(zona, vano){
   BORRADOR = BORRADOR || { nombre:'', descripcion:'', criterio:'', fechaLimite:'', plazo:'',
-                           zonaId:'', alcance:'zona', vanoDesde:0, vanoHasta:0 };
+                           zonas:[], alcance:'zona', vanoDesde:0, vanoHasta:0 };
+  if(!BORRADOR.zonas) BORRADOR.zonas = BORRADOR.zonaId ? [BORRADOR.zonaId] : [];
   if(zona){
-    BORRADOR.zonaId = zona.id;
+    if(BORRADOR.zonas.indexOf(zona.id) < 0) BORRADOR.zonas.push(zona.id);
     if(vano){ BORRADOR.alcance = 'pila'; BORRADOR.vanoDesde = vano; BORRADOR.vanoHasta = vano; }
   }
   ELIGIENDO = false;
@@ -23437,8 +23545,11 @@ function formActividadNueva(zona, vano){
 function pintarActividadForm(){
   var p = $m('mapaPanel');
   var b = BORRADOR;
-  var z = b.zonaId ? zonaPorId(b.zonaId) : null;
+  if(!b.zonas) b.zonas = b.zonaId ? [b.zonaId] : [];
+  /* El tramo de pilas solo tiene sentido sobre UNA carpa. */
+  var z = (b.zonas.length === 1) ? zonaPorId(b.zonas[0]) : null;
   var vanos = z ? vanosDe(z) : 0;
+  if(b.zonas.length > 1) b.alcance = 'zona';
   /* Al cambiar de área el tramo puede quedar fuera de rango: la anterior
      tenía ocho pilas y esta tiene cuatro. Se recorta antes de dibujar. */
   if(vanos){
@@ -23493,7 +23604,7 @@ function pintarActividadForm(){
     '<div class="mapa-sec">Dónde se desempeña</div>' +
     lugar +
     '<div class="mapa-acciones"><button class="mapa-cancelar" id="acElegir">' +
-      (z ? 'Cambiar el lugar' : 'Señalar el lugar en el plano') + '</button></div>' +
+      (b.zonas.length ? 'Agregar o cambiar áreas' : 'Señalar el lugar en el plano') + '</button></div>' +
     alcance +
 
     '<div class="mapa-acciones">' +
@@ -23521,6 +23632,15 @@ function pintarActividadForm(){
     $m('acFechaCaja').style.display = pl.value === 'fecha' ? '' : 'none';
     $m('acPlazoAyuda').textContent = ayudaPlazo(BORRADOR);
   };
+  p.querySelectorAll('[data-quitar]').forEach(function(bt){
+    bt.onclick = function(){
+      guardarBorrador();
+      var k = BORRADOR.zonas.indexOf(bt.dataset.quitar);
+      if(k > -1) BORRADOR.zonas.splice(k, 1);
+      pintar();
+      pintarActividadForm();
+    };
+  });
   $m('acElegir').onclick = function(){ guardarBorrador(); entrarEnEleccion(); };
   $m('acCancelar').onclick = function(){ BORRADOR = null; ELIGIENDO = false; pintar(); limpiarPanel(); };
   $m('acGuardar').onclick = crearActividad;
@@ -23533,15 +23653,21 @@ function pintarActividadForm(){
    quedar diciendo "sección entera" con tres pilas ya pintadas de verde
    abajo: la etiqueta y el plano decían cosas distintas. */
 function textoLugar(){
-  var b = BORRADOR;
-  var z = (b && b.zonaId) ? zonaPorId(b.zonaId) : null;
-  if(!z) return '<div class="act-lugar vacio">Todavía no elegiste dónde. ' +
-                'Tocá el botón y después el área en el plano.</div>';
-  return '<div class="act-lugar"><b>' + esc(z.nombre) + '</b>' +
-    (b.alcance === 'pila'
-      ? ' · ' + (b.vanoDesde === b.vanoHasta ? 'pila ' + b.vanoDesde
-                                             : 'pilas ' + b.vanoDesde + ' a ' + b.vanoHasta)
-      : ' · sección entera') + '</div>';
+  var b = BORRADOR || {};
+  var zonas = b.zonas || [];
+  if(!zonas.length) return '<div class="act-lugar vacio">Todavía no elegiste dónde. ' +
+                'Tocá el botón y después las áreas en el plano: podés marcar varias.</div>';
+  var detalle = (zonas.length > 1)
+    ? zonas.length + ' áreas · sección entera en cada una'
+    : (b.alcance === 'pila'
+        ? (b.vanoDesde === b.vanoHasta ? 'pila ' + b.vanoDesde
+                                       : 'pilas ' + b.vanoDesde + ' a ' + b.vanoHasta)
+        : 'sección entera');
+  return '<div class="act-lugar">' + zonas.map(function(id){
+      var z = zonaPorId(id);
+      return '<span class="act-zona">' + esc(z ? z.nombre : id) +
+             '<button type="button" data-quitar="' + esc(id) + '" title="Sacar esta área">×</button></span>';
+    }).join('') + '<div class="act-lugar-d">' + detalle + '</div></div>';
 }
 
 function refrescarLugar(){
@@ -23594,31 +23720,69 @@ function ayudaPlazo(b){
 
 function entrarEnEleccion(){
   ELIGIENDO = true;
-  var p = $m('mapaPanel');
-  p.innerHTML =
-    '<h3>¿Dónde se hace?</h3>' +
-    '<div class="act-eligiendo">Tocá en el plano el <b>área</b> donde se desempeña la actividad. ' +
-    'Si es una carpa, podés tocar directamente el <b>espacio entre dos parales</b> para señalar una pila.</div>' +
-    '<div class="mapa-acciones"><button class="mapa-cancelar" id="acVolver">Volver sin elegir</button></div>';
-  $m('acVolver').onclick = function(){ ELIGIENDO = false; pintar(); pintarActividadForm(); };
+  pintarEleccion();
   var l = $m('mapaLienzo');
   if(l) l.classList.add('eligiendo');
   if(esPantallaChica() && l) l.scrollIntoView({ behavior:'smooth', block:'start' });
 }
 
 /* La llama el mapa cuando se toca algo estando en modo elección. */
+/* Cada toque SUMA un área a la actividad; tocar una ya marcada la saca.
+   Así se arma una tarea que cubre varias secciones sin salir del plano.
+   Se sale del modo con el botón "Listo". */
 function elegirLugar(zonaId, vano){
   var z = zonaPorId(zonaId);
   if(!z) return;
-  BORRADOR = BORRADOR || { nombre:'', descripcion:'', criterio:'', fechaLimite:'' };
-  BORRADOR.zonaId = zonaId;
-  if(vano){ BORRADOR.alcance = 'pila'; BORRADOR.vanoDesde = vano; BORRADOR.vanoHasta = vano; }
-  else if(BORRADOR.alcance !== 'pila' || !vanosDe(z)){ BORRADOR.alcance = 'zona'; }
+  BORRADOR = BORRADOR || { nombre:'', descripcion:'', criterio:'', fechaLimite:'', zonas:[] };
+  if(!BORRADOR.zonas) BORRADOR.zonas = [];
+
+  var k = BORRADOR.zonas.indexOf(zonaId);
+  if(k > -1 && !vano){
+    BORRADOR.zonas.splice(k, 1);          /* tocarla de nuevo la saca */
+  }else if(k < 0){
+    BORRADOR.zonas.push(zonaId);
+  }
+
+  if(vano && BORRADOR.zonas.length === 1){
+    BORRADOR.alcance = 'pila'; BORRADOR.vanoDesde = vano; BORRADOR.vanoHasta = vano;
+  }else if(BORRADOR.zonas.length !== 1 || !vanosDe(z)){
+    BORRADOR.alcance = 'zona';
+  }
+
+  pintar();
+  pintarEleccion();
+}
+
+/* El cartel del modo elección, con lo que se lleva marcado. */
+function pintarEleccion(){
+  var b = BORRADOR || { zonas:[] };
+  var n = (b.zonas || []).length;
+  var p = $m('mapaPanel');
+  p.innerHTML =
+    '<h3>¿Dónde se hace?</h3>' +
+    '<div class="act-eligiendo">Tocá en el plano las <b>áreas</b> donde se desempeña. ' +
+    'Podés marcar <b>varias</b>; tocando una marcada se saca. ' +
+    'Si es una carpa y marcás una sola, podés tocar el <b>espacio entre dos parales</b> ' +
+    'para señalar un tramo de pilas.</div>' +
+    (n ? '<div class="act-lugar">' + b.zonas.map(function(id){
+            var zz = zonaPorId(id);
+            return '<span class="act-zona">' + esc(zz ? zz.nombre : id) + '</span>';
+         }).join('') + '</div>'
+       : '<div class="act-lugar vacio">Todavía no marcaste ninguna.</div>') +
+    '<div class="mapa-acciones">' +
+      '<button class="mapa-guardar" id="acListo"' + (n ? '' : ' disabled') + '>' +
+        (n ? 'Listo · ' + n + ' área' + (n === 1 ? '' : 's') : 'Marcá al menos una') + '</button>' +
+      '<button class="mapa-cancelar" id="acVolver">Volver sin elegir</button></div>';
+
+  $m('acListo').onclick = function(){ salirDeEleccion(); pintarActividadForm(); };
+  $m('acVolver').onclick = function(){ salirDeEleccion(); pintarActividadForm(); };
+}
+
+function salirDeEleccion(){
   ELIGIENDO = false;
   var l = $m('mapaLienzo');
   if(l) l.classList.remove('eligiendo');
   pintar();
-  pintarActividadForm();
 }
 
 async function crearActividad(){
@@ -23626,17 +23790,18 @@ async function crearActividad(){
   var b = BORRADOR;
   if(!b.nombre.trim()){ alert('Escribí qué hay que hacer.'); $m('acNombre').focus(); return; }
   if(!b.criterio.trim()){ alert('Escribí en base a qué se va a evaluar. Sin eso, después no hay con qué comparar.'); $m('acCriterio').focus(); return; }
-  if(!b.zonaId){ alert('Falta tocar en el plano dónde se desempeña.'); return; }
+  if(!b.zonas || !b.zonas.length){ alert('Falta tocar en el plano dónde se desempeña.'); return; }
 
   var btn = $m('acGuardar'); btn.disabled = true; btn.textContent = 'Creando…';
   try{
     var r = await pedir({ action:'crearActividad',
       nombre: b.nombre.trim(), criterio: b.criterio.trim(), descripcion: b.descripcion.trim(),
-      fechaLimite: b.fechaLimite, plazo: b.plazo, zonaId: b.zonaId, alcance: b.alcance,
+      fechaLimite: b.fechaLimite, plazo: b.plazo,
+      zonaId: b.zonas[0], zonaIds: b.zonas, alcance: b.alcance,
       vanoDesde: b.vanoDesde, vanoHasta: b.vanoHasta, responsable: quienSoy() });
     BORRADOR = null;
     SEL.zona = r.zonaId; SEL.vano = (r.alcance === 'pila') ? r.vanoDesde : null;
-    await cargarMapa(true);
+    if(!aplicarEstadoMapa(r)) await cargarMapa(true);
     if(SEL.vano) verPila(); else verZona();
   }catch(e){ btn.disabled=false; btn.textContent='Crear la actividad'; alert(e.message); }
 }
@@ -23654,10 +23819,17 @@ var FOTO_EVAL = null;
    avance: esto dice a cuál de los dos va la foto que llegue. */
 var DESTINO_FOTO = 'eval';
 
+function resaltarActividad(a){
+  RESALTE = a ? { zonas: zonasDe(a), alcance: a.alcance,
+                  vanoDesde: a.vanoDesde, vanoHasta: a.vanoHasta } : null;
+  pintar();
+}
+
 function formEvaluar(actId){
   var a = actPorId(actId);
   if(!a) return;
   FOTO_EVAL = null;
+  resaltarActividad(a);
   var p = $m('mapaPanel');
   var previas = evalsDe(actId);
 
@@ -23702,7 +23874,7 @@ function formEvaluar(actId){
       g.textContent = 'Guardar la evaluación';
     };
   });
-  $m('evCancelar').onclick = function(){ FOTO_EVAL = null; if(SEL.vano) verPila(); else verZona(); };
+  $m('evCancelar').onclick = function(){ FOTO_EVAL = null; volverDeFormulario(); };
   $m('evGuardar').onclick = function(){ guardarEvaluacion(actId, elegido); };
 }
 
@@ -23867,12 +24039,17 @@ function recibirFotoEval(input){
     var img = new Image();
     img.onload = function(){
       /* Se achica antes de mandarla: una foto de teléfono son varios
-         megas y viaja como texto dentro del JSON. */
-      var max = 1600, esc2 = Math.min(1, max / Math.max(img.width, img.height));
+         megas y viaja como TEXTO dentro del JSON —base64 agrega un tercio
+         más— así que el tamaño se paga entero en el tiempo de subida, que
+         desde el campo es lo más lento de todo.
+         1280 px alcanza de sobra para una evidencia: se lee un número de
+         serie, se ve si una pila escurre. A 1600 y calidad 0,85 una foto
+         pesaba cerca de medio mega; así queda en la quinta parte. */
+      var max = 1280, esc2 = Math.min(1, max / Math.max(img.width, img.height));
       var c = document.createElement('canvas');
       c.width = Math.round(img.width * esc2); c.height = Math.round(img.height * esc2);
       c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-      var dataUrl = c.toDataURL('image/jpeg', 0.85);
+      var dataUrl = c.toDataURL('image/jpeg', 0.72);
       if(DESTINO_FOTO === 'avance'){ FOTO_AVANCE = dataUrl; pintarFotoAvance(); }
       else if(DESTINO_FOTO === 'item'){ FOTO_ITEM = dataUrl; pintarFotoItem(); }
       else { FOTO_EVAL = dataUrl; pintarFotoEval(); }
@@ -23891,12 +24068,13 @@ async function guardarEvaluacion(actId, resultado){
   }
   var b = $m('evGuardar'); b.disabled = true; b.textContent = 'Guardando…';
   try{
-    await pedir({ action:'evaluarActividad', actividadId: actId, resultado: resultado,
+    var r = await pedir({ action:'evaluarActividad', actividadId: actId, resultado: resultado,
       observacion: ($m('evObs')||{}).value || '', foto: FOTO_EVAL || '',
       cerrar: $m('evCerrar') ? $m('evCerrar').checked : false,
       responsable: quienSoy() });
     FOTO_EVAL = null;
-    await cargarMapa(true);
+    resaltarActividad(null);
+    if(!aplicarEstadoMapa(r)) await cargarMapa(true);
     if(SEL.vano) verPila(); else verZona();
   }catch(e){ b.disabled=false; b.textContent='Guardar la evaluación'; alert(e.message); }
 }
@@ -23987,6 +24165,7 @@ function formAvance(actId){
   var a = actPorId(actId);
   if(!a) return;
   FOTO_AVANCE = null;
+  resaltarActividad(a);
   var p = $m('mapaPanel');
   p.innerHTML =
     '<h3>Cómo va</h3>' +
@@ -24034,17 +24213,18 @@ async function guardarAvance(actId){
   if(!motivo){ alert('Escribí por qué la actividad está así. Un avance sin razón no explica nada.'); $m('avMotivo').focus(); return; }
   var b = $m('avGuardar'); b.disabled = true; b.textContent = 'Guardando…';
   try{
-    await pedir({ action:'avanceActividad', id:actId,
+    var r = await pedir({ action:'avanceActividad', id:actId,
       etapa: (($m('avEtapa')||{}).value || '').trim(), motivo: motivo,
       foto: FOTO_AVANCE || '', responsable: quienSoy() });
     FOTO_AVANCE = null;
-    await cargarMapa(true);
+    if(!aplicarEstadoMapa(r)) await cargarMapa(true);
     volverDeFormulario();
   }catch(e){ b.disabled=false; b.textContent='Guardar el avance'; alert(e.message); }
 }
 
 /* A dónde se vuelve al salir de un formulario del panel. */
 function volverDeFormulario(){
+  resaltarActividad(null);
   if(SEL.vano) verPila();
   else if(SEL.zona) verZona();
   else verTablero();
@@ -24056,8 +24236,8 @@ async function cambiarEstadoActividad(boton, id, estado){
   var antes = boton ? boton.textContent : '';
   if(boton){ boton.disabled = true; boton.textContent = '…'; }
   try{
-    await pedir({ action:'cerrarActividad', id:id, estado:estado, responsable:quienSoy() });
-    await cargarMapa(true);
+    var r = await pedir({ action:'cerrarActividad', id:id, estado:estado, responsable:quienSoy() });
+    if(!aplicarEstadoMapa(r)) await cargarMapa(true);
     if(document.querySelector('#mapaPanel h3') &&
        document.querySelector('#mapaPanel h3').textContent === 'Actividades') verTablero();
     else if(SEL.vano) verPila();
@@ -24074,6 +24254,7 @@ async function cambiarEstadoActividad(boton, id, estado){
 function verHistorial(actId){
   var a = actPorId(actId);
   if(!a) return;
+  resaltarActividad(a);
   var l = evalsDe(actId);
   var reales = l.filter(function(e){ return e.resultado !== 'avance'; });
   var cumple = reales.filter(function(e){ return e.resultado === 'cumple'; }).length;
@@ -24104,7 +24285,7 @@ function verHistorial(actId){
       verHistorial(actId);
     }catch(e){ alert(e.message); }
   };
-  $m('hVolver').onclick = function(){ if(SEL.vano) verPila(); else verZona(); };
+  $m('hVolver').onclick = volverDeFormulario;
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -24608,7 +24789,11 @@ async function ubicarElegidos(){
       })
     : [];
 
-  await cargarMapa(true);
+  /* No se vuelve a pedir el mapa: lo único que cambió es la ubicación de
+     unos artículos, y eso ya se corrigió en la copia local de arriba. Con
+     cinco artículos, pedirlo de nuevo eran cinco segundos de más para no
+     enterarse de nada nuevo. */
+  pintar();
   if(!fallados.length){
     if(SEL.zona) verZona(); else verInventario();
   }else{
@@ -24649,7 +24834,7 @@ function formZonaNueva(){
       var r = await pedir({ action:'guardarZona', nombre:nombre, tipo:sel.value,
         parales: sel.value === 'almacen' ? (parseInt($m('nzParales').value,10) || 0) : 0,
         x:430, y:330, w:110, h:60, responsable:quienSoy() });
-      await cargarMapa(true);
+      if(!aplicarEstadoMapa(r)) await cargarMapa(true);
       SEL.zona = r.id; SEL.vano = null;
       pintar(); verZona();
     }catch(e){ b.disabled=false; b.textContent='Crear'; alert(e.message); }
@@ -24689,6 +24874,19 @@ function limpiarPanel(){
 /* ── ENGANCHES ────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', function(){
   var r = $m('mapaRecargar');  if(r) r.onclick = function(){ cargarMapa(true); };
+  /* Pantalla completa: se apoya en el modo que ya existe para Certificado
+     y Operaciones, que esconde el encabezado y las barras fijas. Acá gana
+     el doble: no solo entra más plano, además desaparecen las barras que
+     se comían los toques sobre la parte de arriba del mapa. */
+  var ex = $m('mapaExpandir');
+  if(ex) ex.onclick = function(){
+    if(typeof window.alternarSoloPanel === 'function') window.alternarSoloPanel();
+    ex.textContent = document.documentElement.classList.contains('solo-panel')
+      ? 'Reducir' : 'Expandir';
+    /* El alto disponible cambió: el plano se vuelve a encuadrar para
+       aprovecharlo. */
+    setTimeout(function(){ verTodo(); pintar(); }, 60);
+  };
   var a = $m('mapaNuevaAct');  if(a) a.onclick = function(){
     BORRADOR = null;
     formActividadNueva(SEL.zona ? zonaPorId(SEL.zona) : null, SEL.vano);
