@@ -1707,15 +1707,32 @@ html.solo-panel #panel-auditoria.active{
    Sin encabezado ni barras, el plano usa todo el alto de la ventana.
    Es la vista para mirar la planta, no para navegar el tablero: se sale
    con Esc o con el botón Reducir.                                    */
-html.solo-panel #panel-mapa.active{padding:10px 12px}
+/* ══ PANTALLA COMPLETA DE VERDAD ═══════════════════════════════════
+   El panel se FIJA a la ventana. Antes se le daba height:100vh dentro
+   del flujo normal y el plano terminaba en 405 x 300 —MENOS que en la
+   vista normal— porque alguna altura de la cadena no resolvía y el svg
+   caía a su min-height. Con position:fixed la altura queda anclada a la
+   ventana y no depende de ningún padre.
+
+   Va por encima del contenido del tablero (z-index 900) pero por debajo
+   del visor de fotos (1400) y del panel a pantalla completa del teléfono
+   (1200), que tienen que poder abrirse encima.                       */
+html.solo-panel #panel-mapa.active{
+  position:fixed;inset:0;z-index:900;
+  display:flex;flex-direction:column;
+  padding:8px 10px;margin:0;background:var(--papel,#fff);
+}
 /* El encabezado de la pestaña y los KPI no se necesitan acá: lo que se
    viene a hacer es mirar el plano. */
 html.solo-panel #panel-mapa .sec-hdr,
 html.solo-panel #panel-mapa .mapa-kpis{display:none}
-/* Sin las barras fijas queda todo el alto de la ventana. El tope sube; el
-   ancho lo da solo el wrapper, que en este modo va sin márgenes. */
-html.solo-panel #panel-mapa svg.plano{max-height:calc(100vh - 130px)}
-html.solo-panel #panel-mapa .mapa-panel{max-height:calc(100vh - 130px)}
+html.solo-panel #panel-mapa .mapa-barra{flex:0 0 auto;margin-bottom:8px}
+html.solo-panel #panel-mapa .mapa-area{flex:1 1 auto;min-height:0}
+html.solo-panel #panel-mapa .mapa-lienzo{height:100%}
+/* min-height:0 es imprescindible: el 300px de la vista normal le ganaría
+   al alto real y el plano quedaría chico otra vez. */
+html.solo-panel #panel-mapa svg.plano{height:100%;max-height:none;min-height:0}
+html.solo-panel #panel-mapa .mapa-panel{max-height:100%;height:100%;overflow:auto}
 
 html.solo-panel #panel-certificado.active{
   position:fixed;inset:0;margin:0;width:auto;z-index:13000;
@@ -23099,7 +23116,7 @@ function pintar(){
           g.push('<rect class="' + cls + '" x="' + vx + '" y="' + (z.y+3) + '" width="' + paso +
                  '" height="' + (z.h-6) + '" data-zona="' + esc(z.id) + '" data-vano="' + v +
                  '"><title>' + esc(z.nombre) + ' · pila ' + v +
-                 (pl ? ' · ' + esc(pl.material || 'sin material') + ' · ' + esc(pl.estado) : ' · vacía') +
+                 (pl ? ' · ' + esc(pl.estado.replace('_',' ')) : ' · vacía') +
                  '</title></rect>');
         }
       }
@@ -23319,7 +23336,7 @@ function verZona(){
   if(pilas.length){
     h += '<div class="mapa-sec">Pilas (' + pilas.length + ')</div>';
     h += pilas.sort(function(a,b){ return a.vano - b.vano; }).map(function(x){
-      return '<div class="mapa-linea"><b>Pila ' + x.vano + '</b> ' + esc(x.material || 'sin material') +
+      return '<div class="mapa-linea"><b>Pila ' + x.vano + '</b> ' + esc(x.observacion || '') +
              ' <span class="cuando"><span class="et-estado et-' + esc(x.estado) + '">' + esc(x.estado.replace('_',' ')) + '</span></span></div>';
     }).join('');
   }
@@ -23487,9 +23504,10 @@ function verPila(){
   p.innerHTML =
     '<h3>Pila ' + SEL.vano + '</h3>' +
     '<div class="sub">' + esc(z.nombre) + ' · entre el paral ' + SEL.vano + ' y el ' + (SEL.vano+1) + '</div>' +
-    '<div class="mapa-campo"><label>Material</label><select id="plMaterial">' +
-      opciones('material', pl.material) + '</select>' +
-      '<div class="ayuda">Sale de la matriz de terminología. Si falta uno, se agrega a la hoja Términos.</div></div>' +
+    /* Sin material: la pila se describe por su estado y su observación.
+       El desplegable obligaba a encasillar lo que hay en un vano dentro
+       de la lista de la matriz, y lo que ocupa una pila no siempre entra
+       ahí — para eso está la observación, que es texto libre. */
     '<div class="mapa-campo"><label>Estado</label><select id="plEstado">' +
       ['vacia','llenando','en_proceso','lista','retirada'].map(function(e){
         return '<option value="' + e + '"' + (pl.estado===e?' selected':'') + '>' + e.replace('_',' ') + '</option>';
@@ -23514,7 +23532,7 @@ async function guardarPila(){
   var b = $m('plGuardar'); b.disabled = true; b.textContent = 'Guardando…';
   try{
     var r = await pedir({ action:'guardarPila', zonaId:z.id, vano:SEL.vano,
-      material: $m('plMaterial').value, estado: $m('plEstado').value,
+      estado: $m('plEstado').value,
       observacion: $m('plObs').value, responsable: quienSoy() });
     if(!aplicarEstadoMapa(r)) await cargarMapa(true);
     verPila();
