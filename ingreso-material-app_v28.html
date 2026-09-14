@@ -127,6 +127,10 @@ self.addEventListener('fetch',e=>{
 .mf-campo label{display:block;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px}
 .mf-campo input{width:100%;padding:9px 10px;font-size:16px;border:1px solid var(--rule);background:var(--white);color:var(--ink);font-family:'Source Sans 3',sans-serif;outline:none;box-sizing:border-box}
 .mf-campo input:focus{border-color:var(--navy)}
+.mf-campo input.mf-mal{border-color:#c62828;background:#fdecec}
+.mf-malmsg{font-size:11px;font-weight:700;color:#c62828;margin-top:3px}
+.mf-nc{margin-top:9px;padding:9px;border:1px solid #c62828;background:#fdecec;font-size:12px;color:#8e1c1c}
+.mf-nc .mf-btn{margin-top:7px;background:#c62828;border-color:#c62828}
 .mf-ref{font-size:10px;color:var(--ink-l);margin-top:3px}
 .mf-foto-zona{margin-top:11px;border:1px dashed var(--rule);padding:9px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}
 .mf-foto-zona img{width:74px;height:74px;object-fit:cover;border:1px solid var(--rule);cursor:zoom-in}
@@ -614,6 +618,7 @@ input.campo-error-resaltado,select.campo-error-resaltado,textarea.campo-error-re
           <div class="mf-kpi"><b id="mf-k-pend">—</b><i>por verificar</i></div>
           <div class="mf-kpi"><b id="mf-k-cert">—</b><i>certificados</i></div>
           <div class="mf-kpi"><b id="mf-k-nd">—</b><i>no disponibles</i></div>
+          <div class="mf-kpi"><b id="mf-k-nc">—</b><i>no coinciden</i></div>
           <div class="mf-kpi"><b id="mf-k-total">—</b><i>viajes en el filtro</i></div>
         </div>
         <div class="mf-nota-filtro">
@@ -5226,6 +5231,7 @@ function loginEsperando(activo) {
 
 var MF_MARCA    = 'CERTIFICADO ENTREGA FISICA';
 var MF_MARCA_ND = 'MANIFIESTO NO DISPONIBLE';
+var MF_MARCA_NC = 'MANIFIESTO NO COINCIDE';
 
 var MF = {
   abierto: false,
@@ -5236,7 +5242,7 @@ var MF = {
   foto: null,            // dataUrl del manifiesto recien fotografiado
   noDisp: false,         // el operario marco "manifiesto no disponible"
   enviando: false,
-  difAceptada: false     // ya vio el aviso de diferencia y decidio guardar igual
+  noCoincide: null       // campos que no coincidieron en el ultimo intento: ['neto','manifiesto']
 };
 
 function mfEsc(t) {
@@ -5356,11 +5362,12 @@ function mfRender() {
 
   MF.lista = mfArmarLista();
 
-  var pend = 0, cert = 0, nd = 0;
+  var pend = 0, cert = 0, nd = 0, nc = 0;
   MF.lista.forEach(function (r) {
     var e = mfEstado(r);
     if (e === '') pend++;
     else if (e === MF_MARCA_ND) nd++;
+    else if (e === MF_MARCA_NC) nc++;
     else cert++;
   });
 
@@ -5374,6 +5381,7 @@ function mfRender() {
   if (mfEl('mf-k-pend'))  mfEl('mf-k-pend').textContent  = pend;
   if (mfEl('mf-k-cert'))  mfEl('mf-k-cert').textContent  = cert;
   if (mfEl('mf-k-nd'))    mfEl('mf-k-nd').textContent    = nd;
+  if (mfEl('mf-k-nc'))    mfEl('mf-k-nc').textContent    = nc;
   if (mfEl('mf-k-total')) mfEl('mf-k-total').textContent = MF.lista.length;
 
   /* Al repintar (un filtro nuevo, datos recargados) se vuelve al mismo
@@ -5388,7 +5396,7 @@ function mfRender() {
   }
 
   mfPintarLead();
-  mfPintarCierre(pend, cert, nd);
+  mfPintarCierre(pend, cert, nd, nc);
 }
 
 function mfPintarLead() {
@@ -5437,11 +5445,12 @@ function mfPintarLead() {
           '<dt>Material</dt><dd>' + mfEsc(mfResiduo(r) || '—') + '</dd>' +
           '<dt>Operación</dt><dd>' + mfEsc(mfOperacion(r) || '—') + '</dd>' +
           '<dt>Entrada</dt><dd>' + mfEsc((mfFecha(r) || '—') + '  ' + (mfHora(r) || '')) + '</dd>' +
-          '<dt>Neto báscula</dt><dd>' + fmt(neto) + ' kg</dd>' +
         '</dl>' +
         (estado
-          ? '<div class="mf-ya' + (estado === MF_MARCA_ND ? ' nd' : '') + '">' +
-            (estado === MF_MARCA_ND ? '✋ Marcado como manifiesto no disponible' : '✓ Ya tiene constancia de entrega física') +
+          ? '<div class="mf-ya' + (estado === MF_MARCA_ND || estado === MF_MARCA_NC ? ' nd' : '') + '">' +
+            (estado === MF_MARCA_ND ? 'Marcado como manifiesto no disponible'
+              : estado === MF_MARCA_NC ? 'Registrado como NO COINCIDE: no es un certificado'
+              : '✓ Ya tiene constancia de entrega física') +
             (mfCampo(r, ['MF OPERARIO']) ? ' · ' + mfEsc(mfCampo(r, ['MF OPERARIO'])) : '') +
             (mfCampo(r, ['MF FECHA']) ? ' · ' + mfEsc(mfCampo(r, ['MF FECHA'])) : '') +
             (mfCampo(r, ['MF NOTA']) ? '<br>' + mfEsc(mfCampo(r, ['MF NOTA'])) : '') +
@@ -5454,16 +5463,18 @@ function mfPintarLead() {
   var formulario =
     '<div class="mf-fila">' +
       '<div class="mf-campo">' +
-        '<label for="mf-neto">Neto que dice el papel (kg)</label>' +
-        '<input type="number" id="mf-neto" inputmode="numeric" placeholder="Leelo del manifiesto">' +
-        '<div class="mf-ref">La báscula registró ' + fmt(neto) + ' kg</div>' +
+        '<label for="mf-neto">Peso neto del papel (kg)</label>' +
+        '<input type="number" id="mf-neto" inputmode="numeric" placeholder="Leelo del papel" oninput="mfLimpiarMal(this)">' +
+        '<div class="mf-malmsg" id="mf-mal-neto"></div>' +
       '</div>' +
       '<div class="mf-campo">' +
-        '<label for="mf-baucher">N° de baucher del papel</label>' +
-        '<input type="text" id="mf-baucher" inputmode="numeric" placeholder="Leelo del manifiesto">' +
-        '<div class="mf-ref">En el sistema: ' + mfEsc(mfTiquete(r) || '—') + '</div>' +
+        '<label for="mf-baucher" id="mf-lbl-numero">N° de manifiesto</label>' +
+        '<input type="text" id="mf-baucher" inputmode="numeric" placeholder="Leelo del papel" oninput="mfLimpiarMal(this)">' +
+        '<div class="mf-malmsg" id="mf-mal-manifiesto"></div>' +
+        (cons === null ? '<div class="mf-ref">Este viaje no tiene consecutivo en el sistema: se guarda lo que diga el papel.</div>' : '') +
       '</div>' +
     '</div>' +
+    '<div class="mf-ref" style="margin-top:-2px">El peso neto y el N° de manifiesto tienen que coincidir con el registro para que quede certificado.</div>' +
 
     '<div class="mf-foto-zona" id="mf-foto-zona">' +
       (MF.foto
@@ -5528,9 +5539,16 @@ function mfPintarLead() {
 /* Con "no disponible" marcado la foto deja de pedirse: el papel no existe,
    no hay nada que fotografiar. El neto y el baucher se siguen pidiendo,
    que es lo que permite continuar con el cuadre. */
+/* Al corregir un campo marcado en rojo, se quita la marca. */
+function mfLimpiarMal(input) {
+  input.classList.remove('mf-mal');
+  var m = mfEl(input.id === 'mf-neto' ? 'mf-mal-neto' : 'mf-mal-manifiesto');
+  if (m) m.textContent = '';
+}
+
 function mfCambioNoDisponible(valor) {
   MF.noDisp = !!valor;
-  MF.difAceptada = false;
+  MF.noCoincide = null;
   mfAplicarNoDisponible();
   var b = mfEl('mf-btn-guardar');
   if (b) b.textContent = MF.noDisp ? 'Guardar como no disponible' : 'Guardar y siguiente';
@@ -5539,6 +5557,9 @@ function mfCambioNoDisponible(valor) {
 function mfAplicarNoDisponible() {
   var z = mfEl('mf-foto-zona');
   if (z) z.style.display = MF.noDisp ? 'none' : 'flex';
+  /* Sin manifiesto, el número que se escribe es el del baucher. */
+  var l = mfEl('mf-lbl-numero');
+  if (l) l.textContent = MF.noDisp ? 'N° de baucher' : 'N° de manifiesto';
 }
 
 /* Drive a veces no entrega la miniatura (permiso del archivo, o el
@@ -5582,13 +5603,38 @@ function mfMover(paso) {
   if (n < 0 || n >= MF.lista.length) return;
   MF.i = n;
   MF.clave = mfMarca(MF.lista[MF.i]);
-  MF.foto = null; MF.noDisp = false; MF.difAceptada = false;
+  MF.foto = null; MF.noDisp = false; MF.noCoincide = null;
   mfAviso('');
   mfPintarLead();
 }
 
 /* ── GUARDAR ────────────────────────────────────────────────────────── */
-async function mfGuardar() {
+/* Pinta qué campo no coincide, sin decir el valor correcto. Si hay papel
+   (no es "no disponible") ofrece registrar el viaje como NO COINCIDE:
+   sin esa salida, un viaje cuyo papel de verdad dice otra cosa trabaría
+   la operación entera, porque no se puede saltar. */
+function mfMostrarNoCoincide(campos, mensaje) {
+  MF.noCoincide = campos;
+  ['neto', 'manifiesto'].forEach(function (c) {
+    var inp = mfEl(c === 'neto' ? 'mf-neto' : 'mf-baucher');
+    var msg = mfEl('mf-mal-' + c);
+    var mal = campos.indexOf(c) > -1;
+    if (inp) inp.classList.toggle('mf-mal', mal);
+    if (msg) msg.textContent = mal ? 'No coincide con el registro' : '';
+  });
+  var caja = mfEl('mf-dif-aviso');
+  if (!caja) return;
+  caja.innerHTML = '<div class="mf-nc"><b>' + mfEsc(mensaje) + '</b><br>' +
+    'Revisá que sea el papel de este viaje y que esté bien escrito, y volvé a guardar.' +
+    (MF.noDisp ? '' :
+      '<br>Si el papel de verdad dice otra cosa, escribí en la observación qué pasó y registralo ' +
+      'como NO COINCIDE. No queda certificado: queda marcado para revisar.' +
+      '<br><button type="button" class="mf-btn" onclick="mfGuardar(true)">Registrar como NO COINCIDE</button>') +
+    '</div>';
+}
+
+async function mfGuardar(comoNoCoincide) {
+  comoNoCoincide = comoNoCoincide === true;
   if (MF.enviando) return;
   var r = MF.lista[MF.i];
   if (!r) return;
@@ -5600,30 +5646,34 @@ async function mfGuardar() {
   baucher = baucher.toString().trim();
 
   if (!neto)    { mfAviso('Escribí el neto que dice el manifiesto.'); if (mfEl('mf-neto')) mfEl('mf-neto').focus(); return; }
-  if (!baucher) { mfAviso('Escribí el número de baucher del manifiesto.'); if (mfEl('mf-baucher')) mfEl('mf-baucher').focus(); return; }
+  if (!baucher) { mfAviso(MF.noDisp ? 'Escribí el número de baucher.' : 'Escribí el número de manifiesto.'); if (mfEl('mf-baucher')) mfEl('mf-baucher').focus(); return; }
   if (!MF.noDisp && !MF.foto) {
     mfAviso('Falta la foto del manifiesto. Si el transportador no lo dejó, marcá «Manifiesto no disponible».');
     return;
   }
 
-  /* Diferencias contra la bascula: se avisan ANTES de guardar, porque la
-     causa mas comun es un dedazo. Si el operario confirma, se guarda con
-     la diferencia anotada — es justamente el dato que se quiere tener. */
+  /* ¿Coincide con el registro? Se revisa acá para responder al instante;
+     el servidor lo vuelve a comprobar y es el que decide. */
   var netoSistema = Math.round(mfNeto(r));
-  var netoPapel   = Math.round(parseFloat(neto.replace(/\./g, '').replace(',', '.')) || 0);
-  var difs = [];
-  if (netoSistema !== netoPapel) difs.push('el neto (báscula ' + fmt(netoSistema) + ' / papel ' + fmt(netoPapel) + ')');
-  if (mfTiquete(r) && mfTiquete(r) !== baucher) difs.push('el número (sistema ' + mfTiquete(r) + ' / papel ' + baucher + ')');
-  var avisoDif = mfEl('mf-dif-aviso');
-  if (difs.length && !MF.difAceptada) {
-    MF.difAceptada = true;
-    if (avisoDif) {
-      avisoDif.innerHTML = '<div class="mf-dif">No coincide ' + mfEsc(difs.join(' ni ')) + '.' +
-        '<br>Revisá que no sea un error de tecleo. Si el papel dice eso, volvé a tocar «Guardar» y ' +
-        'la diferencia queda anotada en el registro.</div>';
-    }
-    var b0 = mfEl('mf-btn-guardar');
-    if (b0) b0.textContent = 'Guardar con la diferencia';
+  var netoPapel   = Math.round(parseFloat(neto.replace(/\./g, '').replace(',', '.')));
+  var cons        = mfConsecutivo(r);
+  var escrito     = baucher.replace(/\s/g, '');
+  escrito = /^\d+$/.test(escrito) ? String(parseInt(escrito, 10)) : escrito.toUpperCase();
+  var campos = [];
+  if (netoSistema && netoSistema !== netoPapel) campos.push('neto');
+  if (!MF.noDisp && cons !== null && String(cons) !== escrito) campos.push('manifiesto');
+
+  if (!campos.length) {
+    comoNoCoincide = false;          // si ahora coincide, se certifica normal
+    mfMostrarNoCoincide([], '');
+    if (mfEl('mf-dif-aviso')) mfEl('mf-dif-aviso').innerHTML = '';
+  } else if (!comoNoCoincide || MF.noDisp) {
+    mfMostrarNoCoincide(campos, 'No coincide con el registro: ' +
+      campos.map(function (c) { return c === 'neto' ? 'el peso neto' : 'el N° de manifiesto'; }).join(' ni ') + '.');
+    return;
+  } else if (!nota.trim()) {
+    mfAviso('Para registrarlo como NO COINCIDE escribí en la observación qué pasó.');
+    if (mfEl('mf-nota')) mfEl('mf-nota').focus();
     return;
   }
 
@@ -5644,6 +5694,7 @@ async function mfGuardar() {
       baucher: baucher,
       nota: nota.trim(),
       no_disponible: MF.noDisp,
+      no_coincide: comoNoCoincide,
       operario: sesionUsuario ? sesionUsuario.nombre : '',
       /* Si el viaje ya tenia constancia, el operario lo esta viendo en
          pantalla (la ficha lo dice) y esto es un reemplazo deliberado. */
@@ -5658,6 +5709,10 @@ async function mfGuardar() {
     });
     var json = await res.json();
 
+    if (json && json.noCoincide) {
+      mfMostrarNoCoincide(json.campos || [], json.error || 'No coincide con el registro.');
+      return;
+    }
     if (!json || !json.success) {
       mfAviso('No se pudo guardar: ' + ((json && json.error) || 'el servidor no respondió'));
       return;
@@ -5674,13 +5729,14 @@ async function mfGuardar() {
     r['MF FECHA']              = 'ahora';
     r['MF NOTA']               = json.nota || '';
 
-    MF.foto = null; MF.noDisp = false; MF.difAceptada = false;
+    MF.foto = null; MF.noDisp = false; MF.noCoincide = null;
 
     var quedan = 0;
     MF.lista.forEach(function (x) { if (mfPendiente(x)) quedan++; });
-    mfAviso((json.estado === MF_MARCA_ND ? 'Guardado como no disponible.' : 'Certificado.') +
-            (json.diferencias && json.diferencias.length ? ' Con diferencia anotada.' : '') +
-            ' Quedan ' + quedan + '.', true);
+    mfAviso((json.estado === MF_MARCA_ND ? 'Guardado como no disponible.'
+             : json.estado === MF_MARCA_NC ? 'Registrado como NO COINCIDE (no quedó certificado).'
+             : 'Certificado: coincide con el registro.') +
+            ' Quedan ' + quedan + '.', json.estado !== MF_MARCA_NC);
 
     var sig = -1;
     for (var k = MF.i + 1; k < MF.lista.length; k++) if (mfPendiente(MF.lista[k])) { sig = k; break; }
@@ -5703,7 +5759,8 @@ async function mfGuardar() {
    pendiente. Contar los papeles a mitad de camino no serviría —el número
    no se puede comparar contra nada— y dejaría guardada una diferencia que
    no es un faltante real, sino trabajo sin hacer. */
-function mfPintarCierre(pend, cert, nd) {
+function mfPintarCierre(pend, cert, nd, nc) {
+  nc = nc || 0;
   var d      = mfEl('mf-cierre-datos');
   var espera = mfEl('mf-cierre-espera');
   var form   = mfEl('mf-cierre-form');
@@ -5712,6 +5769,7 @@ function mfPintarCierre(pend, cert, nd) {
   if (d) {
     d.innerHTML = 'Ingresos en el filtro: <b>' + MF.lista.length + '</b> · ' +
                   'certificados: <b>' + cert + '</b> · no disponibles: <b>' + nd + '</b> · ' +
+                  'no coinciden: <b>' + nc + '</b> · ' +
                   'por verificar: <b>' + pend + '</b>.';
   }
 
@@ -5738,7 +5796,7 @@ function mfIrAlPendiente() {
   if (k < 0) return;
   MF.i = k;
   MF.clave = mfMarca(MF.lista[MF.i]);
-  MF.foto = null; MF.noDisp = false; MF.difAceptada = false;
+  MF.foto = null; MF.noDisp = false; MF.noCoincide = null;
   mfAviso('');
   mfPintarLead();
   var caja = mfEl('mf-lead');
@@ -5783,10 +5841,10 @@ async function mfGuardarCierre() {
     if (mfEl('mf-contados')) mfEl('mf-contados').focus();
     return;
   }
-  var cert = 0, nd = 0;
+  var cert = 0, nd = 0, nc = 0;
   MF.lista.forEach(function (r) {
     var e = mfEstado(r);
-    if (e === MF_MARCA_ND) nd++; else if (e !== '') cert++;
+    if (e === MF_MARCA_ND) nd++; else if (e === MF_MARCA_NC) nc++; else if (e !== '') cert++;
   });
 
   var filtroOperacion = (mfEl('filtro-operacion') ? mfEl('filtro-operacion').value : '') ||
@@ -5807,6 +5865,7 @@ async function mfGuardarCierre() {
         bauchers_contados: parseInt(v, 10),
         certificados: cert,
         no_disponibles: nd,
+        no_coinciden: nc,
         nota: ((mfEl('mf-cierre-nota') || {}).value || '').trim(),
         operario: sesionUsuario ? sesionUsuario.nombre : ''
       })
