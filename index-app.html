@@ -20057,11 +20057,24 @@ function restablecerColumnas(){
 /* ══════════════════════════════════════════════════════════════
    4. TRANSPORTE (Apps Script)
    ══════════════════════════════════════════════════════════════ */
-async function llamar(payload){
-  if(!CFG.url || CFG.url.indexOf('/exec') === -1){
-    throw new Error('Falta configurar la URL del Web App (termina en /exec).');
-  }
-  const cuerpo = Object.assign({ token: CFG.token || '' }, payload);
+/* ── GOOGLE A VECES DEVUELVE SU PÁGINA EN VEZ DE LOS DATOS ──────────
+   De vez en cuando, en lugar del JSON llega una página HTML de Google
+   ("<!DOCTYPE html>…ppConf"). No es la implementación mal publicada: la
+   misma petición, repetida un segundo después, responde bien. Y muchas
+   veces el cambio SÍ quedó en la hoja y lo que se perdió fue la respuesta.
+
+   Por eso se reintenta, pero solo lo que se puede repetir sin efectos:
+   leer, y guardar valores/colores/negrilla (el servidor compara con lo
+   que hay y, si ya está igual, responde "sinCambio" sin tocar la nota).
+   NO se reintentan los comentarios, ni borrar/restaurar filas o
+   columnas: repetirlos sí dejaría doble registro.                     */
+function sePuedeRepetir(p){
+  const a = p && p.accion;
+  if(a === 'auditGuardar') return !(p.cambios || []).some(x => x.tipo === 'nota');
+  return ['auditListar','auditFotos','auditComentarios','auditColores','auditPing'].indexOf(a) > -1;
+}
+
+async function llamarUnaVez(cuerpo){
   const r = await fetch(CFG.url, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // evita el preflight de CORS
@@ -20069,9 +20082,29 @@ async function llamar(payload){
     redirect: 'follow'
   });
   const txt = await r.text();
+  try{ return JSON.parse(txt); }
+  catch(e){
+    const err = new Error('Google no devolvió los datos (respondió con una página en vez de la información).');
+    err.noEsJson = true;
+    throw err;
+  }
+}
+
+async function llamar(payload){
+  if(!CFG.url || CFG.url.indexOf('/exec') === -1){
+    throw new Error('Falta configurar la URL del Web App (termina en /exec).');
+  }
+  const cuerpo = Object.assign({ token: CFG.token || '' }, payload);
+  const intentos = sePuedeRepetir(payload) ? 3 : 1;
   let json;
-  try{ json = JSON.parse(txt); }
-  catch(e){ throw new Error('El servicio respondió algo que no es JSON. Revise que la implementación esté publicada para "Cualquier usuario".'); }
+  for(let i = 0; i < intentos; i++){
+    try{ json = await llamarUnaVez(cuerpo); break; }
+    catch(e){
+      /* Un fallo de red (sin conexión) también se reintenta en lo repetible */
+      if(i === intentos - 1) throw e;
+      await new Promise(r => setTimeout(r, 800 * (i + 1)));
+    }
+  }
   if(json && json.sinSesion){ sesionVencida(); throw new Error('La sesión venció. Vuelva a entrar.'); }
   return json;
 }
@@ -21191,6 +21224,8 @@ async function enviarCola(){
       }
     }
 
+    if(S.reintentosCola) aviso('Listo: los cambios pendientes quedaron guardados en la hoja.');
+    S.reintentosCola = 0;
     estado('ok', 'Guardado en la hoja');
     render(); refrescarPendientes(); mostrarDetalle();
     clearTimeout(window._ok);
@@ -21198,6 +21233,29 @@ async function enviarCola(){
 
   }catch(err){
     const sinGuardar = lote.slice(i);
+
+    /* Si Google no contestó tras los reintentos y la tanda es repetible,
+       los cambios NO se revierten: quedan pendientes, a la vista, y se
+       vuelven a mandar solos en unos segundos. Revertirlos hacía creer
+       que no se habían guardado cuando muchas veces sí estaban en la
+       hoja, y el operario los volvía a hacer. */
+    const repetible = !sinGuardar.some(x => x.tipo === 'nota');
+    if(err.noEsJson && repetible){
+      S.cola.unshift.apply(S.cola, sinGuardar);
+      S.reintentosCola = (S.reintentosCola || 0) + 1;
+      estado('err', 'Sin confirmar');
+      if(S.reintentosCola === 1 || S.reintentosCola % 5 === 0){
+        aviso('Google no confirmó el guardado. ' + sinGuardar.length +
+          (sinGuardar.length === 1 ? ' cambio sigue pendiente' : ' cambios siguen pendientes') +
+          ' y se reintenta solo. No hace falta volver a hacerlo.', true);
+      }
+      render(); refrescarPendientes();
+      clearTimeout(temporizador);
+      temporizador = setTimeout(enviarCola, Math.min(30000, 4000 * S.reintentosCola));
+      S.esperaReintento = true;     /* que el finally no lo adelante */
+      return;
+    }
+
     sinGuardar.forEach(revertir);
     estado('err', 'Error al guardar');
     aviso('No se pudo guardar: ' + err.message +
@@ -21206,7 +21264,8 @@ async function enviarCola(){
     render(); refrescarPendientes();
   }finally{
     enviando = false;
-    if(S.cola.length) programarEnvio();
+    if(S.esperaReintento) S.esperaReintento = false;
+    else if(S.cola.length) programarEnvio();
   }
 }
 
@@ -22640,9 +22699,16 @@ function urlCadena(){
    veces. Ante la duda, es mejor un error que un duplicado silencioso.
    ══════════════════════════════════════════════════════════════════ */
 var ACCIONES_LECTURA = ['mapa', 'bootstrap', 'estado'];
+/* Escrituras que dan lo mismo hechas una o dos veces: dar por resuelta
+   una novedad que ya está resuelta no crea nada nuevo. Esas sí se
+   reintentan. Medido: la novedad NV-1E5534FB quedó "resuelta" en la hoja
+   aunque la pantalla mostró la página de Google — el guardado llegó, la
+   respuesta se perdió. */
+var ESCRITURAS_REPETIBLES = ['resolverNovedad'];
 
 function esLectura(cuerpo){
-  return ACCIONES_LECTURA.indexOf((cuerpo && cuerpo.action) || '') > -1;
+  var a = (cuerpo && cuerpo.action) || '';
+  return ACCIONES_LECTURA.indexOf(a) > -1 || ESCRITURAS_REPETIBLES.indexOf(a) > -1;
 }
 
 async function pedirUnaVez(u, cuerpo){
@@ -22672,7 +22738,13 @@ async function pedir(cuerpo){
       /* Solo se insiste cuando la respuesta no fue JSON. Un error del
          propio servidor —"No existe la zona"— va a decir lo mismo las
          tres veces. */
-      if(!e.noEsJson || i === intentos - 1) throw e;
+      if(!e.noEsJson || i === intentos - 1){
+        if(e.noEsJson){
+          e.sinConfirmar = true;
+          e.message = 'Google no devolvió la respuesta. Puede que sí haya quedado guardado: revisá el área antes de repetirlo.';
+        }
+        throw e;
+      }
       await new Promise(function(r){ setTimeout(r, 700 * (i + 1)); });
     }
   }
@@ -23480,7 +23552,7 @@ function bloqueReportes(zonaId, vano){
     ? '<div class="rep-estado">' +
         cajaFoto(est.foto, 'act-foto-mini', 'Estado del ' + cuando(est.fecha)) +
         '<div><span class="et-res r-' + (cond ? cond[2] : 'pend') + '">' + (cond ? cond[1] : est.condicion) + '</span>' +
-          '<div class="act-obs">' + esc(est.observacion) + '</div>' +
+          (est.observacion ? '<div class="act-obs"><b>Observaciones:</b> ' + esc(est.observacion) + '</div>' : '') +
           '<span class="cuando">' + esc(cuando(est.fecha)) +
           (est.reportadoPor ? ' · ' + esc(est.reportadoPor) : '') + '</span></div>' +
       '</div>'
@@ -23558,6 +23630,36 @@ function pintarFotoReporte(){
   if($m('repOtra')) $m('repOtra').onclick = function(){ FOTO_REPORTE = null; pintarFotoReporte(); };
 }
 
+/* ── ¿QUEDÓ O NO QUEDÓ? ──────────────────────────────────────────────
+   Un reporte nuevo NO se reintenta (quedaría dos veces). Si lo que se
+   perdió fue la respuesta, se vuelve a leer el mapa y se busca el
+   reporte recién mandado: mismo lugar, mismo tipo, mismo texto, misma
+   persona, de los últimos minutos. Si está, se da por guardado. */
+async function confirmarReporte(cuerpo, desde){
+  try{ await cargarMapa(true); }catch(e){ return false; }
+  return (M.reportes || []).some(function(r){
+    return r.tipo === cuerpo.tipo &&
+      r.zonaId === cuerpo.zonaId &&
+      String(r.vano || '') === String(cuerpo.vano || '') &&
+      (cuerpo.tipo === 'novedad' ? r.titulo === cuerpo.titulo : r.observacion === cuerpo.observacion) &&
+      (r.reportadoPor || '') === (cuerpo.responsable || '') &&
+      new Date(r.fecha).getTime() >= desde - 120000;
+  });
+}
+
+async function mandarReporte(cuerpo){
+  var desde = Date.now();
+  try{
+    var r = await pedir(cuerpo);
+    if(!aplicarEstadoMapa(r)) await cargarMapa(true);
+  }catch(e){
+    if(!e.sinConfirmar) throw e;
+    cuerpo.tipo = cuerpo.action === 'reportarNovedad' ? 'novedad' : 'estado';
+    if(!(await confirmarReporte(cuerpo, desde))) throw e;
+    pintar();
+  }
+}
+
 /* ── Reportar estado ── */
 function formEstadoArea(zonaId, vano){
   FOTO_REPORTE = null;
@@ -23572,8 +23674,8 @@ function formEstadoArea(zonaId, vano){
       CONDICIONES.map(function(c){
         return '<button type="button" class="act-res r-' + c[2] + '" data-cond="' + c[0] + '">' + c[1] + '</button>';
       }).join('') + '</div>' +
-    '<div class="mapa-campo"><label>Qué se ve</label>' +
-      '<textarea id="repObs" rows="3" placeholder="Orden, limpieza, humedad, daños, lo que sea que se note"></textarea></div>' +
+    '<div class="mapa-campo"><label>Observaciones</label>' +
+      '<textarea id="repObs" rows="4" placeholder="Orden, limpieza, humedad, daños, lo que haga falta. Todo lo que se note del área."></textarea></div>' +
     '<div class="mapa-sec">Foto</div>' +
     '<div class="act-foto" id="repFotoZona"></div>' +
     '<div class="mapa-acciones">' +
@@ -23593,14 +23695,13 @@ function formEstadoArea(zonaId, vano){
   $m('repCancelar').onclick = function(){ RESALTE = null; pintar(); volverAlLugar(); };
   $m('repGuardar').onclick = async function(){
     var obs = (($m('repObs')||{}).value || '').trim();
-    if(!obs){ alert('Escribí qué se ve en el área.'); $m('repObs').focus(); return; }
+    if(!obs){ alert('Escribí las observaciones del área.'); $m('repObs').focus(); return; }
     if(!FOTO_REPORTE && !confirm('El estado va a quedar SIN foto. ¿Guardar igual?')) return;
     var bt = $m('repGuardar'); bt.disabled = true; bt.textContent = 'Guardando…';
     try{
-      var r = await pedir({ action:'reportarEstado', zonaId:zonaId, vano:vano || '',
+      await mandarReporte({ action:'reportarEstado', zonaId:zonaId, vano:vano || '',
         condicion:elegida, observacion:obs, foto:FOTO_REPORTE || '', responsable:quienSoy() });
       RESALTE = null;
-      if(!aplicarEstadoMapa(r)) await cargarMapa(true);
       volverAlLugar();
     }catch(e){ bt.disabled = false; bt.textContent = 'Guardar el estado'; alert(e.message); }
   };
@@ -23634,11 +23735,10 @@ function formNovedad(zonaId, vano){
     if(!titulo){ alert('Escribí qué pasó.'); $m('nvTitulo').focus(); return; }
     var bt = $m('nvGuardar'); bt.disabled = true; bt.textContent = 'Guardando…';
     try{
-      var r = await pedir({ action:'reportarNovedad', zonaId:zonaId, vano:vano || '',
+      await mandarReporte({ action:'reportarNovedad', zonaId:zonaId, vano:vano || '',
         titulo:titulo, observacion:(($m('nvObs')||{}).value || '').trim(),
         foto:FOTO_REPORTE || '', responsable:quienSoy() });
       RESALTE = null;
-      if(!aplicarEstadoMapa(r)) await cargarMapa(true);
       volverAlLugar();
     }catch(e){ bt.disabled = false; bt.textContent = 'Reportar'; alert(e.message); }
   };
@@ -23664,8 +23764,15 @@ function formResolver(id){
     if(!nota){ alert('Escribí cómo se resolvió.'); $m('rsNota').focus(); return; }
     var bt = $m('rsGuardar'); bt.disabled = true; bt.textContent = 'Guardando…';
     try{
-      var res = await pedir({ action:'resolverNovedad', id:id, nota:nota, responsable:quienSoy() });
-      if(!aplicarEstadoMapa(res)) await cargarMapa(true);
+      try{
+        var res = await pedir({ action:'resolverNovedad', id:id, nota:nota, responsable:quienSoy() });
+        if(!aplicarEstadoMapa(res)) await cargarMapa(true);
+      }catch(e1){
+        if(!e1.sinConfirmar) throw e1;
+        await cargarMapa(true);
+        var ya = (M.reportes || []).filter(function(x){ return x.id === id; })[0];
+        if(!ya || ya.estado !== 'resuelta') throw e1;
+      }
       volverAlLugar();
     }catch(e){ bt.disabled = false; bt.textContent = 'Dar por resuelta'; alert(e.message); }
   };
