@@ -1318,10 +1318,22 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 /* Fila creada a mano: una marca dorada en el numero. No entro por la
    bascula ni por un tiquete, y quien la audite tiene que saberlo. */
 /* Banderin de la revision IA de bauchers: un color por resultado. */
-#panel-auditoria table.grid td.num.ia-no_coincide{box-shadow:inset 3px 0 0 #c62828;color:#c62828;font-weight:700}
-#panel-auditoria table.grid td.num.ia-ojo{box-shadow:inset 3px 0 0 #d18a00;color:#9a6500;font-weight:700}
-#panel-auditoria table.grid td.num.ia-ok{box-shadow:inset 3px 0 0 #2e7d32}
-#panel-auditoria table.grid td.num.ia-confirmada{box-shadow:inset 3px 0 0 #1e5fae}
+/* Marca de esquina, como la de los comentarios, pero del color del
+   resultado. Va en el numero de fila y es mas grande que la de nota para
+   que no se confundan. */
+#panel-auditoria table.grid td.num[class*=" ia-"]::after{
+  content:'';position:absolute;top:0;right:0;border-style:solid;border-width:0 11px 11px 0;
+  border-color:transparent var(--ia-color) transparent transparent;
+}
+#panel-auditoria table.grid td.num.ia-no_coincide{--ia-color:#c62828;color:#c62828;font-weight:700}
+#panel-auditoria table.grid td.num.ia-ojo{--ia-color:#d18a00;color:#9a6500;font-weight:700}
+#panel-auditoria table.grid td.num.ia-ok{--ia-color:#2e7d32}
+#panel-auditoria table.grid td.num.ia-confirmada{--ia-color:#1e5fae}
+#panel-auditoria .tb.ia-revisar{color:#2e5b3a;border-color:#b9d9bb}
+#panel-auditoria .tb.ia-revisar:hover{background:#e9f5ea}
+#panel-auditoria .tb.ia-revisar[disabled]{opacity:.6;cursor:progress}
+#panel-auditoria .visor-ia{flex:0 0 auto;max-height:30vh;overflow:auto;padding:9px 18px;font:12px/1.45 var(--sans);white-space:pre-wrap;border-top:3px solid var(--ia-color,#2e7d32);background:#fbfaf6;color:#222}
+#panel-auditoria .visor-ia b.tit{color:var(--ia-color,#2e7d32);font-size:13px}
 #panel-auditoria .tb.ia-confirmar{color:#1e5fae;border-color:#b7cdea}
 #panel-auditoria .tb.ia-confirmar:hover{background:#e8f0fb}
 #panel-auditoria .tb.ia-confirmar[disabled]{opacity:.45;cursor:default;background:none}
@@ -4015,6 +4027,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 
   <button class="tb" id="btnColumnas" title="Borrar filas · crear, ocultar u ordenar columnas">▦ Filas y columnas ▾</button>
   <button class="tb ia-chip" id="btnIA" style="display:none" title="Revisión IA de bauchers · filtrar por etiqueta"></button>
+  <button class="tb ia-revisar" id="btnIARevisar" title="La IA revisa los últimos 5 registros. Los que ya revisó no se vuelven a cobrar: muestra lo que dijo y abre un ejemplo con su baucher.">Revisar últimos 5 con IA</button>
   <button class="tb ia-confirmar" id="btnIAConfirmar" style="display:none" title="Confirmar como revisada por usted la novedad IA de los viajes seleccionados (Ctrl+P)">Confirmar revisión IA <kbd>Ctrl+P</kbd></button>
   <button class="tb alerta" id="btnDups" style="display:none" title="Viajes repetidos: mismo tiquete, placa, pesos, operación y residuo">⚠ <span id="dupsTexto"></span> ▾</button>
   <button class="tb" id="btnComent" style="display:none" title="Comentarios de hilo del archivo (los que deja otra app)">💬 <span id="comentTexto"></span></button>
@@ -4221,6 +4234,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <div id="visorError" style="display:none"></div>
     <button class="visor-nav der" id="visorSig" title="Siguiente (→)">›</button>
   </div>
+  <div class="visor-ia" id="visorIA" style="display:none"></div>
   <div class="visor-pie">
     <span>← → cambiar de foto · Esc o Ctrl+F cerrar · clic en la imagen para acercar</span>
     <span style="flex:1"></span>
@@ -20591,7 +20605,7 @@ function render(){
     const filaBo = !!f.bo;
     const filaNueva = !!f.nueva;
     const ia = f.ia;
-    const tds = [`<td class="num${esDup ? ' dup' : ''}${filaBo ? ' fila-borrada' : ''}${filaNueva ? ' fila-nueva' : ''}${ia ? ' ia-' + ia.estado : ''}" data-vr="${vr}" title="Fila ${f.r}${ia ? ' · IA: ' + esc((IA_ESTADOS[ia.estado] || {}).texto || ia.tipo) + (ia.estado === 'ok' ? '' : ' — ' + esc(ia.detalle)) : ''}${filaBo ? ' · BORRADA por auditoría' : ''}${filaNueva ? ' · CREADA A MANO desde el tablero (no entró por báscula)' : ''}${esDup ? ' · viaje repetido (grupo ' + S.dups.get(idxFila) + ')' : ''} · clic para seleccionar toda la fila">${ia ? banderin(ia.estado) : ''}${f.r}</td>`];
+    const tds = [`<td class="num${esDup ? ' dup' : ''}${filaBo ? ' fila-borrada' : ''}${filaNueva ? ' fila-nueva' : ''}${ia ? ' ia-' + ia.estado : ''}" data-vr="${vr}" title="Fila ${f.r}${ia ? ' · IA: ' + esc((IA_ESTADOS[ia.estado] || {}).texto || ia.tipo) + (ia.estado === 'ok' ? '' : ' — ' + esc(ia.detalle)) : ''}${filaBo ? ' · BORRADA por auditoría' : ''}${filaNueva ? ' · CREADA A MANO desde el tablero (no entró por báscula)' : ''}${esDup ? ' · viaje repetido (grupo ' + S.dups.get(idxFila) + ')' : ''} · clic para seleccionar toda la fila">${f.r}</td>`];
     for(let pos = 0; pos < S.colsVista.length; pos++){
       const c = S.colsVista[pos];
       const val = f.v[c] ?? '';
@@ -21669,11 +21683,12 @@ function fotosDeFila(idx){
   }).filter(Boolean);
 }
 
-function abrirVisor(idx, col){
+function abrirVisor(idx, col, lecturaIA){
   const fotos = fotosDeFila(idx);
   if(!fotos.length){ aviso('Este registro no tiene fotos.', true); return; }
   VISOR.fotos = fotos;
   VISOR.fila  = S.filas[idx];
+  VISOR.lecturaIA = lecturaIA || '';
   VISOR.i     = Math.max(0, fotos.findIndex(x => x.c === +col));
   VISOR.zoom  = false;
   VISOR.abierto = true;
@@ -21711,6 +21726,22 @@ function pintarVisor(){
       ' · ' + (fila.v[8] || '') + (fila.v[9] ? ' / ' + fila.v[9] : '')
     : '';
   $('visorContador').textContent = (VISOR.i + 1) + ' de ' + VISOR.fotos.length;
+
+  /* Resultado de la revision IA de este viaje, debajo de la foto: se ve el
+     baucher y al lado lo que la IA leyo contra lo que dice el sistema. */
+  const cajaIA = $('visorIA'), eIA = fila && fila.ia;
+  if(eIA){
+    const est = IA_ESTADOS[eIA.estado] || {};
+    cajaIA.style.setProperty('--ia-color', est.color || '#2e7d32');
+    cajaIA.innerHTML = '<b class="tit">Revisión IA: ' + esc(est.texto || eIA.tipo) + '</b>' + (eIA.fecha ? ' · ' + esc(eIA.fecha) : '') +
+      (eIA.estado !== 'ok' && eIA.detalle ? '\n' + esc(eIA.detalle) : '') +
+      (eIA.estado === 'confirmada' ? '\nConfirmó: ' + esc(eIA.confirmadoPor || '—') + (eIA.conclusion ? ' · ' + esc(eIA.conclusion) : '') : '') +
+      (VISOR.lecturaIA ? '\n\n<b>Lo que leyó la IA frente al sistema:</b>\n' + esc(VISOR.lecturaIA) : '');
+    cajaIA.style.display = '';
+  }else{
+    cajaIA.style.display = 'none';
+    cajaIA.innerHTML = '';
+  }
   $('visorAbrir').href = f.url;
   $('visorAnt').style.display = VISOR.fotos.length > 1 ? '' : 'none';
   $('visorSig').style.display = VISOR.fotos.length > 1 ? '' : 'none';
@@ -21832,9 +21863,10 @@ const IA_ESTADOS = {
   confirmada:  { color:'#1e5fae', texto:'Confirmada por una persona' },
   ok:          { color:'#2e7d32', texto:'OK: todo coincide' }
 };
+/* El mismo triangulo de esquina, en chico, para el boton, el menu y el panel. */
 function banderin(estado){
   const c = (IA_ESTADOS[estado] || IA_ESTADOS.no_coincide).color;
-  return '<svg class="banderin" viewBox="0 0 9 11" aria-hidden="true"><path d="M1 0v11" stroke="' + c + '" stroke-width="1.4"/><path d="M1.6 .6h6.6L6.4 3.2l1.8 2.6H1.6z" fill="' + c + '"/></svg>';
+  return '<svg class="banderin" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 0h10v10z" fill="' + c + '"/><rect x=".5" y=".5" width="9" height="9" fill="none" stroke="' + c + '" stroke-opacity=".35"/></svg>';
 }
 
 /* Filtros de la revisión IA. '' = todos. */
@@ -22006,6 +22038,62 @@ async function crearColumna(nombre){
   seleccionarColumna(res.col - 1);
   $('gridWrap').scrollLeft = $('gridWrap').scrollWidth;
   aviso('Columna ' + res.letra + ' creada: ' + res.nombre + '.');
+}
+
+/* ── REVISAR LOS ULTIMOS N CON LA IA ───────────────────────────────
+   Los que la IA ya revisó no se vuelven a mandar (no se pagan dos veces):
+   se dice que ya estaban. Al final se abre un ejemplo: el baucher que miró
+   la IA, con su resultado y lo que leyó, en el visor de fotos. */
+async function revisarUltimosConIA(cantidad){
+  const btn = $('btnIARevisar');
+  if(btn.disabled) return;
+  if(!S.cargado){ aviso('Primero cargue los registros.', true); return; }
+  const textoBtn = btn.textContent;
+  btn.disabled = true;
+  const t0 = Date.now();
+  const reloj = setInterval(()=>{ btn.textContent = 'Revisando… ' + Math.round((Date.now() - t0) / 1000) + ' s'; }, 1000);
+  btn.textContent = 'Revisando… 0 s';
+  estado('busy', 'La IA está revisando…');
+  try{
+    const res = await llamar({ accion:'auditIARevisarUltimos', cantidad });
+    if(!res.success) throw new Error(res.error || 'No se pudo revisar.');
+
+    Object.keys(res.ia || {}).forEach(k => {
+      const f = S.filas.find(x => x.r === Number(k));
+      if(f){ f.ia = res.ia[k]; delete f.iaFuera; delete f.iaSinFoto; }
+    });
+    actualizarChipIA(); render(); mostrarDetalle();
+
+    const n = res.cantidad || 0, ya = res.yaEstaban || 0, nuevas = res.nuevas || 0;
+    const novedades = (res.resultados || []).filter(x => x.resultado && x.resultado !== 'OK').length;
+    let msg = nuevas === 0 && ya > 0
+      ? 'La IA ya había revisado ' + (ya === n ? 'los últimos ' + n : ya + ' de los últimos ' + n) + ' registros: no se volvieron a revisar.'
+      : 'La IA revisó ' + nuevas + ' registro' + (nuevas === 1 ? '' : 's') + ' ahora' + (ya ? ' y ' + ya + ' ya estaba' + (ya === 1 ? '' : 'n') + ' revisado' + (ya === 1 ? '' : 's') : '') + '.';
+    msg += ' ' + (novedades ? novedades + (novedades === 1 ? ' con novedad.' : ' con novedades.') : 'Sin novedades.');
+    if(res.sinFoto) msg += ' ' + res.sinFoto + ' sin foto de baucher todavía.';
+    if(res.error) msg += ' Aviso: ' + res.error;
+    aviso(msg, !!res.error);
+    estado('ok', 'Conectado');
+
+    if(res.ejemplo){
+      const idx = S.filas.findIndex(x => x.r === res.ejemplo.fila);
+      if(idx > -1){
+        aviso('Ejemplo: fila ' + res.ejemplo.fila + ' — se abre el baucher que miró la IA.');
+        abrirVisor(idx, res.ejemplo.col, res.ejemplo.lectura);
+      }else{
+        aviso('El ejemplo (fila ' + res.ejemplo.fila + ') no está entre los registros cargados. Recargue la grilla para verlo.', true);
+      }
+    }else if(n){
+      aviso('No hay un ejemplo para mostrar: ninguno de los últimos ' + n + ' tiene foto de baucher revisada.', true);
+    }
+  }catch(e){
+    estado('err', 'Error');
+    aviso('No se pudo revisar con la IA: ' + e.message, true);
+  }finally{
+    clearInterval(reloj);
+    btn.disabled = false;
+    btn.textContent = textoBtn;
+  }
 }
 
 /* ── CONFIRMAR NOVEDADES IA (Ctrl+P) ───────────────────────────────
@@ -22277,6 +22365,7 @@ $('btnIA').addEventListener('click', ev=>{
   cerrarPop('popColumnas'); cerrarPop('popColor'); cerrarPop('popFiltro'); cerrarPop('popDups');
 });
 $('btnIAConfirmar').addEventListener('click', ()=> confirmarNovedadesIA());
+$('btnIARevisar').addEventListener('click', ()=> revisarUltimosConIA(5));
 $('popIAOpciones').addEventListener('click', ev=>{
   if(ev.target.closest('[data-accion-ia="confirmar"]:not([disabled])')){ cerrarPop('popIA'); confirmarNovedadesIA(); return; }
   const b = ev.target.closest('[data-filtro-ia]');
