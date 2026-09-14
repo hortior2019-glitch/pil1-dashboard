@@ -2377,6 +2377,13 @@ var geoIntentado = false;
 // aprox. Full HD; calidad 0.85 conserva bien el detalle del texto.
 var FOTO_MAX_DIM = 1920;
 var FOTO_CALIDAD = 0.85;
+/* La foto del manifiesto fisico va mas liviana: es la prueba de que el
+   papel esta en la mano, no la que se lee numero por numero (esa es la
+   del baucher). A 1920 px y 85 % pesaba cerca de 1 MB y con la señal de
+   la planta el envio no terminaba. 1600 px y 75 % queda en menos de la
+   mitad y el documento se sigue leyendo. */
+var MF_FOTO_MAX_DIM = 1600;
+var MF_FOTO_CALIDAD = 0.75;
 
 var fotosCapturadas = {};    // { 'baucher-1': dataUrl, 'vehiculo': dataUrl }
 var fotosTiqueteExtra = [];  // indice 0 -> tiquete 2, indice 1 -> tiquete 3
@@ -2699,7 +2706,8 @@ function insertarExifSiHay(dataUrl, fecha) {
 function finalizarFotoProcesada(canvasOrigen, targetId) {
   var w = canvasOrigen.width, h = canvasOrigen.height;
   var ladoMax = Math.max(w, h);
-  var escala = ladoMax > FOTO_MAX_DIM ? (FOTO_MAX_DIM / ladoMax) : 1;
+  var maxDim = targetId === 'manifiesto-fisico' ? MF_FOTO_MAX_DIM : FOTO_MAX_DIM;
+  var escala = ladoMax > maxDim ? (maxDim / ladoMax) : 1;
 
   var canvas = document.createElement('canvas');
   canvas.width  = Math.round(w * escala);
@@ -2718,7 +2726,7 @@ function finalizarFotoProcesada(canvasOrigen, targetId) {
   var textoGeo   = geoActual ? ('GPS: ' + geoActual.lat.toFixed(6) + ', ' + geoActual.lon.toFixed(6)) : 'GPS: no disponible';
   dibujarWatermark(ctx, canvas, textoFecha, textoGeo);
 
-  var dataUrl = canvas.toDataURL('image/jpeg', FOTO_CALIDAD);
+  var dataUrl = canvas.toDataURL('image/jpeg', targetId === 'manifiesto-fisico' ? MF_FOTO_CALIDAD : FOTO_CALIDAD);
   dataUrl = insertarExifSiHay(dataUrl, ahora);
 
   console.log('[foto] finalizarFotoProcesada, targetId:', targetId, 'tamano final:', canvas.width + 'x' + canvas.height, 'largo dataUrl:', dataUrl.length);
@@ -5608,6 +5616,78 @@ function mfMover(paso) {
   mfPintarLead();
 }
 
+/* ── ENVIAR SIN QUEDARSE COLGADO ─────────────────────────────────────
+   Medido: el servidor tarda de 6 a 14 s en contestar aunque la accion no
+   haga nada, y una de cada tanto Google no contesta en 3 minutos. Sin
+   limite, el boton quedaba en "Guardando…" para siempre. Se corta a los
+   limiteMs y el error dice si fue falta de respuesta (sinRespuesta), que
+   es el caso en que el certificado PUDO haber quedado. */
+async function mfPost(cuerpo, limiteMs) {
+  var ctl = window.AbortController ? new AbortController() : null;
+  var reloj = ctl ? setTimeout(function () { ctl.abort(); }, limiteMs) : null;
+  try {
+    var res = await fetch(WEBAPP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(cuerpo),
+      signal: ctl ? ctl.signal : undefined
+    });
+    var texto = await res.text();
+    try { return JSON.parse(texto); }
+    catch (e) { var e1 = new Error('Google no devolvió la respuesta'); e1.sinRespuesta = true; throw e1; }
+  } catch (err) {
+    if (!err.sinRespuesta) {
+      var e2 = new Error(err.name === 'AbortError' ? 'no hubo respuesta en ' + Math.round(limiteMs / 1000) + ' s' : err.message);
+      e2.sinRespuesta = true;
+      throw e2;
+    }
+    throw err;
+  } finally {
+    if (reloj) clearTimeout(reloj);
+  }
+}
+
+/* Contador en el boton: con 20-60 s de espera, sin ver que avanza el
+   operario cree que se colgo y toca otra cosa. */
+function mfContador(btn, texto) {
+  var t0 = Date.now();
+  var pintar = function () {
+    if (btn) btn.textContent = texto + ' ' + Math.round((Date.now() - t0) / 1000) + ' s';
+  };
+  pintar();
+  var id = setInterval(pintar, 1000);
+  return function () { clearInterval(id); };
+}
+
+/* No llegó la respuesta: ¿quedó o no quedó? Se lee la fila. Solo se da por
+   guardado si lo escrito es EXACTAMENTE lo que mandó este operario (neto,
+   número y nombre), para no confundirlo con una constancia anterior. */
+/* Kilos enteros, leidos igual que en el servidor: 15.170, 15,170 y 15170 son lo mismo. */
+function mfKg(x) {
+  var t = String(x == null ? '' : x).replace(/\s/g, '').replace(/[.,](?=\d{3}(\D|$))/g, '').replace(',', '.');
+  var n = parseFloat(t);
+  return isNaN(n) ? null : Math.round(n);
+}
+
+async function mfConfirmarEnHoja(cuerpo) {
+  for (var intento = 0; intento < 2; intento++) {
+    try {
+      var c = await mfPost({ accion: 'mfConsultar', marca_temporal: cuerpo.marca_temporal,
+        tiquete: cuerpo.tiquete, fecha: cuerpo.fecha, placa: cuerpo.placa }, 60000);
+      if (!c || !c.success) return { sabe: false };
+      var mismoNeto = mfKg(c.neto) !== null && mfKg(c.neto) === mfKg(cuerpo.neto);
+      var quedo = !!c.estado && mismoNeto &&
+                  String(c.baucher).trim() === String(cuerpo.baucher).trim() &&
+                  String(c.operario).trim() === String(cuerpo.operario).trim();
+      return { sabe: true, quedo: quedo, datos: c };
+    } catch (e) {
+      if (intento === 1) return { sabe: false };
+      await new Promise(function (r) { setTimeout(r, 4000); });
+    }
+  }
+  return { sabe: false };
+}
+
 /* ── GUARDAR ────────────────────────────────────────────────────────── */
 /* Pinta qué campo no coincide, sin decir el valor correcto. Si hay papel
    (no es "no disponible") ofrece registrar el viaje como NO COINCIDE:
@@ -5680,8 +5760,9 @@ async function mfGuardar(comoNoCoincide) {
   var btn = mfEl('mf-btn-guardar');
   var textoBtn = btn ? btn.textContent : '';
   MF.enviando = true;
-  if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
-  mfAviso('');
+  if (btn) btn.disabled = true;
+  var pararContador = mfContador(btn, 'Guardando…');
+  mfAviso(MF.noDisp ? '' : 'Enviando la foto. Con poca señal puede tardar hasta un minuto: no cierres la app.', true);
 
   try {
     var cuerpo = {
@@ -5702,12 +5783,32 @@ async function mfGuardar(comoNoCoincide) {
     };
     if (!MF.noDisp) cuerpo.foto = MF.foto;
 
-    var res = await fetch(WEBAPP_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(cuerpo)
-    });
-    var json = await res.json();
+    var json;
+    try {
+      json = await mfPost(cuerpo, 150000);
+    } catch (errEnvio) {
+      if (!errEnvio.sinRespuesta) throw errEnvio;
+      pararContador();
+      pararContador = mfContador(btn, 'Revisando si quedó…');
+      mfAviso('No llegó la respuesta (' + errEnvio.message + '). Revisando en la hoja si quedó guardado…', true);
+      var conf = await mfConfirmarEnHoja(cuerpo);
+      if (conf.sabe && conf.quedo) {
+        json = { success: true, estado: conf.datos.estado, url: conf.datos.url, nota: conf.datos.nota };
+      } else if (conf.sabe) {
+        /* La foto sigue en memoria: se reintenta sin volver a tomarla. */
+        mfAviso('No quedó guardado. La foto sigue lista: tocá «Guardar» otra vez cuando haya señal.');
+        return;
+      } else {
+        mfAviso('No se pudo confirmar si quedó guardado. Antes de repetir, tocá «Actualizar» en la planilla y mirá si el viaje ya aparece verificado.');
+        return;
+      }
+    }
+
+    if (json && json.ya && !cuerpo.sobrescribir) {
+      /* Un envío anterior sí había llegado: la fila ya tiene constancia. */
+      var c2 = await mfConfirmarEnHoja(cuerpo);
+      if (c2.sabe && c2.quedo) json = { success: true, estado: c2.datos.estado, url: c2.datos.url, nota: c2.datos.nota };
+    }
 
     if (json && json.noCoincide) {
       mfMostrarNoCoincide(json.campos || [], json.error || 'No coincide con el registro.');
@@ -5748,9 +5849,10 @@ async function mfGuardar(comoNoCoincide) {
   } catch (err) {
     mfAviso('Error de red al guardar: ' + err.message + '. Revisá la señal y volvé a intentar.');
   } finally {
+    pararContador();
     MF.enviando = false;
     var b = mfEl('mf-btn-guardar');
-    if (b) { b.disabled = false; if (textoBtn && b.textContent === 'Guardando…') b.textContent = textoBtn; }
+    if (b) { b.disabled = false; if (textoBtn && /^(Guardando|Revisando)/.test(b.textContent)) b.textContent = textoBtn; }
   }
 }
 

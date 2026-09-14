@@ -1317,6 +1317,11 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-auditoria .men small{display:block;color:var(--tinta-suave);font-size:11px;margin-top:1px}
 /* Fila creada a mano: una marca dorada en el numero. No entro por la
    bascula ni por un tiquete, y quien la audite tiene que saberlo. */
+/* Banderin rojo: la revision IA de bauchers dejo una novedad abierta. */
+#panel-auditoria table.grid td.num.ia-nov{box-shadow:inset 3px 0 0 #c62828;color:#c62828;font-weight:700}
+#panel-auditoria table.grid td.num .banderin{width:9px;height:11px;vertical-align:-1px;margin-right:3px}
+#panel-auditoria .tb.ia-chip{color:#c62828;border-color:#e0b4b4}
+#panel-auditoria .tb.ia-chip.activo{background:#c62828;color:#fff;border-color:#c62828}
 #panel-auditoria table.grid td.num.fila-nueva{
   box-shadow:inset 3px 0 0 var(--oro);
   font-style:italic;
@@ -3981,6 +3986,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <div class="divisor"></div>
 
   <button class="tb" id="btnColumnas" title="Borrar filas · crear, ocultar u ordenar columnas">▦ Filas y columnas ▾</button>
+  <button class="tb ia-chip" id="btnIA" style="display:none" title="Viajes con novedad de la revisión IA de bauchers · clic para ver solo esos"></button>
   <button class="tb alerta" id="btnDups" style="display:none" title="Viajes repetidos: mismo tiquete, placa, pesos, operación y residuo">⚠ <span id="dupsTexto"></span> ▾</button>
   <button class="tb" id="btnComent" style="display:none" title="Comentarios de hilo del archivo (los que deja otra app)">💬 <span id="comentTexto"></span></button>
   <button class="tb" id="btnComentario" title="Agregar un comentario a la celda">✎ Comentar</button>
@@ -20256,6 +20262,7 @@ async function cargar(){
     if(!S.anchos.length || S.anchos.length !== S.headers.length) definirAnchos();
     aplicarDisposicion();
     detectarDuplicados();
+    actualizarChipIA();
     construirCabecera();
     recalcularVista();
     pedirComentarios();
@@ -20391,6 +20398,7 @@ function recalcularVista(){
   }
 
   if(S.soloDups) S.vista = S.vista.filter(i => S.dups.has(i));
+  if(S.soloIA)   S.vista = S.vista.filter(i => !!S.filas[i].ia);
 
   if(S.orden){
     const c = S.orden.col, dir = S.orden.dir === 'desc' ? -1 : 1;
@@ -20518,7 +20526,8 @@ function render(){
     const esDup = S.resaltarDups && S.dups.has(idxFila);
     const filaBo = !!f.bo;
     const filaNueva = !!f.nueva;
-    const tds = [`<td class="num${esDup ? ' dup' : ''}${filaBo ? ' fila-borrada' : ''}${filaNueva ? ' fila-nueva' : ''}" data-vr="${vr}" title="Fila ${f.r}${filaBo ? ' · BORRADA por auditoría' : ''}${filaNueva ? ' · CREADA A MANO desde el tablero (no entró por báscula)' : ''}${esDup ? ' · viaje repetido (grupo ' + S.dups.get(idxFila) + ')' : ''} · clic para seleccionar toda la fila">${f.r}</td>`];
+    const ia = f.ia;
+    const tds = [`<td class="num${esDup ? ' dup' : ''}${filaBo ? ' fila-borrada' : ''}${filaNueva ? ' fila-nueva' : ''}${ia ? ' ia-nov' : ''}" data-vr="${vr}" title="Fila ${f.r}${ia ? ' · ' + esc(ia.tipo) + ': ' + esc(ia.detalle) : ''}${filaBo ? ' · BORRADA por auditoría' : ''}${filaNueva ? ' · CREADA A MANO desde el tablero (no entró por báscula)' : ''}${esDup ? ' · viaje repetido (grupo ' + S.dups.get(idxFila) + ')' : ''} · clic para seleccionar toda la fila">${ia ? BANDERIN : ''}${f.r}</td>`];
     for(let pos = 0; pos < S.colsVista.length; pos++){
       const c = S.colsVista[pos];
       const val = f.v[c] ?? '';
@@ -21502,7 +21511,11 @@ function mostrarDetalle(){
          <b>Viaje repetido.</b> Coincide con otro registro en tiquete, placa, pesos, operación y residuo (grupo ${S.dups.get(S.vista[S.foco.vr])}).
        </div></div>` : '';
 
-  $('panelCuerpo').innerHTML = avisoFila + avisoCol + avisoDup + bloqueHilos + `
+  /* La novedad IA va primero: es lo que hay que confirmar con ojo humano. */
+  const avisoIA = f.ia
+    ? `<div class="campo"><div class="val" style="background:#fdecec;border-color:#e0b4b4;color:#8e1c1c;font-family:var(--sans);font-size:12px;white-space:pre-wrap">${BANDERIN} <b>${esc(f.ia.tipo)}</b>${f.ia.fecha ? ' · revisado ' + esc(f.ia.fecha) : ''}<br>${esc(f.ia.detalle)}<br><span style="color:#6d6d64">Se cierra en la pestaña NOVEDADES IA del Sheet, llenando CONFIRMADO POR y CONCLUSION.</span>
+       </div></div>` : '';
+  $('panelCuerpo').innerHTML = avisoIA + avisoFila + avisoCol + avisoDup + bloqueHilos + `
     <div class="campo">
       <span class="et">${esc(S.headers[c] || letraCol(c+1))}</span>
       <div class="val">${esc(f.v[c] ?? '') || '<i style="color:var(--tinta-suave)">(vacío)</i>'}</div>
@@ -21721,6 +21734,18 @@ function detectarDuplicados(){
   S.dupGrupos = g;
   S.dupsSucios = false;
   actualizarChipDups();
+}
+
+const BANDERIN = '<svg class="banderin" viewBox="0 0 9 11" aria-hidden="true"><path d="M1 0v11" stroke="#c62828" stroke-width="1.4"/><path d="M1.6 .6h6.6L6.4 3.2l1.8 2.6H1.6z" fill="#c62828"/></svg>';
+
+function actualizarChipIA(){
+  const b = $('btnIA');
+  if(!b) return;
+  const n = S.filas.filter(f => f.ia).length;
+  if(!n){ b.style.display = 'none'; S.soloIA = false; return; }
+  b.style.display = '';
+  b.classList.toggle('activo', !!S.soloIA);
+  b.innerHTML = BANDERIN + ' ' + n + (n === 1 ? ' novedad IA' : ' novedades IA');
 }
 
 function actualizarChipDups(){
@@ -22033,6 +22058,14 @@ $('colDer').addEventListener('click', ()=>{
   cerrarPop('popColumnas');
 });
 $('colReset').addEventListener('click', ()=>{ cerrarPop('popColumnas'); restablecerColumnas(); });
+
+$('btnIA').addEventListener('click', ()=>{
+  S.soloIA = !S.soloIA;
+  actualizarChipIA();
+  recalcularVista();
+  render();
+  aviso(S.soloIA ? 'Mostrando solo los viajes con novedad de la revisión IA.' : 'Mostrando todos los registros.');
+});
 
 $('btnDups').addEventListener('click', ev=>{
   ev.stopPropagation();
