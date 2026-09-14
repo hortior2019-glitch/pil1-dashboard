@@ -1317,8 +1317,17 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-auditoria .men small{display:block;color:var(--tinta-suave);font-size:11px;margin-top:1px}
 /* Fila creada a mano: una marca dorada en el numero. No entro por la
    bascula ni por un tiquete, y quien la audite tiene que saberlo. */
-/* Banderin rojo: la revision IA de bauchers dejo una novedad abierta. */
-#panel-auditoria table.grid td.num.ia-nov{box-shadow:inset 3px 0 0 #c62828;color:#c62828;font-weight:700}
+/* Banderin de la revision IA de bauchers: un color por resultado. */
+#panel-auditoria table.grid td.num.ia-no_coincide{box-shadow:inset 3px 0 0 #c62828;color:#c62828;font-weight:700}
+#panel-auditoria table.grid td.num.ia-ojo{box-shadow:inset 3px 0 0 #d18a00;color:#9a6500;font-weight:700}
+#panel-auditoria table.grid td.num.ia-ok{box-shadow:inset 3px 0 0 #2e7d32}
+#panel-auditoria table.grid td.num.ia-confirmada{box-shadow:inset 3px 0 0 #1e5fae}
+#panel-auditoria #popIA .men button{display:flex;align-items:center;gap:7px;width:100%}
+#panel-auditoria #popIA .men button .cuenta{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--tinta-suave);font-weight:600}
+#panel-auditoria #popIA .men button.activo{background:var(--crema);font-weight:700}
+#panel-auditoria #popIA .men button.activo::after{content:'✓';margin-left:6px;color:var(--verde)}
+#panel-auditoria #popIA .men button[disabled]{opacity:.45;cursor:default}
+#panel-auditoria .ia-leyenda{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--tinta-suave);margin-top:6px}
 #panel-auditoria table.grid td.num .banderin{width:9px;height:11px;vertical-align:-1px;margin-right:3px}
 #panel-auditoria .tb.ia-chip{color:#c62828;border-color:#e0b4b4}
 #panel-auditoria .tb.ia-chip.activo{background:#c62828;color:#fff;border-color:#c62828}
@@ -3986,7 +3995,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <div class="divisor"></div>
 
   <button class="tb" id="btnColumnas" title="Borrar filas · crear, ocultar u ordenar columnas">▦ Filas y columnas ▾</button>
-  <button class="tb ia-chip" id="btnIA" style="display:none" title="Viajes con novedad de la revisión IA de bauchers · clic para ver solo esos"></button>
+  <button class="tb ia-chip" id="btnIA" style="display:none" title="Revisión IA de bauchers · filtrar por etiqueta"></button>
   <button class="tb alerta" id="btnDups" style="display:none" title="Viajes repetidos: mismo tiquete, placa, pesos, operación y residuo">⚠ <span id="dupsTexto"></span> ▾</button>
   <button class="tb" id="btnComent" style="display:none" title="Comentarios de hilo del archivo (los que deja otra app)">💬 <span id="comentTexto"></span></button>
   <button class="tb" id="btnComentario" title="Agregar un comentario a la celda">✎ Comentar</button>
@@ -4069,6 +4078,12 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <span style="flex:1"></span>
     <button class="mini" id="filtroAplicar" style="background:var(--verde);color:#fff;border-color:var(--verde)">Aplicar</button>
   </div>
+</div>
+
+<!-- menú de la revisión IA: filtrar por etiqueta -->
+<div class="pop" id="popIA">
+  <h3>Revisión IA de bauchers</h3>
+  <div class="men" id="popIAOpciones"></div>
 </div>
 
 <!-- menú de duplicados -->
@@ -20398,7 +20413,7 @@ function recalcularVista(){
   }
 
   if(S.soloDups) S.vista = S.vista.filter(i => S.dups.has(i));
-  if(S.soloIA)   S.vista = S.vista.filter(i => !!S.filas[i].ia);
+  if(S.filtroIA) S.vista = S.vista.filter(i => cumpleFiltroIA(S.filas[i], S.filtroIA));
 
   if(S.orden){
     const c = S.orden.col, dir = S.orden.dir === 'desc' ? -1 : 1;
@@ -20527,7 +20542,7 @@ function render(){
     const filaBo = !!f.bo;
     const filaNueva = !!f.nueva;
     const ia = f.ia;
-    const tds = [`<td class="num${esDup ? ' dup' : ''}${filaBo ? ' fila-borrada' : ''}${filaNueva ? ' fila-nueva' : ''}${ia ? ' ia-nov' : ''}" data-vr="${vr}" title="Fila ${f.r}${ia ? ' · ' + esc(ia.tipo) + ': ' + esc(ia.detalle) : ''}${filaBo ? ' · BORRADA por auditoría' : ''}${filaNueva ? ' · CREADA A MANO desde el tablero (no entró por báscula)' : ''}${esDup ? ' · viaje repetido (grupo ' + S.dups.get(idxFila) + ')' : ''} · clic para seleccionar toda la fila">${ia ? BANDERIN : ''}${f.r}</td>`];
+    const tds = [`<td class="num${esDup ? ' dup' : ''}${filaBo ? ' fila-borrada' : ''}${filaNueva ? ' fila-nueva' : ''}${ia ? ' ia-' + ia.estado : ''}" data-vr="${vr}" title="Fila ${f.r}${ia ? ' · IA: ' + esc((IA_ESTADOS[ia.estado] || {}).texto || ia.tipo) + (ia.estado === 'ok' ? '' : ' — ' + esc(ia.detalle)) : ''}${filaBo ? ' · BORRADA por auditoría' : ''}${filaNueva ? ' · CREADA A MANO desde el tablero (no entró por báscula)' : ''}${esDup ? ' · viaje repetido (grupo ' + S.dups.get(idxFila) + ')' : ''} · clic para seleccionar toda la fila">${ia ? banderin(ia.estado) : ''}${f.r}</td>`];
     for(let pos = 0; pos < S.colsVista.length; pos++){
       const c = S.colsVista[pos];
       const val = f.v[c] ?? '';
@@ -21511,10 +21526,22 @@ function mostrarDetalle(){
          <b>Viaje repetido.</b> Coincide con otro registro en tiquete, placa, pesos, operación y residuo (grupo ${S.dups.get(S.vista[S.foco.vr])}).
        </div></div>` : '';
 
-  /* La novedad IA va primero: es lo que hay que confirmar con ojo humano. */
-  const avisoIA = f.ia
-    ? `<div class="campo"><div class="val" style="background:#fdecec;border-color:#e0b4b4;color:#8e1c1c;font-family:var(--sans);font-size:12px;white-space:pre-wrap">${BANDERIN} <b>${esc(f.ia.tipo)}</b>${f.ia.fecha ? ' · revisado ' + esc(f.ia.fecha) : ''}<br>${esc(f.ia.detalle)}<br><span style="color:#6d6d64">Se cierra en la pestaña NOVEDADES IA del Sheet, llenando CONFIRMADO POR y CONCLUSION.</span>
-       </div></div>` : '';
+  /* El resultado de la revisión IA va primero. */
+  const FONDOS_IA = { no_coincide:['#fdecec','#e0b4b4','#8e1c1c'], ojo:['#fff6e0','#e8cf94','#7a5200'],
+                      confirmada:['#e8f0fb','#b7cdea','#163f73'], ok:['#e9f5ea','#b9d9bb','#1d5a22'] };
+  const avisoIA = f.ia ? (() => {
+    const e = f.ia, k = FONDOS_IA[e.estado] || FONDOS_IA.no_coincide;
+    let cuerpo = '';
+    if(e.estado === 'ok') cuerpo = 'Los 8 datos del registro coinciden con las fotos.';
+    else cuerpo = esc(e.detalle) +
+      (e.estado === 'confirmada'
+        ? '<br><b>Confirmó:</b> ' + esc(e.confirmadoPor || '—') + (e.fechaConfirmacion ? ' · ' + esc(e.fechaConfirmacion) : '') +
+          (e.conclusion ? '<br><b>Conclusión:</b> ' + esc(e.conclusion) : '')
+        : '<br><span style="color:#6d6d64">Se cierra en la pestaña NOVEDADES IA del Sheet, llenando CONFIRMADO POR y CONCLUSION.</span>');
+    return `<div class="campo"><div class="val" style="background:${k[0]};border-color:${k[1]};color:${k[2]};font-family:var(--sans);font-size:12px;white-space:pre-wrap">${banderin(e.estado)} <b>Revisión IA: ${esc((IA_ESTADOS[e.estado] || {}).texto || e.tipo)}</b>${e.fecha ? ' · ' + esc(e.fecha) : ''}<br>${cuerpo}
+       <div class="ia-leyenda">${['no_coincide','ojo','confirmada','ok'].map(x => banderin(x) + ' ' + IA_ESTADOS[x].texto).join('')}</div>
+       </div></div>`;
+  })() : '';
   $('panelCuerpo').innerHTML = avisoIA + avisoFila + avisoCol + avisoDup + bloqueHilos + `
     <div class="campo">
       <span class="et">${esc(S.headers[c] || letraCol(c+1))}</span>
@@ -21736,16 +21763,71 @@ function detectarDuplicados(){
   actualizarChipDups();
 }
 
-const BANDERIN = '<svg class="banderin" viewBox="0 0 9 11" aria-hidden="true"><path d="M1 0v11" stroke="#c62828" stroke-width="1.4"/><path d="M1.6 .6h6.6L6.4 3.2l1.8 2.6H1.6z" fill="#c62828"/></svg>';
+/* Un color por resultado de la revisión IA. */
+const IA_ESTADOS = {
+  no_coincide: { color:'#c62828', texto:'No coincide' },
+  ojo:         { color:'#d18a00', texto:'Confirmar con ojo humano' },
+  confirmada:  { color:'#1e5fae', texto:'Confirmada por una persona' },
+  ok:          { color:'#2e7d32', texto:'OK: todo coincide' }
+};
+function banderin(estado){
+  const c = (IA_ESTADOS[estado] || IA_ESTADOS.no_coincide).color;
+  return '<svg class="banderin" viewBox="0 0 9 11" aria-hidden="true"><path d="M1 0v11" stroke="' + c + '" stroke-width="1.4"/><path d="M1.6 .6h6.6L6.4 3.2l1.8 2.6H1.6z" fill="' + c + '"/></svg>';
+}
+
+/* Filtros de la revisión IA. '' = todos. */
+const FILTROS_IA = [
+  { id:'',            texto:'Todos los registros' },
+  { id:'pendientes',  texto:'Pendientes de revisar', sub:'Rojo y ámbar' },
+  { id:'no_coincide', texto:IA_ESTADOS.no_coincide.texto },
+  { id:'ojo',         texto:IA_ESTADOS.ojo.texto },
+  { id:'confirmada',  texto:IA_ESTADOS.confirmada.texto },
+  { id:'ok',          texto:IA_ESTADOS.ok.texto },
+  { id:'sin',         texto:'Sin revisar por la IA', sub:'Todavía no pasó la revisión' }
+];
+function cumpleFiltroIA(f, filtro){
+  const e = f.ia ? f.ia.estado : '';
+  if(filtro === 'pendientes') return e === 'no_coincide' || e === 'ojo';
+  if(filtro === 'sin') return !e;
+  return e === filtro;
+}
+function cuentasIA(){
+  const c = {};
+  FILTROS_IA.forEach(x => { c[x.id] = x.id ? S.filas.filter(f => cumpleFiltroIA(f, x.id)).length : S.filas.length; });
+  return c;
+}
 
 function actualizarChipIA(){
   const b = $('btnIA');
   if(!b) return;
-  const n = S.filas.filter(f => f.ia).length;
-  if(!n){ b.style.display = 'none'; S.soloIA = false; return; }
+  const c = cuentasIA();
+  const revisados = c.no_coincide + c.ojo + c.confirmada + c.ok;
+  if(!revisados){ b.style.display = 'none'; S.filtroIA = ''; return; }
   b.style.display = '';
-  b.classList.toggle('activo', !!S.soloIA);
-  b.innerHTML = BANDERIN + ' ' + n + (n === 1 ? ' novedad IA' : ' novedades IA');
+  b.classList.toggle('activo', !!S.filtroIA);
+  const activo = FILTROS_IA.find(x => x.id === S.filtroIA);
+  b.innerHTML = (S.filtroIA
+      ? (IA_ESTADOS[S.filtroIA] ? banderin(S.filtroIA) + ' ' : '') + esc(activo.texto) + ' (' + c[S.filtroIA] + ')'
+      : ['no_coincide','ojo','confirmada','ok'].filter(k => c[k]).map(k => banderin(k) + ' ' + c[k]).join(' &nbsp;')) + ' ▾';
+}
+
+function pintarMenuIA(){
+  const c = cuentasIA();
+  $('popIAOpciones').innerHTML = FILTROS_IA.map((x, i) =>
+    (i === 1 || i === 2 || i === 6 ? '<div class="sep"></div>' : '') +
+    `<button type="button" data-filtro-ia="${x.id}" class="${(S.filtroIA || '') === x.id ? 'activo' : ''}"${x.id && !c[x.id] ? ' disabled' : ''}>
+       ${IA_ESTADOS[x.id] ? banderin(x.id) : ''}<span>${esc(x.texto)}${x.sub ? '<small>' + esc(x.sub) + '</small>' : ''}</span>
+       <span class="cuenta">${c[x.id]}</span></button>`).join('');
+}
+
+function aplicarFiltroIA(id){
+  S.filtroIA = id;
+  cerrarPop('popIA');
+  actualizarChipIA();
+  recalcularVista();
+  render();
+  const x = FILTROS_IA.find(f => f.id === id);
+  aviso(id ? 'Mostrando: ' + x.texto + ' (' + S.vista.length + ').' : 'Mostrando todos los registros.');
 }
 
 function actualizarChipDups(){
@@ -22059,12 +22141,20 @@ $('colDer').addEventListener('click', ()=>{
 });
 $('colReset').addEventListener('click', ()=>{ cerrarPop('popColumnas'); restablecerColumnas(); });
 
-$('btnIA').addEventListener('click', ()=>{
-  S.soloIA = !S.soloIA;
-  actualizarChipIA();
-  recalcularVista();
-  render();
-  aviso(S.soloIA ? 'Mostrando solo los viajes con novedad de la revisión IA.' : 'Mostrando todos los registros.');
+$('btnIA').addEventListener('click', ev=>{
+  ev.stopPropagation();
+  const r = $('btnIA').getBoundingClientRect();
+  const pop = $('popIA');
+  pintarMenuIA();
+  pop.style.left = Math.min(r.left, window.innerWidth - 300) + 'px';
+  pop.style.top  = (r.bottom + 4) + 'px';
+  pop.classList.toggle('abierto');
+  cerrarPop('popColumnas'); cerrarPop('popColor'); cerrarPop('popFiltro'); cerrarPop('popDups');
+});
+$('popIAOpciones').addEventListener('click', ev=>{
+  const b = ev.target.closest('[data-filtro-ia]');
+  if(!b || b.disabled) return;
+  aplicarFiltroIA(b.dataset.filtroIa);
 });
 
 $('btnDups').addEventListener('click', ev=>{
@@ -22076,7 +22166,7 @@ $('btnDups').addEventListener('click', ev=>{
   pop.style.left = Math.min(r.left, window.innerWidth - 280) + 'px';
   pop.style.top  = (r.bottom + 4) + 'px';
   pop.classList.toggle('abierto');
-  cerrarPop('popColumnas'); cerrarPop('popColor'); cerrarPop('popFiltro');
+  cerrarPop('popColumnas'); cerrarPop('popColor'); cerrarPop('popFiltro'); cerrarPop('popIA');
 });
 $('dupSolo').addEventListener('click', ()=>{
   S.soloDups = !S.soloDups;
@@ -22219,6 +22309,7 @@ _audDocOn('mousedown', ev=>{
   if(!ev.target.closest('#popColor') && !ev.target.closest('#btnLetra') && !ev.target.closest('#btnFondo')) cerrarPop('popColor');
   if(!ev.target.closest('#popColumnas') && !ev.target.closest('#btnColumnas')) cerrarPop('popColumnas');
   if(!ev.target.closest('#popDups') && !ev.target.closest('#btnDups')) cerrarPop('popDups');
+  if(!ev.target.closest('#popIA') && !ev.target.closest('#btnIA')) cerrarPop('popIA');
 });
 
 // El boton Configuracion se quito junto con el encabezado. El modal
