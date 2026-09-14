@@ -1752,6 +1752,11 @@ html.solo-panel #panel-certificado .preview-wrap{
   animation:sp-fade 3.4s ease forwards;
 }
 html.solo-panel #salir-solo-panel{display:block}
+/* Con el mapa expandido el aviso va abajo al centro: arriba a la derecha
+   quedaba justo encima de los interruptores Artículos, Pilas y
+   Actividades — medido a 1440 px, el cartel ocupaba de x=1226 a 1424 y
+   los tres interruptores estaban en x=1249, 1312 y 1360. */
+html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;transform:translateX(-50%)}
 @keyframes sp-fade{0%,72%{opacity:1}100%{opacity:0}}
 @media (prefers-reduced-motion:reduce){#salir-solo-panel{animation:none;opacity:1}}
 
@@ -2927,6 +2932,26 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-mapa .ub-resultado.malo{border:1px solid #b23b3b;background:#fdf6f6;color:#8f2626}
 
 #panel-mapa .act-ultima-foto{display:flex;gap:9px;align-items:flex-start;margin-top:8px}
+
+/* Estado del área y novedades */
+#panel-mapa .rep-estado{display:flex;gap:9px;align-items:flex-start;padding:4px 0 2px}
+#panel-mapa .rep-estado .cuando{font-size:10.5px;color:var(--ink-l,#8a8f8a)}
+#panel-mapa .rep-novedad{
+  display:flex;gap:9px;align-items:flex-start;padding:8px;margin-bottom:7px;
+  border:1px solid var(--rule,#dcdcdc);border-radius:7px;
+}
+#panel-mapa .rep-novedad.abierta{border-color:#d9822b;border-width:2px;background:#fff8f0}
+#panel-mapa .rep-novedad-d{flex:1;min-width:0}
+#panel-mapa .rep-novedad-d b{font-size:12.5px;color:var(--ink,#1f2a24)}
+#panel-mapa .rep-novedad-d .cuando{font-size:10.5px;color:var(--ink-l,#8a8f8a)}
+#panel-mapa .rep-resolver{margin-top:6px;padding:7px 11px;border-radius:6px;border:none;
+  font-family:inherit;font-size:11.5px;font-weight:700;cursor:pointer}
+#panel-mapa .rep-cierre{font-size:11px;color:#2f8f52;margin-top:4px;line-height:1.4}
+#panel-mapa .rep-resueltas{margin:4px 0 8px;font-size:11.5px;color:var(--ink-m,#54605a)}
+#panel-mapa .rep-resueltas summary{cursor:pointer;padding:4px 0}
+#panel-mapa .marca-novedad{pointer-events:none}
+#panel-mapa .marca-novedad path{fill:#d9822b;stroke:#fff;stroke-width:1.2}
+#panel-mapa .marca-novedad text{font-size:7.5px;font-weight:800;fill:#fff;text-anchor:middle;dominant-baseline:central}
 #panel-mapa .act-foto-mini{
   flex:0 0 56px;width:56px;height:56px;border-radius:5px;overflow:hidden;
   border:1px solid var(--rule,#dcdcdc);display:block;background:#fff;
@@ -6757,6 +6782,8 @@ function alternarSoloPanel(forzar){
      por su propio onclick. */
   const bm = document.getElementById('mapaExpandir');
   if (bm) bm.textContent = activo ? 'Reducir' : 'Expandir';
+  const pm = document.getElementById('panel-mapa');
+  raiz.classList.toggle('mapa-expandido', !!(activo && pm && pm.classList.contains('active')));
 
   // Se reinicia la animacion del aviso cada vez que se entra
   const av = document.getElementById('salir-solo-panel');
@@ -22330,7 +22357,7 @@ window.operacionesCargar = function(){
 (function(){
 "use strict";
 
-var M = { zonas:[], pilas:[], actividades:[], evaluaciones:[], terminos:[], inventario:[],
+var M = { zonas:[], pilas:[], actividades:[], evaluaciones:[], reportes:[], terminos:[], inventario:[],
           dibujado:false,   // el plano ya esta en pantalla (sale del codigo)
           cargado:false,    // el servidor ya contesto (nombres, pilas, actividades)
           cargando:false };
@@ -22837,6 +22864,7 @@ function aplicarEstadoMapa(d){
   if(d.pilas)        M.pilas        = d.pilas;
   if(d.actividades)  M.actividades  = d.actividades;
   if(d.evaluaciones) M.evaluaciones = d.evaluaciones;
+  if(d.reportes)     M.reportes     = d.reportes;
   if(d.terminos && d.terminos.length) M.terminos = d.terminos;
   M.cargado = true;
   estadoMapa('');
@@ -22876,6 +22904,7 @@ async function cargarMapa(forzar){
     M.pilas        = d.pilas || [];
     M.actividades  = d.actividades || [];
     M.evaluaciones = d.evaluaciones || [];
+    M.reportes     = d.reportes || [];
     /* Si la hoja de terminos esta vacia se conservan los de aca: sin
        ellos no se podria registrar una actividad. */
     M.terminos = (d.terminos && d.terminos.length) ? d.terminos : MAPA_TERMINOS_BASE.slice();
@@ -23030,13 +23059,21 @@ function pintar(){
     .slice()
     .sort(function(a,b){ return (b.w*b.h) - (a.w*a.h); })
     .forEach(function(z){
-    var sel = SEL.zona === z.id ? ' sel' : '';
+    /* Si lo tocado es una PILA, la carpa no se pinta: se marca solo el
+       espacio entre esos dos parales. Antes se pintaba la carpa entera de
+       amarillo con sus escuadras y la pila quedaba perdida adentro —
+       medido, la pila 3 de Orgánicos A salía con toda la carpa marcada. */
+    var sel = (SEL.zona === z.id && !SEL.vano) ? ' sel' : '';
     /* El lugar elegido para la actividad que se está creando se pinta de
        verde mientras se llena el formulario. Sin esto había que confiar
        en la memoria: se tocaba un área, el panel volvía al formulario y
        el plano quedaba igual que antes, sin decir cuál se había tocado. */
-    var eleg = (elegida && elegida.zonas && elegida.zonas.indexOf(z.id) > -1)
-             ? (elegida.alcance === 'pila' && elegida.zonas.length === 1 ? ' elegida-zona' : ' elegida')
+    /* Con alcance de pila, la carpa queda sin marca: el verde va solo en
+       los vanos elegidos. Marcarla con borde hacía creer que la actividad
+       era de toda la sección. */
+    var eleg = (elegida && elegida.zonas && elegida.zonas.indexOf(z.id) > -1 &&
+                !(elegida.alcance === 'pila' && elegida.zonas.length === 1))
+             ? ' elegida'
              : '';
     var g = ['<g class="z t-' + esc(z.tipo) + sel + eleg + '" data-zona="' + esc(z.id) + '">'];
     if(z.puntos){
@@ -23125,7 +23162,7 @@ function pintar(){
     /* Las escuadras amarillas del área tocada. Van después del recuadro
        para quedar por encima, y no sobre los polígonos —el contorno del
        predio y las áreas irregulares no tienen esquinas que marcar. */
-    if(SEL.zona === z.id && !z.puntos && z.w && z.h){
+    if(SEL.zona === z.id && !SEL.vano && !z.puntos && z.w && z.h){
       var lado = Math.max(5, Math.min(15, Math.min(z.w, z.h) * 0.3));
       [[z.x, z.y, 1, 1], [z.x + z.w, z.y, -1, 1],
        [z.x, z.y + z.h, 1, -1], [z.x + z.w, z.y + z.h, -1, -1]].forEach(function(c){
@@ -23149,6 +23186,18 @@ function pintar(){
                '<title>' + acsZ.length + ' actividad' + (acsZ.length === 1 ? '' : 'es') +
                ' abierta' + (acsZ.length === 1 ? '' : 's') + ' acá</title></g>');
       }
+    }
+
+    /* Novedades abiertas: un triángulo en la esquina de abajo. Es lo que
+       hay que atender, así que tiene que verse sin tocar nada. */
+    var nvZ = novedadesAbiertas(z.id, 0);
+    if(nvZ.length && z.w && z.h){
+      var nx = z.x + 9, ny = z.y + z.h - 9;
+      g.push('<g class="marca-novedad"><path d="M' + nx + ',' + (ny - 8) + ' L' + (nx + 8) + ',' + (ny + 6) +
+             ' L' + (nx - 8) + ',' + (ny + 6) + ' Z"></path>' +
+             '<text x="' + nx + '" y="' + (ny + 2) + '">' + nvZ.length + '</text>' +
+             '<title>' + nvZ.length + ' novedad' + (nvZ.length === 1 ? '' : 'es') + ' abierta' +
+             (nvZ.length === 1 ? '' : 's') + '</title></g>');
     }
 
     /* Marca con la cantidad de articulos ubicados aca */
@@ -23319,6 +23368,7 @@ function verZona(){
   var h = '<h3>' + esc(z.nombre) + '</h3><div class="sub">' + esc(z.tipo) +
           (z.tipo === 'almacen' ? ' · ' + z.parales + ' parales · ' + vanosDe(z) + ' espacios de pila' : '') + '</div>';
 
+  h += bloqueReportes(z.id, 0);
   h += bloqueActividades(acts, 'esta área');
   h += bloqueFotosZona(acts);
 
@@ -23374,6 +23424,251 @@ function verZona(){
   if($m('zActividad')) $m('zActividad').onclick = function(){ BORRADOR = null; formActividadNueva(z, null); };
   engancharActividades(p);
   engancharVerTodas(p);
+  engancharReportes(p);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   ESTADO DEL ÁREA Y NOVEDADES
+   ------------------------------------------------------------------
+   Dos cosas distintas:
+     ESTADO   "así está hoy". Foto, condición y observación. El último
+              manda; los anteriores quedan como historial.
+     NOVEDAD  "pasó algo acá". Queda ABIERTA hasta que alguien la da por
+              resuelta diciendo cómo. Es lo que hay que atender, y por
+              eso se ve en el plano mientras esté abierta.
+   Las dos pueden ir sobre el área entera o sobre una pila.
+   ══════════════════════════════════════════════════════════════════ */
+var CONDICIONES = [
+  ['bueno',   'Bien',     'ok'],
+  ['regular', 'Regular',  'medio'],
+  ['malo',    'Mal',      'mal']
+];
+var FOTO_REPORTE = null;
+
+/* Los reportes de un lugar. Sin pila: los del área entera Y los de sus
+   pilas, porque quien mira la carpa quiere saber todo lo que pasa adentro.
+   Con pila: solo los de esa pila. */
+function reportesDe(zonaId, vano){
+  return (M.reportes || []).filter(function(r){
+    if(r.zonaId !== zonaId) return false;
+    return vano ? r.vano === vano : true;
+  });
+}
+function ultimoEstado(zonaId, vano){
+  var l = reportesDe(zonaId, vano).filter(function(r){
+    return r.tipo === 'estado' && (vano ? true : !r.vano);
+  });
+  return l.length ? l[0] : null;
+}
+function novedadesAbiertas(zonaId, vano){
+  return reportesDe(zonaId, vano).filter(function(r){
+    return r.tipo === 'novedad' && r.estado !== 'resuelta';
+  });
+}
+
+function bloqueReportes(zonaId, vano){
+  var est = ultimoEstado(zonaId, vano);
+  var abiertas = novedadesAbiertas(zonaId, vano);
+  var resueltas = reportesDe(zonaId, vano).filter(function(r){
+    return r.tipo === 'novedad' && r.estado === 'resuelta';
+  });
+  var cond = est ? CONDICIONES.filter(function(c){ return c[0] === est.condicion; })[0] : null;
+  var h = '';
+
+  h += '<div class="mapa-sec">Estado' + (vano ? ' de la pila' : ' del área') + '</div>';
+  h += est
+    ? '<div class="rep-estado">' +
+        cajaFoto(est.foto, 'act-foto-mini', 'Estado del ' + cuando(est.fecha)) +
+        '<div><span class="et-res r-' + (cond ? cond[2] : 'pend') + '">' + (cond ? cond[1] : est.condicion) + '</span>' +
+          '<div class="act-obs">' + esc(est.observacion) + '</div>' +
+          '<span class="cuando">' + esc(cuando(est.fecha)) +
+          (est.reportadoPor ? ' · ' + esc(est.reportadoPor) : '') + '</span></div>' +
+      '</div>'
+    : '<div class="mapa-linea" style="color:var(--ink-l)">Nadie reportó todavía cómo está.</div>';
+
+  h += '<div class="mapa-sec">Novedades (' + abiertas.length + ' abierta' +
+       (abiertas.length === 1 ? '' : 's') + ')</div>';
+  h += abiertas.length
+    ? abiertas.map(lineaNovedad).join('')
+    : '<div class="mapa-linea" style="color:var(--ink-l)">Sin novedades abiertas.</div>';
+  if(resueltas.length){
+    h += '<details class="rep-resueltas"><summary>' + resueltas.length + ' resuelta' +
+         (resueltas.length === 1 ? '' : 's') + '</summary>' +
+         resueltas.slice(0, 10).map(lineaNovedad).join('') + '</details>';
+  }
+
+  h += '<div class="mapa-acciones">' +
+         '<button type="button" class="mapa-guardar" data-rep-estado="' + esc(zonaId) + '" data-vano="' + (vano || '') + '">Reportar estado</button>' +
+         '<button type="button" class="mapa-cancelar" data-rep-novedad="' + esc(zonaId) + '" data-vano="' + (vano || '') + '">Reportar novedad</button>' +
+       '</div>';
+  return h;
+}
+
+function lineaNovedad(r){
+  var abierta = r.estado !== 'resuelta';
+  return '<div class="rep-novedad' + (abierta ? ' abierta' : '') + '">' +
+    cajaFoto(r.foto, 'act-foto-mini', r.titulo) +
+    '<div class="rep-novedad-d">' +
+      '<b>' + esc(r.titulo) + '</b>' +
+      (r.vano ? ' <span class="cuando">· pila ' + r.vano + '</span>' : '') +
+      (r.observacion ? '<div class="act-obs">' + esc(r.observacion) + '</div>' : '') +
+      '<span class="cuando">' + esc(cuando(r.fecha)) + (r.reportadoPor ? ' · ' + esc(r.reportadoPor) : '') + '</span>' +
+      (abierta
+        ? '<div><button type="button" class="mapa-cancelar rep-resolver" data-resolver="' + esc(r.id) + '">Dar por resuelta</button></div>'
+        : '<div class="rep-cierre">Resuelta el ' + esc(cuando(r.fechaCierre)) +
+          (r.cerradoPor ? ' por ' + esc(r.cerradoPor) : '') + ': ' + esc(r.notaCierre) + '</div>') +
+    '</div></div>';
+}
+
+function engancharReportes(cont){
+  cont.querySelectorAll('[data-rep-estado]').forEach(function(b){
+    b.onclick = function(){ formEstadoArea(b.dataset.repEstado, +b.dataset.vano || 0); };
+  });
+  cont.querySelectorAll('[data-rep-novedad]').forEach(function(b){
+    b.onclick = function(){ formNovedad(b.dataset.repNovedad, +b.dataset.vano || 0); };
+  });
+  cont.querySelectorAll('[data-resolver]').forEach(function(b){
+    b.onclick = function(){ formResolver(b.dataset.resolver); };
+  });
+}
+
+function nombreLugar(zonaId, vano){
+  var z = zonaPorId(zonaId);
+  return (z ? z.nombre : zonaId) + (vano ? ' · pila ' + vano : '');
+}
+
+function volverAlLugar(){
+  FOTO_REPORTE = null;
+  if(SEL.vano) verPila(); else if(SEL.zona) verZona(); else limpiarPanel();
+}
+
+function pintarFotoReporte(){
+  var z = $m('repFotoZona');
+  if(!z) return;
+  z.innerHTML = FOTO_REPORTE
+    ? '<img src="' + FOTO_REPORTE + '" alt="">' +
+      '<div class="act-foto-txt">Foto lista para enviar.</div>' +
+      '<button type="button" class="mapa-cancelar" id="repOtra">Tomar otra</button>'
+    : '<button type="button" class="mapa-guardar" id="repFoto">Tomar la foto</button>' +
+      '<div class="act-foto-txt">Sacala ahora, con el lugar a la vista.</div>';
+  if($m('repFoto')) $m('repFoto').onclick = function(){
+    DESTINO_FOTO = 'reporte';
+    var inp = $m('mapaFotoInput'); if(inp){ inp.value=''; inp.click(); }
+  };
+  if($m('repOtra')) $m('repOtra').onclick = function(){ FOTO_REPORTE = null; pintarFotoReporte(); };
+}
+
+/* ── Reportar estado ── */
+function formEstadoArea(zonaId, vano){
+  FOTO_REPORTE = null;
+  RESALTE = { zonas:[zonaId], alcance: vano ? 'pila' : 'zona', vanoDesde: vano, vanoHasta: vano };
+  pintar();
+  var p = $m('mapaPanel');
+  p.innerHTML =
+    '<h3>Estado</h3>' +
+    '<div class="sub">' + esc(nombreLugar(zonaId, vano)) + '</div>' +
+    '<div class="mapa-sec">¿Cómo está?</div>' +
+    '<div class="act-resultados">' +
+      CONDICIONES.map(function(c){
+        return '<button type="button" class="act-res r-' + c[2] + '" data-cond="' + c[0] + '">' + c[1] + '</button>';
+      }).join('') + '</div>' +
+    '<div class="mapa-campo"><label>Qué se ve</label>' +
+      '<textarea id="repObs" rows="3" placeholder="Orden, limpieza, humedad, daños, lo que sea que se note"></textarea></div>' +
+    '<div class="mapa-sec">Foto</div>' +
+    '<div class="act-foto" id="repFotoZona"></div>' +
+    '<div class="mapa-acciones">' +
+      '<button class="mapa-guardar" id="repGuardar" disabled>Elegí cómo está</button>' +
+      '<button class="mapa-cancelar" id="repCancelar">Cancelar</button></div>';
+
+  pintarFotoReporte();
+  var elegida = '';
+  p.querySelectorAll('[data-cond]').forEach(function(b){
+    b.onclick = function(){
+      elegida = b.dataset.cond;
+      p.querySelectorAll('[data-cond]').forEach(function(x){ x.classList.toggle('sel', x === b); });
+      $m('repGuardar').disabled = false;
+      $m('repGuardar').textContent = 'Guardar el estado';
+    };
+  });
+  $m('repCancelar').onclick = function(){ RESALTE = null; pintar(); volverAlLugar(); };
+  $m('repGuardar').onclick = async function(){
+    var obs = (($m('repObs')||{}).value || '').trim();
+    if(!obs){ alert('Escribí qué se ve en el área.'); $m('repObs').focus(); return; }
+    if(!FOTO_REPORTE && !confirm('El estado va a quedar SIN foto. ¿Guardar igual?')) return;
+    var bt = $m('repGuardar'); bt.disabled = true; bt.textContent = 'Guardando…';
+    try{
+      var r = await pedir({ action:'reportarEstado', zonaId:zonaId, vano:vano || '',
+        condicion:elegida, observacion:obs, foto:FOTO_REPORTE || '', responsable:quienSoy() });
+      RESALTE = null;
+      if(!aplicarEstadoMapa(r)) await cargarMapa(true);
+      volverAlLugar();
+    }catch(e){ bt.disabled = false; bt.textContent = 'Guardar el estado'; alert(e.message); }
+  };
+}
+
+/* ── Reportar novedad ── */
+function formNovedad(zonaId, vano){
+  FOTO_REPORTE = null;
+  RESALTE = { zonas:[zonaId], alcance: vano ? 'pila' : 'zona', vanoDesde: vano, vanoHasta: vano };
+  pintar();
+  var p = $m('mapaPanel');
+  p.innerHTML =
+    '<h3>Novedad</h3>' +
+    '<div class="sub">' + esc(nombreLugar(zonaId, vano)) + '</div>' +
+    '<div class="mapa-campo"><label>¿Qué pasó?</label>' +
+      '<input id="nvTitulo" maxlength="90" placeholder="Con tus palabras, en una línea"></div>' +
+    '<div class="mapa-campo"><label>Detalle (opcional)</label>' +
+      '<textarea id="nvObs" rows="3" placeholder="Dónde exactamente, desde cuándo, qué hace falta"></textarea></div>' +
+    '<div class="mapa-sec">Foto (opcional)</div>' +
+    '<div class="act-foto" id="repFotoZona"></div>' +
+    '<div class="ayuda" style="font-size:11px;color:var(--ink-l);margin-top:8px">' +
+      'Queda abierta y marcada en el plano hasta que alguien la dé por resuelta.</div>' +
+    '<div class="mapa-acciones">' +
+      '<button class="mapa-guardar" id="nvGuardar">Reportar</button>' +
+      '<button class="mapa-cancelar" id="nvCancelar">Cancelar</button></div>';
+
+  pintarFotoReporte();
+  $m('nvCancelar').onclick = function(){ RESALTE = null; pintar(); volverAlLugar(); };
+  $m('nvGuardar').onclick = async function(){
+    var titulo = (($m('nvTitulo')||{}).value || '').trim();
+    if(!titulo){ alert('Escribí qué pasó.'); $m('nvTitulo').focus(); return; }
+    var bt = $m('nvGuardar'); bt.disabled = true; bt.textContent = 'Guardando…';
+    try{
+      var r = await pedir({ action:'reportarNovedad', zonaId:zonaId, vano:vano || '',
+        titulo:titulo, observacion:(($m('nvObs')||{}).value || '').trim(),
+        foto:FOTO_REPORTE || '', responsable:quienSoy() });
+      RESALTE = null;
+      if(!aplicarEstadoMapa(r)) await cargarMapa(true);
+      volverAlLugar();
+    }catch(e){ bt.disabled = false; bt.textContent = 'Reportar'; alert(e.message); }
+  };
+}
+
+/* ── Resolver una novedad ── */
+function formResolver(id){
+  var r = (M.reportes || []).filter(function(x){ return x.id === id; })[0];
+  if(!r) return;
+  var p = $m('mapaPanel');
+  p.innerHTML =
+    '<h3>Resolver</h3>' +
+    '<div class="sub">' + esc(r.titulo) + ' · ' + esc(nombreLugar(r.zonaId, r.vano)) + '</div>' +
+    lineaNovedad(Object.assign({}, r, { estado:'__vista' })).replace(/<div><button[^]*?<\/button><\/div>/, '') +
+    '<div class="mapa-campo"><label>¿Cómo se resolvió?</label>' +
+      '<textarea id="rsNota" rows="3" placeholder="Qué se hizo. Le sirve a quien vea la misma falla dentro de un mes."></textarea></div>' +
+    '<div class="mapa-acciones">' +
+      '<button class="mapa-guardar" id="rsGuardar">Dar por resuelta</button>' +
+      '<button class="mapa-cancelar" id="rsCancelar">Cancelar</button></div>';
+  $m('rsCancelar').onclick = volverAlLugar;
+  $m('rsGuardar').onclick = async function(){
+    var nota = (($m('rsNota')||{}).value || '').trim();
+    if(!nota){ alert('Escribí cómo se resolvió.'); $m('rsNota').focus(); return; }
+    var bt = $m('rsGuardar'); bt.disabled = true; bt.textContent = 'Guardando…';
+    try{
+      var res = await pedir({ action:'resolverNovedad', id:id, nota:nota, responsable:quienSoy() });
+      if(!aplicarEstadoMapa(res)) await cargarMapa(true);
+      volverAlLugar();
+    }catch(e){ bt.disabled = false; bt.textContent = 'Dar por resuelta'; alert(e.message); }
+  };
 }
 
 /* ── LAS DOS LISTAS ────────────────────────────────────────────────
@@ -23419,6 +23714,14 @@ function bloqueFotosZona(acts){
       if(e.foto) fotos.push({ e:e, nombre:a.nombre });
     });
   });
+  /* También las de estado y novedades del área: son el registro visual
+     del lugar tanto como las de las actividades. */
+  if(SEL.zona){
+    reportesDe(SEL.zona, 0).forEach(function(r){
+      if(r.foto) fotos.push({ e:{ foto:r.foto, fecha:r.fecha, resultado:r.tipo },
+                              nombre: r.tipo === 'estado' ? 'Estado del área' : r.titulo });
+    });
+  }
   if(!fotos.length) return '';
   fotos.sort(function(x, y){ return (y.e.fecha || '') < (x.e.fecha || '') ? -1 : 1; });
 
@@ -23519,12 +23822,14 @@ function verPila(){
     '<div class="mapa-acciones">' +
       '<button class="mapa-guardar" id="plGuardar">Guardar pila</button>' +
       '<button class="mapa-cancelar" id="plActividad">Nueva actividad en esta pila</button></div>' +
+    bloqueReportes(z.id, SEL.vano) +
     bloqueActividades(acts, 'esta pila');
 
   $m('plGuardar').onclick = guardarPila;
   $m('plActividad').onclick = function(){ BORRADOR = null; formActividadNueva(z, SEL.vano); };
   engancharActividades(p);
   engancharVerTodas(p);
+  engancharReportes(p);
 }
 
 async function guardarPila(){
@@ -23755,15 +24060,27 @@ function elegirLugar(zonaId, vano){
   if(!BORRADOR.zonas) BORRADOR.zonas = [];
 
   var k = BORRADOR.zonas.indexOf(zonaId);
-  if(k > -1 && !vano){
-    BORRADOR.zonas.splice(k, 1);          /* tocarla de nuevo la saca */
-  }else if(k < 0){
-    BORRADOR.zonas.push(zonaId);
-  }
 
-  if(vano && BORRADOR.zonas.length === 1){
-    BORRADOR.alcance = 'pila'; BORRADOR.vanoDesde = vano; BORRADOR.vanoHasta = vano;
-  }else if(BORRADOR.zonas.length !== 1 || !vanosDe(z)){
+  if(vano){
+    /* UNA PILA. Se elige exactamente esa: la carpa pasa a ser la única
+       área y el tramo es de esa pila sola. Tocar la misma pila otra vez la
+       quita; tocar otra de la misma carpa mueve la selección a esa. Un
+       tramo más largo se ajusta después con "de la pila … a la pila …". */
+    var mismaPila = BORRADOR.alcance === 'pila' && BORRADOR.zonas.length === 1 &&
+                    BORRADOR.zonas[0] === zonaId &&
+                    BORRADOR.vanoDesde === vano && BORRADOR.vanoHasta === vano;
+    if(mismaPila){
+      BORRADOR.zonas = [];
+      BORRADOR.alcance = 'zona';
+    }else{
+      BORRADOR.zonas = [zonaId];
+      BORRADOR.alcance = 'pila';
+      BORRADOR.vanoDesde = vano; BORRADOR.vanoHasta = vano;
+    }
+  }else{
+    /* UN ÁREA ENTERA. Suma o saca, y se pueden juntar varias. */
+    if(k > -1) BORRADOR.zonas.splice(k, 1);
+    else       BORRADOR.zonas.push(zonaId);
     BORRADOR.alcance = 'zona';
   }
 
@@ -24070,6 +24387,7 @@ function recibirFotoEval(input){
       var dataUrl = c.toDataURL('image/jpeg', 0.72);
       if(DESTINO_FOTO === 'avance'){ FOTO_AVANCE = dataUrl; pintarFotoAvance(); }
       else if(DESTINO_FOTO === 'item'){ FOTO_ITEM = dataUrl; pintarFotoItem(); }
+      else if(DESTINO_FOTO === 'reporte'){ FOTO_REPORTE = dataUrl; pintarFotoReporte(); }
       else { FOTO_EVAL = dataUrl; pintarFotoEval(); }
     };
     img.src = ev.target.result;
