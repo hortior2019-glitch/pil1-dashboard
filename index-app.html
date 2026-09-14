@@ -18238,7 +18238,7 @@ const VOZ_FUENTES = {
   operaciones: {
     label:'Operaciones · registro maestro con auditoría',
     panel:'auditoria',
-    desc:'auditoría, registros auditados o sin auditar, si ya se auditó un día, si quedó revisado lo de ayer, cuántos faltan por auditar, baucher, bauchers, manifiesto, tiquete, numero de tiquete, buscar un viaje puntual, celdas marcadas con color, revision de registros',
+    desc:'auditoría, registros auditados o sin auditar, si ya se auditó un día, si quedó revisado lo de ayer, cuántos faltan por auditar, revisión IA, auditoría de la IA, novedades de la IA, si todo está auditado, cuántas novedades hay, no coincide, confirmar con ojo humano, baucher, bauchers, manifiesto, tiquete, numero de tiquete, buscar un viaje puntual, celdas marcadas con color, revision de registros',
     obtener: () => vozArr(() => (typeof operacionesFilas === 'function' ? operacionesFilas() : [])),
     fecha:   r => (r && (r['FECHA DISPOSICION PLANTA'] || r['Marca temporal'])) || '',
     cargar: async () => {
@@ -18269,6 +18269,34 @@ const VOZ_FUENTES = {
                dias.map(d => d + ': ' + porDia[d].a + '/' + porDia[d].t +
                         (porDia[d].a === porDia[d].t ? ' COMPLETO' : ' faltan ' + (porDia[d].t - porDia[d].a))).join(' · ') + '.';
         }
+        /* REVISION IA DE BAUCHERS. Va con la frase ya armada para que el
+           asistente la diga tal cual: contar filas es donde se equivoca. */
+        try {
+          const iso = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+          const hoyD = new Date(), ayerD = new Date(); ayerD.setDate(ayerD.getDate() - 1);
+          const general = window.operacionesRevisionIA();
+          if (general.ok) {
+            t += '\n\nREVISIÓN IA DE BAUCHERS (la IA compara las fotos de los bauchers con el registro; es distinta de la auditoría manual por color). ' +
+                 'Si preguntan si todo está auditado o cuántas novedades hay, responde con estas frases tal cual:\n';
+            t += '- En todo lo cargado: ' + general.frase + '\n';
+            [['HOY', iso(hoyD)], ['AYER', iso(ayerD)]].forEach(([nom, d]) => {
+              const r = window.operacionesRevisionIA(d);
+              t += '- ' + nom + ' (' + d + '): ' + (r.ok ? r.frase : 'no hay viajes cargados de ese día.') + '\n';
+            });
+            const diasIA = Object.keys(porDia).sort().slice(-8);
+            if (diasIA.length) {
+              t += '- Por día: ' + diasIA.map(d => { const r = window.operacionesRevisionIA(d);
+                return (r.ok && r.aRevisar) ? d + ': ' + r.revisados + '/' + r.aRevisar + ' revisados, ' + r.novedades + ' novedades pendientes' + (r.completo ? ' (COMPLETO)' : '') : ''; })
+                .filter(Boolean).join(' · ') + '\n';
+            }
+            if (general.novedadesPendientes.length) {
+              t += '- Novedades pendientes: ' + general.novedadesPendientes.map(n =>
+                'tiquete ' + n.tiquete + ' (' + n.placa + ', ' + n.fecha + ', fila ' + n.fila + '): ' + n.tipo + (n.detalle ? ' — ' + n.detalle : '')).join(' | ') + '\n';
+            }
+            t += '- Colores en Operaciones: rojo no coincide, ámbar confirmar con ojo humano, azul confirmada por una persona, verde OK.\n';
+          }
+        } catch(e){}
+
         const ayer = new Date(); ayer.setDate(ayer.getDate() - 1);
         const kAyer = window.operacionesKpiAuditoria();
         if (kAyer && kAyer.ok) {
@@ -20279,6 +20307,7 @@ async function cargar(){
     if(!res.success) throw new Error(res.error || 'El servicio devolvió un error.');
 
     S.headers  = res.headers || [];
+    S.revisionIA = res.revisionIA || null;
     S.filas    = res.filas || [];
     S.filas.forEach(f => { f.f = f.f || {}; f.b = f.b || {}; f.n = f.n || {}; f.w = f.w || {}; });
     S.colsEdit    = res.columnasEditables || 21;
@@ -22499,6 +22528,10 @@ window.operacionesFilas = function(limite){
     o['AUDITADO']       = color ? 'si' : 'no';
     o['COLOR_AUDITORIA'] = color || '';
     o['FILA_HOJA']      = f.r || '';
+    /* Revision IA de bauchers (distinta de la auditoria manual del color). */
+    o['REVISION_IA'] = f.ia ? f.ia.estado
+                     : f.iaFuera ? 'fuera' : f.iaSinFoto ? 'sin_foto' : 'sin_revisar';
+    if (f.ia && f.ia.estado !== 'ok') o['NOVEDAD_IA'] = String(f.ia.detalle || '').slice(0, 200);
     out.push(o);
   }
   return out;
@@ -22515,6 +22548,55 @@ window.operacionesResumen = function(){
     sinAuditar: filas.length - aud,
     nota: 'Auditado = la celda de la columna H tiene un color distinto al predeterminado.'
   };
+};
+
+/* ── REVISION IA: ¿TODO AUDITADO? ¿CON CUANTAS NOVEDADES? ──────────
+   Lo que responde el asistente cuando preguntan si ya se auditó todo.
+   "Todo auditado" = cada viaje que la IA tenía que revisar ya tiene
+   resultado. No cuentan como pendientes:
+     fuera     entró antes de activar la revisión
+     sin_foto  todavía no tiene baucher (se revisa cuando lo suban)
+   Se cuenta por dia, sobre lo que la grilla tiene cargado.            */
+window.operacionesRevisionIA = function(fechaISO){
+  const filas = window.operacionesFilas();
+  if (!filas.length) return { ok:false, motivo:'sin-cargar' };
+  const activa = !!(S.revisionIA && S.revisionIA.activa);
+  const fechaDe = f => ((f['FECHA DISPOSICION PLANTA'] || '').toString().trim().slice(0,10));
+  const delDia = fechaISO ? filas.filter(f => fechaDe(f) === fechaISO) : filas;
+  if (fechaISO && !delDia.length) return { ok:false, motivo:'fuera-de-rango', fecha:fechaISO };
+
+  const c = { ok:0, no_coincide:0, ojo:0, confirmada:0, sin_revisar:0, sin_foto:0, fuera:0 };
+  delDia.forEach(f => { c[f['REVISION_IA']] = (c[f['REVISION_IA']] || 0) + 1; });
+  const aRevisar = delDia.length - c.fuera;
+  const revisados = c.ok + c.no_coincide + c.ojo + c.confirmada;
+  const novedades = c.no_coincide + c.ojo;
+  const completo = aRevisar > 0 && c.sin_revisar === 0 && c.sin_foto === 0;
+
+  let frase;
+  if (!activa && !revisados) frase = 'La revisión IA de bauchers está apagada: no hay viajes auditados por la IA' + (fechaISO ? ' el ' + fechaISO : '') + '.';
+  else if (!aRevisar) frase = 'Ningún viaje' + (fechaISO ? ' del ' + fechaISO : '') + ' entraba en la revisión IA (son anteriores a su activación).';
+  else {
+    const detalleNov = novedades
+      ? novedades + (novedades === 1 ? ' novedad pendiente' : ' novedades pendientes') + ' (' +
+        [c.no_coincide ? c.no_coincide + ' no coincide' + (c.no_coincide === 1 ? '' : 'n') : '',
+         c.ojo ? c.ojo + ' para confirmar con ojo humano' : ''].filter(Boolean).join(', ') + ')'
+      : 'sin novedades pendientes';
+    const conf = c.confirmada ? ' y ' + c.confirmada + (c.confirmada === 1 ? ' novedad ya confirmada' : ' novedades ya confirmadas') + ' por una persona' : '';
+    frase = (completo
+        ? 'Todo auditado por la IA' + (fechaISO ? ' el ' + fechaISO : '') + ': ' + aRevisar + ' viaje' + (aRevisar === 1 ? '' : 's') + ', ' + detalleNov + conf + '.'
+        : 'Falta' + (aRevisar - revisados === 1 ? '' : 'n') + ' ' + (aRevisar - revisados) + ' de ' + aRevisar + ' viajes por revisar' + (fechaISO ? ' del ' + fechaISO : '') +
+          (c.sin_foto ? ' (' + c.sin_foto + ' todavía sin foto de baucher)' : '') + '. Hasta ahora: ' + revisados + (revisados === 1 ? ' revisado, ' : ' revisados, ') + detalleNov + conf + '.') +
+      (activa ? '' : ' Ojo: la revisión IA está apagada en este momento.');
+  }
+
+  const pendientesLista = delDia.filter(f => f['REVISION_IA'] === 'no_coincide' || f['REVISION_IA'] === 'ojo').slice(0, 12).map(f => ({
+    tiquete: f['NUMERO TIQUETE'] || '', placa: f['PLACA'] || '', operacion: f['OPERACION'] || '',
+    fecha: fechaDe(f), fila: f['FILA_HOJA'] || '',
+    tipo: f['REVISION_IA'] === 'no_coincide' ? 'no coincide' : 'confirmar con ojo humano',
+    detalle: f['NOVEDAD_IA'] || ''
+  }));
+  return { ok:true, activa, fecha: fechaISO || null, total: delDia.length, aRevisar, revisados, completo,
+           novedades, cuentas: c, frase, novedadesPendientes: pendientesLista };
 };
 
 /* ── KPI: ¿YA SE AUDITARON LAS OPERACIONES DE UN DIA? ───────────────
