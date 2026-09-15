@@ -1676,6 +1676,18 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-auditoria .bj-foto span{position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,.65);color:#fff;font:600 11.5px var(--sans);padding:3px 8px;border-radius:3px}
 #panel-auditoria .bj-foto.sin{color:#bbb;font:13px var(--sans);cursor:default}
 #panel-auditoria .bj-fotos-tabs{display:flex;gap:6px;flex-wrap:wrap}
+#panel-auditoria .bj-ref{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:#fff;border:1px solid #e2ddd0;border-radius:4px;padding:6px 9px;font:12px var(--sans);color:#444}
+#panel-auditoria .bj-ref em{font-style:normal;color:#888}
+#panel-auditoria .bj-ref-btn{border:1px solid #1e5fae;background:#fff;color:#1e5fae;border-radius:3px;padding:4px 9px;font:600 11.5px var(--sans);cursor:pointer;white-space:nowrap}
+#panel-auditoria .bj-ref-btn:hover{background:#e8f0fb}
+#panel-auditoria .bj-ref-btn:disabled{opacity:.6;cursor:progress}
+#panel-auditoria .bj-ref.pedir{background:#eef4fc;border-color:#b7cdea;color:#163f73;align-items:flex-start}
+#panel-auditoria .bj-ref-btns{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#panel-auditoria .bj-ref-btn.fuerte{background:#1e5fae;color:#fff}
+#panel-auditoria .bj-ref-btn.fuerte:hover{background:#174b8a}
+#panel-auditoria .bj-ref-link{border:0;background:none;color:#1e5fae;font:600 11.5px var(--sans);cursor:pointer;padding:0;text-decoration:underline;white-space:nowrap}
+#panel-auditoria .bj-ref-link:disabled{opacity:.6;cursor:progress}
+#panel-auditoria .panel-ref{margin-top:6px;font-size:11.5px}
 #panel-auditoria .bj-fotos-tabs button{border:1px solid #c9c9bf;background:#fff;border-radius:3px;padding:4px 10px;font:600 12px var(--sans);cursor:pointer}
 #panel-auditoria .bj-fotos-tabs button.activo{background:var(--verde-osc,#16432b);border-color:var(--verde-osc,#16432b);color:#fff}
 #panel-auditoria .bj-fotos-tabs button.error{border-color:#c62828;box-shadow:inset 0 -2px 0 #c62828}
@@ -7382,6 +7394,8 @@ const CLIENT_COLORS = {
   "SABANA LARGA": "#3B6E52",  // verde campo
   "SAMSA":        "#6B21A8",  // morado oscuro
   "SOFTYS":       "#0057A8",  // azul Softys corporativo
+  "BBC":          "#1F1F1F",  // negro BBC (Bogotá Beer Company)
+  "BOGOTA BEER":  "#1F1F1F",
     "URBASER":      "#4B5563",  // gris oscuro
   "ZASIAGO":      "#92400E",  // café tierra
   "OTRO":         "#6B7280",  // gris neutro
@@ -7423,6 +7437,8 @@ const CLIENT_LOGOS = {
   'RATONERA':    LOGO_BASE + 'la ratonera.png',
   'SAMSA':       LOGO_BASE + 'samsa.png',
   'PELDAR':      LOGO_BASE + 'peldar.png',
+  'BBC':         LOGO_BASE + 'BBC.png',          // Bogotá Beer Company
+  'BOGOTA BEER': LOGO_BASE + 'BBC.png',
   'FUNREDCOL':   LOGO_BASE + '1-Alqueria.png', // Funredcol usa el mismo logo que Alqueria
 };
 
@@ -20649,6 +20665,7 @@ async function cargar(){
 
     S.headers  = res.headers || [];
     S.revisionIA = res.revisionIA || null;
+    S.referenciasIA = res.referenciasIA || {};
     S.filas    = res.filas || [];
     S.filas.forEach(f => { f.f = f.f || {}; f.b = f.b || {}; f.n = f.n || {}; f.w = f.w || {}; });
     S.colsEdit    = res.columnasEditables || 21;
@@ -20984,7 +21001,8 @@ function render(){
       if(colBorrada) titulo = esc('Columna borrada. ' + (S.notaCol[c] || '') + (f.n[c] ? '\n' + f.n[c] : ''));
       const hilos = S.coment.get(f.r + '_' + (c+1));
       if(hilos) titulo = esc('💬 ' + hilos.map(x=>x.autor + ': ' + x.texto).join(' · ').substring(0,220));
-      if(iac) titulo += esc('\nIA: ' + (iac.e === 'ok' ? '✔ coincide' : iac.e === 'no' ? '✖ NO coincide' : iac.e === 'fix' ? (iac.confirmada ? '✔ revisado por ' + (f.ia.confirmadoPor || 'una persona') + ' (el sistema decía "' + iac.s + '")' : '✔ corregido (antes decía "' + iac.s + '")') : '? no se lee claro') +
+      if(iac && c === 8) titulo += esc('\nFormato del documento: ' + (iac.e === 'ok' ? '✔ ' : iac.e === 'fix' ? '✔ revisado · ' : '⚠ ') + iac.ia);
+      else if(iac) titulo += esc('\nIA: ' + (iac.e === 'ok' ? '✔ coincide' : iac.e === 'no' ? '✖ NO coincide' : iac.e === 'fix' ? (iac.confirmada ? '✔ revisado por ' + (f.ia.confirmadoPor || 'una persona') + ' (el sistema decía "' + iac.s + '")' : '✔ corregido (antes decía "' + iac.s + '")') : '? no se lee claro') +
                             ' · en ' + iac.foto + ' dice "' + iac.ia + '"');
       tds.push(`<td class="${cls}" data-vr="${vr}" data-c="${c}" data-pos="${pos}" style="${st}" title="${titulo}">${contenido}</td>`);
     }
@@ -21952,13 +21970,22 @@ function mostrarDetalle(){
         : (e.estado === 'no_coincide' || e.estado === 'ojo'
             ? '<br><button type="button" class="ia-btn-confirmar" data-ia-confirmar-panel="1" title="Queda a su nombre en NOVEDADES IA (Ctrl+P)">Confirmar revisión</button>'
             : ''));
-    return `<div class="campo"><div class="val ia-aviso" style="background:${k[0]};border-color:${k[1]};color:${k[2]};font-family:var(--sans);white-space:pre-wrap">${banderin(e.estado)} <b>IA: ${esc((IA_ESTADOS[e.estado] || {}).texto || e.tipo)}</b>${e.fecha ? ' · ' + esc(e.fecha) : ''}<br>${cuerpo}</div></div>`;
+    const colRef = [21, 22, 23].find(k => String(f.v[k] || '').indexOf('http') === 0);
+    const refPanel = colRef !== undefined && !referenciasDeIA(f).length && !refOmitidaIA(f)
+      ? bloqueReferenciaIA(f, S.vista[S.foco.vr], colRef, 'panel-ref') : '';
+    return `<div class="campo"><div class="val ia-aviso" style="background:${k[0]};border-color:${k[1]};color:${k[2]};font-family:var(--sans);white-space:pre-wrap">${banderin(e.estado)} <b>IA: ${esc((IA_ESTADOS[e.estado] || {}).texto || e.tipo)}</b>${e.fecha ? ' · ' + esc(e.fecha) : ''}<br>${cuerpo}</div>${refPanel}</div>`;
   })() : '';
   /* El boton del aviso IA se atiende por delegacion (el panel se repinta). */
   if(!$('panelCuerpo')._iaConfirmar){
     $('panelCuerpo')._iaConfirmar = true;
     $('panelCuerpo').addEventListener('click', ev=>{
       if(ev.target.closest('[data-ia-confirmar-panel]')) return confirmarNovedadesIA();
+      const br = ev.target.closest('[data-bj-ref],[data-bj-omitir]');
+      if(br){
+        if(br.dataset.bjOmitir !== undefined){ omitirRefIA(S.filas[+br.dataset.bjOmitir]); mostrarDetalle(); }
+        else guardarReferenciaIA(S.filas[+br.dataset.idx], +br.dataset.bjRef, br, br.dataset.bjModo);
+        return;
+      }
       const b = ev.target.closest('[data-ia-corregir],[data-ia-editar],[data-ia-foto],[data-ia-siguiente]');
       if(!b) return;
       if(b.dataset.iaCorregir) corregirIA(+b.dataset.iaCorregir);
@@ -22698,7 +22725,55 @@ async function confirmarFilasIA(pendientes, conclusion){
    Cuando un viaje ya no tiene datos en rojo, se confirma solo con lo que
    se corrigió como conclusión, y pasa al siguiente.
    La IA nunca escribe sola: siempre aplica una persona que vio la foto. */
-const IA_NOMBRE_COL = { 1:'N° tiquete', 2:'Fecha', 4:'Placa', 7:'Peso neto', 9:'Tipo de residuo' };
+const IA_NOMBRE_COL = { 1:'N° tiquete', 2:'Fecha', 4:'Placa', 7:'Peso neto', 8:'Formato del documento', 9:'Tipo de residuo' };
+/* Misma clave que el servidor (iaClaveOperacion_): "REFINOR S.A.S." = "Refinor". */
+const IA_VACIAS = ['DE','DEL','LA','LAS','LO','LOS','EL','Y','E','EN','CON','PARA','POR','AL','SA','SAS','S','A','LTDA','CI','BIC','ESP','INC','CO','CIA','GRUPO'];
+function claveOperacionIA(op){
+  const t = String(op ?? '').toUpperCase().normalize('NFD').replace(/[^\x00-\x7F]/g, '').replace(/[^A-Z0-9]+/g, ' ').trim();
+  const p = t.split(' ').filter(w => w && IA_VACIAS.indexOf(w) === -1 && !/^\d+$/.test(w)).map(w => {
+    if(w.length > 4 && /[^AEIOU]ES$/.test(w)) return w.slice(0, -2);
+    if(w.length > 3 && /S$/.test(w)) return w.slice(0, -1);
+    return w;
+  });
+  return p.join(' ') || t;
+}
+/* Los documentos de referencia de la operación del viaje: el principal y
+   sus variantes (lista, puede estar vacía). */
+function referenciasDeIA(f){
+  const r = (S.referenciasIA || {})[claveOperacionIA(f.v[8])];
+  return !r ? [] : (Array.isArray(r) ? r : [r]);
+}
+/* "Ahora no": la referencia se pide UNA vez por operación. Si se dice que
+   no, no se vuelve a pedir en este equipo (queda un enlace discreto). */
+const IA_REF_OMITIR = 'horti_ref_omitir_v1';
+function refOmitidaIA(f){
+  try { return (JSON.parse(localStorage.getItem(IA_REF_OMITIR) || '[]')).indexOf(claveOperacionIA(f.v[8])) > -1; } catch(e){ return false; }
+}
+function omitirRefIA(f){
+  try {
+    const l = JSON.parse(localStorage.getItem(IA_REF_OMITIR) || '[]');
+    const k = claveOperacionIA(f.v[8]);
+    if(l.indexOf(k) === -1){ l.push(k); localStorage.setItem(IA_REF_OMITIR, JSON.stringify(l)); }
+  } catch(e){}
+}
+/* El bloque de referencia para un viaje y una de sus fotos (bandeja y panel). */
+function bloqueReferenciaIA(f, idx, colFoto, clase){
+  const refs = referenciasDeIA(f), op = String(f.v[8] || 'esta operación');
+  const urlFoto = colFoto !== undefined ? String(f.v[colFoto] || '') : '';
+  const idF = urlFoto ? idDrive(urlFoto) : '';
+  const yaEsRef = idF && refs.some(r => idDrive(r.foto || '') === idF);
+  const attrs = `data-bj-ref="${colFoto}" data-idx="${idx}"`;
+  if(!refs.length){
+    if(refOmitidaIA(f)){
+      return `<div class="${clase} bj-ref"><span>Sin documento de referencia para <b>${esc(op)}</b>.</span>${idF ? `<button type="button" class="bj-ref-link" ${attrs}>Guardar esta foto</button>` : ''}</div>`;
+    }
+    return `<div class="${clase} bj-ref pedir"><span>📌 <b>${esc(op)}</b> todavía no tiene documento de referencia. Se pide una sola vez: si esta foto es clara y completa, guárdela y la IA revisará que los próximos viajes de ${esc(op)} traigan lo mismo.</span>
+      <span class="bj-ref-btns">${idF ? `<button type="button" class="bj-ref-btn fuerte" ${attrs}>📌 Usar esta foto como referencia</button>` : ''}<button type="button" class="bj-ref-link" data-bj-omitir="${idx}">Ahora no</button></span></div>`;
+  }
+  const detalle = refs.map(r => 'Variante ' + r.variante + ': ' + r.resumen + ' · ' + r.fecha + (r.por ? ' por ' + r.por : '') + (r.fila ? ' (fila ' + r.fila + ')' : '')).join('\n');
+  return `<div class="${clase} bj-ref"><span title="${esc(detalle)}">📌 <b>${esc(op)}</b>: referencia${refs.length > 1 ? ' y ' + (refs.length - 1) + ' variante' + (refs.length > 2 ? 's' : '') : ''} <em>· ${esc(refs[0].resumen)}</em></span>
+    ${yaEsRef ? '<em>Esta foto es una referencia</em>' : (idF && refs.length < 5 ? `<button type="button" class="bj-ref-link" ${attrs} data-bj-modo="variante" title="Si ${esc(op)} usa otro tipo de papel, guárdelo como variante: el viaje pasa si se parece a cualquiera">+ Agregar esta foto como variante</button>` : '')}</div>`;
+}
 const IA_FOTO_COL = { 'BAUCHER I':21, 'BAUCHER II':22, 'BAUCHER III':23 };
 /* Para comparar lo que dice la celda con lo que vio la IA. Las fechas llegan
    2026-09-14 a la grilla y 14/09/2026 al registro de la IA: se llevan a lo mismo. */
@@ -22751,7 +22826,7 @@ function pesoIA(t){
    Fecha y residuo se corrigen a mano: el residuo usa los nombres del
    sistema, no el texto del papel. */
 function sugerenciaIA(f, c, iac){
-  if(!iac || iac.e !== 'no') return '';
+  if(!iac || iac.e !== 'no' || c === 8) return '';
   const leido = String(iac.ia || '');
   if(c === 7){ const n = pesoIA(leido.split(' (')[0]); return n === null ? '' : String(n); }   // "16330 (salida 28540 - entrada 12210)" -> 16330
   if(c === 4){ const p = leido.toUpperCase().replace(/[^A-Z0-9]/g, ''); return /^[A-Z0-9]{5,7}$/.test(p) ? p : ''; }
@@ -22774,6 +22849,8 @@ function guiaPanelIA(f){
     const sug = sugerenciaIA(f, c, iac);
     const colFoto = IA_FOTO_COL[iac.foto];
     const verFoto = colFoto !== undefined ? `<button type="button" data-ia-foto="${colFoto}">Ver ${esc(iac.foto)}</button>` : '';
+    if(c === 8) return `<div class="ia-guia-item duda"><b>Formato del documento</b>: ${esc(iac.ia)}. Revise la foto: puede que la IA haya pasado algo por alto.
+           <div class="ia-guia-btns">${verFoto}</div></div>`;
     return iac.e === 'no'
       ? `<div class="ia-guia-item"><b>${esc(nombre)}</b>: el sistema dice <s>${esc(f.v[c] ?? '')}</s> · en ${esc(iac.foto)} dice <b>${esc(iac.ia)}</b>
            <div class="ia-guia-btns">${sug ? `<button type="button" class="fuerte" data-ia-corregir="${c}">Corregir a ${esc(sug)}</button>` : ''}
@@ -22965,6 +23042,7 @@ function pintarBandejaIA(){
     ${idFoto
       ? `<div class="bj-foto" data-bj-foto="${colFoto}" data-idx="${idx}" title="Abrir en grande (zoom)"><img src="https://drive.google.com/thumbnail?id=${esc(idFoto)}&sz=w1200" alt="" onerror="this.onerror=null;this.src='https://lh3.googleusercontent.com/d/${esc(idFoto)}=w1200'"><span>${esc(COL_FOTOS[colFoto] || '')} · celda ${letraCol(colFoto + 1)}${f.r} · clic para ampliar</span></div>`
       : '<div class="bj-foto sin">Este viaje no tiene foto de baucher</div>'}
+    ${bloqueReferenciaIA(f, idx, idFoto ? colFoto : undefined, 'bj-ref-visor')}
     ${conFoto.length > 1 ? '<div class="bj-fotos-tabs">' + conFoto.map(k => `<button type="button" data-bj-ver="${k}" class="${k === colFoto ? 'activo' : ''} ${conError.has(k) ? 'error' : ''}" title="${conError.has(k) ? 'En esta foto está el dato con novedad' : ''}">${esc(COL_FOTOS[k])} · ${letraCol(k + 1)}${f.r}</button>`).join('') + '</div>' : ''}
   </div>`;
 
@@ -22976,6 +23054,11 @@ function pintarBandejaIA(){
     const comp = `<div class="bj-comp">Sistema <span class="bj-celda" title="Celda de la hoja">${celdaSis}</span>: <s>${esc(f.v[c] ?? '') || '(vacío)'}</s> · ${esc(iac.foto)}${celdaFoto ? ` <span class="bj-celda" title="Celda donde está la foto del baucher">${celdaFoto}</span>` : ''} dice <span class="lee">${esc(iac.ia)}</span>${iac.e === 'duda' ? ' <em>(se lee dudoso)</em>' : ''}
       <button type="button" class="bj-ir" data-bj-ir="${c}" data-idx="${idx}" title="Cerrar la bandeja y llevar el cursor a ${celdaSis}">Ver en la hoja ↗</button></div>`;
     if(res) return `<div class="bj-campo resuelto"><b>${esc(nombre)}</b>${comp}<div class="bj-accion">✔ ${res.tipo === 'reemplazo' ? 'Reemplazado por ' + esc(res.valor) : 'Se deja como está'}</div></div>`;
+    if(c === 8) return `<div class="bj-campo duda" data-idx="${idx}" data-c="${c}"><b>Formato del documento</b>
+      <div class="bj-comp">⚠ ${esc(iac.ia)}. Mire la foto: puede que la IA haya pasado algo por alto.</div>
+      <div class="bj-accion"><button type="button" class="si" data-bj-mantener>Entendido</button>
+        ${IA_FOTO_COL[iac.foto] !== undefined && String(f.v[IA_FOTO_COL[iac.foto]] || '').indexOf('http') === 0
+          ? `<button type="button" data-bj-ref="${IA_FOTO_COL[iac.foto]}" data-idx="${idx}" data-bj-modo="variante" data-bj-resolver="8" title="Si ${esc(f.v[8] || '')} usa otro tipo de papel, guárdelo como variante y este viaje queda resuelto">Es otra variante: guardarla</button>` : ''}</div></div>`;
     const est = estimadoIA(f, c, iac);
     return `<div class="bj-campo ${iac.e === 'duda' ? 'duda' : ''}" data-idx="${idx}" data-c="${c}"><b>${esc(nombre)}</b>${comp}
       <div class="bj-accion">
@@ -23009,6 +23092,8 @@ async function accionBandejaIA(b){
   if(b.dataset.bjFoto !== undefined){ abrirVisor(+b.dataset.idx, +b.dataset.bjFoto); return; }
   if(b.dataset.bjVer !== undefined){ S.bjCola[S.bjPos]._bjFoto = +b.dataset.bjVer; pintarBandejaIA(); return; }
   if(b.dataset.bjIr !== undefined){ irACeldaIA(S.filas[+b.dataset.idx], +b.dataset.bjIr); return; }
+  if(b.dataset.bjRef !== undefined){ guardarReferenciaIA(S.filas[+b.dataset.idx], +b.dataset.bjRef, b, b.dataset.bjModo, b.dataset.bjResolver); return; }
+  if(b.dataset.bjOmitir !== undefined){ omitirRefIA(S.filas[+b.dataset.bjOmitir]); pintarBandejaIA(); return; }
   if(b.dataset.bjConfirmar !== undefined){
     const f = S.filas[+b.dataset.idx];
     b.disabled = true;
@@ -23052,6 +23137,44 @@ async function accionBandejaIA(b){
     else { delete f._bjHecha; pintarBandejaIA(); }
   }else{
     pintarBandejaIA();
+  }
+}
+
+/* Guarda un baucher bueno como documento de referencia de su operación.
+   El servidor lo lee una vez y anota qué trae y dónde; desde ahí, a cada
+   viaje nuevo de esa operación se le revisa que la IA haya encontrado lo
+   mismo, y si no, lo marca en la celda de Operación. */
+async function guardarReferenciaIA(f, col, boton, modo, resolver){
+  const op = String(f.v[8] || '');
+  const textoBoton = boton ? boton.textContent : '';
+  if(boton){ boton.disabled = true; boton.textContent = 'Leyendo el documento…'; }
+  const pedir = (m) => llamar({ accion:'auditIAReferencia', autor: CFG.autor, fila: f.r, col, modo: m });
+  try{
+    let res = await pedir(modo === 'variante' ? 'variante' : '');
+    /* Ya tenía referencia (la guardó otra persona, o se abrió en otro equipo):
+       no se pisa; se ofrece agregarla como variante. */
+    if(res && res.yaTiene){
+      S.referenciasIA = S.referenciasIA || {};
+      S.referenciasIA[claveOperacionIA(op)] = (res.referencias || []).map(r => Object.assign({ operacion: res.operacion }, r));
+      if(!confirm(op + ' ya tiene documento de referencia.\n\n¿Agregar esta foto como VARIANTE (otro tipo de papel de la misma operación)?')) return;
+      res = await pedir('variante');
+    }
+    if(!res || !res.success) throw new Error((res && res.error) || 'No se pudo guardar.');
+    S.referenciasIA = S.referenciasIA || {};
+    if(res.referencias) S.referenciasIA[claveOperacionIA(op)] = res.referencias.map(r => Object.assign({ operacion: res.operacion }, r));
+    if(res.repetida) aviso('Esa foto ya es documento de referencia de ' + res.operacion + '.');
+    else if(res.mismoFormato) aviso('Ese papel tiene el mismo formato que la referencia ' + res.mismoFormato + ' de ' + res.operacion + ': no hace falta agregarlo.');
+    else aviso((res.variante > 1 ? 'Variante ' + res.variante + ' de ' : 'Referencia de ') + res.operacion + ' guardada: ' + res.resumen + '.');
+    /* "Es otra variante": el aviso de formato de este viaje queda resuelto. */
+    if(resolver !== undefined && S.bandejaIA){
+      if(boton){ boton.disabled = false; boton.textContent = textoBoton; }
+      const entendido = document.querySelector('.bj-campo[data-c="' + resolver + '"] [data-bj-mantener]');
+      if(entendido){ entendido.click(); return; }
+    }
+  }catch(e){
+    aviso('No se pudo guardar la referencia: ' + e.message, true);
+  }finally{
+    if(S.bandejaIA) pintarBandejaIA(); else mostrarDetalle();
   }
 }
 
@@ -23310,7 +23433,7 @@ $('bandejaIA').addEventListener('keydown', ev => {
 });
 $('bandejaIA').addEventListener('click', ev => {
   if(ev.target === $('bandejaIA')) return cerrarBandejaIA();
-  const b = ev.target.closest('[data-bj-reemplazar],[data-bj-mantener],[data-bj-confirmar],[data-bj-foto],[data-bj-ver],[data-bj-ir]');
+  const b = ev.target.closest('[data-bj-reemplazar],[data-bj-mantener],[data-bj-confirmar],[data-bj-foto],[data-bj-ver],[data-bj-ir],[data-bj-ref],[data-bj-omitir]');
   if(b) accionBandejaIA(b);
 });
 $('bjAnterior').addEventListener('click', () => moverBandejaIA(-1));
