@@ -1400,6 +1400,19 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
   0%{box-shadow:inset 0 0 0 2px rgba(74,163,110,.95)}
   100%{box-shadow:inset 0 0 0 2px rgba(74,163,110,0)}
 }
+/* Revision IA DATO POR DATO: un triangulo en la esquina de abajo de la
+   celda auditada. Verde = coincide con el baucher, rojo = no coincide
+   (y fondo rosado para encontrarla rapido), ambar = no se lee claro.
+   Arriba-izquierda es el comentario y arriba-derecha la nota: no chocan. */
+#panel-auditoria table.grid td.iac-ok:not(.pendiente)::before,
+#panel-auditoria table.grid td.iac-no:not(.pendiente)::before,
+#panel-auditoria table.grid td.iac-duda:not(.pendiente)::before{
+  content:'';position:absolute;right:0;bottom:0;border-style:solid;border-width:0 0 9px 9px;
+  border-color:transparent transparent var(--iac) transparent;pointer-events:none;
+}
+#panel-auditoria table.grid td.iac-ok{--iac:#2e7d32}
+#panel-auditoria table.grid td.iac-no{--iac:#c62828;background-color:#fde3e1;color:#8a1c1c;font-weight:700}
+#panel-auditoria table.grid td.iac-duda{--iac:#d18a00;background-color:#fff3d6}
 #panel-auditoria table.grid td.nota::after{
   content:'';position:absolute;top:0;right:0;border-width:0 6px 6px 0;border-style:solid;
   border-color:transparent var(--oro) transparent transparent;
@@ -20798,6 +20811,8 @@ function render(){
       if(f.n[c]) cls += ' nota';
       if(f._p && f._p[c]) cls += ' pendiente';
       if(f._ok && f._ok[c]) cls += ' guardado';
+      const iac = (ia && ia.campos && !filaBo) ? ia.campos[c] : null;
+      if(iac) cls += ' iac-' + iac.e;
       let st = '';
       if(f.f[c]) st += 'color:' + f.f[c] + ';';
       if(f.b[c] && !esDup) st += 'background-color:' + f.b[c] + ';';
@@ -20824,6 +20839,8 @@ function render(){
       if(colBorrada) titulo = esc('Columna borrada. ' + (S.notaCol[c] || '') + (f.n[c] ? '\n' + f.n[c] : ''));
       const hilos = S.coment.get(f.r + '_' + (c+1));
       if(hilos) titulo = esc('💬 ' + hilos.map(x=>x.autor + ': ' + x.texto).join(' · ').substring(0,220));
+      if(iac) titulo += esc('\nIA: ' + (iac.e === 'ok' ? '✔ coincide' : iac.e === 'no' ? '✖ NO coincide' : '? no se lee claro') +
+                            ' · en ' + iac.foto + ' dice "' + iac.ia + '"');
       tds.push(`<td class="${cls}" data-vr="${vr}" data-c="${c}" data-pos="${pos}" style="${st}" title="${titulo}">${contenido}</td>`);
     }
     partes.push('<tr>' + tds.join('') + '</tr>');
@@ -22474,26 +22491,13 @@ function filasParaConfirmar(){
   return { filas, pendientes: filas.filter(f => f.ia && (f.ia.estado === 'no_coincide' || f.ia.estado === 'ojo')) };
 }
 
+/* Ctrl+P confirma EN SILENCIO: sin preguntar observaciones y sin avisos.
+   Lo que se ve es el banderín que pasa a azul. Solo se avisa si el
+   servidor no pudo guardarlo, para que no quede creyendo que se confirmó. */
 async function confirmarNovedadesIA(){
   const { filas, pendientes } = filasParaConfirmar();
-  if(!filas.length){ aviso('Ubíquese en el viaje (o seleccione varios) y vuelva a pulsar Confirmar revisión IA.', true); return; }
-
-  if(!pendientes.length){
-    const f = filas[0];
-    aviso(filas.length > 1
-      ? 'Ninguno de los ' + filas.length + ' seleccionados tiene novedad pendiente (rojo o ámbar).'
-      : (f.ia ? 'Fila ' + f.r + ': ' + ((IA_ESTADOS[f.ia.estado] || {}).texto || f.ia.estado) + '. No hay novedad pendiente.'
-              : 'Fila ' + f.r + ': la IA todavía no revisó este viaje.'), true);
-    return;
-  }
-
-  const quien = CFG.nombre || CFG.autor || 'usted';
-  const conclusion = window.prompt(
-    'Confirmar ' + (pendientes.length === 1 ? 'la novedad IA de la fila ' + pendientes[0].r : pendientes.length + ' novedades IA') +
-    ' como revisada' + (pendientes.length === 1 ? '' : 's') + ' por ' + quien + '.' +
-    (filas.length > pendientes.length ? '\n(' + (filas.length - pendientes.length) + ' de la selección no tienen novedad pendiente y se omiten.)' : '') +
-    '\n\nConclusión (opcional): qué se encontró o qué se corrigió.', '');
-  if(conclusion === null) return;
+  if(!filas.length || !pendientes.length) return;
+  const conclusion = '';
 
   estado('busy', 'Confirmando…');
   try{
@@ -22510,9 +22514,8 @@ async function confirmarNovedadesIA(){
        y el panel muestra el nuevo estado del mismo viaje. */
     if(S.filtroIA) recalcularVista(); else render();
     mostrarDetalle();
-    const n = (res.confirmadas || []).length, om = res.omitidas || [];
-    aviso((n ? (n === 1 ? 'Novedad confirmada' : n + ' novedades confirmadas') + ' por ' + (res.confirmadoPor || quien) + '.' : 'No se confirmó ninguna.') +
-      (om.length ? ' Omitidas: ' + om.slice(0, 4).map(o => 'fila ' + o.fila + ' (' + o.motivo + ')').join(', ') + (om.length > 4 ? '…' : '') : ''), !n);
+    const n = (res.confirmadas || []).length;
+    if(!n) aviso('No se pudo confirmar la novedad IA' + ((res.omitidas || [])[0] ? ': ' + res.omitidas[0].motivo : '.'), true);
     estado('ok', 'Conectado');
   }catch(e){
     estado('err', 'Error');
