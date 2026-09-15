@@ -20175,20 +20175,57 @@ function sePuedeRepetir(p){
   return ['auditListar','auditFotos','auditComentarios','auditColores','auditPing'].indexOf(a) > -1;
 }
 
+/* ── CUANDO GOOGLE DEVUELVE LA HOJA ENTERA EN VEZ DE LA RESPUESTA ─────
+   Medido el 15/09: el listado normal pesa 221 KB y tarda 5-13 s. Una de
+   cada tanto, el paso intermedio de Google falla, el navegador sigue la
+   redirección como una lectura normal de /exec y el servidor contesta con
+   TODA la hoja de ingresos (5,2 MB, 85 s) — la lectura que usa la app de
+   ingreso. La grilla la recibía, no encontraba registros y decía "Ningún
+   registro coincide con los filtros".
+   Ahora: (1) cada pedido de lectura tiene un tiempo máximo, y (2) si la
+   respuesta es la hoja completa se descarta y se reintenta.            */
+const LIMITE_MS = { auditListar: 60000, auditFotos: 45000, auditComentarios: 45000,
+                    auditColores: 30000, auditPing: 30000, auditIAProgreso: 30000 };
+
 async function llamarUnaVez(cuerpo){
-  const r = await fetch(CFG.url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // evita el preflight de CORS
-    body: JSON.stringify(cuerpo),
-    redirect: 'follow'
-  });
-  const txt = await r.text();
-  try{ return JSON.parse(txt); }
+  /* Traer TODO el registro o un rango largo sí puede tardar: ahí se espera más. */
+  const limite = (cuerpo.accion === 'auditListar' && cuerpo.modo && cuerpo.modo !== 'ultimos') ? 180000 : LIMITE_MS[cuerpo.accion];
+  const ctl = (limite && window.AbortController) ? new AbortController() : null;
+  const reloj = ctl ? setTimeout(() => ctl.abort(), limite) : null;
+  let txt;
+  try{
+    const r = await fetch(CFG.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // evita el preflight de CORS
+      body: JSON.stringify(cuerpo),
+      redirect: 'follow',
+      signal: ctl ? ctl.signal : undefined
+    });
+    txt = await r.text();
+  }catch(e){
+    const err = new Error(e.name === 'AbortError'
+      ? 'Google no respondió en ' + Math.round(limite / 1000) + ' s.'
+      : 'No hubo conexión con el servidor (' + e.message + ').');
+    err.noEsJson = true;
+    throw err;
+  }finally{
+    if(reloj) clearTimeout(reloj);
+  }
+  let json;
+  try{ json = JSON.parse(txt); }
   catch(e){
     const err = new Error('Google no devolvió los datos (respondió con una página en vez de la información).');
     err.noEsJson = true;
     throw err;
   }
+  /* Ninguna respuesta de auditoría trae "data": eso es la lectura completa
+     de la hoja, que llegó por una redirección fallida. */
+  if(json && Array.isArray(json.data) && String(cuerpo.accion || '').indexOf('audit') === 0){
+    const err = new Error('Google devolvió la hoja completa en lugar de la respuesta pedida.');
+    err.noEsJson = true;
+    throw err;
+  }
+  return json;
 }
 
 async function llamar(payload){
@@ -20337,6 +20374,9 @@ async function cargar(){
   try{
     const res = await llamar(pl);
     if(!res.success) throw new Error(res.error || 'El servicio devolvió un error.');
+    /* Sin la lista de filas no es un listado: mejor decir que falló que
+       mostrar la grilla vacía como si no hubiera registros. */
+    if(!Array.isArray(res.filas)) throw new Error('El servidor no devolvió los registros. Vuelva a cargar.');
 
     S.headers  = res.headers || [];
     S.revisionIA = res.revisionIA || null;
@@ -20370,6 +20410,15 @@ async function cargar(){
   }catch(err){
     estado('err', 'Sin conexión');
     aviso(err.message, true);
+    /* Si no quedó nada cargado, la grilla dice que falló (y no "ningún
+       registro coincide", que hace pensar que no hay datos). */
+    if(!S.filas || !S.filas.length){
+      $('vacio').style.display = 'block';
+      $('vacio').innerHTML = 'No se pudieron traer los registros: ' + esc(err.message) +
+        '<br><button type="button" class="tb" data-reintentar-carga="1" style="margin-top:10px">Volver a intentar</button>';
+      const br = $('vacio').querySelector('[data-reintentar-carga]');
+      if(br) br.onclick = () => cargar();
+    }
   }finally{
     cargando(false);
   }
