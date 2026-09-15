@@ -21958,6 +21958,7 @@ function cuentasIA(){
 function actualizarChipIA(){
   const b = $('btnIA');
   if(!b) return;
+  pintarAvisoAlDia();   /* va primero: el estado (apagada / atrasada) se muestra aunque no haya nada revisado */
   const c = cuentasIA();
   const revisados = c.no_coincide + c.ojo + c.confirmada + c.ok;
   const bc = $('btnIAConfirmar');
@@ -21970,7 +21971,6 @@ function actualizarChipIA(){
       ? (IA_ESTADOS[S.filtroIA] ? banderin(S.filtroIA) + ' ' : '') + esc(activo.texto) + ' (' + c[S.filtroIA] + ')'
       : ['no_coincide','ojo','confirmada','ok'].filter(k => c[k]).map(k => banderin(k) + c[k]).join(' ')) + ' ▾';
   b.title = 'Revisión IA · clic para filtrar\n' + ['no_coincide','ojo','confirmada','ok'].map(k => IA_ESTADOS[k].texto + ': ' + c[k]).join('\n');
-  pintarAvisoAlDia();
 }
 
 /* ── ¿LA REVISION IA ESTA AL DIA? ─────────────────────────────────
@@ -21996,10 +21996,10 @@ function pintarAvisoAlDia(){
     r.errorAgenda ? 'Error al agendar: ' + r.errorAgenda.slice(25) : '',
     r.ultimoError ? 'Último error de la IA: ' + r.ultimoError.slice(25) : ''
   ].filter(Boolean).join('\n');
-  if(!r.activa && S.filas.some(f => f.ia)){
+  if(!r.activa){
     b.style.display = ''; b.classList.add('apagada');
-    b.textContent = 'IA apagada';
-    b.title = 'La revisión IA está apagada: los viajes nuevos no se revisan.\nSe enciende ejecutando iaActivar en el editor de Apps Script.\n' + detalle;
+    b.textContent = 'IA apagada · Encender';
+    b.title = 'La revisión IA está apagada: los viajes nuevos no se revisan.\nClic para encenderla desde acá.\n' + detalle;
     return;
   }
   b.classList.remove('apagada');
@@ -22058,9 +22058,39 @@ function pintarProgresoIA(){
 document.addEventListener('visibilitychange', () => { if(!document.hidden) programarSondeoIA(500); });
 programarSondeoIA(3000);
 
+/* ── ENCENDER LA REVISIÓN IA DESDE OPERACIONES ────────────────────
+   Pregunta dos cosas: si se enciende, y si también se revisa lo que entró
+   desde ayer a las 00:00 (lo que quedó sin revisar mientras estuvo
+   apagada). Si se elige solo lo nuevo, arranca desde este momento. */
+async function encenderIA(){
+  const b = $('btnIAAlDia');
+  if(!confirm('¿Encender la revisión IA de bauchers?\n\nDesde ahora, cada ingreso nuevo se revisa 1 a 2 minutos después de guardarse. Cada revisión consume créditos de la cuenta de Anthropic.')) return;
+  const ayer = new Date(); ayer.setDate(ayer.getDate() - 1); ayer.setHours(0, 0, 0, 0);
+  const pendientes = S.filas.filter(f => !f.bo && !f.ia && marcaMs(f.v[0]) >= ayer.getTime()).length;
+  const incluirAyer = pendientes > 0 && confirm('¿Revisar también los ' + pendientes + ' viajes que entraron desde ayer a las 00:00 y quedaron sin revisar?\n\nAceptar: sí, incluirlos.\nCancelar: solo lo que entre desde ahora.');
+  b.disabled = true; b.textContent = 'Encendiendo…';
+  try{
+    const res = await llamar({ accion:'auditIAActivar', desde: incluirAyer ? ayer.getTime() : undefined });
+    if(!res.success) throw new Error(res.error || 'No se pudo encender.');
+    aviso('Revisión IA encendida' + (incluirAyer ? ', incluyendo lo que entró desde ayer.' : ': revisa lo que entre desde ahora.'));
+    await cargar();
+  }catch(e){
+    aviso('No se pudo encender la revisión IA: ' + e.message, true);
+    b.disabled = false;
+    pintarAvisoAlDia();
+    return;
+  }
+  b.disabled = false;
+  pintarAvisoAlDia();
+  /* Con lo de ayer incluido, se revisa ya mismo en vez de esperar al
+     próximo ingreso. Se espera a que termine: el botón muestra el avance. */
+  if(incluirAyer && atrasadosIA().length) await ponerAlDiaIA();
+}
+
 async function ponerAlDiaIA(){
   const b = $('btnIAAlDia');
-  if(!b || b.disabled || b.classList.contains('apagada')) return;
+  if(!b || b.disabled) return;
+  if(b.classList.contains('apagada')){ encenderIA(); return; }
   const texto = b.textContent;
   b.disabled = true;
   const t0 = Date.now();
