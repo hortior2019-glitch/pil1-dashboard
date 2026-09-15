@@ -1691,6 +1691,8 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-auditoria .bj-comp{font:12.5px var(--sans);color:#444;line-height:1.5}
 #panel-auditoria .bj-comp s{color:#8a1c1c}
 #panel-auditoria .bj-comp .lee{color:#1e5fae;font-weight:600}
+#panel-auditoria .bj-celda{display:inline-block;font:700 11px ui-monospace,Consolas,monospace;background:#eef0e8;border:1px solid #d9dccf;border-radius:3px;padding:0 5px;color:#3b4a3b;vertical-align:1px}
+#panel-auditoria .bj-ir{margin-left:6px;border:0;background:none;color:#1e5fae;font:600 11.5px var(--sans);cursor:pointer;padding:0;text-decoration:underline}
 #panel-auditoria .bj-accion{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 #panel-auditoria .bj-accion input{flex:1 1 160px;min-width:0;padding:8px 10px;border:1.5px solid #2e7d32;border-radius:3px;font:700 15px var(--sans)}
 #panel-auditoria .bj-accion input:placeholder-shown{border-color:#c9c9bf}
@@ -20095,7 +20097,37 @@ if (VozSR){
     if (ev.results[ev.results.length-1].isFinal){ vozRec.stop(); vozConsultar(t); }
     else vozStatus.textContent = t;
   };
-  vozRec.onerror = function(){ vozEscuchando = false; vozMicBtn.classList.remove('voz-on'); vozSetEstado('','No te escuché bien, probá de nuevo'); };
+  /* Antes todo error decía "No te escuché bien", incluso cuando el
+     micrófono estaba bloqueado o no había conexión con el servicio de voz,
+     y se cerraba al instante sin que se supiera por qué. Ahora se dice la
+     causa, y los cortes pasajeros (red, otra escucha abierta) se reintentan
+     una vez solos. */
+  let vozReintento = 0;
+  const VOZ_ERRORES = {
+    'not-allowed':            'El micrófono está bloqueado. Toca el candado junto a la dirección → Micrófono → Permitir, y recarga.',
+    'service-not-allowed':    'Este navegador no deja usar el reconocimiento de voz. Usa Google Chrome o Microsoft Edge.',
+    'audio-capture':          'No se encontró micrófono. Revisa que esté conectado y que otra app no lo esté usando.',
+    'network':                'No hubo conexión con el servicio de voz de Google. Revisa internet (o la VPN) y prueba de nuevo.',
+    'language-not-supported': 'El idioma elegido no está disponible para dictado. Se usa español.',
+    'no-speech':              'No te escuché. Toca Hablar y habla apenas diga "Escuchando…".',
+    'aborted':                'La escucha se interrumpió. Toca Hablar de nuevo.'
+  };
+  vozRec.onerror = function(ev){
+    const cod = (ev && ev.error) || '';
+    console.info('Asistente de voz · error del reconocimiento:', cod, ev && ev.message);
+    vozEscuchando = false; vozMicBtn.classList.remove('voz-on');
+    if ((cod === 'network' || cod === 'aborted') && vozReintento < 1){
+      vozReintento++;
+      setTimeout(function(){ try { vozRec.start(); } catch(e){} }, 400);
+      return;
+    }
+    if (cod === 'language-not-supported' && vozRec.lang !== 'es-ES'){
+      vozRec.lang = 'es-ES';
+      setTimeout(function(){ try { vozRec.start(); } catch(e){} }, 200);
+      return;
+    }
+    vozSetEstado('', VOZ_ERRORES[cod] || 'No te escuché bien, probá de nuevo');
+  };
   vozRec.onend   = function(){ vozEscuchando = false; vozMicBtn.classList.remove('voz-on');
     if (vozOrbWrap.className.indexOf('voz-listening') !== -1) vozSetEstado('','Preguntame por cualquier fecha o pestaña'); };
   vozMicBtn.addEventListener('click', function(){
@@ -20103,7 +20135,14 @@ if (VozSR){
     try { window.speechSynthesis.cancel(); } catch(e){}
     // El micrófono escucha en el mismo idioma en que responde el asistente
     try { vozRec.lang = vozIdiomaActual().lang; } catch(e){}
-    try { vozRec.start(); } catch(e){}
+    vozReintento = 0;
+    if (!window.isSecureContext){ vozSetEstado('', 'El micrófono solo funciona con la página abierta en https://.'); return; }
+    try { vozRec.start(); }
+    catch(e){
+      /* "already started": quedó una escucha abierta. Se cierra y se vuelve a abrir. */
+      try { vozRec.abort(); } catch(x){}
+      setTimeout(function(){ try { vozRec.start(); } catch(x){ vozSetEstado('', 'No se pudo abrir el micrófono: ' + (x && x.message || x)); } }, 300);
+    }
   });
 } else {
   document.getElementById('voz-unsupported').style.display = 'block';
@@ -20945,7 +20984,7 @@ function render(){
       if(colBorrada) titulo = esc('Columna borrada. ' + (S.notaCol[c] || '') + (f.n[c] ? '\n' + f.n[c] : ''));
       const hilos = S.coment.get(f.r + '_' + (c+1));
       if(hilos) titulo = esc('💬 ' + hilos.map(x=>x.autor + ': ' + x.texto).join(' · ').substring(0,220));
-      if(iac) titulo += esc('\nIA: ' + (iac.e === 'ok' ? '✔ coincide' : iac.e === 'no' ? '✖ NO coincide' : iac.e === 'fix' ? '✔ corregido (antes decía "' + iac.s + '")' : '? no se lee claro') +
+      if(iac) titulo += esc('\nIA: ' + (iac.e === 'ok' ? '✔ coincide' : iac.e === 'no' ? '✖ NO coincide' : iac.e === 'fix' ? (iac.confirmada ? '✔ revisado por ' + (f.ia.confirmadoPor || 'una persona') + ' (el sistema decía "' + iac.s + '")' : '✔ corregido (antes decía "' + iac.s + '")') : '? no se lee claro') +
                             ' · en ' + iac.foto + ' dice "' + iac.ia + '"');
       tds.push(`<td class="${cls}" data-vr="${vr}" data-c="${c}" data-pos="${pos}" style="${st}" title="${titulo}">${contenido}</td>`);
     }
@@ -22677,6 +22716,9 @@ function estadoCeldaIA(f, c){
   const iac = f.ia && f.ia.campos && f.ia.campos[c];
   if(!iac) return null;
   if(iac.e !== 'ok' && iac.s !== undefined && normIA(f.v[c]) !== normIA(iac.s)) return Object.assign({}, iac, { e:'fix' });
+  /* Una persona ya confirmó la novedad del viaje: lo que la IA dejó en rojo
+     o ámbar pasa a azul, igual que el banderín de la fila. */
+  if(iac.e !== 'ok' && f.ia.estado === 'confirmada') return Object.assign({}, iac, { e:'fix', confirmada:true });
   return iac;
 }
 function celdasPendientesIA(f){
@@ -22696,7 +22738,11 @@ function pesoIA(t){
   const sep = x.charAt(ult), otro = sep === '.' ? ',' : '.', entero = x.slice(0, ult), cola = x.slice(ult + 1);
   let n;
   if(x.indexOf(otro) > -1) n = Number(entero.split(otro).join('').split(sep).join('') + '.' + cola);
-  else if(x.split(sep).length > 2) n = Number(x.split(sep).join(''));
+  else if(x.split(sep).length > 2){
+    const g = x.split(sep);
+    n = Number(g.join(''));
+    if(n > 100000 && g.length === 3 && g[2] === '000') n = Number(g[0] + g[1] + '.' + g[2]);   // 17.500.000 -> 17500 (ningún camión pesa millones)
+  }
   else if(cola.length === 3 && entero.length >= 1 && entero.length <= 3 && entero !== '0') n = Number(entero + cola);
   else n = Number(entero + '.' + cola);
   return isNaN(n) ? null : n;
@@ -22707,7 +22753,7 @@ function pesoIA(t){
 function sugerenciaIA(f, c, iac){
   if(!iac || iac.e !== 'no') return '';
   const leido = String(iac.ia || '');
-  if(c === 7){ const n = pesoIA(leido); return n === null ? '' : String(n); }
+  if(c === 7){ const n = pesoIA(leido.split(' (')[0]); return n === null ? '' : String(n); }   // "16330 (salida 28540 - entrada 12210)" -> 16330
   if(c === 4){ const p = leido.toUpperCase().replace(/[^A-Z0-9]/g, ''); return /^[A-Z0-9]{5,7}$/.test(p) ? p : ''; }
   if(c === 1){
     if(leido.indexOf(',') > -1) return '';                 // varios numeros en el papel: que decida la persona
@@ -22917,15 +22963,18 @@ function pintarBandejaIA(){
   const conError = new Set(celdas.map(x => IA_FOTO_COL[x.iac.foto]));
   const visor = `<div class="bj-visor">
     ${idFoto
-      ? `<div class="bj-foto" data-bj-foto="${colFoto}" data-idx="${idx}" title="Abrir en grande (zoom)"><img src="https://drive.google.com/thumbnail?id=${esc(idFoto)}&sz=w1200" alt="" onerror="this.onerror=null;this.src='https://lh3.googleusercontent.com/d/${esc(idFoto)}=w1200'"><span>${esc(COL_FOTOS[colFoto] || '')} · clic para ampliar</span></div>`
+      ? `<div class="bj-foto" data-bj-foto="${colFoto}" data-idx="${idx}" title="Abrir en grande (zoom)"><img src="https://drive.google.com/thumbnail?id=${esc(idFoto)}&sz=w1200" alt="" onerror="this.onerror=null;this.src='https://lh3.googleusercontent.com/d/${esc(idFoto)}=w1200'"><span>${esc(COL_FOTOS[colFoto] || '')} · celda ${letraCol(colFoto + 1)}${f.r} · clic para ampliar</span></div>`
       : '<div class="bj-foto sin">Este viaje no tiene foto de baucher</div>'}
-    ${conFoto.length > 1 ? '<div class="bj-fotos-tabs">' + conFoto.map(k => `<button type="button" data-bj-ver="${k}" class="${k === colFoto ? 'activo' : ''} ${conError.has(k) ? 'error' : ''}" title="${conError.has(k) ? 'En esta foto está el dato con novedad' : ''}">${esc(COL_FOTOS[k])}</button>`).join('') + '</div>' : ''}
+    ${conFoto.length > 1 ? '<div class="bj-fotos-tabs">' + conFoto.map(k => `<button type="button" data-bj-ver="${k}" class="${k === colFoto ? 'activo' : ''} ${conError.has(k) ? 'error' : ''}" title="${conError.has(k) ? 'En esta foto está el dato con novedad' : ''}">${esc(COL_FOTOS[k])} · ${letraCol(k + 1)}${f.r}</button>`).join('') + '</div>' : ''}
   </div>`;
 
   const campos = celdas.map(({ c, iac }) => {
     const nombre = IA_NOMBRE_COL[c] || S.headers[c] || letraCol(c + 1);
     const res = f._resIA && f._resIA[c];
-    const comp = `<div class="bj-comp">Sistema: <s>${esc(f.v[c] ?? '') || '(vacío)'}</s> · ${esc(iac.foto)} dice <span class="lee">${esc(iac.ia)}</span>${iac.e === 'duda' ? ' <em>(se lee dudoso)</em>' : ''}</div>`;
+    const colF = IA_FOTO_COL[iac.foto];
+    const celdaSis = letraCol(c + 1) + f.r, celdaFoto = colF !== undefined ? letraCol(colF + 1) + f.r : '';
+    const comp = `<div class="bj-comp">Sistema <span class="bj-celda" title="Celda de la hoja">${celdaSis}</span>: <s>${esc(f.v[c] ?? '') || '(vacío)'}</s> · ${esc(iac.foto)}${celdaFoto ? ` <span class="bj-celda" title="Celda donde está la foto del baucher">${celdaFoto}</span>` : ''} dice <span class="lee">${esc(iac.ia)}</span>${iac.e === 'duda' ? ' <em>(se lee dudoso)</em>' : ''}
+      <button type="button" class="bj-ir" data-bj-ir="${c}" data-idx="${idx}" title="Cerrar la bandeja y llevar el cursor a ${celdaSis}">Ver en la hoja ↗</button></div>`;
     if(res) return `<div class="bj-campo resuelto"><b>${esc(nombre)}</b>${comp}<div class="bj-accion">✔ ${res.tipo === 'reemplazo' ? 'Reemplazado por ' + esc(res.valor) : 'Se deja como está'}</div></div>`;
     const est = estimadoIA(f, c, iac);
     return `<div class="bj-campo ${iac.e === 'duda' ? 'duda' : ''}" data-idx="${idx}" data-c="${c}"><b>${esc(nombre)}</b>${comp}
@@ -22959,6 +23008,7 @@ function pintarBandejaIA(){
 async function accionBandejaIA(b){
   if(b.dataset.bjFoto !== undefined){ abrirVisor(+b.dataset.idx, +b.dataset.bjFoto); return; }
   if(b.dataset.bjVer !== undefined){ S.bjCola[S.bjPos]._bjFoto = +b.dataset.bjVer; pintarBandejaIA(); return; }
+  if(b.dataset.bjIr !== undefined){ irACeldaIA(S.filas[+b.dataset.idx], +b.dataset.bjIr); return; }
   if(b.dataset.bjConfirmar !== undefined){
     const f = S.filas[+b.dataset.idx];
     b.disabled = true;
@@ -23003,6 +23053,21 @@ async function accionBandejaIA(b){
   }else{
     pintarBandejaIA();
   }
+}
+
+/* Cierra la bandeja y deja el cursor en la celda del dato, en la grilla. */
+function irACeldaIA(f, c){
+  cerrarBandejaIA();
+  const vr = S.vista.indexOf(S.filas.indexOf(f));
+  const pos = S.colsVista.indexOf(c);
+  if(vr < 0){ aviso('La fila ' + f.r + ' no se ve con los filtros puestos.', true); return; }
+  if(pos < 0){ aviso('La columna ' + letraCol(c + 1) + ' está oculta.', true); return; }
+  S.foco = { vr, pos };
+  S.sel = { r1: vr, c1: pos, r2: vr, c2: pos };
+  asegurarVisible(vr);
+  render(); actualizarPie(); mostrarDetalle();
+  const td = tdDe(S.foco);
+  if(td) td.scrollIntoView({ block:'center', inline:'center' });
 }
 
 function editarAManoIA(c){
@@ -23245,7 +23310,7 @@ $('bandejaIA').addEventListener('keydown', ev => {
 });
 $('bandejaIA').addEventListener('click', ev => {
   if(ev.target === $('bandejaIA')) return cerrarBandejaIA();
-  const b = ev.target.closest('[data-bj-reemplazar],[data-bj-mantener],[data-bj-confirmar],[data-bj-foto],[data-bj-ver]');
+  const b = ev.target.closest('[data-bj-reemplazar],[data-bj-mantener],[data-bj-confirmar],[data-bj-foto],[data-bj-ver],[data-bj-ir]');
   if(b) accionBandejaIA(b);
 });
 $('bjAnterior').addEventListener('click', () => moverBandejaIA(-1));
