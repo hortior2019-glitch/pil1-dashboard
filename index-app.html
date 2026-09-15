@@ -21128,7 +21128,7 @@ function render(){
       const hilos = S.coment.get(f.r + '_' + (c+1));
       if(hilos) titulo = esc('💬 ' + hilos.map(x=>x.autor + ': ' + x.texto).join(' · ').substring(0,220));
       if(iac && c === 8) titulo += esc('\nFormato del documento: ' + (iac.e === 'ok' ? '✔ ' : iac.e === 'fix' ? '✔ revisado · ' : '⚠ ') + iac.ia);
-      else if(iac) titulo += esc('\nIA: ' + (iac.e === 'ok' ? '✔ coincide' : iac.e === 'no' ? '✖ NO coincide' : iac.e === 'fix' ? (iac.confirmada ? '✔ revisado por ' + (f.ia.confirmadoPor || 'una persona') + ' (el sistema decía "' + iac.s + '")' : '✔ corregido (antes decía "' + iac.s + '")') : '? no se lee claro') +
+      else if(iac) titulo += esc('\nIA: ' + (iac.e === 'ok' ? '✔ coincide' : iac.e === 'no' ? '✖ NO coincide' : noVerificadoIA(iac) ? '? no se pudo verificar en las fotos — revisar con ojo humano' : iac.e === 'fix' ? (iac.confirmada ? '✔ revisado por ' + (f.ia.confirmadoPor || 'una persona') + ' (el sistema decía "' + iac.s + '")' : '✔ corregido (antes decía "' + iac.s + '")') : '? no se lee claro') +
                             ' · en ' + iac.foto + ' dice "' + iac.ia + '"');
       tds.push(`<td class="${cls}" data-vr="${vr}" data-c="${c}" data-pos="${pos}" style="${st}" title="${titulo}">${contenido}</td>`);
     }
@@ -22817,9 +22817,22 @@ async function confirmarFilasIA(pendientes, conclusion){
   try{
     /* tiqueteIA: el que tenía la fila cuando la revisó la IA. Si en la
        bandeja se corrigió el tiquete, la fila ya dice el nuevo. */
+    /* La conclusión de cada viaje lleva TODO lo que se cambió, aunque se haya
+       corregido a mano en la grilla antes del Ctrl+P: queda en el historial
+       de calidad (si no, al re-evaluar el viaje sale OK y el error se pierde). */
+    const conclusionDe = (f) => {
+      const cambios = Object.keys((f.ia && f.ia.campos) || {}).map(Number)
+        .filter(c => CQ_DATOS[c])
+        .map(c => ({ c, e: estadoCeldaIA(f, c) }))
+        .filter(x => x.e && x.e.e === 'fix' && !x.e.confirmada)
+        .map(x => (IA_NOMBRE_COL[x.c] || '') + ': ' + x.e.s + ' → ' + (f.v[x.c] ?? ''))
+        .filter(t => conclusion.indexOf(t.split(' → ')[0]) === -1);
+      return [conclusion.trim(), cambios.join('; ')].filter(Boolean).join('; ');
+    };
     const res = await llamar({ accion:'auditIAConfirmar', autor: CFG.autor,
       filas: pendientes.map(f => ({ fila: f.r, tiquete: f.v[1],
-        tiqueteIA: (f.ia && f.ia.campos && f.ia.campos[1] && f.ia.campos[1].s !== undefined) ? f.ia.campos[1].s : (f.ia && f.ia.tiqueteIA) })),
+        tiqueteIA: (f.ia && f.ia.campos && f.ia.campos[1] && f.ia.campos[1].s !== undefined) ? f.ia.campos[1].s : (f.ia && f.ia.tiqueteIA),
+        conclusion: conclusionDe(f) })),
       conclusion: conclusion.trim() });
     if(!res.success) throw new Error(res.error || 'No se pudo confirmar.');
     Object.keys(res.ia || {}).forEach(k => {
@@ -23076,9 +23089,14 @@ function clasificarCalidadIA(f){
   if(!f.ia) return { tipo:'sin' };
   const cols = Object.keys(f.ia.campos || {}).map(Number).filter(c => CQ_DATOS[c]);
   const est = cols.map(c => ({ c, e: estadoCeldaIA(f, c) })).filter(x => x.e);
-  const corregidos = est.filter(x => x.e.e === 'fix' && !x.e.confirmada).map(x => x.c);
+  /* Lo corregido cuenta aunque el viaje ya esté en verde: sale del
+     historial que guarda el servidor (revisiones anteriores y conclusiones)
+     y de lo cambiado desde la última revisión. */
+  const hist = f.ia.hist || {};
+  const corregidos = [...new Set(est.filter(x => x.e.e === 'fix' && !x.e.confirmada).map(x => x.c)
+    .concat((hist.correcciones || []).map(x => x.c).filter(c => CQ_DATOS[c])))];
   if(corregidos.length) return { tipo:'corregido', cols: corregidos };
-  if(f.ia.estado === 'ok') return { tipo:'bien' };
+  if(f.ia.estado === 'ok') return hist.tuvoNovedad ? { tipo:'bien', falsaAlarma: true } : { tipo:'bien' };
   if(f.ia.estado === 'confirmada') return { tipo:'bien', falsaAlarma: true };
   /* Rojo SIN un dato auditado distinto (lo marcó una regla vieja, por
      ejemplo la operación o el peso lleno): no se cuenta como error de
@@ -23156,7 +23174,7 @@ function pintarCalidadIA(){
       ${tile('cq-neutro', revisados, 'de ' + tot.total, 'Revisados por la IA', tot.sin + ' sin revisión (fuera de la revisión o sin foto)')}
       ${tile('cq-bien', tot.bien, resueltos ? cqPct(tot.bien, resueltos) + ' %' : '', '✔ Bien ingresados', tot.falsas ? tot.falsas + ' eran alarmas de la IA que una persona descartó' : 'Coinciden con el baucher')}
       ${tile('cq-error', errores, resueltos ? cqPct(errores, resueltos) + ' %' : '', '✖ Con errores de ingreso', tot.corregido + ' ya corregidos · ' + tot.pendiente + ' sin resolver')}
-      ${tile('cq-ojo', tot.ojo, '', '? Por revisar', 'Ámbar: la IA no leyó claro o el formato cambió')}
+      ${tile('cq-ojo', tot.ojo, '', '? Por revisar', 'Ámbar: un dato que la IA no pudo verificar (tiquete, placa, neto o material) o que no se lee claro. No cuenta como error.')}
     </div>
     <div class="cq-sec"><h4>Registros resueltos${resueltos ? '<small>' + resueltos + ' (bien + con errores)</small>' : ''}</h4>
       <div class="cq-barra" title="${tot.bien} bien · ${errores} con errores"><i class="b" style="width:${w(tot.bien)}%"></i><i class="e" style="width:${w(errores)}%"></i></div>
@@ -23209,8 +23227,11 @@ function residuoParecidoIA(f, leido){
   const mejor = Object.keys(cuenta).sort((a, b) => cuenta[b] - cuenta[a])[0];
   return mejor || '';
 }
+/* Dato que la IA no pudo verificar en las fotos (tiquete, placa, neto o
+   material): no hay lectura de donde sacar un estimado. */
+function noVerificadoIA(iac){ return !!iac && /^no se pudo verificar/i.test(String(iac.ia || '')); }
 function estimadoIA(f, c, iac){
-  if(!iac) return '';
+  if(!iac || noVerificadoIA(iac)) return '';
   const base = Object.assign({}, iac, { e:'no', ia: String(iac.ia || '').replace(/\?/g, '') });
   if(c === 1 || c === 4 || c === 7) return sugerenciaIA(f, c, base);
   if(c === 2){
@@ -23301,7 +23322,9 @@ function pintarBandejaIA(){
     const res = f._resIA && f._resIA[c];
     const colF = IA_FOTO_COL[iac.foto];
     const celdaSis = letraCol(c + 1) + f.r, celdaFoto = colF !== undefined ? letraCol(colF + 1) + f.r : '';
-    const comp = `<div class="bj-comp">Sistema <span class="bj-celda" title="Celda de la hoja">${celdaSis}</span>: <s>${esc(f.v[c] ?? '') || '(vacío)'}</s> · ${esc(iac.foto)}${celdaFoto ? ` <span class="bj-celda" title="Celda donde está la foto del baucher">${celdaFoto}</span>` : ''} dice <span class="lee">${esc(iac.ia)}</span>${iac.e === 'duda' ? ' <em>(se lee dudoso)</em>' : ''}
+    const comp = `<div class="bj-comp">Sistema <span class="bj-celda" title="Celda de la hoja">${celdaSis}</span>: <s>${esc(f.v[c] ?? '') || '(vacío)'}</s> · ${noVerificadoIA(iac)
+      ? '<span class="lee">la IA no lo pudo verificar en las fotos</span> <em>— revíselo con ojo humano y escríbalo mirando el baucher</em>'
+      : esc(iac.foto) + (celdaFoto ? ` <span class="bj-celda" title="Celda donde está la foto del baucher">${celdaFoto}</span>` : '') + ` dice <span class="lee">${esc(iac.ia)}</span>${iac.e === 'duda' ? ' <em>(se lee dudoso)</em>' : ''}`}
       <button type="button" class="bj-ir" data-bj-ir="${c}" data-idx="${idx}" title="Cerrar la bandeja y llevar el cursor a ${celdaSis}">Ver en la hoja ↗</button></div>`;
     if(res) return `<div class="bj-campo resuelto"><b>${esc(nombre)}</b>${comp}<div class="bj-accion">✔ ${res.tipo === 'reemplazo' ? 'Reemplazado por ' + esc(res.valor) : 'Se deja como está'}</div></div>`;
     if(c === 8) return `<div class="bj-campo duda" data-idx="${idx}" data-c="${c}"><b>Formato del documento</b>
