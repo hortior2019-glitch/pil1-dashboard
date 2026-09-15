@@ -1413,6 +1413,25 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-auditoria table.grid td.iac-ok{--iac:#2e7d32}
 #panel-auditoria table.grid td.iac-no{--iac:#c62828;background-color:#fde3e1;color:#8a1c1c;font-weight:700}
 #panel-auditoria table.grid td.iac-duda{--iac:#d18a00;background-color:#fff3d6}
+#panel-auditoria table.grid td.iac-fix:not(.pendiente)::before{
+  content:'';position:absolute;right:0;bottom:0;border-style:solid;border-width:0 0 9px 9px;
+  border-color:transparent transparent #1e5fae transparent;pointer-events:none;
+}
+#panel-auditoria table.grid td.guia-ia{box-shadow:inset 0 0 0 2px #c62828}
+/* La guia de novedades en el panel */
+#panel-auditoria .ia-guia{margin-top:8px;display:flex;flex-direction:column;gap:6px;white-space:normal}
+#panel-auditoria .ia-guia-cont{font:700 11px var(--sans);letter-spacing:.3px;text-transform:uppercase;opacity:.8}
+#panel-auditoria .ia-guia-item{background:#fff;border:1px solid #e0b4b4;border-left:4px solid #c62828;border-radius:3px;padding:6px 8px;color:#3a1a1a;font-size:12px;line-height:1.45}
+#panel-auditoria .ia-guia-item.duda{border-color:#e8cf94;border-left-color:#d18a00;color:#4a3300}
+#panel-auditoria .ia-guia-item.fix{border-color:#b7cdea;border-left-color:#1e5fae;color:#163f73}
+#panel-auditoria .ia-guia-item s{opacity:.7}
+#panel-auditoria .ia-guia-btns{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
+#panel-auditoria .ia-guia button{border-radius:3px;padding:4px 9px;font:600 11.5px var(--sans);cursor:pointer;border:1px solid #c9c9bf;background:#fff;color:#333}
+#panel-auditoria .ia-guia button.fuerte{background:#2e7d32;border-color:#2e7d32;color:#fff}
+#panel-auditoria .ia-guia button.fuerte:hover{background:#256628}
+#panel-auditoria .ia-guia-pie{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+#panel-auditoria .ia-guia-pie .ia-btn-confirmar{margin-top:0}
+#panel-auditoria .tb.ia-guia-btn{color:#fff;background:#c62828;border-color:#c62828;font-weight:700}
 #panel-auditoria table.grid td.nota::after{
   content:'';position:absolute;top:0;right:0;border-width:0 6px 6px 0;border-style:solid;
   border-color:transparent var(--oro) transparent transparent;
@@ -4069,6 +4088,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <span class="ia-progreso" id="iaProgreso" style="display:none"></span>
   <button class="tb ia-aldia" id="btnIAAlDia" style="display:none"></button>
   <button class="tb ia-apagar" id="btnIAApagar" style="display:none" title="Apagar la revisión IA: los ingresos nuevos se guardan igual, sin revisión ni consumo de créditos. Lo ya revisado conserva su banderín.">⏻ Apagar IA</button>
+  <button class="tb ia-guia-btn" id="btnIAGuia" style="display:none" title="Lo lleva de una novedad IA a la siguiente: le muestra qué dato no coincide, lo que dice el baucher y le deja la corrección lista para aplicar con un clic.">▶ Guiarme</button>
   <button class="tb ia-reevaluar" id="btnIAReevaluar" style="display:none" title="Vuelve a mirar las novedades IA abiertas con las reglas de ahora. Las fotos leídas en las últimas 6 horas no se vuelven a cobrar.">↻ Re-evaluar novedades</button>
   <button class="tb ia-revisar" id="btnIARevisar" title="La IA revisa los últimos 5 registros. Los que ya revisó no se vuelven a cobrar: muestra lo que dijo y abre un ejemplo con su baucher.">Revisar 5 IA</button>
   <button class="tb ia-confirmar" id="btnIAConfirmar" style="display:none" title="Confirmar como revisada por usted la novedad IA de los viajes seleccionados (Ctrl+P)">Confirmar IA</button>
@@ -20811,8 +20831,9 @@ function render(){
       if(f.n[c]) cls += ' nota';
       if(f._p && f._p[c]) cls += ' pendiente';
       if(f._ok && f._ok[c]) cls += ' guardado';
-      const iac = (ia && ia.campos && !filaBo) ? ia.campos[c] : null;
+      const iac = filaBo ? null : estadoCeldaIA(f, c);
       if(iac) cls += ' iac-' + iac.e;
+      if(iac && S.guiaIA && S.foco && S.foco.vr === vr && (iac.e === 'no' || iac.e === 'duda')) cls += ' guia-ia';
       let st = '';
       if(f.f[c]) st += 'color:' + f.f[c] + ';';
       if(f.b[c] && !esDup) st += 'background-color:' + f.b[c] + ';';
@@ -20839,7 +20860,7 @@ function render(){
       if(colBorrada) titulo = esc('Columna borrada. ' + (S.notaCol[c] || '') + (f.n[c] ? '\n' + f.n[c] : ''));
       const hilos = S.coment.get(f.r + '_' + (c+1));
       if(hilos) titulo = esc('💬 ' + hilos.map(x=>x.autor + ': ' + x.texto).join(' · ').substring(0,220));
-      if(iac) titulo += esc('\nIA: ' + (iac.e === 'ok' ? '✔ coincide' : iac.e === 'no' ? '✖ NO coincide' : '? no se lee claro') +
+      if(iac) titulo += esc('\nIA: ' + (iac.e === 'ok' ? '✔ coincide' : iac.e === 'no' ? '✖ NO coincide' : iac.e === 'fix' ? '✔ corregido (antes decía "' + iac.s + '")' : '? no se lee claro') +
                             ' · en ' + iac.foto + ' dice "' + iac.ia + '"');
       tds.push(`<td class="${cls}" data-vr="${vr}" data-c="${c}" data-pos="${pos}" style="${st}" title="${titulo}">${contenido}</td>`);
     }
@@ -21426,6 +21447,8 @@ function cambiar(idx, c, tipo, valor, op){
   if(op.diferido) return;
   render(); refrescarPendientes(); mostrarDetalle();
   if(CFG.auto) programarEnvio();
+  /* Guía IA: corregir a mano el último dato en rojo cierra la novedad y pasa a la siguiente. */
+  if(tipo === 'valor' && S.guiaIA && esNovedadIA(f)) finalizarFilaIA(f);
 }
 
 /* Aplica una operación sobre muchas celdas a la vez sin repintar la
@@ -21797,6 +21820,7 @@ function mostrarDetalle(){
     const e = f.ia, k = FONDOS_IA[e.estado] || FONDOS_IA.no_coincide;
     let cuerpo = '';
     if(e.estado === 'ok') cuerpo = esc(e.detalle || 'Los datos del registro coinciden con las fotos.');
+    else if(e.estado === 'no_coincide' || e.estado === 'ojo') cuerpo = guiaPanelIA(f) + '<div style="margin-top:6px;opacity:.75;font-size:11.5px">' + esc(e.detalle) + '</div>';
     else cuerpo = esc(e.detalle) +
       (e.estado === 'confirmada'
         ? '<br><b>Confirmó:</b> ' + esc(e.confirmadoPor || '—') + (e.fechaConfirmacion ? ' · ' + esc(e.fechaConfirmacion) : '') +
@@ -21809,7 +21833,15 @@ function mostrarDetalle(){
   /* El boton del aviso IA se atiende por delegacion (el panel se repinta). */
   if(!$('panelCuerpo')._iaConfirmar){
     $('panelCuerpo')._iaConfirmar = true;
-    $('panelCuerpo').addEventListener('click', ev=>{ if(ev.target.closest('[data-ia-confirmar-panel]')) confirmarNovedadesIA(); });
+    $('panelCuerpo').addEventListener('click', ev=>{
+      if(ev.target.closest('[data-ia-confirmar-panel]')) return confirmarNovedadesIA();
+      const b = ev.target.closest('[data-ia-corregir],[data-ia-editar],[data-ia-foto],[data-ia-siguiente]');
+      if(!b) return;
+      if(b.dataset.iaCorregir) corregirIA(+b.dataset.iaCorregir);
+      else if(b.dataset.iaEditar) editarAManoIA(+b.dataset.iaEditar);
+      else if(b.dataset.iaFoto) abrirVisor(S.vista[S.foco.vr], +b.dataset.iaFoto);
+      else if(b.dataset.iaSiguiente){ S.guiaIA = true; siguienteNovedadIA(false); }
+    });
   }
   $('panelCuerpo').innerHTML = avisoIA + avisoFila + avisoCol + avisoDup + bloqueHilos + `
     <div class="campo">
@@ -22131,6 +22163,8 @@ function pintarAvisoAlDia(){
   if(bRe){
     const abiertas = S.filas.filter(f => f.ia && (f.ia.estado === 'no_coincide' || f.ia.estado === 'ojo')).length;
     bRe.style.display = abiertas ? '' : 'none';
+    const bG = $('btnIAGuia');
+    if(bG){ bG.style.display = abiertas ? '' : 'none'; bG.textContent = '▶ Guiarme por ' + abiertas + ' novedad' + (abiertas === 1 ? '' : 'es'); }
     if(!bRe.disabled) bRe.textContent = '↻ Re-evaluar ' + abiertas + ' novedad' + (abiertas === 1 ? '' : 'es');
   }
   if(!r.activa){
@@ -22497,8 +22531,11 @@ function filasParaConfirmar(){
 async function confirmarNovedadesIA(){
   const { filas, pendientes } = filasParaConfirmar();
   if(!filas.length || !pendientes.length) return;
-  const conclusion = '';
+  const hecho = await confirmarFilasIA(pendientes, '');
+  if(hecho && S.guiaIA) siguienteNovedadIA(false);
+}
 
+async function confirmarFilasIA(pendientes, conclusion){
   estado('busy', 'Confirmando…');
   try{
     const res = await llamar({ accion:'auditIAConfirmar', autor: CFG.autor,
@@ -22517,10 +22554,175 @@ async function confirmarNovedadesIA(){
     const n = (res.confirmadas || []).length;
     if(!n) aviso('No se pudo confirmar la novedad IA' + ((res.omitidas || [])[0] ? ': ' + res.omitidas[0].motivo : '.'), true);
     estado('ok', 'Conectado');
+    return n > 0;
   }catch(e){
     estado('err', 'Error');
     aviso('No se pudo confirmar: ' + e.message, true);
+    return false;
   }
+}
+
+/* ══ GUÍA DE NOVEDADES IA ═══════════════════════════════════════════
+   El tablero lleva de una novedad a la siguiente. En cada viaje muestra
+   qué dato no coincide, qué dice el baucher y deja la corrección lista:
+     Corregir a X   escribe el valor que leyó la IA, deja una nota en la
+                    celda (quién, según qué foto, qué decía antes) y se
+                    puede deshacer con Ctrl+Z como cualquier edición.
+     Corregir a mano  abre la celda para escribir (fecha, residuo, o
+                    cuando la lectura no da un valor limpio).
+     Está bien así  Ctrl+P: la novedad queda confirmada sin tocar nada.
+   Cuando un viaje ya no tiene datos en rojo, se confirma solo con lo que
+   se corrigió como conclusión, y pasa al siguiente.
+   La IA nunca escribe sola: siempre aplica una persona que vio la foto. */
+const IA_NOMBRE_COL = { 1:'N° tiquete', 2:'Fecha', 4:'Placa', 7:'Peso neto', 9:'Tipo de residuo' };
+const IA_FOTO_COL = { 'BAUCHER I':21, 'BAUCHER II':22, 'BAUCHER III':23 };
+/* Para comparar lo que dice la celda con lo que vio la IA. Las fechas llegan
+   2026-09-14 a la grilla y 14/09/2026 al registro de la IA: se llevan a lo mismo. */
+function normIA(x){
+  let t = String(x ?? '').trim();
+  const iso = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/), dmy = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if(iso) t = (+iso[3]) + '/' + (+iso[2]) + '/' + iso[1];
+  else if(dmy) t = (+dmy[1]) + '/' + (+dmy[2]) + '/' + dmy[3];
+  return t.toUpperCase().normalize('NFD').replace(/[^A-Z0-9]/g, '');
+}
+
+/* El estado de una celda auditada, con "fix" si ya no dice lo que la IA
+   comparó (alguien la corrigió después de la revisión). */
+function estadoCeldaIA(f, c){
+  const iac = f.ia && f.ia.campos && f.ia.campos[c];
+  if(!iac) return null;
+  if(iac.e !== 'ok' && iac.s !== undefined && normIA(f.v[c]) !== normIA(iac.s)) return Object.assign({}, iac, { e:'fix' });
+  return iac;
+}
+function celdasPendientesIA(f){
+  return Object.keys((f.ia && f.ia.campos) || {}).map(Number)
+    .map(c => ({ c, iac: estadoCeldaIA(f, c) }))
+    .filter(x => x.iac && (x.iac.e === 'no' || x.iac.e === 'duda'))
+    .sort((a, b) => (a.iac.e === 'no' ? 0 : 1) - (b.iac.e === 'no' ? 0 : 1) || a.c - b.c);
+}
+function esNovedadIA(f){ return f && !f.bo && f.ia && (f.ia.estado === 'no_coincide' || f.ia.estado === 'ojo'); }
+
+/* Mismo criterio que el servidor: 11.480,00 Kgs. -> 11480 · 10190.000 -> 10190 */
+function pesoIA(t){
+  let x = String(t ?? '').toUpperCase().replace(/KGS?|KILOS?|\s/g, '').replace(/[.,]+$/, '');
+  if(!/^\d[\d.,]*$/.test(x)) return null;
+  const ult = Math.max(x.lastIndexOf('.'), x.lastIndexOf(','));
+  if(ult < 0) return Number(x);
+  const sep = x.charAt(ult), otro = sep === '.' ? ',' : '.', entero = x.slice(0, ult), cola = x.slice(ult + 1);
+  let n;
+  if(x.indexOf(otro) > -1) n = Number(entero.split(otro).join('').split(sep).join('') + '.' + cola);
+  else if(x.split(sep).length > 2) n = Number(x.split(sep).join(''));
+  else if(cola.length === 3 && entero.length >= 1 && entero.length <= 3 && entero !== '0') n = Number(entero + cola);
+  else n = Number(entero + '.' + cola);
+  return isNaN(n) ? null : n;
+}
+/* El valor limpio para escribir, o '' si la lectura no da uno seguro.
+   Fecha y residuo se corrigen a mano: el residuo usa los nombres del
+   sistema, no el texto del papel. */
+function sugerenciaIA(f, c, iac){
+  if(!iac || iac.e !== 'no') return '';
+  const leido = String(iac.ia || '');
+  if(c === 7){ const n = pesoIA(leido); return n === null ? '' : String(n); }
+  if(c === 4){ const p = leido.toUpperCase().replace(/[^A-Z0-9]/g, ''); return /^[A-Z0-9]{5,7}$/.test(p) ? p : ''; }
+  if(c === 1){
+    if(leido.indexOf(',') > -1) return '';                 // varios numeros en el papel: que decida la persona
+    const m = leido.match(/(\d[\d.\-]*)\s*$/);
+    if(!m) return '';
+    let n = m[1].replace(/\D/g, '');
+    if(/FAMILIA/i.test(String(f.v[8] || '')) && n.indexOf('2000') === 0 && n.length > 4) n = n.slice(4);
+    return n ? String(parseInt(n, 10)) : '';
+  }
+  return '';
+}
+
+function guiaPanelIA(f){
+  const pend = S.filas.filter(esNovedadIA);
+  const pos = pend.indexOf(f);
+  const items = celdasPendientesIA(f).map(({ c, iac }) => {
+    const nombre = IA_NOMBRE_COL[c] || S.headers[c] || letraCol(c + 1);
+    const sug = sugerenciaIA(f, c, iac);
+    const colFoto = IA_FOTO_COL[iac.foto];
+    const verFoto = colFoto !== undefined ? `<button type="button" data-ia-foto="${colFoto}">Ver ${esc(iac.foto)}</button>` : '';
+    return iac.e === 'no'
+      ? `<div class="ia-guia-item"><b>${esc(nombre)}</b>: el sistema dice <s>${esc(f.v[c] ?? '')}</s> · en ${esc(iac.foto)} dice <b>${esc(iac.ia)}</b>
+           <div class="ia-guia-btns">${sug ? `<button type="button" class="fuerte" data-ia-corregir="${c}">Corregir a ${esc(sug)}</button>` : ''}
+           <button type="button" data-ia-editar="${c}">Corregir a mano</button>${verFoto}</div></div>`
+      : `<div class="ia-guia-item duda"><b>${esc(nombre)}</b>: en ${esc(iac.foto)} no se lee claro (${esc(iac.ia)}). Mírelo en la foto.
+           <div class="ia-guia-btns"><button type="button" data-ia-editar="${c}">Corregir a mano</button>${verFoto}</div></div>`;
+  }).join('');
+  const hechas = Object.keys((f.ia && f.ia.campos) || {}).map(Number).filter(c => (estadoCeldaIA(f, c) || {}).e === 'fix')
+    .map(c => `<div class="ia-guia-item fix"><b>${esc(IA_NOMBRE_COL[c] || '')}</b>: corregido (antes "${esc(f.ia.campos[c].s)}")</div>`).join('');
+  return `<div class="ia-guia">
+    ${pos > -1 ? `<div class="ia-guia-cont">Novedad ${pos + 1} de ${pend.length}</div>` : ''}
+    ${items || (hechas ? '' : '<div class="ia-guia-item duda">No hay un dato puntual marcado: revise el detalle y la foto.</div>')}${hechas}
+    <div class="ia-guia-pie">
+      <button type="button" class="ia-btn-confirmar" data-ia-confirmar-panel="1" title="Confirma la novedad sin cambiar nada (Ctrl+P)">Está bien así · Ctrl+P</button>
+      <button type="button" data-ia-siguiente="1">Siguiente novedad →</button>
+    </div></div>`;
+}
+
+/* Lleva el cursor a la próxima novedad (en el orden de la grilla) y a su
+   primer dato en rojo. desdeInicio: empieza por la primera. */
+function siguienteNovedadIA(desdeInicio){
+  const total = S.vista.length;
+  const pendTotal = S.filas.filter(esNovedadIA).length;
+  if(!pendTotal){ S.guiaIA = false; render(); mostrarDetalle(); actualizarChipIA(); aviso('✔ No quedan novedades IA pendientes.'); return; }
+  const actual = (!desdeInicio && S.foco) ? S.foco.vr : -1;
+  let destino = -1;
+  for(let i = 1; i <= total; i++){
+    const vr = (actual + i + total) % total;
+    if(esNovedadIA(S.filas[S.vista[vr]])){ destino = vr; break; }
+  }
+  if(destino < 0){
+    aviso('Quedan ' + pendTotal + ' novedades IA, pero no se ven con los filtros puestos. Quite los filtros para seguir.', true);
+    return;
+  }
+  const f = S.filas[S.vista[destino]];
+  const primera = celdasPendientesIA(f)[0];
+  const posCol = primera ? S.colsVista.indexOf(primera.c) : -1;
+  const pos = posCol > -1 ? posCol : 0;
+  S.foco = { vr: destino, pos };
+  S.sel = { r1: destino, c1: pos, r2: destino, c2: pos };
+  asegurarVisible(destino);
+  render(); actualizarPie(); mostrarDetalle();
+  const td = tdDe(S.foco);
+  if(td) td.scrollIntoView({ block:'center', inline:'center' });
+}
+
+function corregirIA(c){
+  if(!S.foco) return;
+  const idx = S.vista[S.foco.vr], f = S.filas[idx];
+  const iac = estadoCeldaIA(f, c), nuevo = sugerenciaIA(f, c, iac);
+  if(!nuevo) return;
+  if(!esEditable(c)){ aviso(motivoBloqueo(c), true); return; }
+  const antes = String(f.v[c] ?? '');
+  const quien = CFG.nombre || CFG.autor || 'auditoría';
+  cambiar(idx, c, 'valor', nuevo, { diferido:true });
+  cambiar(idx, c, 'nota', 'Corregido por ' + quien + ' con la guía IA, según ' + iac.foto + '. Antes: ' + antes + ' · ' + new Date().toLocaleString('es-CO'), { diferido:true });
+  f._corrIA = (f._corrIA || []).concat((IA_NOMBRE_COL[c] || letraCol(c + 1)) + ': ' + antes + ' → ' + nuevo + ' (' + iac.foto + ')');
+  render(); refrescarPendientes(); mostrarDetalle();
+  if(CFG.auto) programarEnvio(); else enviarCola();
+  S.guiaIA = true;
+  finalizarFilaIA(f);
+}
+
+/* Si al viaje ya no le quedan datos en rojo ni dudosos, se confirma con lo
+   corregido como conclusión y se pasa al siguiente. */
+async function finalizarFilaIA(f){
+  if(celdasPendientesIA(f).length || !esNovedadIA(f)) return;
+  const hecho = await confirmarFilasIA([f], f._corrIA && f._corrIA.length ? 'Corregido con la guía IA: ' + f._corrIA.join('; ') : '');
+  if(hecho){ delete f._corrIA; siguienteNovedadIA(false); }
+}
+
+function editarAManoIA(c){
+  if(!S.foco) return;
+  const pos = S.colsVista.indexOf(c);
+  if(pos < 0){ aviso('La columna ' + letraCol(c + 1) + ' está oculta. Muéstrela para corregirla.', true); return; }
+  S.foco = { vr: S.foco.vr, pos };
+  S.sel = { r1: S.foco.vr, c1: pos, r2: S.foco.vr, c2: pos };
+  render(); mostrarDetalle();
+  const td = tdDe(S.foco);
+  if(td){ td.scrollIntoView({ block:'center', inline:'center' }); editarCelda(td); }
 }
 
 function filasSeleccionadas(){
@@ -22741,6 +22943,7 @@ $('btnIARevisar').addEventListener('click', ()=> revisarUltimosConIA(5));
 $('btnIAAlDia').addEventListener('click', ponerAlDiaIA);
 $('btnIAApagar').addEventListener('click', apagarIA);
 $('btnIAReevaluar').addEventListener('click', reevaluarIA);
+$('btnIAGuia').addEventListener('click', () => { S.guiaIA = true; siguienteNovedadIA(true); });
 $('popIAOpciones').addEventListener('click', ev=>{
   if(ev.target.closest('[data-accion-ia="confirmar"]:not([disabled])')){ cerrarPop('popIA'); confirmarNovedadesIA(); return; }
   const b = ev.target.closest('[data-filtro-ia]');
