@@ -27329,6 +27329,15 @@ window.mapaActivar = function(){ cargarMapa(false); refrescarMapaSiToca(MAPA_AL_
       // buscó, no se deja marca en la columna AG (evita marcar algo que no se certificó).
       descInput.addEventListener('input', () => { materiales[i].descripcion = descInput.value; idsEnvioMaterialesActuales = []; update(); });
       cantInput.addEventListener('input', () => { materiales[i].cantidad = cantInput.value; idsEnvioMaterialesActuales = []; update(); });
+      /* Al salir de la casilla se quita la coma (y el punto de miles): "20.580,00"
+         queda 20580. Si tiene decimales de verdad se deja como se escribió. */
+      cantInput.addEventListener('blur', () => {
+        const n = numeroCert(cantInput.value);
+        if (isNaN(n) || !/[.,]/.test(cantInput.value) || n !== Math.round(n)) return;
+        cantInput.value = String(n);
+        materiales[i].cantidad = cantInput.value;
+        update();
+      });
       fechaInput.addEventListener('input', () => { materiales[i].fecha = fechaInput.value; update(); });
       removeBtn.addEventListener('click', () => {
         materiales.splice(i, 1);
@@ -27360,15 +27369,36 @@ window.mapaActivar = function(){ cargarMapa(false); refrescarMapaSiToca(MAPA_AL_
 
   // Interpreta un número escrito a mano o pegado desde una factura, tolerando el formato
   // colombiano (punto = miles, coma = decimales) y el formato simple ("20580").
-  function parseNumeroFlexible(s){
-    s = s.trim();
-    if (s.includes(',') && s.includes('.')) {
-      s = s.replace(/\./g, '').replace(',', '.');
-    } else if (s.includes(',')) {
-      s = s.replace(',', '.');
+  /* UNA SOLA REGLA para leer cantidades en el certificado, la misma que usa
+     la revisión IA con los pesos. Antes la casilla quitaba la coma pero
+     tomaba el punto como decimal: "20.580,00" salía 20,58 kg. Y la lista
+     pegada usaba otra regla distinta. Ahora:
+       20580 · 20.580 · 20,580 · 20.580,00 · 20,580.00 · 20580,000  -> 20580
+       20.580.000 (puntos de más)                                    -> 20580
+       1.234.567                                                     -> 1234567
+       12,5 · 12.5 (un decimal)                                      -> 12,5
+     Sin letras ni "kg". Vacío o sin número = NaN. */
+  function numeroCert(valor){
+    if (typeof valor === 'number') return valor;
+    let x = String(valor == null ? '' : valor).toUpperCase().replace(/KGS?|KILOS?|\s/g, '').replace(/[.,]+$/, '');
+    if (!/^\d[\d.,]*$/.test(x)) return NaN;
+    const ult = Math.max(x.lastIndexOf('.'), x.lastIndexOf(','));
+    if (ult < 0) return Number(x);
+    const sep = x.charAt(ult), otro = sep === '.' ? ',' : '.';
+    const entero = x.slice(0, ult), cola = x.slice(ult + 1);
+    let n;
+    if (x.indexOf(otro) > -1) n = Number(entero.split(otro).join('').split(sep).join('') + '.' + cola);
+    else if (x.split(sep).length > 2) {
+      const g = x.split(sep);
+      n = Number(g.join(''));
+      if (n > 100000 && g.length === 3 && g[2] === '000') n = Number(g[0] + g[1] + '.' + g[2]);
     }
-    return parseFloat(s);
+    else if (cola.length === 3 && entero.length >= 1 && entero.length <= 3 && entero !== '0') n = Number(entero + cola);
+    else n = Number(entero + '.' + cola);
+    return n;
   }
+  window.numeroCertificado = numeroCert;
+  function parseNumeroFlexible(s){ return numeroCert(s); }
 
   // Itemizar por viaje/manifiesto: convierte una lista de cantidades pegadas (una por
   // línea, o separadas por coma/espacio) en una fila de "Materiales" por cada una, todas
@@ -27553,7 +27583,7 @@ window.mapaActivar = function(){ cargarMapa(false); refrescarMapaSiToca(MAPA_AL_
   }
 
   function formatKg(valor){
-    const num = parseFloat(String(valor).replace(/,/g, '')) || 0;
+    const num = numeroCert(valor) || 0;
     let fixed = num.toFixed(3);
     let [intPart, decPart] = fixed.split('.');
     decPart = decPart.replace(/0+$/, '');
@@ -27566,7 +27596,7 @@ window.mapaActivar = function(){ cargarMapa(false); refrescarMapaSiToca(MAPA_AL_
   function formatCantidad(valor){
     const unidad = document.getElementById('unidadCertificacion').value;
     if (unidad === 'viajes'){
-      const num = Math.round(parseFloat(String(valor).replace(/,/g, '')) || 0);
+      const num = Math.round(numeroCert(valor) || 0);
       return String(num).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
     }
     return formatKg(valor);
@@ -27883,7 +27913,7 @@ window.mapaActivar = function(){ cargarMapa(false); refrescarMapaSiToca(MAPA_AL_
     tbody.innerHTML = '';
     let total = 0;
     materiales.forEach((m, i) => {
-      const cantNum = parseFloat(String(m.cantidad).replace(/,/g, '')) || 0;
+      const cantNum = numeroCert(m.cantidad) || 0;
       total += cantNum;
       const tr = document.createElement('tr');
       const tdItem = document.createElement('td');
@@ -28531,7 +28561,7 @@ window.mapaActivar = function(){ cargarMapa(false); refrescarMapaSiToca(MAPA_AL_
       lista = [{ descripcion: rec.Descripcion, cantidad: rec['Cantidad KG'] || '' }];
     }
     let total = 0;
-    lista.forEach(m => { total += parseFloat(String(m.cantidad).replace(/,/g,'')) || 0; });
+    lista.forEach(m => { total += (window.numeroCertificado ? window.numeroCertificado(m.cantidad) : parseFloat(m.cantidad)) || 0; });
     const nombres = lista.map(m => m.descripcion).filter(Boolean).join(', ');
     return { total, nombres, cantidad: lista.length };
   }
@@ -28854,7 +28884,7 @@ window.mapaActivar = function(){ cargarMapa(false); refrescarMapaSiToca(MAPA_AL_
         // declarado en el certificado. Si coincide casi exacto, son casi con certeza los
         // mismos viajes aunque el texto del material sea distinto.
         if (!candidatos.length && enRangoOperacionLibres.length){
-          const totalCertificado = materiales.reduce((s, m) => s + (parseFloat(String(m.cantidad).replace(/,/g,'')) || 0), 0);
+          const totalCertificado = materiales.reduce((s, m) => s + ((window.numeroCertificado ? window.numeroCertificado(m.cantidad) : parseFloat(m.cantidad)) || 0), 0);
           const totalRango = enRangoOperacionLibres.reduce((s, f) => s + f.peso, 0);
           if (totalCertificado > 0 && Math.abs(totalRango - totalCertificado) < 0.5){
             candidatos = enRangoOperacionLibres;
