@@ -16718,12 +16718,26 @@ async function remote(action, payload){
   const cuerpo = Object.assign({ action }, payload || {});
   if(CSC_LECTURAS.indexOf(action) === -1 && !cuerpo.idCliente) cuerpo.idCliente = cscIdPedido();
   const pesado = !!(cuerpo.firmaDataUrl || cuerpo.foto || cuerpo.dataUrl);
-  const limite = pesado ? 120000 : 45000;
+  /* Tope por intento: 35 s sin foto, 50 s con foto. Lo normal es 4 a 8 s;
+     el tope es para no quedarse esperando a un Google trabado. Cortar antes
+     es seguro: el reintento lleva el mismo idCliente y, si el primero sí
+     llegó, el servidor responde "ya estaba" sin sumar nada. (La app de
+     ingreso v28 espera 150 s porque NO tiene esa protección.) */
+  const limite = pesado ? 50000 : 35000;
   let avisado = false;
+  /* Medicion: cuanto pesa el envio y cuanto tardo cada intento. Queda en
+     window.cscTiempos (los ultimos 20) para saber donde se va la espera. */
+  const med = { accion: action, kb: Math.round(JSON.stringify(cuerpo).length / 1024), intentos: [], inicio: Date.now() };
+  const anotar = (r) => { med.totalMs = Date.now() - med.inicio;
+    try { (window.cscTiempos = window.cscTiempos || []).push(med); window.cscTiempos.splice(0, window.cscTiempos.length - 20); } catch(x){}
+    return r; };
   for(let i = 0; ; i++){
-    try { return await remoteUnaVez(cuerpo, limite); }
+    const t0 = Date.now();
+    try { const r = await remoteUnaVez(cuerpo, limite); med.intentos.push(Date.now() - t0); return anotar(r); }
     catch(e){
+      med.intentos.push(Date.now() - t0); med.ultimoError = e.message;
       if(!e.transitorio || i >= CSC_ESPERAS.length){
+        anotar();
         if(e.transitorio) e.message = e.message + ' (después de ' + (i + 1) + ' intentos).';
         throw e;
       }
@@ -16733,6 +16747,21 @@ async function remote(action, payload){
       await new Promise(r => setTimeout(r, CSC_ESPERAS[i]));
     }
   }
+}
+/* Si un guardado tardo mas de 15 s, se dice en que se fue el tiempo:
+   esperando otro guardado de esta misma pantalla, subiendo el envio
+   (lo que pesa la foto) o reintentos por Google. */
+function cscAvisarDemora(tCola, t0){
+  const total = Date.now() - t0;
+  const m = (window.cscTiempos || []).slice(-1)[0];
+  if(total < 15000 || !m) return;
+  const seg = (ms) => Math.round(ms / 1000) + ' s';
+  const partes = [];
+  if(tCola > 2000) partes.push('esperó otro guardado ' + seg(tCola));
+  partes.push('envío de ' + m.kb + ' KB: ' + m.intentos.map(seg).join(' + ') + (m.intentos.length > 1 ? ' (' + m.intentos.length + ' intentos)' : ''));
+  const texto = 'Tardó ' + seg(total) + ' · ' + partes.join(' · ');
+  console.info('Cadena · demora:', texto, m);
+  try { toast(texto); } catch(x){}
 }
 /* Estado de la conexion con el servidor. Vacio = todo bien. Se declara
    aca arriba porque applyState() la toca, y applyState corre antes que
@@ -16906,8 +16935,11 @@ const API = {
      de que quedo registrado y al recargar no habria nada. */
   ingresoBodega: async (datos)=>{
     if(MODO!=='remoto') throw new Error('Se necesita conexion con el servidor para registrar existencias.');
+    const t0 = Date.now();
     await saveChain;
+    const tCola = Date.now() - t0;
     const r = await remote('ingresoBodega', Object.assign({ responsable: (session&&session.nombre)||'' }, datos));
+    cscAvisarDemora(tCola, t0);
     if(!r || r.ok===false) throw new Error((r&&r.error) || 'No se pudo registrar el ingreso');
     applyState(r);
     return r;
@@ -23487,7 +23519,12 @@ function guardarEnCola(cuerpo, etiqueta){
 async function enviarUnaVez(cuerpo){
   var u = urlCadena();
   if(!u){ var e0 = new Error('Falta la URL del servicio de Cadena de Abastecimiento.'); throw e0; }
-  var limite = cuerpo.foto ? 120000 : 45000;
+  /* Tope por intento: 35 s sin foto, 50 s con foto. Lo normal es 4 a 8 s;
+     el tope es para no quedarse esperando a un Google trabado. Cortar antes
+     es seguro: el reintento lleva el mismo idCliente y, si el primero sí
+     llegó, el servidor responde "ya estaba" sin sumar nada. (La app de
+     ingreso v28 espera 150 s porque NO tiene esa protección.) */
+  var limite = cuerpo.foto ? 50000 : 35000;
   var ctl = window.AbortController ? new AbortController() : null;
   var reloj = ctl ? setTimeout(function(){ ctl.abort(); }, limite) : null;
   var t;
