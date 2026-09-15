@@ -2741,6 +2741,13 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
 
 /* Cada vano es donde se puede crear una pila. */
 #panel-mapa .vano{cursor:pointer;fill:transparent;stroke:none}
+#panel-mapa .mapa-cola{display:inline-flex;align-items:center;gap:6px;font:600 12px var(--sans,sans-serif);padding:3px 8px;border-radius:12px;white-space:nowrap}
+#panel-mapa .mapa-cola.enviando{color:#1e5fae;background:#e8f0fb}
+#panel-mapa .mapa-cola.enviando::before{content:'';width:7px;height:7px;border-radius:50%;background:#1e5fae;animation:colaPulso 1s ease-in-out infinite}
+#panel-mapa .mapa-cola.esperando{color:#8a4b00;background:#fff6e0;cursor:pointer}
+#panel-mapa .mapa-cola.ok{color:#2e7d32;background:#e9f5ea}
+#panel-mapa .mapa-cola.error{color:#9b1c1c;background:#fdecec;cursor:pointer}
+@keyframes colaPulso{0%,100%{opacity:.3}50%{opacity:1}}
 #panel-mapa .z text.pila-nombre{font-weight:600;fill:#23405e;pointer-events:none;text-anchor:middle}
 #panel-mapa .z.t-almacen polygon{fill:#fcfdfc}
 #panel-mapa .vano:hover{fill:rgba(192,138,46,.22)}
@@ -3372,13 +3379,13 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <!-- Certificado de disposicion: misma lista blanca que Operaciones. -->
   <div class="nav-tab" data-panel="certificado" data-users-only="gerencia,sub-gerencia,juan,auditoria" onclick="showPanel('certificado',this)" style="display:none"><span class="nav-lbl">Certificado</span></div>
   <div class="nav-tab" data-panel="mapa" onclick="showPanel('mapa',this)"><span class="nav-lbl">Mapa de Planta</span></div>
+  <div class="nav-tab" data-panel="csc-inventario" onclick="showPanel('csc-inventario',this)"><span class="nav-lbl">Cadena · Inventario</span></div>
   <div class="nav-sep"></div>
   <div class="nav-tab" data-panel="csc-resumen" onclick="showPanel('csc-resumen',this)"><span class="nav-lbl">Cadena · Resumen</span></div>
   <div class="nav-tab" data-panel="csc-compras" onclick="showPanel('csc-compras',this)"><span class="nav-lbl">Cadena · Compras</span></div>
   <div class="nav-tab" data-panel="csc-aprobaciones" onclick="showPanel('csc-aprobaciones',this)"><span class="nav-lbl">Cadena · Aprobaciones</span></div>
   <div class="nav-tab" data-panel="csc-pagos" onclick="showPanel('csc-pagos',this)"><span class="nav-lbl">Cadena · Pagos</span></div>
   <div class="nav-tab" data-panel="csc-recepcion" onclick="showPanel('csc-recepcion',this)"><span class="nav-lbl">Cadena · Recepción</span></div>
-  <div class="nav-tab" data-panel="csc-inventario" onclick="showPanel('csc-inventario',this)"><span class="nav-lbl">Cadena · Inventario</span></div>
   <div class="nav-sep"></div>
   <div class="nav-tab" data-panel="preopequipo" onclick="showPanel('preopequipo',this)"><span class="nav-lbl">Preop. Equipo Pesado</span></div>
   <div class="nav-tab" data-panel="dalas" onclick="showPanel('dalas',this)"><span class="nav-lbl">Dalas_Solutions</span></div>
@@ -3912,6 +3919,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <div class="mapa-barra">
     <button class="mapa-btn" id="mapaExpandir">Expandir</button>
     <button class="mapa-btn" id="mapaRecargar">Actualizar</button>
+    <span class="mapa-cola" id="mapaCola" style="display:none"></span>
     <button class="mapa-btn" id="mapaNuevaAct">Nueva actividad</button>
     <button class="mapa-btn" id="mapaPendientes">Pendientes</button>
     <button class="mapa-btn" id="mapaTablero">Registro de actividades</button>
@@ -16669,9 +16677,62 @@ function barraSimple(label, count, max, color) {
 const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbz6OvMI5muB683I7TWTirRlp-sl_II95tCEx47GmKmEdI4dmFALf-TWZODRRLHNdkFJ/exec';   // ej: 'https://script.google.com/macros/s/AKfy.../exec'
 const MODO = BACKEND_URL ? 'remoto' : 'demo';
 
+/* ── HABLAR CON EL SERVIDOR SIN QUE UN TROPIEZO DE GOOGLE SE NOTE ──────
+   Medido el 15/09: la carga tarda 4 a 6 s, con picos de 15 a 22 s, y de
+   vez en cuando Google devuelve su página de error en vez de los datos.
+   Antes había un solo intento sin tiempo máximo: una carga vacía o
+   "No se pudo guardar (revisa tu conexión)".
+   Ahora cada pedido tiene tiempo máximo y se reintenta solo (5 intentos,
+   unos 35 s). Los guardados llevan un id (idCliente) que el servidor usa
+   para no repetir lo que ya hizo: reintentar un ingreso de stock no lo
+   suma dos veces. Si el servidor RECHAZA algo, eso no se reintenta: se
+   devuelve como siempre para que la pantalla lo diga. */
+const CSC_LECTURAS = ['bootstrap', 'estado', 'historialInventario'];
+const CSC_ESPERAS = [1500, 4000, 9000, 20000];
+
+function cscIdPedido(){
+  const a = new Uint8Array(6);
+  (window.crypto || window.msCrypto).getRandomValues(a);
+  return Array.prototype.map.call(a, b => ('0' + b.toString(16)).slice(-2)).join('').toUpperCase();
+}
+
+async function remoteUnaVez(cuerpo, limite){
+  const ctl = window.AbortController ? new AbortController() : null;
+  const reloj = ctl ? setTimeout(() => ctl.abort(), limite) : null;
+  let t;
+  try{
+    const r = await fetch(BACKEND_URL, { method:'POST', body: JSON.stringify(cuerpo), signal: ctl ? ctl.signal : undefined });
+    t = await r.text();
+  }catch(e){
+    const err = new Error(e && e.name === 'AbortError' ? 'Google no respondió a tiempo' : 'Sin conexión con Google');
+    err.transitorio = true; throw err;
+  }finally{ if(reloj) clearTimeout(reloj); }
+  let d;
+  try { d = JSON.parse(t); }
+  catch(e){ const err = new Error('Google devolvió una página en vez de los datos'); err.transitorio = true; throw err; }
+  if(d && d.ok === false && d.reintentar){ const err = new Error(d.error || 'Servidor ocupado'); err.transitorio = true; throw err; }
+  return d;
+}
+
 async function remote(action, payload){
-  const r = await fetch(BACKEND_URL, { method:'POST', body: JSON.stringify(Object.assign({action}, payload||{})) });
-  return r.json();
+  const cuerpo = Object.assign({ action }, payload || {});
+  if(CSC_LECTURAS.indexOf(action) === -1 && !cuerpo.idCliente) cuerpo.idCliente = cscIdPedido();
+  const pesado = !!(cuerpo.firmaDataUrl || cuerpo.foto || cuerpo.dataUrl);
+  const limite = pesado ? 120000 : 45000;
+  let avisado = false;
+  for(let i = 0; ; i++){
+    try { return await remoteUnaVez(cuerpo, limite); }
+    catch(e){
+      if(!e.transitorio || i >= CSC_ESPERAS.length){
+        if(e.transitorio) e.message = e.message + ' (después de ' + (i + 1) + ' intentos).';
+        throw e;
+      }
+      /* Solo se avisa si ya van dos tropiezos: uno solo pasa sin que nadie lo note. */
+      if(i === 1 && !avisado){ avisado = true; try { toast('Conexión lenta con Google, reintentando…'); } catch(x){} }
+      console.info('Cadena · ' + action + ' se reintenta:', e.message);
+      await new Promise(r => setTimeout(r, CSC_ESPERAS[i]));
+    }
+  }
 }
 /* Estado de la conexion con el servidor. Vacio = todo bien. Se declara
    aca arriba porque applyState() la toca, y applyState corre antes que
@@ -16704,7 +16765,7 @@ let saveChain = Promise.resolve();
 function persist(action, payload){
   saveChain = saveChain.then(()=> remote(action, payload)
     .then(r=>{ if(r && r.ok===false) toast('El servidor rechazó un cambio','bad'); })
-    .catch(()=>toast('No se pudo guardar (revisa tu conexión)','bad')));
+    .catch((e)=>toast('No se pudo guardar: ' + ((e && e.message) || 'sin conexión con Google') + ' Revisá antes de repetirlo.','bad')));
   return saveChain;
 }
 
@@ -16820,7 +16881,9 @@ const API = {
     return it;
   },
   pushInventory: async (it)=>{ // contabilidad → almacén
-    if(MODO==='remoto'){ await saveChain; applyState(await remote('pushInventory',{item:it})); return; }
+    if(MODO==='remoto'){ await saveChain; const r = await remote('pushInventory',{item:it});
+      if(!r || r.ok===false) throw new Error((r&&r.error) || 'No se pudo enviar a inventario');
+      applyState(r); return; }
     it.estado='en_inventario'; const cat=CAT[it.categoria];
     let inv=DB.inventario.find(x=>x.item.toLowerCase()===it.descripcion.toLowerCase());
     if(!inv){ inv={id:uid('IN-'),categoria:it.categoria,item:it.descripcion,unidad:it.unidad,stock:0,minimo:0,ubicacion:'Por asignar'}; DB.inventario.push(inv); }
@@ -16829,7 +16892,9 @@ const API = {
     log('ingreso_inventario','item',it.id);
   },
   deliver: async (it,receptor,cargo,firma)=>{ // almacén firma el acta de recepción
-    if(MODO==='remoto'){ await saveChain; applyState(await remote('deliver',{id:it.id,receptor,cargo,firmaDataUrl:firma})); return; }
+    if(MODO==='remoto'){ await saveChain; const r = await remote('deliver',{id:it.id,receptor,cargo,firmaDataUrl:firma});
+      if(!r || r.ok===false) throw new Error((r&&r.error) || 'No se pudo registrar la entrega');
+      applyState(r); return; }
     it.estado='entregada'; it.entrega={receptor,cargo,firma,fecha:now()};
     log('recepcion_firmada','item',it.id);   // el stock NO baja aquí; solo con "Registrar salida"
   },
@@ -16901,7 +16966,9 @@ const API = {
     return r;
   },
   invMove: async (inv,tipo,cant,motivo)=>{
-    if(MODO==='remoto'){ await saveChain; applyState(await remote('invMove',{invId:inv.id,tipo,cantidad:cant,motivo})); return; }
+    if(MODO==='remoto'){ await saveChain; const r = await remote('invMove',{invId:inv.id,tipo,cantidad:cant,motivo});
+      if(!r || r.ok===false) throw new Error((r&&r.error) || 'No se pudo registrar el movimiento');
+      applyState(r); return; }
     inv.stock = tipo==='entrada'? inv.stock+cant : Math.max(0,inv.stock-cant);
     DB.movimientos.unshift({id:uid('MV-'),inventarioId:inv.id,item:inv.item,tipo,cantidad:cant,fecha:now(),responsable:session.nombre,receptor:'',cargo:'',firma:''});
     log('movimiento_'+tipo,'inventario',inv.id);
@@ -17536,8 +17603,11 @@ function openPay(it){
     it.pago={estado:c.estado,metodo:$('#p-met').value,base:c.b,ivaPct:c.ip,iva:c.iva,total:c.total,
       pagado:c.pag,saldo:c.saldo,vencimiento:$('#p-venc').value,factura:facturaUrl,
       historial:[{fecha:now(),monto:c.pag}]};
-    await API.pushInventory(it); log('registrar_pago','item',it.id);
-    toast('Pago registrado · enviado a inventario','gold'); closeModal(); refresh();
+    const bp = $('#p-do'); bp.disabled = true; const tp = bp.textContent; bp.textContent = 'Guardando…';
+    try{
+      await API.pushInventory(it); log('registrar_pago','item',it.id);
+      toast('Pago registrado · enviado a inventario','gold'); closeModal(); refresh();
+    }catch(e){ bp.disabled = false; bp.textContent = tp; toast(e.message,'bad'); }
   };
 }
 
@@ -17597,8 +17667,11 @@ function openDeliver(it){
   $('#d-do').onclick=async ()=>{
     if(empty){toast('Falta la firma del receptor','bad');return;}
     const [nombre,cargo]=$('#d-rec').value.split('|');
-    await API.deliver(it,nombre,cargo,cv.toDataURL());
-    toast('Entrega registrada con firma ✓'); closeModal(); refresh();
+    const bd = $('#d-do'); if(bd.disabled) return; bd.disabled = true; const td = bd.textContent; bd.textContent = 'Guardando…';
+    try{
+      await API.deliver(it,nombre,cargo,cv.toDataURL());
+      toast('Entrega registrada con firma ✓'); closeModal(); refresh();
+    }catch(e){ bd.disabled = false; bd.textContent = td; toast(e.message,'bad'); }
   };
 }
 
@@ -17818,7 +17891,10 @@ function openInvOut(inv){
   $('#o-do').onclick=async ()=>{ const c=+$('#o-cant').value||0;
     if(c<=0){toast('Cantidad inválida','bad');return;}
     if(c>Number(inv.stock)){toast('No puedes sacar más de '+inv.stock+' '+inv.unidad,'bad');return;}
-    await API.invMove(inv,'salida',c,$('#o-mot').value.trim()); toast('Salida registrada'); closeModal(); render(); };
+    const bo = $('#o-do'); if(bo.disabled) return; bo.disabled = true; const to = bo.textContent; bo.textContent = 'Guardando…';
+    try{
+      await API.invMove(inv,'salida',c,$('#o-mot').value.trim()); toast('Salida registrada'); closeModal(); render();
+    }catch(e){ bo.disabled = false; bo.textContent = to; toast(e.message,'bad'); } };
 }
 
 /* ---------- ESTADO DE UN ARTICULO (maquinaria, herramienta) ---------- */
@@ -23357,6 +23433,250 @@ function quienSoy(){
 }
 
 /* ══════════════════════════════════════════════════════════════════
+   COLA DE GUARDADOS
+   ------------------------------------------------------------------
+   Medido el 15/09: guardar tardaba 5 a 10 s o más (el servidor escribía
+   y devolvía el mapa entero, y además subía la foto), la pantalla
+   quedaba bloqueada todo ese tiempo y, si la señal fallaba o Google
+   perdía la respuesta, saltaba una alerta — muchas veces de algo que sí
+   se había guardado.
+
+   Ahora:
+   · Lo que se guarda aparece al instante en el mapa y el formulario se
+     cierra. El envío va en una cola, en orden, en segundo plano.
+   · Cada guardado lleva un id generado acá (idCliente). El servidor lo
+     usa para no hacer dos veces lo mismo, así que un corte de señal se
+     resuelve reintentando solo, sin duplicar nada.
+   · La cola se guarda en el navegador: si se cierra o recarga la página
+     con cosas pendientes, se retoman al volver.
+   · En vez de alertas, un indicador chico en la barra. Solo se avisa si
+     el servidor RECHAZA algo (por ejemplo "No existe la zona").
+   ══════════════════════════════════════════════════════════════════ */
+var COLA_CLAVE = 'horti_mapa_cola_v1';
+var COLA = [];
+var COLA_ENVIANDO = false, COLA_ESPERA = null, COLA_RELOJ = null;
+var COLA_ULTIMO_OK = 0, COLA_ERROR = '', COLA_SOLO_MEMORIA = false;
+var COLA_ESPERAS = [3000, 8000, 15000, 30000, 60000];
+
+try { COLA = JSON.parse(localStorage.getItem(COLA_CLAVE) || '[]'); if(!Array.isArray(COLA)) COLA = []; }
+catch(e){ COLA = []; }
+
+function colaGuardar(){
+  try { localStorage.setItem(COLA_CLAVE, JSON.stringify(COLA)); COLA_SOLO_MEMORIA = false; }
+  catch(e){ COLA_SOLO_MEMORIA = true; }      /* sin espacio (muchas fotos): sigue en memoria */
+}
+
+function nuevoIdCliente(){
+  var a = new Uint8Array(6);
+  (window.crypto || window.msCrypto).getRandomValues(a);
+  return Array.prototype.map.call(a, function(b){ return ('0' + b.toString(16)).slice(-2); }).join('').toUpperCase();
+}
+
+/* Guarda: pinta el cambio ya, y lo manda en segundo plano. */
+function guardarEnCola(cuerpo, etiqueta){
+  var c = Object.assign({}, cuerpo, { idCliente: nuevoIdCliente(), sinEstado: true });
+  COLA.push({ cuerpo: c, etiqueta: etiqueta || 'Cambio', intentos: 0, creado: Date.now() });
+  colaGuardar();
+  aplicarLocal(c);
+  pintar();
+  pintarCola();
+  procesarCola();
+  return c.idCliente;
+}
+
+async function enviarUnaVez(cuerpo){
+  var u = urlCadena();
+  if(!u){ var e0 = new Error('Falta la URL del servicio de Cadena de Abastecimiento.'); throw e0; }
+  var limite = cuerpo.foto ? 120000 : 45000;
+  var ctl = window.AbortController ? new AbortController() : null;
+  var reloj = ctl ? setTimeout(function(){ ctl.abort(); }, limite) : null;
+  var t;
+  try{
+    var r = await fetch(u, { method:'POST', body: JSON.stringify(cuerpo), signal: ctl ? ctl.signal : undefined });
+    t = await r.text();
+  }catch(e){
+    var e1 = new Error(e && e.name === 'AbortError' ? 'Google no respondió a tiempo' : 'Sin conexión con Google');
+    e1.transitorio = true; throw e1;
+  }finally{ if(reloj) clearTimeout(reloj); }
+  var d;
+  try { d = JSON.parse(t); }
+  catch(e){ var e2 = new Error('Google devolvió una página en vez de la respuesta'); e2.transitorio = true; throw e2; }
+  if(!d || d.ok === false){
+    var e3 = new Error((d && d.error) || 'El servidor no lo aceptó');
+    e3.transitorio = !!(d && d.reintentar);       /* "ocupado con otro guardado": se reintenta */
+    throw e3;
+  }
+  return d;
+}
+
+async function procesarCola(){
+  if(COLA_ENVIANDO) return;
+  clearTimeout(COLA_ESPERA); COLA_ESPERA = null;
+  if(!COLA.length){ pintarCola(); return; }
+  COLA_ENVIANDO = true;
+  var huboCambios = false;
+  try{
+    while(COLA.length){
+      var item = COLA[0];
+      item.esperandoHasta = 0;
+      pintarCola();
+      try{
+        await enviarUnaVez(item.cuerpo);
+        COLA.shift(); colaGuardar();
+        huboCambios = true; COLA_ULTIMO_OK = Date.now();
+      }catch(e){
+        if(!e.transitorio){
+          /* Rechazo de verdad: no tiene sentido insistir. Se saca de la cola
+             y se avisa; el mapa se vuelve a leer para deshacer lo pintado. */
+          COLA.shift(); colaGuardar();
+          huboCambios = true;
+          COLA_ERROR = item.etiqueta + ' no se guardó: ' + e.message;
+          console.warn('Mapa · rechazado:', item.cuerpo.action, e.message);
+          continue;
+        }
+        item.intentos++;
+        var espera = COLA_ESPERAS[Math.min(item.intentos - 1, COLA_ESPERAS.length - 1)];
+        item.esperandoHasta = Date.now() + espera;
+        item.motivo = e.message;
+        colaGuardar();
+        console.info('Mapa · se reintenta en ' + (espera / 1000) + ' s:', e.message);
+        COLA_ESPERA = setTimeout(procesarCola, espera);
+        return;
+      }
+    }
+  }finally{
+    COLA_ENVIANDO = false;
+    pintarCola();
+    /* Terminada la cola, se lee el mapa del servidor para quedar igual a
+       la hoja (fotos con su enlace, ids definitivos). */
+    if(huboCambios && !COLA.length) cargarMapa(true);
+  }
+}
+
+function pintarCola(){
+  var el = $m('mapaCola');
+  if(!el) return;
+  clearInterval(COLA_RELOJ); COLA_RELOJ = null;
+  var n = COLA.length;
+  if(COLA_ERROR){
+    el.className = 'mapa-cola error'; el.style.display = '';
+    el.textContent = COLA_ERROR + '  ✕';
+    el.title = 'Tocá para cerrar el aviso';
+    el.onclick = function(){ COLA_ERROR = ''; pintarCola(); };
+    return;
+  }
+  if(n){
+    var primero = COLA[0];
+    if(primero.esperandoHasta && primero.esperandoHasta > Date.now()){
+      el.className = 'mapa-cola esperando'; el.style.display = '';
+      var pintarEspera = function(){
+        var seg = Math.max(0, Math.ceil((primero.esperandoHasta - Date.now()) / 1000));
+        el.textContent = 'Sin señal con Google · ' + n + (n === 1 ? ' pendiente' : ' pendientes') + ' · reintenta en ' + seg + ' s';
+      };
+      pintarEspera();
+      COLA_RELOJ = setInterval(pintarEspera, 1000);
+      el.title = (primero.motivo || '') + '\nLo pendiente está guardado en este teléfono y se manda solo. Tocá para reintentar ya.' +
+                 (COLA_SOLO_MEMORIA ? '\nOJO: no hay espacio para guardarlo en el navegador; no cierres la página.' : '');
+      el.onclick = function(){ procesarCola(); };
+    } else {
+      el.className = 'mapa-cola enviando'; el.style.display = '';
+      el.textContent = 'Guardando' + (n > 1 ? ' ' + n : '') + '…';
+      el.title = COLA.map(function(x){ return x.etiqueta; }).join('\n');
+      el.onclick = null;
+    }
+    return;
+  }
+  if(Date.now() - COLA_ULTIMO_OK < 3500){
+    el.className = 'mapa-cola ok'; el.style.display = '';
+    el.textContent = '✓ Guardado'; el.title = ''; el.onclick = null;
+    setTimeout(pintarCola, 3600);
+    return;
+  }
+  el.style.display = 'none';
+}
+
+/* Lo pendiente se vuelve a pintar encima de lo que llega del servidor,
+   para que un cambio no "desaparezca" mientras espera su turno. */
+function reaplicarPendientes(){
+  COLA.forEach(function(it){ try { aplicarLocal(it.cuerpo); } catch(e){} });
+}
+
+/* El cambio, pintado en la memoria del mapa sin esperar al servidor.
+   Usa los mismos ids que va a usar el servidor (prefijo + idCliente). */
+function aplicarLocal(c){
+  var ahora = new Date().toISOString(), idc = c.idCliente, yo = c.responsable || '';
+  M.reportes = M.reportes || []; M.pilas = M.pilas || []; M.actividades = M.actividades || []; M.evaluaciones = M.evaluaciones || [];
+  var act = function(id){ return M.actividades.filter(function(a){ return a.id === id; })[0]; };
+  switch(c.action){
+    case 'reportarEstado':
+    case 'reportarNovedad':
+      var esEstado = c.action === 'reportarEstado';
+      var idR = (esEstado ? 'RE-' : 'NV-') + idc;
+      if(M.reportes.some(function(r){ return r.id === idR; })) return;
+      M.reportes.unshift({ id:idR, fecha:ahora, tipo: esEstado ? 'estado' : 'novedad', zonaId:c.zonaId,
+        vano: Number(c.vano) || '', condicion:c.condicion || '', titulo:c.titulo || '', observacion:c.observacion || '',
+        foto: c.foto ? 'subiendo' : '', reportadoPor:yo, estado: esEstado ? 'registrado' : 'abierta',
+        fechaCierre:'', cerradoPor:'', notaCierre:'', pendiente:true });
+      break;
+    case 'resolverNovedad':
+      var rn = M.reportes.filter(function(r){ return r.id === c.id; })[0];
+      if(rn){ rn.estado = 'resuelta'; rn.notaCierre = c.nota || ''; rn.cerradoPor = yo; rn.fechaCierre = rn.fechaCierre || ahora; }
+      break;
+    case 'guardarPila':
+    case 'renombrarPila':
+      var p = pilaDe(c.zonaId, Number(c.vano));
+      if(!p){ p = { id:'PL-' + idc, zonaId:c.zonaId, vano:Number(c.vano), estado:'vacia', material:'', observacion:'', nombre:'' }; M.pilas.push(p); }
+      if(c.action === 'guardarPila'){
+        p.estado = c.estado || p.estado;
+        if(c.observacion !== undefined) p.observacion = c.observacion;
+        if(!p.fechaInicio) p.fechaInicio = ahora;
+      }
+      if(c.nombre !== undefined) p.nombre = c.nombre;
+      break;
+    case 'crearActividad':
+      var idA = 'AC-' + idc;
+      if(act(idA)) return;
+      var zs = (c.zonaIds && c.zonaIds.length) ? c.zonaIds.slice() : [c.zonaId];
+      M.actividades.unshift({ id:idA, fecha:ahora, nombre:c.nombre, descripcion:c.descripcion || '', criterio:c.criterio,
+        zonaId:zs[0], zonaIds:zs, alcance: zs.length > 1 ? 'zona' : (c.alcance || 'zona'),
+        vanoDesde:Number(c.vanoDesde) || 0, vanoHasta:Number(c.vanoHasta) || 0, responsable:yo,
+        fechaLimite:c.fechaLimite || '', plazo:c.plazo || '', estado:'abierta', etapa:'', activa:true, pendiente:true });
+      break;
+    case 'evaluarActividad':
+      var idE = 'EV-' + idc;
+      if(M.evaluaciones.some(function(x){ return x.id === idE; })) return;
+      M.evaluaciones.unshift({ id:idE, actividadId:c.actividadId, fecha:ahora, resultado:c.resultado,
+        observacion:c.observacion || '', foto: c.foto ? 'subiendo' : '', evaluadaPor:yo, pendiente:true });
+      if(c.cerrar && act(c.actividadId)) act(c.actividadId).estado = 'cerrada';
+      break;
+    case 'avanceActividad':
+      var idV = 'AV-' + idc;
+      if(M.evaluaciones.some(function(x){ return x.id === idV; })) return;
+      M.evaluaciones.unshift({ id:idV, actividadId:c.id, fecha:ahora, resultado:'avance',
+        observacion:(c.etapa ? c.etapa + ' — ' : '') + (c.motivo || ''), foto: c.foto ? 'subiendo' : '', evaluadaPor:yo, pendiente:true });
+      var av = act(c.id);
+      if(av){ av.etapa = c.etapa || av.etapa; if(av.estado !== 'cerrada') av.estado = 'en_proceso'; }
+      break;
+    case 'cerrarActividad':
+      if(act(c.id)) act(c.id).estado = c.estado;
+      break;
+    case 'estadoInventario':
+      inventario().concat(M.inventario || []).forEach(function(x){
+        if(x.id !== c.invId) return;
+        x.estado = c.estado; x.estadoNota = c.nota || ''; x.estadoFecha = ahora;
+      });
+      break;
+    case 'ubicarItem':
+      var zu = zonaPorId(c.zonaId);
+      inventario().concat(M.inventario || []).forEach(function(x){ if(x.id === c.invId && zu) x.ubicacion = zu.nombre; });
+      break;
+  }
+}
+
+window.addEventListener('online', function(){ procesarCola(); });
+document.addEventListener('visibilitychange', function(){ if(!document.hidden && COLA.length) procesarCola(); });
+
+/* ══════════════════════════════════════════════════════════════════
    EL PLANO VIVE EN EL CODIGO
    ------------------------------------------------------------------
    Antes el dibujo entero se le pedia al servidor cada vez que se abria
@@ -23567,6 +23887,7 @@ function aplicarEstadoMapa(d){
   if(d.reportes)     M.reportes     = d.reportes;
   if(d.terminos && d.terminos.length) M.terminos = d.terminos;
   M.cargado = true;
+  reaplicarPendientes();
   estadoMapa('');
   pintar();
   return true;
@@ -23605,6 +23926,11 @@ async function cargarMapa(forzar){
     M.actividades  = d.actividades || [];
     M.evaluaciones = d.evaluaciones || [];
     M.reportes     = d.reportes || [];
+    reaplicarPendientes();
+    /* Lo que quedó pendiente de otra vez (se cerró la página, se cortó la
+       señal) se retoma solo al abrir el mapa. */
+    pintarCola();
+    if(COLA.length && !COLA_ENVIANDO && !COLA_ESPERA) setTimeout(procesarCola, 0);
     /* Si la hoja de terminos esta vacia se conservan los de aca: sin
        ellos no se podria registrar una actividad. */
     M.terminos = (d.terminos && d.terminos.length) ? d.terminos : MAPA_TERMINOS_BASE.slice();
@@ -23620,9 +23946,18 @@ async function cargarMapa(forzar){
     /* El mensaje va SIN el volcado de la página de Google: no le dice
        nada a nadie y tapaba lo único accionable, que es reintentar. El
        detalle queda en la consola para cuando haga falta. */
-    estadoMapa('No se pudo hablar con el servidor después de tres intentos. El plano se ve ' +
-               'igual, pero las pilas y las actividades pueden estar desactualizadas. ' +
-               'Tocá «Actualizar» para volver a intentar.', true);
+    /* Si ya había datos en pantalla, no se tapa el mapa con un cartel: se
+       vuelve a intentar solo en 30 s. El cartel queda para cuando nunca
+       se pudo cargar nada. */
+    if(M.cargado){
+      estadoMapa('');
+      clearTimeout(M.reintentoLectura);
+      M.reintentoLectura = setTimeout(function(){ cargarMapa(true); }, 30000);
+    } else {
+      estadoMapa('No se pudo leer el mapa del servidor. El plano se ve igual; se vuelve a intentar solo en 30 s.', true);
+      clearTimeout(M.reintentoLectura);
+      M.reintentoLectura = setTimeout(function(){ cargarMapa(true); }, 30000);
+    }
     console.warn('Mapa · el servidor no respondió:', err.message);
   }finally{ M.cargando = false; }
 }
@@ -24334,16 +24669,7 @@ async function confirmarReporte(cuerpo, desde){
 }
 
 async function mandarReporte(cuerpo){
-  var desde = Date.now();
-  try{
-    var r = await pedir(cuerpo);
-    if(!aplicarEstadoMapa(r)) await cargarMapa(true);
-  }catch(e){
-    if(!e.sinConfirmar) throw e;
-    cuerpo.tipo = cuerpo.action === 'reportarNovedad' ? 'novedad' : 'estado';
-    if(!(await confirmarReporte(cuerpo, desde))) throw e;
-    pintar();
-  }
+  guardarEnCola(cuerpo, cuerpo.action === 'reportarNovedad' ? 'Novedad' : 'Estado del área');
 }
 
 /* ── Reportar estado ── */
@@ -24449,15 +24775,7 @@ function formResolver(id){
     if(!nota){ alert('Escribí cómo se resolvió.'); $m('rsNota').focus(); return; }
     var bt = $m('rsGuardar'); bt.disabled = true; bt.textContent = 'Guardando…';
     try{
-      try{
-        var res = await pedir({ action:'resolverNovedad', id:id, nota:nota, responsable:quienSoy() });
-        if(!aplicarEstadoMapa(res)) await cargarMapa(true);
-      }catch(e1){
-        if(!e1.sinConfirmar) throw e1;
-        await cargarMapa(true);
-        var ya = (M.reportes || []).filter(function(x){ return x.id === id; })[0];
-        if(!ya || ya.estado !== 'resuelta') throw e1;
-      }
+      guardarEnCola({ action:'resolverNovedad', id:id, nota:nota, responsable:quienSoy() }, 'Novedad resuelta');
       volverAlLugar();
     }catch(e){ bt.disabled = false; bt.textContent = 'Dar por resuelta'; alert(e.message); }
   };
@@ -24636,8 +24954,7 @@ async function renombrarPila(){
   var nombre = ($m('plNombre').value || '').trim();
   var b = $m('plRenombrar'); b.disabled = true; b.textContent = 'Guardando…';
   try{
-    var r = await pedir({ action:'renombrarPila', zonaId:z.id, vano:SEL.vano, nombre:nombre, responsable: quienSoy() });
-    if(!aplicarEstadoMapa(r)) await cargarMapa(true);
+    guardarEnCola({ action:'renombrarPila', zonaId:z.id, vano:SEL.vano, nombre:nombre, responsable: quienSoy() }, 'Nombre de la pila');
     verPila();
   }catch(e){ b.disabled = false; b.textContent = 'Renombrar'; alert(e.message); }
 }
@@ -24649,11 +24966,10 @@ async function guardarPila(){
     /* El nombre va también: quien escribe el nombre y toca "Guardar pila"
        (el botón grande) espera que quede. Antes solo lo guardaba el botón
        "Renombrar" y el nombre se perdía sin aviso. */
-    var r = await pedir({ action:'guardarPila', zonaId:z.id, vano:SEL.vano,
+    guardarEnCola({ action:'guardarPila', zonaId:z.id, vano:SEL.vano,
       estado: $m('plEstado').value,
       nombre: (($m('plNombre')||{}).value || '').trim(),
-      observacion: $m('plObs').value, responsable: quienSoy() });
-    if(!aplicarEstadoMapa(r)) await cargarMapa(true);
+      observacion: $m('plObs').value, responsable: quienSoy() }, 'Pila');
     verPila();
   }catch(e){ b.disabled=false; b.textContent='Guardar pila'; alert(e.message); }
 }
@@ -24943,14 +25259,14 @@ async function crearActividad(){
 
   var btn = $m('acGuardar'); btn.disabled = true; btn.textContent = 'Creando…';
   try{
-    var r = await pedir({ action:'crearActividad',
+    var alcance = b.zonas.length > 1 ? 'zona' : b.alcance;
+    guardarEnCola({ action:'crearActividad',
       nombre: b.nombre.trim(), criterio: b.criterio.trim(), descripcion: b.descripcion.trim(),
       fechaLimite: b.fechaLimite, plazo: b.plazo,
-      zonaId: b.zonas[0], zonaIds: b.zonas, alcance: b.alcance,
-      vanoDesde: b.vanoDesde, vanoHasta: b.vanoHasta, responsable: quienSoy() });
+      zonaId: b.zonas[0], zonaIds: b.zonas, alcance: alcance,
+      vanoDesde: b.vanoDesde, vanoHasta: b.vanoHasta, responsable: quienSoy() }, 'Actividad nueva');
+    SEL.zona = b.zonas[0]; SEL.vano = (alcance === 'pila') ? b.vanoDesde : null;
     BORRADOR = null;
-    SEL.zona = r.zonaId; SEL.vano = (r.alcance === 'pila') ? r.vanoDesde : null;
-    if(!aplicarEstadoMapa(r)) await cargarMapa(true);
     if(SEL.vano) verPila(); else verZona();
   }catch(e){ btn.disabled=false; btn.textContent='Crear la actividad'; alert(e.message); }
 }
@@ -25071,6 +25387,9 @@ function miniDrive(url, ancho){
 /* Una foto con su enlace, o el recuadro de "sin foto". Se usa igual en el
    inventario, en las actividades y en el historial. */
 function cajaFoto(url, clase, titulo){
+  if(url === 'subiendo'){
+    return '<span class="' + clase + ' sin-foto" title="La foto se está subiendo">subiendo…</span>';
+  }
   var mini = miniDrive(url, 160);
   if(!mini){
     return '<span class="' + clase + ' sin-foto" title="' + esc(titulo || 'sin foto') + '">sin foto</span>';
@@ -25240,13 +25559,12 @@ async function guardarEvaluacion(actId, resultado){
   if(!resultado){ alert('Decí si se llevó a cabo.'); return; }
   var b = $m('evGuardar'); b.disabled = true; b.textContent = 'Guardando…';
   try{
-    var r = await pedir({ action:'evaluarActividad', actividadId: actId, resultado: resultado,
+    guardarEnCola({ action:'evaluarActividad', actividadId: actId, resultado: resultado,
       observacion: ($m('evObs')||{}).value || '', foto: FOTO_EVAL || '',
       cerrar: $m('evCerrar') ? $m('evCerrar').checked : false,
-      responsable: quienSoy() });
+      responsable: quienSoy() }, 'Evaluación');
     FOTO_EVAL = null;
     resaltarActividad(null);
-    if(!aplicarEstadoMapa(r)) await cargarMapa(true);
     if(SEL.vano) verPila(); else verZona();
   }catch(e){ b.disabled=false; b.textContent='Guardar la evaluación'; alert(e.message); }
 }
@@ -25385,11 +25703,10 @@ async function guardarAvance(actId){
   if(!motivo){ alert('Escribí por qué la actividad está así. Un avance sin razón no explica nada.'); $m('avMotivo').focus(); return; }
   var b = $m('avGuardar'); b.disabled = true; b.textContent = 'Guardando…';
   try{
-    var r = await pedir({ action:'avanceActividad', id:actId,
+    guardarEnCola({ action:'avanceActividad', id:actId,
       etapa: (($m('avEtapa')||{}).value || '').trim(), motivo: motivo,
-      foto: FOTO_AVANCE || '', responsable: quienSoy() });
+      foto: FOTO_AVANCE || '', responsable: quienSoy() }, 'Avance');
     FOTO_AVANCE = null;
-    if(!aplicarEstadoMapa(r)) await cargarMapa(true);
     volverDeFormulario();
   }catch(e){ b.disabled=false; b.textContent='Guardar el avance'; alert(e.message); }
 }
@@ -25408,8 +25725,9 @@ async function cambiarEstadoActividad(boton, id, estado){
   var antes = boton ? boton.textContent : '';
   if(boton){ boton.disabled = true; boton.textContent = '…'; }
   try{
-    var r = await pedir({ action:'cerrarActividad', id:id, estado:estado, responsable:quienSoy() });
-    if(!aplicarEstadoMapa(r)) await cargarMapa(true);
+    guardarEnCola({ action:'cerrarActividad', id:id, estado:estado, responsable:quienSoy() },
+      estado === 'cerrada' ? 'Actividad terminada' : 'Actividad reabierta');
+    pintar();
     if(document.querySelector('#mapaPanel h3') &&
        document.querySelector('#mapaPanel h3').textContent === 'Actividades') verTablero();
     else if(SEL.vano) verPila();
@@ -25452,8 +25770,7 @@ function verHistorial(actId){
   $m('hEval').onclick = function(){ formEvaluar(actId); };
   if($m('hCerrar')) $m('hCerrar').onclick = async function(){
     try{
-      await pedir({ action:'cerrarActividad', id:actId, estado:'cerrada', responsable:quienSoy() });
-      await cargarMapa(true);
+      guardarEnCola({ action:'cerrarActividad', id:actId, estado:'cerrada', responsable:quienSoy() }, 'Actividad terminada');
       verHistorial(actId);
     }catch(e){ alert(e.message); }
   };
@@ -25765,15 +26082,8 @@ async function guardarEstadoItem(invId){
   }
   var b = $m('itGuardar'); b.disabled = true; b.textContent = 'Guardando…';
   try{
-    var r = await pedir({ action:'estadoInventario', invId:invId, estado:estado,
-      nota:nota, foto: FOTO_ITEM || '', responsable: quienSoy() });
-    /* Las dos copias del inventario quedan al día sin volver a pedirlo. */
-    (M.inventario || []).forEach(function(x){
-      if(x.id !== invId) return;
-      x.estado = r.estado; x.estadoNota = nota; x.estadoFecha = new Date().toISOString();
-      if(r.foto && r.foto.indexOf('http') === 0) x.foto = r.foto;
-    });
-    try{ if(typeof window.cscRefrescarInventario === 'function') window.cscRefrescarInventario(r); }catch(e){}
+    guardarEnCola({ action:'estadoInventario', invId:invId, estado:estado,
+      nota:nota, foto: FOTO_ITEM || '', responsable: quienSoy() }, 'Estado del artículo');
     FOTO_ITEM = null;
     pintar();
     verInventario();
@@ -25934,13 +26244,8 @@ async function ubicarElegidos(){
     var id = UB_ELEGIDOS[i];
     b.textContent = 'Ubicando ' + (i + 1) + ' de ' + total + '…';
     try{
-      var r = await pedir({ action:'ubicarItem', invId:id, zonaId:zonaId, responsable:quienSoy() });
-      hechos.push(r.item || id);
-      /* Las dos copias del inventario tienen que quedar al día: la de
-         Cadena y la del mapa. Si no, la marca de artículos sigue contando
-         el área vieja hasta la próxima recarga. */
-      try{ if(typeof window.cscRefrescarInventario === 'function') window.cscRefrescarInventario(r); }catch(e){}
-      (M.inventario || []).forEach(function(x){ if(x.id === r.invId) x.ubicacion = r.ubicacion; });
+      guardarEnCola({ action:'ubicarItem', invId:id, zonaId:zonaId, responsable:quienSoy() }, 'Ubicación de artículo');
+      hechos.push(id);
     }catch(e){
       var nom = (inventario().filter(function(x){ return x.id === id; })[0] || {}).item || id;
       fallados.push(nom + ' (' + e.message + ')');
