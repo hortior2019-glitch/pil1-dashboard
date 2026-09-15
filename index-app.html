@@ -2719,6 +2719,10 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
 #panel-mapa .z.t-lombriz    rect{fill:#f7f3ef}
 #panel-mapa .z.t-compost    rect{fill:#f6f4f0}
 #panel-mapa .z polygon{stroke:#2b3a31;stroke-width:1.6;fill:#fff}
+#panel-mapa .z circle.forma{stroke:#2b3a31;stroke-width:1.6;fill:#f3f7fb;transition:fill .12s}
+#panel-mapa .z .linea-base{stroke:#2b3a31;stroke-width:1.8;pointer-events:none}
+#panel-mapa .z.sel circle.forma{fill:rgba(240,190,40,.32);stroke:#c9a227;stroke-width:2.6}
+#panel-mapa .z.elegida circle.forma{fill:rgba(37,150,74,.62);stroke:#12592f;stroke-width:3.2}
 #panel-mapa .z:hover polygon{fill:#eef5f0}
 
 /* Los parales: las lineas de colores del plano. */
@@ -3905,7 +3909,6 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <button class="mapa-btn" id="mapaNuevaZona">Nueva área</button>
     <span style="flex:1"></span>
     <label class="mapa-ver"><input type="checkbox" id="mapaVerItems" checked> Artículos</label>
-    <label class="mapa-ver"><input type="checkbox" id="mapaVerPilas" checked> Pilas</label>
     <label class="mapa-ver"><input type="checkbox" id="mapaVerActs" checked> Actividades</label>
   </div>
 
@@ -23197,11 +23200,21 @@ var MAPA_BASE = [
   {id:'Z-HUERTA',nombre:'Huerta',tipo:'produccion',parales:0,color:'',x:116,y:318,w:67,h:147,orientacion:'vertical',activa:true,puntos:''},
   {id:'Z-SEC1',nombre:'Secadero (planchas)',tipo:'secado',parales:0,color:'',x:274,y:318,w:154,h:67,orientacion:'vertical',activa:true,puntos:''},
   {id:'Z-COMPOS',nombre:'Compostera',tipo:'compost',parales:0,color:'',x:445,y:329,w:205,h:56,orientacion:'vertical',activa:true,puntos:''},
-  {id:'Z-NEBUL',nombre:'Área nebulización',tipo:'servicio',parales:0,color:'',x:444,y:404,w:53,h:48,orientacion:'vertical',activa:true,puntos:''},
-  /* La piscina va donde la dibuja el esquema de pilas; el área lácteo, que
-     ocupaba ese lugar, baja a la franja libre que dejaron las carpas viejas. */
-  {id:'Z-PISCINA',nombre:'Piscina',tipo:'servicio',parales:0,color:'',x:473,y:473,w:62,h:50,orientacion:'vertical',activa:true,puntos:''},
-  {id:'Z-LACTEO',nombre:'Área lácteo',tipo:'produccion',parales:0,color:'',x:478,y:527,w:52,h:30,orientacion:'vertical',activa:true,puntos:''},
+  /* A la mitad de ancho, corrida a la izquierda: la mitad derecha queda libre. */
+  {id:'Z-NEBUL',nombre:'Área nebulización',tipo:'servicio',parales:0,color:'',x:444,y:404,w:26,h:48,orientacion:'vertical',activa:true,puntos:''},
+  /* Área lodo lácteo, como el dibujo: el nombre arriba y, abajo sobre una
+     línea de base, las dos piscinas — una redonda y una cuadrada. Las
+     piscinas son áreas propias (se tocan, tienen actividades y reportes)
+     y van DESPUÉS del recinto para quedar encima. */
+  {id:'Z-LACTEO',nombre:'Área lodo lácteo',tipo:'produccion',parales:0,color:'',x:462,y:461,w:76,h:97,orientacion:'vertical',activa:true,puntos:'',
+    etiquetaArriba:true, lineaBase:539},
+  {id:'Z-PISC-R',nombre:'Piscina redonda',tipo:'servicio',parales:0,color:'',x:467,y:511,w:28,h:28,orientacion:'vertical',activa:true,puntos:'',
+    forma:'circulo', sinEtiqueta:true, dentro:'Z-LACTEO'},
+  {id:'Z-PISCINA',nombre:'Piscina cuadrada',tipo:'servicio',parales:0,color:'',x:508,y:509,w:19,h:30,orientacion:'vertical',activa:true,puntos:'',
+    sinEtiqueta:true, dentro:'Z-LACTEO'},
+  /* Pre molino: la franja entre el bloque inferior de pilas y el molino,
+     del mismo ancho que el molino. */
+  {id:'Z-PREMOL',nombre:'Pre molino',tipo:'produccion',parales:0,color:'',x:253,y:527,w:137,h:33,orientacion:'vertical',activa:true,puntos:''},
   {id:'Z-MOLINO',nombre:'Molino',tipo:'produccion',parales:0,color:'',x:253,y:564,w:137,h:48,orientacion:'vertical',activa:true,puntos:''},
   {id:'Z-SEC2',nombre:'Secadero (molino)',tipo:'secado',parales:0,color:'',x:393,y:564,w:99,h:96,orientacion:'vertical',activa:true,puntos:''},
   {id:'Z-EMPAQ',nombre:'Zona de empaque',tipo:'produccion',parales:0,color:'',x:253,y:612,w:75,h:34,orientacion:'vertical',activa:true,puntos:''},
@@ -23537,7 +23550,7 @@ function pintar(){
   if(!cont) return;
   var aviso = $m('mapaCargando');
   if(aviso) aviso.style.display = 'none';
-  var verPilas = $m('mapaVerPilas') ? $m('mapaVerPilas').checked : true;
+  var verPilas = true;   /* las pilas se ven siempre: la casilla para ocultarlas se quitó */
   var verItems = $m('mapaVerItems') ? $m('mapaVerItems').checked : true;
   var verActs  = $m('mapaVerActs')  ? $m('mapaVerActs').checked  : true;
   /* Lo que se está por marcar como lugar de una actividad nueva. */
@@ -23584,8 +23597,14 @@ function pintar(){
       /* Un bloque de pilas con forma (esquina recortada): las pilas se
          recortan con la misma forma para no salirse por la esquina. */
       if(z.tipo === 'almacen') g.push('<clipPath id="clip-' + esc(z.id) + '"><polygon points="' + esc(z.puntos) + '"></polygon></clipPath>');
+    } else if(z.forma === 'circulo'){
+      g.push('<circle class="forma" cx="' + (z.x + z.w/2) + '" cy="' + (z.y + z.h/2) + '" r="' + (Math.min(z.w, z.h)/2) + '"></circle>');
     } else {
       g.push('<rect x="' + z.x + '" y="' + z.y + '" width="' + z.w + '" height="' + z.h + '" rx="2"></rect>');
+    }
+    /* Línea de base: el piso sobre el que están apoyadas las piscinas. */
+    if(z.lineaBase){
+      g.push('<line class="linea-base" x1="' + (z.x + 1) + '" y1="' + z.lineaBase + '" x2="' + (z.x + z.w - 1) + '" y2="' + z.lineaBase + '"></line>');
     }
 
     /* Tramas que copian el plano: el secado va rayado en horizontal, la
@@ -23623,13 +23642,23 @@ function pintar(){
        nombre encima: adentro van los nombres de cada pila, como el esquema.
        El nombre del bloque sigue en el tooltip y en el panel. */
     var tapaPilas = z.tipo === 'almacen' && z.parales > 1 && verPilas;
-    var lineas = tapaPilas ? { linea: [] } : repartir(z.nombre || '', anchoUtil, z.h);
+    /* Un recuadro angosto y alto (como nebulización) lleva el nombre de
+       canto: acostado no entra ni una palabra. */
+    var deCantoZ = !z.puntos && z.forma !== 'circulo' && z.w < 34 && z.h > z.w * 1.5;
+    /* Con etiquetaArriba el nombre va en el tercio de arriba, para dejar
+       libre lo que el área tiene adentro (las piscinas del lácteo). */
+    var altoUtil = z.etiquetaArriba ? (z.lineaBase ? (z.lineaBase - z.y) * 0.5 : z.h * 0.45) : z.h;
+    if(z.etiquetaArriba) cy = z.y + altoUtil / 2 + 2;
+    var lineas = (tapaPilas || z.sinEtiqueta) ? { linea: [] }
+               : deCantoZ ? repartir(z.nombre || '', z.h, z.w)
+               : repartir(z.nombre || '', anchoUtil, altoUtil);
     if(lineas.linea.length){
       var alto = lineas.linea.length * (lineas.tam + 1.5);
       var y0 = cy - alto/2 + lineas.tam - 1;
+      var giro = deCantoZ ? ' transform="rotate(-90 ' + cx + ' ' + cy + ')"' : '';
       lineas.linea.forEach(function(t, i){
         g.push('<text x="' + cx + '" y="' + (y0 + i*(lineas.tam+1.5)) +
-               '" style="font-size:' + lineas.tam + 'px">' + esc(t) + '</text>');
+               '" style="font-size:' + lineas.tam + 'px"' + giro + '>' + esc(t) + '</text>');
       });
     }
 
@@ -23688,7 +23717,7 @@ function pintar(){
     /* Las escuadras amarillas del área tocada. Van después del recuadro
        para quedar por encima, y no sobre los polígonos —el contorno del
        predio y las áreas irregulares no tienen esquinas que marcar. */
-    if(SEL.zona === z.id && !SEL.vano && !z.puntos && z.w && z.h){
+    if(SEL.zona === z.id && !SEL.vano && !z.puntos && z.forma !== 'circulo' && z.w && z.h){
       var lado = Math.max(5, Math.min(15, Math.min(z.w, z.h) * 0.3));
       [[z.x, z.y, 1, 1], [z.x + z.w, z.y, -1, 1],
        [z.x, z.y + z.h, 1, -1], [z.x + z.w, z.y + z.h, -1, -1]].forEach(function(c){
@@ -24809,7 +24838,7 @@ function lineaEval(e){
   var miniatura =
       id      ? '<a href="' + esc(e.foto) + '" target="_blank" rel="noopener" title="Ver la evidencia">' +
                 '<img src="https://drive.google.com/thumbnail?id=' + esc(id) + '&sz=w160" alt="evidencia" loading="lazy" ' +
-                'onerror="this.style.display=\'none\'"></a>'
+                'onerror="mapaFotoFallo(this)"></a>'
     : e.foto  ? '<a class="act-sinfoto" href="' + esc(e.foto) + '" target="_blank" rel="noopener" ' +
                 'title="Hay evidencia, pero no se puede previsualizar desde acá">ver foto ↗</a>'
     :           '<span class="act-sinfoto" title="Esta evaluación quedó sin evidencia fotográfica">sin foto</span>';
@@ -24905,9 +24934,35 @@ function cerrarFotoMapa(){
 
 /* Si Drive no entrega la miniatura, queda el recuadro con el motivo en vez
    de un hueco: hay que poder distinguir "no hay foto" de "no cargó". */
+/* ── UNA MINIATURA QUE NO CARGA NO ES UNA FOTO QUE NO EXISTE ─────────
+   Medido: las fotos del inventario se sirven bien desde afuera, pero en
+   el navegador la miniatura de drive.google.com a veces falla — la foto
+   recién subida todavía no tiene miniatura, o Drive rechaza el pedido
+   cuando hay una sesión de Google abierta o llegan muchas juntas. Antes
+   el primer error dejaba "ver foto ↗" para siempre.
+   Ahora se intenta en orden:
+     1. lh3.googleusercontent.com/d/ID  — adonde redirige Drive, sin pasar
+        por la sesión de drive.google.com
+     2. la miniatura de Drive otra vez, 3 s después
+     3. lh3 otra vez, 10 s después (una foto recién subida)
+   Recién si fallan todos queda el enlace. */
 window.mapaFotoFallo = function(img){
   var a = img.parentNode;
   if(!a) { img.style.display = 'none'; return; }
+  var id = idDriveMapa(a.getAttribute('data-foto') || a.getAttribute('href') || img.src);
+  var intento = +(img.getAttribute('data-intento') || 0) + 1;
+  img.setAttribute('data-intento', intento);
+  var ancho = /sz=w400|=w400/.test(img.src) ? 400 : 160;
+  if(id && intento <= 3){
+    var esperas = [0, 3000, 10000];
+    var fuentes = [
+      'https://lh3.googleusercontent.com/d/' + id + '=w' + ancho,
+      'https://drive.google.com/thumbnail?id=' + id + '&sz=w' + ancho + '&r=' + intento,
+      'https://lh3.googleusercontent.com/d/' + id + '=w' + ancho + '?r=' + intento
+    ];
+    setTimeout(function(){ if(img.isConnected) img.src = fuentes[intento - 1]; }, esperas[intento - 1]);
+    return;
+  }
   a.classList.add('sin-foto');
   a.textContent = 'ver foto ↗';
 };
@@ -25818,7 +25873,6 @@ document.addEventListener('DOMContentLoaded', function(){
   var bm = $m('mapaMas');   if(bm) bm.onclick = function(){ zoomEn(0.72); };
   var bn = $m('mapaMenos'); if(bn) bn.onclick = function(){ zoomEn(1.4); };
   var bt = $m('mapaTodo');  if(bt) bt.onclick = verTodo;
-  var vp = $m('mapaVerPilas'); if(vp) vp.onchange = pintar;
   var vi = $m('mapaVerItems'); if(vi) vi.onchange = pintar;
   var va = $m('mapaVerActs');  if(va) va.onchange = pintar;
 });
