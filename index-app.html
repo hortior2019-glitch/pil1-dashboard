@@ -1337,6 +1337,8 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 @keyframes iaFila{0%,100%{background:#e8f0fb}50%{background:#b7cdea}}
 #panel-auditoria .tb.ia-aldia{color:#8a4b00;border-color:#e8cf94;background:#fff6e0;font-weight:700}
 #panel-auditoria .tb.ia-aldia.apagada{color:#6d6d64;border-color:#c9c9bf;background:#efefe9}
+#panel-auditoria .tb.ia-apagar{color:#6d6d64;border-color:#c9c9bf}
+#panel-auditoria .tb.ia-reevaluar{color:#8a4b00;border-color:#e8cf94}
 #panel-auditoria .tb.ia-chip{padding-left:6px;padding-right:6px;gap:0}
 #panel-auditoria .tb.ia-chip .banderin{width:8px;height:8px;vertical-align:0;margin-right:1px}
 #panel-auditoria .ia-aviso{font-size:11px !important;padding:5px 7px !important;line-height:1.35}
@@ -4053,6 +4055,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <button class="tb ia-chip" id="btnIA" style="display:none" title="Revisión IA de bauchers · filtrar por etiqueta"></button>
   <span class="ia-progreso" id="iaProgreso" style="display:none"></span>
   <button class="tb ia-aldia" id="btnIAAlDia" style="display:none"></button>
+  <button class="tb ia-apagar" id="btnIAApagar" style="display:none" title="Apagar la revisión IA: los ingresos nuevos se guardan igual, sin revisión ni consumo de créditos. Lo ya revisado conserva su banderín.">⏻ Apagar IA</button>
+  <button class="tb ia-reevaluar" id="btnIAReevaluar" style="display:none" title="Vuelve a mirar las novedades IA abiertas con las reglas de ahora. Las fotos leídas en las últimas 6 horas no se vuelven a cobrar.">↻ Re-evaluar novedades</button>
   <button class="tb ia-revisar" id="btnIARevisar" title="La IA revisa los últimos 5 registros. Los que ya revisó no se vuelven a cobrar: muestra lo que dijo y abre un ejemplo con su baucher.">Revisar 5 IA</button>
   <button class="tb ia-confirmar" id="btnIAConfirmar" style="display:none" title="Confirmar como revisada por usted la novedad IA de los viajes seleccionados (Ctrl+P)">Confirmar IA</button>
   <button class="tb alerta" id="btnDups" style="display:none" title="Viajes repetidos: mismo tiquete, placa, pesos, operación y residuo">⚠ <span id="dupsTexto"></span> ▾</button>
@@ -22104,6 +22108,14 @@ function pintarAvisoAlDia(){
     r.errorAgenda ? 'Error al agendar: ' + r.errorAgenda.slice(25) : '',
     r.ultimoError ? 'Último error de la IA: ' + r.ultimoError.slice(25) : ''
   ].filter(Boolean).join('\n');
+  const bApagar = $('btnIAApagar');
+  if(bApagar) bApagar.style.display = r.activa ? '' : 'none';
+  const bRe = $('btnIAReevaluar');
+  if(bRe){
+    const abiertas = S.filas.filter(f => f.ia && (f.ia.estado === 'no_coincide' || f.ia.estado === 'ojo')).length;
+    bRe.style.display = abiertas ? '' : 'none';
+    if(!bRe.disabled) bRe.textContent = '↻ Re-evaluar ' + abiertas + ' novedad' + (abiertas === 1 ? '' : 'es');
+  }
   if(!r.activa){
     b.style.display = ''; b.classList.add('apagada');
     b.textContent = 'IA apagada · Encender';
@@ -22193,6 +22205,49 @@ async function encenderIA(){
   /* Con lo de ayer incluido, se revisa ya mismo en vez de esperar al
      próximo ingreso. Se espera a que termine: el botón muestra el avance. */
   if(incluirAyer && atrasadosIA().length) await ponerAlDiaIA();
+}
+
+/* ── APAGAR LA REVISIÓN IA ─────────────────────────────────────────── */
+async function apagarIA(){
+  const b = $('btnIAApagar');
+  if(!b || b.disabled) return;
+  if(!confirm('¿Apagar la revisión IA?\n\nLos ingresos nuevos se siguen guardando normal, pero la IA no los revisa ni consume créditos. Lo ya revisado conserva su banderín. Se puede volver a encender desde acá.')) return;
+  b.disabled = true; b.textContent = 'Apagando…';
+  try{
+    const res = await llamar({ accion:'auditIADesactivar' });
+    if(!res || !res.success) throw new Error((res && res.error) || 'No se pudo apagar.');
+    aviso('Revisión IA apagada. Los ingresos se guardan normal, sin revisión.');
+    if(S.revisionIA) S.revisionIA.activa = false;
+    await cargar();
+  }catch(e){
+    aviso('No se pudo apagar la revisión IA: ' + e.message, true);
+  }finally{
+    b.disabled = false; b.textContent = '⏻ Apagar IA';
+    pintarAvisoAlDia();
+  }
+}
+
+/* ── RE-EVALUAR NOVEDADES CON LAS REGLAS DE AHORA ───────────────────── */
+async function reevaluarIA(){
+  const b = $('btnIAReevaluar');
+  if(!b || b.disabled) return;
+  if(!confirm('¿Volver a revisar las novedades IA abiertas con las reglas nuevas?\n\nSe revisan hasta 25 por vez. Las que ahora coincidan pasan a verde; las que sigan con diferencia quedan marcadas.')) return;
+  b.disabled = true;
+  const t0 = Date.now();
+  const reloj = setInterval(()=>{ b.textContent = 'Re-evaluando… ' + Math.round((Date.now() - t0) / 1000) + ' s'; }, 1000);
+  try{
+    programarSondeoIA(2500);
+    const res = await llamar({ accion:'auditIAReevaluar' });
+    if(!res || !res.success) throw new Error((res && res.error) || 'No se pudo.');
+    aviso('Re-evaluadas ' + (res.hechas || 0) + ' novedades: ' + (res.cambiaron || 0) + ' pasaron a OK.' + (res.quedan ? ' Quedan más: vuelva a pulsar el botón.' : ''));
+    await cargar();
+  }catch(e){
+    aviso('No se pudieron re-evaluar las novedades: ' + e.message, true);
+  }finally{
+    clearInterval(reloj);
+    b.disabled = false;
+    pintarAvisoAlDia();
+  }
 }
 
 async function ponerAlDiaIA(){
@@ -22681,6 +22736,8 @@ $('btnIA').addEventListener('click', ev=>{
 $('btnIAConfirmar').addEventListener('click', ()=> confirmarNovedadesIA());
 $('btnIARevisar').addEventListener('click', ()=> revisarUltimosConIA(5));
 $('btnIAAlDia').addEventListener('click', ponerAlDiaIA);
+$('btnIAApagar').addEventListener('click', apagarIA);
+$('btnIAReevaluar').addEventListener('click', reevaluarIA);
 $('popIAOpciones').addEventListener('click', ev=>{
   if(ev.target.closest('[data-accion-ia="confirmar"]:not([disabled])')){ cerrarPop('popIA'); confirmarNovedadesIA(); return; }
   const b = ev.target.closest('[data-filtro-ia]');
