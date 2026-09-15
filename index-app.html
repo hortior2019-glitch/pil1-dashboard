@@ -21602,7 +21602,7 @@ function mostrarDetalle(){
   const avisoIA = f.ia ? (() => {
     const e = f.ia, k = FONDOS_IA[e.estado] || FONDOS_IA.no_coincide;
     let cuerpo = '';
-    if(e.estado === 'ok') cuerpo = 'Los 8 datos del registro coinciden con las fotos.';
+    if(e.estado === 'ok') cuerpo = esc(e.detalle || 'Los datos del registro coinciden con las fotos.');
     else cuerpo = esc(e.detalle) +
       (e.estado === 'confirmada'
         ? '<br><b>Confirmó:</b> ' + esc(e.confirmadoPor || '—') + (e.fechaConfirmacion ? ' · ' + esc(e.fechaConfirmacion) : '') +
@@ -24131,7 +24131,7 @@ function formEstadoArea(zonaId, vano){
       }).join('') + '</div>' +
     '<div class="mapa-campo"><label>Observaciones</label>' +
       '<textarea id="repObs" rows="4" placeholder="Orden, limpieza, humedad, daños, lo que haga falta. Todo lo que se note del área."></textarea></div>' +
-    '<div class="mapa-sec">Foto</div>' +
+    '<div class="mapa-sec">Foto (opcional)</div>' +
     '<div class="act-foto" id="repFotoZona"></div>' +
     '<div class="mapa-acciones">' +
       '<button class="mapa-guardar" id="repGuardar" disabled>Elegí cómo está</button>' +
@@ -24151,7 +24151,6 @@ function formEstadoArea(zonaId, vano){
   $m('repGuardar').onclick = async function(){
     var obs = (($m('repObs')||{}).value || '').trim();
     if(!obs){ alert('Escribí las observaciones del área.'); $m('repObs').focus(); return; }
-    if(!FOTO_REPORTE && !confirm('El estado va a quedar SIN foto. ¿Guardar igual?')) return;
     var bt = $m('repGuardar'); bt.disabled = true; bt.textContent = 'Guardando…';
     try{
       await mandarReporte({ action:'reportarEstado', zonaId:zonaId, vano:vano || '',
@@ -24416,8 +24415,12 @@ async function guardarPila(){
   var z = zonaPorId(SEL.zona);
   var b = $m('plGuardar'); b.disabled = true; b.textContent = 'Guardando…';
   try{
+    /* El nombre va también: quien escribe el nombre y toca "Guardar pila"
+       (el botón grande) espera que quede. Antes solo lo guardaba el botón
+       "Renombrar" y el nombre se perdía sin aviso. */
     var r = await pedir({ action:'guardarPila', zonaId:z.id, vano:SEL.vano,
       estado: $m('plEstado').value,
+      nombre: (($m('plNombre')||{}).value || '').trim(),
       observacion: $m('plObs').value, responsable: quienSoy() });
     if(!aplicarEstadoMapa(r)) await cargarMapa(true);
     verPila();
@@ -24764,7 +24767,7 @@ function formEvaluar(actId){
     '<div class="mapa-campo"><label>Qué se vio</label>' +
       '<textarea id="evObs" rows="2" placeholder="Lo que encontraste, contra el criterio de arriba"></textarea></div>' +
 
-    '<div class="mapa-sec">Evidencia</div>' +
+    '<div class="mapa-sec">Evidencia (foto opcional)</div>' +
     '<div class="act-foto" id="evFotoZona"></div>' +
 
     '<label class="act-check"><input type="checkbox" id="evCerrar"> ' +
@@ -24978,10 +24981,6 @@ function recibirFotoEval(input){
 
 async function guardarEvaluacion(actId, resultado){
   if(!resultado){ alert('Decí si se llevó a cabo.'); return; }
-  if(!FOTO_EVAL){
-    if(!confirm('Esta evaluación va a quedar SIN foto.\n\n' +
-                'La evidencia es lo que la hace comprobable después. ¿Guardar igual?')) return;
-  }
   var b = $m('evGuardar'); b.disabled = true; b.textContent = 'Guardando…';
   try{
     var r = await pedir({ action:'evaluarActividad', actividadId: actId, resultado: resultado,
