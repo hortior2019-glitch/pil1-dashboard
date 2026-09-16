@@ -1799,6 +1799,19 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 }
 #panel-auditoria .visor-btn:hover{background:rgba(255,255,255,.14);border-color:var(--oro-claro)}
 #panel-auditoria .visor-btn.cerrar{font-size:18px;line-height:1;padding:5px 11px}
+/* Foto del manifiesto de entrega (AK): marca de agua con el logo y franja verde. */
+#panel-auditoria .foto.foto-mf{border-color:#2e7d32;background:#f1f8f1;box-shadow:inset 3px 0 0 #2e7d32}
+#panel-auditoria .foto .foto-mini{position:relative;display:block;flex-shrink:0}
+#panel-auditoria .foto .marca-mf{position:absolute;inset:0;pointer-events:none;
+  background:url('https://raw.githubusercontent.com/hortior2019-glitch/pil1-dashboard/main/logoverde.png') center/70% no-repeat;opacity:.35}
+#panel-auditoria .foto .marca-mf::after{content:'ENTREGA';position:absolute;left:0;right:0;bottom:0;background:rgba(46,125,50,.88);color:#fff;
+  font:700 9px var(--sans);letter-spacing:1px;text-align:center;padding:1px 0}
+#panel-auditoria .foto .mf-dato{color:#1d5a22;font-weight:600}
+#panel-auditoria .visor-marca-mf{position:absolute;inset:0;pointer-events:none;z-index:2}
+#panel-auditoria .visor-marca-mf::before{content:'';position:absolute;inset:0;
+  background:url('https://raw.githubusercontent.com/hortior2019-glitch/pil1-dashboard/main/logoverde.png') center/min(42%,420px) no-repeat;opacity:.22}
+#panel-auditoria .visor-marca-mf span{position:absolute;left:50%;top:14px;transform:translateX(-50%);max-width:calc(100% - 120px);
+  background:rgba(46,125,50,.92);color:#fff;font:700 12.5px var(--sans);padding:6px 14px;border-radius:14px;box-shadow:0 4px 14px rgba(0,0,0,.3);text-align:center}
 #panel-auditoria .visor-cuerpo{
   flex:1;min-height:0;position:relative;display:flex;align-items:center;justify-content:center;
   overflow:auto;padding:18px;
@@ -4472,6 +4485,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <button class="visor-nav izq" id="visorAnt" title="Anterior (←)">‹</button>
     <img id="visorImg" alt="">
     <iframe id="visorFrame" style="display:none" allow="autoplay"></iframe>
+    <div class="visor-marca-mf" id="visorMarcaMF" style="display:none" aria-hidden="true"><span id="visorMarcaMFTexto"></span></div>
     <div id="visorError" style="display:none"></div>
     <button class="visor-nav der" id="visorSig" title="Siguiente (→)">›</button>
   </div>
@@ -20375,6 +20389,31 @@ function grabarCfg(){
    ══════════════════════════════════════════════════════════════ */
 const ALTO_FILA = 30;
 const COL_FOTOS = { 21:'Baucher I', 22:'Baucher II', 23:'Baucher III', 24:'Vehículo', 25:'Vehículo 2' };
+/* ── FOTO DEL MANIFIESTO DE ENTREGA (columna AK, "MF FOTO MANIFIESTO") ──
+   La toma el operario al verificar el manifiesto físico para la entrega.
+   Se muestra con los demás soportes, pero con la marca de agua del logo de
+   Horti y una franja que dice qué es, para no confundirla con los bauchers
+   de la báscula. La columna se ubica por su encabezado (las columnas MF se
+   agregan al final de la hoja y su letra puede cambiar). La revisión IA no
+   la usa: solo mira BAUCHER I, II y III. */
+const LOGO_MARCA_MF = 'https://raw.githubusercontent.com/hortior2019-glitch/pil1-dashboard/main/logoverde.png';
+let MF_COL = -1, MF_COLS = {};
+function registrarFotoEntregaMF(){
+  if(MF_COL > -1) delete COL_FOTOS[MF_COL];
+  const cab = (S.headers || []).map(h => String(h || '').trim().toUpperCase());
+  MF_COL = cab.indexOf('MF FOTO MANIFIESTO');
+  MF_COLS = { operario: cab.indexOf('MF OPERARIO'), fecha: cab.indexOf('MF FECHA'), neto: cab.indexOf('MF NETO VERIFICADO'), baucher: cab.indexOf('MF BAUCHER VERIFICADO') };
+  if(MF_COL > -1) COL_FOTOS[MF_COL] = 'Manifiesto de entrega';
+}
+function esFotoEntregaMF(c){ return MF_COL > -1 && +c === MF_COL; }
+function textoEntregaMF(f){
+  const v = k => (MF_COLS[k] > -1 ? String(f.v[MF_COLS[k]] ?? '').trim() : '');
+  return ['Verificado para la entrega',
+          v('operario') ? 'por ' + v('operario') : '',
+          v('fecha'),
+          v('neto') ? 'neto verificado ' + v('neto') : '',
+          v('baucher') ? 'baucher ' + v('baucher') : ''].filter(Boolean).join(' · ');
+}
 
 const S = {
   headers:   [],
@@ -20580,10 +20619,20 @@ function restablecerColumnas(){
    que hay y, si ya está igual, responde "sinCambio" sin tocar la nota).
    NO se reintentan los comentarios, ni borrar/restaurar filas o
    columnas: repetirlos sí dejaría doble registro.                     */
+/* Qué se puede mandar otra vez si Google responde con una página en vez de
+   los datos (pasa de vez en cuando, y casi siempre el pedido SÍ se hizo):
+   las lecturas, y las acciones que repetidas dan lo mismo.
+     auditIAConfirmar  la segunda vez responde "ya confirmada" y el tablero
+                       la toma como hecha (antes: "No se pudo confirmar").
+     auditIAReferencia la misma foto no se guarda dos veces.
+     auditIAActivar / auditIADesactivar dejan el mismo estado.
+   No se repiten las que agregan algo cada vez (notas) ni las largas que
+   llaman a la IA (revisar, poner al día, re-evaluar). */
 function sePuedeRepetir(p){
   const a = p && p.accion;
   if(a === 'auditGuardar') return !(p.cambios || []).some(x => x.tipo === 'nota');
-  return ['auditListar','auditFotos','auditComentarios','auditColores','auditPing'].indexOf(a) > -1;
+  return ['auditListar','auditFotos','auditComentarios','auditColores','auditPing','auditIAProgreso',
+          'auditIAConfirmar','auditIAReferencia','auditIAActivar','auditIADesactivar'].indexOf(a) > -1;
 }
 
 /* ── CUANDO GOOGLE DEVUELVE LA HOJA ENTERA EN VEZ DE LA RESPUESTA ─────
@@ -20790,6 +20839,7 @@ async function cargar(){
     if(!Array.isArray(res.filas)) throw new Error('El servidor no devolvió los registros. Vuelva a cargar.');
 
     S.headers  = res.headers || [];
+    registrarFotoEntregaMF();
     S.revisionIA = res.revisionIA || null;
     S.referenciasIA = res.referenciasIA || {};
     S.filas    = res.filas || [];
@@ -22050,10 +22100,12 @@ function mostrarDetalle(){
                                                     : 'armado con los datos de la fila') : '');
     const mini    = id ? 'https://drive.google.com/thumbnail?id=' + id + '&sz=w400' : '';
     const idxF = S.vista[S.foco.vr];
-    return `<div class="foto">
-      ${mini ? `<a href="${esc(v)}" class="foto-link" data-idx="${idxF}" data-col="${k}" target="_blank" rel="noopener"><img src="${mini}" alt="${esc(COL_FOTOS[k])}" loading="lazy" onerror="this.closest('.foto').classList.add('sin-mini')"></a>` : ''}
+    const mf = esFotoEntregaMF(k);
+    return `<div class="foto${mf ? ' foto-mf' : ''}">
+      ${mini ? `<a href="${esc(v)}" class="foto-link foto-mini" data-idx="${idxF}" data-col="${k}" target="_blank" rel="noopener"><img src="${mini}" alt="${esc(COL_FOTOS[k])}" loading="lazy" onerror="this.closest('.foto').classList.add('sin-mini')">${mf ? '<span class="marca-mf" aria-hidden="true"></span>' : ''}</a>` : ''}
       <div class="foto-txt">
-        <b>${COL_FOTOS[k]}</b>
+        <b>${mf ? '📋 ' : ''}${COL_FOTOS[k]}</b>
+        ${mf ? `<span class="foto-dato mf-dato">${esc(textoEntregaMF(f))}</span>` : ''}
         <a class="foto-nombre foto-link" href="${esc(v)}" data-idx="${idxF}" data-col="${k}" title="${esc(nombre)}" target="_blank" rel="noopener">${esc(nombre)}</a>
         ${detalle ? `<span class="foto-dato">${esc(detalle)}</span>` : ''}
         <a href="${esc(v)}" target="_blank" rel="noopener">Abrir en Drive ↗</a>
@@ -22250,6 +22302,9 @@ function pintarVisor(){
   $('visorZoom').textContent = VISOR.zoom ? '⤡ Ajustar' : '⤢ Tamaño real';
 
   const img = $('visorImg'), frame = $('visorFrame'), err = $('visorError');
+  const esMF = esFotoEntregaMF(f.c);
+  $('visorMarcaMF').style.display = esMF ? '' : 'none';
+  if(esMF) $('visorMarcaMFTexto').textContent = '📋 Manifiesto de entrega · ' + textoEntregaMF(fila);
   img.classList.toggle('zoom', VISOR.zoom);
   const fuente = f.id ? 'https://drive.google.com/thumbnail?id=' + f.id + '&sz=w1600' : f.url;
   if(img.dataset.fuente !== fuente){
