@@ -2270,9 +2270,19 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
   }
   #panel-certificado .material-row{
     display:flex;
+    flex-wrap:wrap;
     gap:6px;
     margin-bottom:6px;
     align-items:center;
+  }
+  /* Ninguna casilla baja de este ancho: con muchas columnas la linea se
+     parte en dos en vez de dejar tiras donde no cabe ni una fecha. */
+  #panel-certificado .material-row input{min-width:84px;}
+  /* Cuando un material ocupa dos lineas, una raya marca donde termina. */
+  #panel-certificado .material-row.mat-ancha{
+    border-bottom:1px dashed var(--border);
+    padding-bottom:8px;
+    margin-bottom:8px;
   }
   #panel-certificado .material-row .mat-desc{flex:2;}
   #panel-certificado .material-row .mat-cant{flex:1;}
@@ -2280,9 +2290,39 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
      caracteres. Se le da 1.25 de reparto y se ajustan letra y relleno de
      las dos casillas cortas, para que el texto entre sin recortarse en el
      menu de 380px. */
-  #panel-certificado .material-row .mat-fecha{flex:1.25;min-width:0;}
+  #panel-certificado .material-row .mat-fecha{flex:1.25;}
   #panel-certificado .material-row .mat-cant,
   #panel-certificado .material-row .mat-fecha{padding-left:6px;padding-right:6px;font-size:12px;}
+  #panel-certificado .material-row .mat-extra{flex:1.25;padding-left:6px;padding-right:6px;font-size:12px;}
+  /* ── Las columnas de la tabla, una linea cada una ──────────────────
+     Casilla para mostrarla u ocultarla, su nombre (editable), flechas
+     para moverla y la X solo en las que agrego yo: las cuatro de
+     siempre se esconden, no se borran. */
+  #panel-certificado .cols-cert .col-fila{
+    display:flex;
+    gap:6px;
+    align-items:center;
+    margin-bottom:6px;
+  }
+  #panel-certificado .cols-cert .col-ver{width:auto;flex:0 0 auto;margin:0;}
+  #panel-certificado .cols-cert .col-titulo{flex:1;min-width:0;font-size:12px;padding-left:6px;padding-right:6px;}
+  #panel-certificado .cols-cert .col-fija .col-titulo{color:var(--gray);}
+  #panel-certificado .cols-cert button{
+    flex:0 0 auto;
+    width:26px;
+    height:32px;
+    padding:0;
+    background:#eef1ee;
+    color:#555;
+    border-radius:6px;
+    font-weight:700;
+    line-height:1;
+  }
+  #panel-certificado .cols-cert button:hover{background:#e2e7e2;}
+  #panel-certificado .cols-cert button:disabled{opacity:.35;cursor:default;}
+  #panel-certificado .cols-cert .col-quitar{background:#f6e6e6;color:#b23b3b;}
+  #panel-certificado .cols-cert .col-quitar:hover{background:#f0d5d5;}
+  #panel-certificado .cols-nota{font-size:11px;color:#888;line-height:1.4;}
   #panel-certificado .material-row .mat-remove{
     flex:0 0 auto;
     width:30px;
@@ -2671,14 +2711,13 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
   #panel-certificado table.cert-table tfoot td, #panel-certificado table.cert-table .total-row td{
     font-weight:700;
   }
-  /* La columna FECHA la decide la casilla "Mostrar la columna FECHA"
-     que está junto a los materiales, y vale igual en pantalla y en
-     papel: lo que se ve es lo que se imprime. Antes se deducía sola —
-     aparecía si alguna fila tenía fecha — y adivinar no alcanzaba: hay
-     certificados con las fechas cargadas que no las quieren mostrar, y
-     al revés. La marca .con-fecha la pone update(). */
+  /* Qué columnas salen lo decide "Columnas de la tabla", junto a los
+     materiales, y vale igual en pantalla y en papel: lo que se ve es lo
+     que se imprime. Antes la fecha se deducía sola — aparecía si alguna
+     fila tenía fecha — y adivinar no alcanzaba: hay certificados con las
+     fechas cargadas que no las quieren mostrar, y al revés. Una columna
+     apagada no se dibuja, así que aquí solo queda su ancho. */
   #panel-certificado table.cert-table .col-fecha{white-space:nowrap}
-  #panel-certificado table.cert-table:not(.con-fecha) .col-fecha{display:none}
 
   #panel-certificado .cert-date{
     font-size:12.5px;
@@ -3920,10 +3959,10 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     </div>
 
     <div class="field cert-sec sec-mat" data-sec="4 · Materiales y cantidades">
-      <label style="display:flex;align-items:center;gap:8px;font-weight:400;cursor:pointer;margin-bottom:10px;">
-        <input type="checkbox" id="mostrarFechaItems" style="width:auto;">
-        Mostrar la columna FECHA en los ítems
-      </label>
+      <label>Columnas de la tabla</label>
+      <div class="cols-cert" id="columnasCertList"></div>
+      <button class="btn-list" type="button" onclick="agregarColumnaCert()" style="width:100%;margin:4px 0 12px;">+ Agregar una columna mía</button>
+      <div class="cols-nota">Desmarca una columna para que no salga en el certificado (lo escrito no se borra). Las flechas la mueven de lugar y el nombre se puede cambiar.</div>
       <label>Materiales certificados</label>
       <div id="materialesList"></div>
       <button class="btn-list" type="button" onclick="agregarMaterialVacio()" style="width:100%;margin-top:4px;">+ Agregar material</button>
@@ -4024,8 +4063,11 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
              tablas), lo que hacía ver el total completo a mitad de la lista. Poniéndolo
              como última fila del tbody solo aparece una vez, al final de verdad. -->
         <table class="cert-table">
+          <!-- El encabezado lo arma update() con las columnas que estén
+               marcadas, en su orden: puede haber columnas propias y faltar
+               las de siempre. -->
           <thead>
-            <tr><th>ÍTEM</th><th>DESCRIPCIÓN</th><th id="thCantidad">CANTIDAD KG</th><th class="col-fecha">FECHA</th></tr>
+            <tr id="certTablaHead"></tr>
           </thead>
           <tbody id="tMaterialesBody"></tbody>
         </table>
@@ -28076,38 +28118,189 @@ window.mapaActivar = function(){ cargarMapa(false); refrescarMapaSiToca(MAPA_AL_
      reinterpretarlo ni correrlo un dia por zona horaria. */
   let materiales = [ { descripcion: '', cantidad: '', fecha: '' } ];
 
+  /* ── LAS COLUMNAS DE LA TABLA ──────────────────────────────────────
+     La tabla del certificado ya no es fija. Estas cuatro vienen de
+     fabrica y se pueden apagar (no se borran: lo escrito sigue ahi por
+     si se vuelven a encender), y ademas se pueden agregar columnas
+     propias — "N° de manifiesto", "Placa", "Acta del cliente" — con el
+     nombre que uno quiera.
+       ver    : si sale o no en el certificado.
+       titulo : vacio = el nombre de fabrica. La cantidad, sin nombre
+                propio, sigue a la unidad elegida (KG / N° de viajes).
+     El valor de cada columna mia se guarda en cada fila dentro de
+     'extra', asi viaja en el mismo JSON de Materiales que ya se guarda
+     en la hoja y los certificados viejos siguen abriendo igual. */
+  const COL_TITULOS = { item:'ÍTEM', desc:'DESCRIPCIÓN', cant:'CANTIDAD KG', fecha:'FECHA' };
+  const COL_CAMPO = { desc:'descripcion', cant:'cantidad', fecha:'fecha' };
+  function columnasPorDefecto(){
+    return [
+      { id:'item',  fija:true, ver:true,  titulo:'' },
+      { id:'desc',  fija:true, ver:true,  titulo:'' },
+      { id:'cant',  fija:true, ver:true,  titulo:'' },
+      { id:'fecha', fija:true, ver:false, titulo:'' }
+    ];
+  }
+  let columnasCert = columnasPorDefecto();
+
+  function tituloPorDefecto(col){
+    if (col.id === 'cant'){
+      return document.getElementById('unidadCertificacion').value === 'viajes' ? 'N° DE VIAJES' : 'CANTIDAD KG';
+    }
+    return COL_TITULOS[col.id] || 'COLUMNA';
+  }
+  function tituloColumna(col){ return (col.titulo || '').trim() || tituloPorDefecto(col); }
+
+  function valorCelda(m, col){
+    if (COL_CAMPO[col.id]) return m[COL_CAMPO[col.id]] || '';
+    return (m.extra || {})[col.id] || '';
+  }
+  function ponerCelda(m, col, valor){
+    if (COL_CAMPO[col.id]) { m[COL_CAMPO[col.id]] = valor; return; }
+    if (!m.extra) m.extra = {};
+    m.extra[col.id] = valor;
+  }
+  function columnaPorId(id){ return columnasCert.filter(c => c.id === id)[0] || null; }
+  function verColumna(id, valor){ const c = columnaPorId(id); if (c) c.ver = valor; }
+  function columnasVisibles(){ return columnasCert.filter(c => c.ver); }
+
+  /* El editor de columnas del menu. */
+  function renderColumnasCert(){
+    const cont = document.getElementById('columnasCertList');
+    if (!cont) return;
+    cont.innerHTML = '';
+    columnasCert.forEach((col, i) => {
+      const fila = document.createElement('div');
+      fila.className = 'col-fila' + (col.fija ? ' col-fija' : '');
+
+      const ver = document.createElement('input');
+      ver.type = 'checkbox';
+      ver.className = 'col-ver';
+      ver.checked = !!col.ver;
+      ver.title = 'Mostrar esta columna en el certificado';
+      ver.addEventListener('change', () => { col.ver = ver.checked; renderMateriales(); update(); });
+
+      const titulo = document.createElement('input');
+      titulo.className = 'col-titulo';
+      titulo.value = col.titulo || '';
+      titulo.placeholder = tituloPorDefecto(col);
+      titulo.title = col.fija ? 'Nombre de la columna (vacío = ' + tituloPorDefecto(col) + ')' : 'Nombre de la columna';
+      titulo.addEventListener('input', () => { col.titulo = titulo.value; renderMateriales(); update(); });
+
+      const subir = document.createElement('button');
+      subir.type = 'button'; subir.textContent = '↑'; subir.title = 'Mover a la izquierda';
+      subir.disabled = i === 0;
+      subir.addEventListener('click', () => moverColumnaCert(i, -1));
+
+      const bajar = document.createElement('button');
+      bajar.type = 'button'; bajar.textContent = '↓'; bajar.title = 'Mover a la derecha';
+      bajar.disabled = i === columnasCert.length - 1;
+      bajar.addEventListener('click', () => moverColumnaCert(i, 1));
+
+      fila.appendChild(ver);
+      fila.appendChild(titulo);
+      fila.appendChild(subir);
+      fila.appendChild(bajar);
+
+      if (!col.fija){
+        const quitar = document.createElement('button');
+        quitar.type = 'button'; quitar.className = 'col-quitar'; quitar.innerHTML = '&times;';
+        quitar.title = 'Quitar esta columna y lo que se escribió en ella';
+        quitar.addEventListener('click', () => quitarColumnaCert(col));
+        fila.appendChild(quitar);
+      }
+      cont.appendChild(fila);
+    });
+  }
+
+  function moverColumnaCert(i, paso){
+    const j = i + paso;
+    if (j < 0 || j >= columnasCert.length) return;
+    const tmp = columnasCert[i]; columnasCert[i] = columnasCert[j]; columnasCert[j] = tmp;
+    renderColumnasCert(); renderMateriales(); update();
+  }
+
+  function agregarColumnaCert(){
+    /* Un id que no se repita ni choque con los de fabrica: asi, al
+       guardar y volver a abrir, cada columna encuentra sus datos. */
+    let id;
+    do { id = 'x' + Math.random().toString(36).slice(2, 8); } while (columnaPorId(id));
+    columnasCert.push({ id: id, fija:false, ver:true, titulo:'' });
+    renderColumnasCert(); renderMateriales(); update();
+    const inputs = document.querySelectorAll('#columnasCertList .col-titulo');
+    const ultimo = inputs[inputs.length - 1];
+    if (ultimo) ultimo.focus();
+  }
+
+  function quitarColumnaCert(col){
+    const nombre = tituloColumna(col);
+    const conDatos = materiales.some(m => String(valorCelda(m, col)).trim().length > 0);
+    if (conDatos && !confirm('¿Quitar la columna "' + nombre + '"? Se borra también lo que se escribió en ella.')) return;
+    columnasCert = columnasCert.filter(c => c !== col);
+    materiales.forEach(m => { if (m.extra) delete m.extra[col.id]; });
+    renderColumnasCert(); renderMateriales(); update();
+  }
+
+  /* Las columnas que trae un certificado guardado. Los de antes no
+     traen ninguna: quedan con las cuatro de siempre. */
+  function setColumnasCert(lista){
+    const limpias = (Array.isArray(lista) ? lista : [])
+      .filter(c => c && c.id)
+      .map(c => ({ id: String(c.id), fija: !!COL_TITULOS[c.id], ver: c.ver !== false, titulo: c.titulo || '' }));
+    // Si a la lista guardada le falta alguna de fábrica (certificado de
+    // otra versión), se agrega apagada para no perder el dato que tenga.
+    columnasPorDefecto().forEach(d => { if (!limpias.some(c => c.id === d.id)) limpias.push({ id:d.id, fija:true, ver:false, titulo:'' }); });
+    columnasCert = limpias.length ? limpias : columnasPorDefecto();
+    renderColumnasCert();
+  }
+
   // ---- Código de verificación (huella digital) + QR ----
   let certCodigo = '';
 
+  /* Una linea por material, con una casilla por cada columna que este
+     marcada (la del ÍTEM no se escribe: es la numeracion). Apagar una
+     columna solo esconde su casilla; lo que tenga escrito se conserva. */
   function renderMateriales(){
     const cont = document.getElementById('materialesList');
     const unidad = document.getElementById('unidadCertificacion').value;
     const placeholderCant = unidad === 'viajes' ? 'N° viajes' : 'Kg';
     cont.innerHTML = '';
+    const cols = columnasVisibles().filter(c => c.id !== 'item');
     materiales.forEach((m, i) => {
       const row = document.createElement('div');
-      row.className = 'material-row';
-      row.innerHTML =
-        '<input class="mat-desc" placeholder="Ej: Residuos Orgánicos / nombre técnico" value="' + (m.descripcion || '').replace(/"/g,'&quot;') + '">' +
-        '<input class="mat-cant" placeholder="' + placeholderCant + '" value="' + (m.cantidad || '') + '">' +
-        '<input class="mat-fecha" placeholder="Fecha" value="' + (m.fecha || '').replace(/"/g,'&quot;') + '">' +
-        '<button type="button" class="mat-remove" title="Quitar">&times;</button>';
-      const [descInput, cantInput, fechaInput, removeBtn] = row.children;
-      // Cualquier edición manual de los materiales invalida el vínculo con los viajes de
-      // la base de datos: así, si el certificado ya no coincide exactamente con lo que se
-      // buscó, no se deja marca en la columna AG (evita marcar algo que no se certificó).
-      descInput.addEventListener('input', () => { materiales[i].descripcion = descInput.value; idsEnvioMaterialesActuales = []; update(); });
-      cantInput.addEventListener('input', () => { materiales[i].cantidad = cantInput.value; idsEnvioMaterialesActuales = []; update(); });
-      /* Al salir de la casilla se quita la coma (y el punto de miles): "20.580,00"
-         queda 20580. Si tiene decimales de verdad se deja como se escribió. */
-      cantInput.addEventListener('blur', () => {
-        const n = numeroCert(cantInput.value);
-        if (isNaN(n) || !/[.,]/.test(cantInput.value) || n !== Math.round(n)) return;
-        cantInput.value = String(n);
-        materiales[i].cantidad = cantInput.value;
-        update();
+      row.className = 'material-row' + (cols.length > 3 ? ' mat-ancha' : '');
+      cols.forEach(col => {
+        const input = document.createElement('input');
+        input.className = 'mat-' + (COL_CAMPO[col.id] ? col.id : 'extra');
+        input.placeholder = col.id === 'desc' ? 'Ej: Residuos Orgánicos / nombre técnico'
+          : col.id === 'cant' ? placeholderCant
+          : col.id === 'fecha' ? 'Fecha'
+          : tituloColumna(col);
+        input.value = valorCelda(m, col);
+        // Cambiar la descripción o la cantidad invalida el vínculo con los viajes de la
+        // base de datos: así, si el certificado ya no coincide exactamente con lo que se
+        // buscó, no se deja marca en la columna AG (evita marcar algo que no se certificó).
+        // La fecha y las columnas propias no cambian lo certificado, así que no lo rompen.
+        input.addEventListener('input', () => {
+          ponerCelda(m, col, input.value);
+          if (col.id === 'desc' || col.id === 'cant') idsEnvioMaterialesActuales = [];
+          update();
+        });
+        /* Al salir de la casilla se quita la coma (y el punto de miles): "20.580,00"
+           queda 20580. Si tiene decimales de verdad se deja como se escribió. */
+        if (col.id === 'cant') input.addEventListener('blur', () => {
+          const n = numeroCert(input.value);
+          if (isNaN(n) || !/[.,]/.test(input.value) || n !== Math.round(n)) return;
+          input.value = String(n);
+          m.cantidad = input.value;
+          update();
+        });
+        row.appendChild(input);
       });
-      fechaInput.addEventListener('input', () => { materiales[i].fecha = fechaInput.value; update(); });
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'mat-remove';
+      removeBtn.title = 'Quitar';
+      removeBtn.innerHTML = '&times;';
       removeBtn.addEventListener('click', () => {
         materiales.splice(i, 1);
         if (materiales.length === 0) materiales.push({ descripcion:'', cantidad:'', fecha:'' });
@@ -28115,12 +28308,13 @@ window.mapaActivar = function(){ cargarMapa(false); refrescarMapaSiToca(MAPA_AL_
         renderMateriales();
         update();
       });
+      row.appendChild(removeBtn);
       cont.appendChild(row);
     });
   }
 
   function agregarMaterialVacio(){
-    materiales.push({ descripcion: '', cantidad: '', fecha: '' });
+    materiales.push({ descripcion: '', cantidad: '', fecha: '', extra: {} });
     idsEnvioMaterialesActuales = [];
     renderMateriales();
     update();
@@ -28130,8 +28324,9 @@ window.mapaActivar = function(){ cargarMapa(false); refrescarMapaSiToca(MAPA_AL_
     // Los certificados guardados antes de que existiera la fecha no traen
     // el campo: se completa vacio para que el editor no muestre "undefined".
     materiales = nuevaLista.length
-      ? nuevaLista.map(m => ({ descripcion: m.descripcion || '', cantidad: m.cantidad || '', fecha: m.fecha || '' }))
-      : [{ descripcion:'', cantidad:'', fecha:'' }];
+      ? nuevaLista.map(m => ({ descripcion: m.descripcion || '', cantidad: m.cantidad || '', fecha: m.fecha || '',
+                               extra: Object.assign({}, m.extra || {}) }))
+      : [{ descripcion:'', cantidad:'', fecha:'', extra:{} }];
     renderMateriales();
     update();
   }
@@ -28203,7 +28398,7 @@ window.mapaActivar = function(){ cargarMapa(false); refrescarMapaSiToca(MAPA_AL_
     idsEnvioMaterialesActuales = [];
     // Pegar una lista de fechas es pedir que se muestren: se enciende la
     // casilla. Apagarla después sigue siendo decisión de quien la usa.
-    if (fechas.length) document.getElementById('mostrarFechaItems').checked = true;
+    if (fechas.length) { verColumna('fecha', true); renderColumnasCert(); }
     setMateriales(nuevaLista);
 
     /* Si las dos listas no miden lo mismo, casi seguro se pegó de más o de
@@ -28219,7 +28414,7 @@ window.mapaActivar = function(){ cargarMapa(false); refrescarMapaSiToca(MAPA_AL_
         est.textContent = numeros.length + ' fila(s) creada(s)' +
           (fechas.length
             ? ', cada una con su fecha. Se activó la columna FECHA.'
-            : '. Sin fechas pegadas: la columna FECHA la enciendes con su casilla.');
+            : '. Sin fechas pegadas: la columna FECHA la enciendes en "Columnas de la tabla".');
         est.className = 'status-msg ok';
       }
     }
@@ -28669,35 +28864,34 @@ window.mapaActivar = function(){ cargarMapa(false); refrescarMapaSiToca(MAPA_AL_
     document.getElementById('pParrafo2Rest').innerHTML = procesarRealce(parrafo2);
     document.getElementById('pFecha').textContent = fecha;
 
-    const unidad = document.getElementById('unidadCertificacion').value;
-    document.getElementById('thCantidad').textContent = unidad === 'viajes' ? 'N° DE VIAJES' : 'CANTIDAD KG';
-
-    // La columna FECHA se muestra si la casilla lo pide, y punto.
-    const conFecha = !!(document.getElementById('mostrarFechaItems') || {}).checked;
-    const tabla = document.querySelector('#panel-certificado table.cert-table');
-    if (tabla) tabla.classList.toggle('con-fecha', conFecha);
+    /* La tabla se dibuja con las columnas marcadas, en su orden: las de
+       siempre que sigan encendidas y las que se hayan agregado. Lo que
+       se ve aquí es exactamente lo que sale impreso. */
+    const cols = columnasVisibles();
+    const thead = document.getElementById('certTablaHead');
+    thead.innerHTML = '';
+    cols.forEach(col => {
+      const th = document.createElement('th');
+      th.className = 'col-' + col.id;
+      th.textContent = tituloColumna(col);
+      thead.appendChild(th);
+    });
 
     // Filas de la tabla, una por material
     const tbody = document.getElementById('tMaterialesBody');
     tbody.innerHTML = '';
     let total = 0;
     materiales.forEach((m, i) => {
-      const cantNum = numeroCert(m.cantidad) || 0;
-      total += cantNum;
+      total += numeroCert(m.cantidad) || 0;
       const tr = document.createElement('tr');
-      const tdItem = document.createElement('td');
-      tdItem.textContent = i + 1;
-      const tdDesc = document.createElement('td');
-      tdDesc.textContent = m.descripcion || '';
-      const tdCant = document.createElement('td');
-      tdCant.textContent = formatCantidad(m.cantidad);
-      const tdFecha = document.createElement('td');
-      tdFecha.className = 'col-fecha';
-      tdFecha.textContent = (m.fecha || '').trim();
-      tr.appendChild(tdItem);
-      tr.appendChild(tdDesc);
-      tr.appendChild(tdCant);
-      tr.appendChild(tdFecha);
+      cols.forEach(col => {
+        const td = document.createElement('td');
+        td.className = 'col-' + col.id;
+        td.textContent = col.id === 'item' ? String(i + 1)
+          : col.id === 'cant' ? formatCantidad(m.cantidad)
+          : String(valorCelda(m, col)).trim();
+        tr.appendChild(td);
+      });
       tbody.appendChild(tr);
     });
 
@@ -28707,22 +28901,41 @@ window.mapaActivar = function(){ cargarMapa(false); refrescarMapaSiToca(MAPA_AL_
     const trTotal = document.createElement('tr');
     trTotal.className = 'total-row';
     const tdTotalLabel = document.createElement('td');
-    tdTotalLabel.colSpan = 2;
     tdTotalLabel.textContent = 'Total, disposición mes de ';
     const spanPeriodo = document.createElement('span');
     spanPeriodo.id = 'tPeriodo';
     spanPeriodo.textContent = periodo;
     tdTotalLabel.appendChild(spanPeriodo);
-    const tdTotalValor = document.createElement('td');
-    tdTotalValor.id = 'tCantidadTotal';
-    tdTotalValor.textContent = formatCantidad(total);
-    // Celda vacía bajo FECHA, para que la fila del total no quede corta
-    // cuando la columna está visible. Se esconde con el resto si no lo está.
-    const tdTotalFecha = document.createElement('td');
-    tdTotalFecha.className = 'col-fecha';
-    trTotal.appendChild(tdTotalLabel);
-    trTotal.appendChild(tdTotalValor);
-    trTotal.appendChild(tdTotalFecha);
+    /* El rótulo ocupa todo lo que hay antes de la cantidad, el total va
+       bajo su columna y lo que venga después queda en blanco. Si la
+       columna de la cantidad está apagada no hay número que totalizar:
+       queda solo el rótulo. */
+    const iCant = cols.map(c => c.id).indexOf('cant');
+    if (iCant < 0){
+      tdTotalLabel.colSpan = Math.max(1, cols.length);
+      trTotal.appendChild(tdTotalLabel);
+    } else {
+      const tdTotalValor = document.createElement('td');
+      tdTotalValor.id = 'tCantidadTotal';
+      tdTotalValor.className = 'col-cant';
+      tdTotalValor.textContent = formatCantidad(total);
+      if (iCant === 0){
+        trTotal.appendChild(tdTotalValor);
+        if (cols.length > 1){
+          tdTotalLabel.colSpan = cols.length - 1;
+          trTotal.appendChild(tdTotalLabel);
+        }
+      } else {
+        tdTotalLabel.colSpan = iCant;
+        trTotal.appendChild(tdTotalLabel);
+        trTotal.appendChild(tdTotalValor);
+        for (let k = iCant + 1; k < cols.length; k++){
+          const vacia = document.createElement('td');
+          vacia.className = 'col-' + cols[k].id;
+          trTotal.appendChild(vacia);
+        }
+      }
+    }
     tbody.appendChild(trTotal);
     repartirMarcaDeAgua();
   }
@@ -28742,7 +28955,7 @@ window.mapaActivar = function(){ cargarMapa(false); refrescarMapaSiToca(MAPA_AL_
   document.getElementById('parrafo1').addEventListener('input', _p1PintarAviso);
 
   document.getElementById('mostrarActa').addEventListener('change', update);
-  document.getElementById('mostrarFechaItems').addEventListener('change', update);
+  renderColumnasCert();
 
   document.getElementById('tipoParrafo1').addEventListener('change', () => {
     const esIntermediario = document.getElementById('tipoParrafo1').value === 'intermediario';
@@ -28755,6 +28968,7 @@ window.mapaActivar = function(){ cargarMapa(false); refrescarMapaSiToca(MAPA_AL_
     // Si hay datos cargados desde la base de datos, se vuelven a totalizar en la nueva
     // unidad (sumando peso en kg, o contando viajes). Si los materiales son manuales, solo
     // se refresca el encabezado/placeholder — el número que ya escribiste no cambia.
+    renderColumnasCert();   // el nombre de la columna de cantidad sigue a la unidad
     if (filasOpActuales.length){
       recalcularMaterialesConExclusiones();
     } else {
@@ -28878,7 +29092,11 @@ window.mapaActivar = function(){ cargarMapa(false); refrescarMapaSiToca(MAPA_AL_
       texto: document.getElementById('parrafo1').value,
       unidad: document.getElementById('unidadCertificacion').value,
       mostrarActa: document.getElementById('mostrarActa').checked,
-      mostrarFechaItems: document.getElementById('mostrarFechaItems').checked,
+      // Las columnas del certificado (cuáles salen, en qué orden y con qué
+      // nombre). Se sigue guardando mostrarFechaItems para que una versión
+      // anterior del tablero abra este certificado sin perder la fecha.
+      columnas: columnasCert.map(c => ({ id:c.id, ver:!!c.ver, titulo:c.titulo || '' })),
+      mostrarFechaItems: !!(columnaPorId('fecha') || {}).ver,
       empresaOrigen: document.getElementById('empresaOrigen').value,
       nitOrigen: document.getElementById('nitOrigen').value,
       direccionOrigen: document.getElementById('direccionOrigen').value,
@@ -28900,10 +29118,21 @@ window.mapaActivar = function(){ cargarMapa(false); refrescarMapaSiToca(MAPA_AL_
        traen el dato. Para ellos se decide como se venían viendo: con la
        columna si alguna fila tiene fecha, sin ella si ninguna la tiene.
        Así ninguno cambia de aspecto al abrirlo. */
-    document.getElementById('mostrarFechaItems').checked =
-      (typeof datos.mostrarFechaItems === 'boolean')
+    /* Certificado guardado con sus columnas: se respetan tal cual. Los
+       anteriores solo traían la casilla de la fecha, y los más viejos ni
+       eso: para ellos se decide como se venían viendo — con la columna si
+       alguna fila tiene fecha, sin ella si ninguna la tiene. Así ninguno
+       cambia de aspecto al abrirlo. */
+    if (Array.isArray(datos.columnas) && datos.columnas.length){
+      setColumnasCert(datos.columnas);
+    } else {
+      setColumnasCert(columnasPorDefecto());
+      verColumna('fecha', (typeof datos.mostrarFechaItems === 'boolean')
         ? datos.mostrarFechaItems
-        : materiales.some(m => (m.fecha || '').trim().length > 0);
+        : materiales.some(m => (m.fecha || '').trim().length > 0));
+      renderColumnasCert();
+    }
+    renderMateriales();
     document.getElementById('empresaOrigen').value = datos.empresaOrigen || '';
     document.getElementById('nitOrigen').value = datos.nitOrigen || '';
     document.getElementById('direccionOrigen').value = datos.direccionOrigen || '';
@@ -29862,6 +30091,7 @@ window.mapaActivar = function(){ cargarMapa(false); refrescarMapaSiToca(MAPA_AL_
   window.aplicarOperacionesSeleccionadas = aplicarOperacionesSeleccionadas;
   window.aplicarCantidadesIndividuales = aplicarCantidadesIndividuales;
   window.agregarMaterialVacio = agregarMaterialVacio;
+  window.agregarColumnaCert = agregarColumnaCert;
   window.abrirExplorador = abrirExplorador;
   window.exportarDesdeExplorador = exportarDesdeExplorador;
   window.cargarGuardados = cargarGuardados;
