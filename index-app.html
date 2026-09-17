@@ -1287,6 +1287,12 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-auditoria table.grid tr:hover td.num{background:var(--oro-tenue);color:var(--verde-osc)}
 #panel-auditoria table.grid td.ro{background:#f5f2ea;color:var(--tinta-suave)}
 #panel-auditoria table.grid td.dup{background:#fbdada}
+/* Misma placa dos veces en 2 h o menos: velo morado encima del color que
+   tenga la celda (las filas auditadas ya vienen pintadas). */
+#panel-auditoria table.grid td.placa2h{box-shadow:inset 0 0 0 999px rgba(122,31,162,.13)}
+#panel-auditoria table.grid td.placa2h-placa{box-shadow:inset 0 0 0 999px rgba(122,31,162,.30);color:#4a0f6b;font-weight:700}
+#panel-auditoria table.grid td.num.placa2h{box-shadow:inset 3px 0 0 #7a1fa2, inset 0 0 0 999px rgba(122,31,162,.18);color:#5b1780;font-weight:700}
+#panel-auditoria .tb.placa2h-chip{color:#5b1780;border-color:#cfb3e0;background:#f6effa;font-weight:700}
 #panel-auditoria table.grid td.num.dup{background:#f3c4c4;color:#8a1c1c;font-weight:700}
 #panel-auditoria table.grid tr:hover td.num.dup{background:#eab0b0}
 #panel-auditoria table.grid td.coment{
@@ -4206,11 +4212,11 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 <div class="toolbar">
   <div class="grupo">
     <select class="tb" id="modo" title="Cuántos registros traer">
+      <option value="todo" selected>Todo el historial</option>
       <option value="300">Últimos 300</option>
       <option value="1000">Últimos 1.000</option>
       <option value="3000">Últimos 3.000</option>
       <option value="rango">Rango de fechas…</option>
-      <option value="todo">Todo el historial</option>
     </select>
     <input type="date" class="tb" id="desde" style="display:none" title="Desde">
     <input type="date" class="tb" id="hasta" style="display:none" title="Hasta">
@@ -4249,6 +4255,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <button class="tb ia-calidad" id="btnCalidad" title="Cuántos registros llegan bien ingresados y cuántos con errores: por dato, por operario y por operación">📊 Calidad de ingreso</button>
   <button class="tb ia-revisar" id="btnIARevisar" title="La IA revisa los últimos 5 registros. Los que ya revisó no se vuelven a cobrar: muestra lo que dijo y abre un ejemplo con su baucher.">Revisar 5 IA</button>
   <button class="tb ia-confirmar" id="btnIAConfirmar" style="display:none" title="Confirmar como revisada por usted la novedad IA de los viajes seleccionados (Ctrl+P)">Confirmar IA</button>
+  <button class="tb placa2h-chip" id="btnPlaca2h" style="display:none" title="Misma placa registrada dos veces con 2 horas o menos de diferencia. Clic: ir a la siguiente."></button>
   <button class="tb alerta" id="btnDups" style="display:none" title="Viajes repetidos: mismo tiquete, placa, pesos, operación y residuo">⚠ <span id="dupsTexto"></span> ▾</button>
   <button class="tb" id="btnComent" style="display:none" title="Comentarios de hilo del archivo (los que deja otra app)">💬 <span id="comentTexto"></span></button>
   <button class="tb" id="btnComentario" title="Agregar un comentario a la celda">✎ Comentar</button>
@@ -21134,12 +21141,14 @@ function render(){
     const filaBo = !!f.bo;
     const filaNueva = !!f.nueva;
     const ia = f.ia;
-    const tds = [`<td class="num${esDup ? ' dup' : ''}${filaBo ? ' fila-borrada' : ''}${filaNueva ? ' fila-nueva' : ''}${ia ? ' ia-' + ia.estado : ''}${S.iaProgreso && S.iaProgreso.fila === f.r ? ' ia-analizando' : ''}" data-vr="${vr}" title="Fila ${f.r}${ia ? ' · IA: ' + esc((IA_ESTADOS[ia.estado] || {}).texto || ia.tipo) + (ia.estado === 'ok' ? '' : ' — ' + esc(ia.detalle)) : ''}${filaBo ? ' · BORRADA por auditoría' : ''}${filaNueva ? ' · CREADA A MANO desde el tablero (no entró por báscula)' : ''}${esDup ? ' · viaje repetido (grupo ' + S.dups.get(idxFila) + ')' : ''} · clic para seleccionar toda la fila">${f.r}</td>`];
+    const p2h = S.placa2h ? S.placa2h.get(idxFila) : null;
+    const tds = [`<td class="num${p2h ? ' placa2h' : ''}${esDup ? ' dup' : ''}${filaBo ? ' fila-borrada' : ''}${filaNueva ? ' fila-nueva' : ''}${ia ? ' ia-' + ia.estado : ''}${S.iaProgreso && S.iaProgreso.fila === f.r ? ' ia-analizando' : ''}" data-vr="${vr}" title="Fila ${f.r}${ia ? ' · IA: ' + esc((IA_ESTADOS[ia.estado] || {}).texto || ia.tipo) + (ia.estado === 'ok' ? '' : ' — ' + esc(ia.detalle)) : ''}${filaBo ? ' · BORRADA por auditoría' : ''}${filaNueva ? ' · CREADA A MANO desde el tablero (no entró por báscula)' : ''}${esDup ? ' · viaje repetido (grupo ' + S.dups.get(idxFila) + ')' : ''}${p2h ? ' · ' + esc(textoPlaca2h(p2h)) : ''} · clic para seleccionar toda la fila">${f.r}</td>`];
     for(let pos = 0; pos < S.colsVista.length; pos++){
       const c = S.colsVista[pos];
       const val = f.v[c] ?? '';
       let cls = 'celda';
       if(esDup) cls += ' dup';
+      if(p2h) cls += c === 4 ? ' placa2h placa2h-placa' : ' placa2h';
       if(filaBo) cls += ' fila-borrada';
       if(S.coment.has(f.r + '_' + (c+1))) cls += ' coment';
       const colBorrada = S.borradas.has(c);
@@ -22128,6 +22137,11 @@ function mostrarDetalle(){
          <b>Fila borrada por auditoría.</b> Las columnas A a U se vaciaron; lo que tenían quedó en el comentario de cada celda.
          Se devuelve con <b>Filas y columnas → Restaurar la fila</b>.
        </div></div>` : '';
+  const p2hPanel = S.placa2h ? S.placa2h.get(S.vista[S.foco.vr]) : null;
+  const avisoPlaca2h = p2hPanel
+    ? `<div class="campo"><div class="val" style="background:#f1e6f7;border-color:#cfb3e0;color:#5b1780;font-family:var(--sans);font-size:12px">
+         <b>Placa repetida en 2 horas o menos.</b> ${esc(textoPlaca2h(p2hPanel))}. Revise si es un registro doble.
+       </div></div>` : '';
   const avisoDup = S.dups.has(S.vista[S.foco.vr])
     ? `<div class="campo"><div class="val" style="background:#fbdada;border-color:#e0b4b4;color:#8a1c1c;font-family:var(--sans);font-size:12px">
          <b>Viaje repetido.</b> Coincide con otro registro en tiquete, placa, pesos, operación y residuo (grupo ${S.dups.get(S.vista[S.foco.vr])}).
@@ -22172,7 +22186,7 @@ function mostrarDetalle(){
       else if(b.dataset.iaSiguiente){ S.guiaIA = true; siguienteNovedadIA(false); }
     });
   }
-  $('panelCuerpo').innerHTML = avisoIA + avisoFila + avisoCol + avisoDup + bloqueHilos + `
+  $('panelCuerpo').innerHTML = avisoIA + avisoFila + avisoCol + avisoPlaca2h + avisoDup + bloqueHilos + `
     <div class="campo">
       <span class="et">${esc(S.headers[c] || letraCol(c+1))}</span>
       <div class="val">${esc(f.v[c] ?? '') || '<i style="color:var(--tinta-suave)">(vacío)</i>'}</div>
@@ -22410,7 +22424,70 @@ function detectarDuplicados(){
   });
   S.dupGrupos = g;
   S.dupsSucios = false;
+  detectarPlacas2h();
   actualizarChipDups();
+}
+
+/* ── MISMA PLACA DOS VECES EN 2 HORAS O MENOS ─────────────────────────
+   Un camión no hace dos viajes completos tan seguido: si la misma placa
+   entra dos veces con 2 h o menos entre una marca temporal y la otra,
+   las dos filas se sombrean de MORADO (puede ser un registro doble). Se
+   calcula sobre lo cargado en la grilla; las filas borradas no cuentan.
+   S.placa2h: índice de fila -> { placa, con: [filas], minutos } */
+const PLACA_2H_MS = 2 * 60 * 60 * 1000;
+function detectarPlacas2h(){
+  S.placa2h = new Map();
+  const porPlaca = new Map();
+  S.filas.forEach((f, i) => {
+    if(f.bo) return;
+    const placa = String(f.v[4] ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if(placa.length < 4 || /^(NA|NULL|SINPLACA)$/.test(placa)) return;
+    const t = marcaMs(f.v[0]);
+    if(!t) return;
+    if(!porPlaca.has(placa)) porPlaca.set(placa, []);
+    porPlaca.get(placa).push({ i, t, r: f.r });
+  });
+  porPlaca.forEach((lista, placa) => {
+    if(lista.length < 2) return;
+    lista.sort((a, b) => a.t - b.t);
+    for(let k = 1; k < lista.length; k++){
+      const a = lista[k - 1], b = lista[k];
+      const dif = b.t - a.t;
+      if(dif > PLACA_2H_MS) continue;
+      const min = Math.round(dif / 60000);
+      [[a, b], [b, a]].forEach(([x, otro]) => {
+        const reg = S.placa2h.get(x.i) || { placa, con: [], minutos: min };
+        if(reg.con.indexOf(otro.r) === -1) reg.con.push(otro.r);
+        reg.minutos = Math.min(reg.minutos, min);
+        S.placa2h.set(x.i, reg);
+      });
+    }
+  });
+  const b = $('btnPlaca2h');
+  if(b){
+    const n = S.placa2h.size;
+    b.style.display = n ? '' : 'none';
+    b.textContent = '🟪 ' + n + ' con placa repetida ≤ 2 h';
+  }
+}
+function textoPlaca2h(p){
+  const t = p.minutos < 60 ? p.minutos + ' min' : Math.floor(p.minutos / 60) + ' h ' + (p.minutos % 60 ? (p.minutos % 60) + ' min' : '');
+  return 'Placa ' + p.placa + ' registrada otra vez con ' + t.trim() + ' de diferencia (fila' + (p.con.length > 1 ? 's ' : ' ') + p.con.join(', ') + ')';
+}
+/* Salta a la siguiente fila marcada (en el orden de la grilla). */
+function siguientePlaca2h(){
+  if(!S.placa2h || !S.placa2h.size) return;
+  const total = S.vista.length, actual = S.foco ? S.foco.vr : -1;
+  for(let k = 1; k <= total; k++){
+    const vr = (actual + k) % total;
+    if(S.placa2h.has(S.vista[vr])){
+      const pos = Math.max(0, S.colsVista.indexOf(4));
+      S.foco = { vr, pos }; S.sel = { r1: vr, c1: pos, r2: vr, c2: pos };
+      asegurarVisible(vr); render(); actualizarPie(); mostrarDetalle();
+      return;
+    }
+  }
+  aviso('Las filas con placa repetida no se ven con los filtros puestos.', true);
 }
 
 /* Un color por resultado de la revisión IA. */
@@ -23747,6 +23824,7 @@ $('btnIA').addEventListener('click', ev=>{
 });
 $('btnIAConfirmar').addEventListener('click', ()=> confirmarNovedadesIA());
 $('btnIARevisar').addEventListener('click', ()=> revisarUltimosConIA(5));
+$('btnPlaca2h').addEventListener('click', siguientePlaca2h);
 $('btnCalidad').addEventListener('click', abrirCalidadIA);
 $('cqCerrar').addEventListener('click', cerrarCalidadIA);
 $('calidadIA').addEventListener('click', ev => {
