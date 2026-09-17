@@ -1752,7 +1752,16 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-auditoria .bj-campo.duda{background:#fffaf0;border-color:#f0e0b8}
 #panel-auditoria .bj-campo b{font:700 13.5px var(--sans);color:#333}
 #panel-auditoria .bj-comp{font:12.5px var(--sans);color:#444;line-height:1.5}
-#panel-auditoria .bj-comp s{color:#8a1c1c}
+#panel-auditoria .bj-dos{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:stretch}
+#panel-auditoria .bj-lado{display:flex;flex-direction:column;gap:2px;border-radius:4px;padding:6px 9px;border:1px solid}
+#panel-auditoria .bj-lado.sis{background:#f4f5f2;border-color:#d9dccf}
+#panel-auditoria .bj-lado.ia{background:#eef4fc;border-color:#b7cdea}
+#panel-auditoria .bj-et{font:600 11px var(--sans);color:#5b665e}
+#panel-auditoria .bj-lado.ia .bj-et{color:#1e5fae}
+#panel-auditoria .bj-val{font:700 15px var(--sans);color:#1f2a22;word-break:break-word}
+#panel-auditoria .bj-lado em{font:11.5px var(--sans);color:#8a4b00;font-style:normal}
+#panel-auditoria .bj-dos .bj-ir{grid-column:1/-1;justify-self:start}
+@media (max-width:760px){ #panel-auditoria .bj-dos{grid-template-columns:1fr} }
 #panel-auditoria .bj-comp .lee{color:#1e5fae;font-weight:600}
 #panel-auditoria .bj-celda{display:inline-block;font:700 11px ui-monospace,Consolas,monospace;background:#eef0e8;border:1px solid #d9dccf;border-radius:3px;padding:0 5px;color:#3b4a3b;vertical-align:1px}
 #panel-auditoria .bj-ir{margin-left:6px;border:0;background:none;color:#1e5fae;font:600 11.5px var(--sans);cursor:pointer;padding:0;text-decoration:underline}
@@ -4265,6 +4274,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 
   <button class="tb primario" id="btnGuardar" disabled>Guardar</button>
   <span class="pendientes" id="pendientes"></span>
+  <span class="pendientes" id="estadoHistorial" style="display:none" title="La pantalla ya se puede usar; el resto del historial se agrega solo">⏳ Cargando historial completo…</span>
 
   <div class="header-sep"></div>
   <button class="tb" id="btnCSV" title="Descargar lo que se ve como CSV">↓ CSV</button>
@@ -20652,7 +20662,11 @@ function sePuedeRepetir(p){
    Ahora: (1) cada pedido de lectura tiene un tiempo máximo, y (2) si la
    respuesta es la hoja completa se descarta y se reintenta.            */
 const LIMITE_MS = { auditListar: 60000, auditFotos: 45000, auditComentarios: 45000,
-                    auditColores: 30000, auditPing: 30000, auditIAProgreso: 30000 };
+                    auditColores: 30000, auditPing: 30000, auditIAProgreso: 30000,
+                    /* Guardar no tenia tiempo maximo: si Google se trababa, el envio
+                       quedaba colgado y "5 cambios pendientes" no bajaba nunca. A los
+                       45 s se corta y se reintenta (guardar lo mismo dos veces da igual). */
+                    auditGuardar: 45000, auditIAConfirmar: 45000 };
 
 async function llamarUnaVez(cuerpo){
   /* Traer TODO el registro o un rango largo sí puede tardar: ahí se espera más. */
@@ -20829,12 +20843,23 @@ function sesionVencida(){
 /* ══════════════════════════════════════════════════════════════
    5. CARGA DE DATOS
    ══════════════════════════════════════════════════════════════ */
+/* ── CARGA EN DOS TIEMPOS ────────────────────────────────────────────
+   Medido el 16/09: el historial completo (5.094 filas, 2,9 MB) tarda 20 a
+   30 s en Google, y con esas esperas Google a veces falla. Con "Todo el
+   historial" se piden PRIMERO las últimas 400 filas (unos 5 s): la
+   pantalla queda lista para trabajar. El historial completo llega por
+   detrás y se agrega a la lista sin tocar filtros, cursor ni cambios
+   pendientes. Mientras tanto la IA y los guardados siguen su curso. */
+const CARGA_RAPIDA = 400;
+let _genCarga = 0;
 async function cargar(){
   const modo = $('modo').value;
   const pl = { accion:'auditListar' };
-  if(modo === 'todo')       pl.modo = 'todo';
+  const enDosTiempos = modo === 'todo';
+  if(enDosTiempos)          { pl.modo = 'ultimos'; pl.limite = CARGA_RAPIDA; }
   else if(modo === 'rango'){ pl.modo = 'rango'; pl.desde = $('desde').value; pl.hasta = $('hasta').value; }
   else                     { pl.modo = 'ultimos'; pl.limite = parseInt(modo,10); }
+  const gen = ++_genCarga;
 
   cargando(true, 'Consultando el registro…');
   estado('busy', 'Consultando…');
@@ -20844,6 +20869,7 @@ async function cargar(){
     /* Sin la lista de filas no es un listado: mejor decir que falló que
        mostrar la grilla vacía como si no hubiera registros. */
     if(!Array.isArray(res.filas)) throw new Error('El servidor no devolvió los registros. Vuelva a cargar.');
+    if(gen !== _genCarga) return;
 
     S.headers  = res.headers || [];
     registrarFotoEntregaMF();
@@ -20874,8 +20900,14 @@ async function cargar(){
     cargarFavoritos();
     estado('ok', 'Conectado');
     $('pieVersion').textContent = 'Operaciones v2.2 · ' + (res.version || '');
-    if(res.truncado) aviso('La hoja es muy grande: se trajeron las últimas ' + S.filas.length + ' filas.');
-    aviso(S.filas.length + ' registros cargados de ' + res.total + ' en la hoja.');
+    S.ultimaLectura = Date.now();
+    if(enDosTiempos && res.total > S.filas.length){
+      aviso('Últimos ' + S.filas.length + ' registros listos. El historial completo (' + res.total + ') se carga por detrás.');
+      traerHistorialCompleto(gen);
+    } else {
+      if(res.truncado) aviso('La hoja es muy grande: se trajeron las últimas ' + S.filas.length + ' filas.');
+      aviso(S.filas.length + ' registros cargados de ' + res.total + ' en la hoja.');
+    }
   }catch(err){
     estado('err', 'Sin conexión');
     aviso(err.message, true);
@@ -20892,6 +20924,114 @@ async function cargar(){
     cargando(false);
   }
 }
+
+/* Mezcla filas que llegaron del servidor con las que hay en pantalla.
+   Cada fila se actualiza EN SU LUGAR (los viajes abiertos en la bandeja o
+   el visor siguen siendo el mismo objeto) y las celdas con un cambio local
+   todavía sin guardar conservan lo que escribió la persona.
+   completo=true: la lista recibida es la hoja entera (se agregan las filas
+   viejas que faltaban). */
+function fusionarFilas(nuevas, completo){
+  const actuales = new Map(S.filas.map(f => [f.r, f]));
+  let desfase = false;
+  const lista = [];
+  nuevas.forEach(n => {
+    n.f = n.f || {}; n.b = n.b || {}; n.n = n.n || {}; n.w = n.w || {};
+    const vieja = actuales.get(n.r);
+    if(!vieja){ lista.push(n); return; }
+    actuales.delete(n.r);
+    const pend = vieja._p || {};
+    const hayPend = Object.keys(pend).length > 0;
+    /* Si en esa fila ahora hay OTRO viaje (se insertaron o borraron filas
+       en la hoja) y hay cambios sin guardar, no se mezcla: avisar. */
+    if(hayPend && String(vieja.v[0] ?? '') !== String(n.v[0] ?? '')){ desfase = true; lista.push(vieja); return; }
+    Object.keys(pend).forEach(c => {
+      n.v[c] = vieja.v[c];
+      ['f','b','w'].forEach(k => { if(vieja[k][c] !== undefined) n[k][c] = vieja[k][c]; else delete n[k][c]; });
+    });
+    ['v','f','b','n','w','ia','bo','nueva','iaFuera','iaSinFoto'].forEach(k => {
+      if(k in n) vieja[k] = n[k]; else delete vieja[k];
+    });
+    lista.push(vieja);
+  });
+  /* Las que no vinieron: si la lista es completa, ya no existen en la hoja
+     (salvo que tengan cambios pendientes); si es parcial, se conservan. */
+  actuales.forEach(f => { if(!completo || (f._p && Object.keys(f._p).length)) lista.push(f); });
+  lista.sort((a, b) => a.r - b.r);
+  S.filas = lista;
+  detectarDuplicados();
+  if(desfase) aviso('La hoja cambió de orden (se insertaron o borraron filas) y hay cambios sin guardar. Guarde y vuelva a Cargar antes de seguir editando.', true);
+}
+
+/* El historial completo, por detrás. */
+async function traerHistorialCompleto(gen){
+  S.cargandoHistorial = true;
+  pintarEstadoHistorial();
+  const t0 = Date.now();
+  try{
+    const res = await llamar({ accion:'auditListar', modo:'todo' });
+    if(gen !== _genCarga) return;
+    if(!res || !res.success || !Array.isArray(res.filas)) throw new Error((res && res.error) || 'no llegó la lista');
+    await esperarSinEdicion();
+    if(gen !== _genCarga) return;
+    S.revisionIA = res.revisionIA || S.revisionIA;
+    S.referenciasIA = res.referenciasIA || S.referenciasIA;
+    const lugar = capturarLugar();
+    fusionarFilas(res.filas, true);
+    S.ultimaLectura = Date.now();
+    actualizarChipIA();
+    recalcularVistaConservando(lugar);
+    if(S.bandejaIA) pintarBandejaIA();
+    aviso('Historial completo listo: ' + S.filas.length + ' registros (' + Math.round((Date.now() - t0) / 1000) + ' s).');
+  }catch(e){
+    if(gen !== _genCarga) return;
+    aviso('No se pudo traer el historial completo (' + e.message + '). Se ve lo más reciente; se intenta otra vez en 2 min.', true);
+    S.historialPendiente = gen;
+  }finally{
+    if(gen === _genCarga){ S.cargandoHistorial = false; pintarEstadoHistorial(); }
+  }
+}
+function pintarEstadoHistorial(){
+  const el = $('estadoHistorial');
+  if(!el) return;
+  el.style.display = S.cargandoHistorial ? '' : 'none';
+}
+
+/* Lo reciente (IA, otros usuarios, viajes nuevos), por detrás. */
+async function refrescarRecientes(){
+  if(!S.cargado || S.refrescando) return;
+  S.refrescando = true;
+  try{
+    const gen = _genCarga;
+    const res = await llamar({ accion:'auditListar', modo:'ultimos', limite: 300 });
+    if(!res || !res.success || !Array.isArray(res.filas) || gen !== _genCarga) return;
+    await esperarSinEdicion();
+    if(gen !== _genCarga) return;
+    S.revisionIA = res.revisionIA || S.revisionIA;
+    S.referenciasIA = res.referenciasIA || S.referenciasIA;
+    const lugar = capturarLugar();
+    fusionarFilas(res.filas, false);
+    S.ultimaLectura = Date.now();
+    actualizarChipIA();
+    recalcularVistaConservando(lugar);
+    if(S.bandejaIA) pintarBandejaIA();
+  }catch(e){ /* sin ruido: se intenta en la vuelta siguiente */ }
+  finally{ S.refrescando = false; }
+}
+/* Cada 2 minutos con Operaciones a la vista. Con la ventana oculta no
+   consulta; al volver, si pasó más de 1 minuto, consulta enseguida. */
+function panelOperacionesVisible(){
+  const p = document.getElementById('panel-auditoria');
+  return !!(p && p.classList.contains('active') && !document.hidden);
+}
+function tocaRefrescar(minimo){
+  if(!S.cargado || !panelOperacionesVisible() || S.cargandoHistorial) return;
+  if(Date.now() - (S.ultimaLectura || 0) < minimo) return;
+  if(S.historialPendiente === _genCarga){ S.historialPendiente = null; traerHistorialCompleto(_genCarga); return; }
+  refrescarRecientes();
+}
+setInterval(() => tocaRefrescar(120000), 15000);
+document.addEventListener('visibilitychange', () => { if(!document.hidden) tocaRefrescar(60000); });
 
 function definirAnchos(){
   S.anchos = S.headers.map((h,i) => {
@@ -20994,6 +21134,51 @@ function marcarFiltrosActivos(){
 /* ══════════════════════════════════════════════════════════════
    7. FILTRO / ORDEN / BÚSQUEDA
    ══════════════════════════════════════════════════════════════ */
+/* Actualiza la lista filtrada/ordenada con lo que llegó por detrás (IA,
+   guardados, otros usuarios) SIN perder el lugar: la fila del cursor, la
+   selección y el scroll se conservan. La fila del cursor se deja a la
+   vista aunque ya no cumpla el filtro, para que no desaparezca debajo de
+   quien está trabajando; sale en la próxima actualización cuando el cursor
+   se mueva. Antes, con filtros puestos, lo nuevo solo se veía al quitarlos. */
+/* Dónde está parado el usuario, por NÚMERO de fila (se toma ANTES de
+   cambiar la lista). */
+function capturarLugar(){
+  const wrap = $('gridWrap');
+  const rDe = vr => { const f = S.filas[S.vista[vr]]; return f ? f.r : null; };
+  const sel = S.sel ? normalizar(S.sel) : null;
+  return {
+    focoR: S.foco ? rDe(S.foco.vr) : null, focoPos: S.foco ? S.foco.pos : 0, focoVrViejo: S.foco ? S.foco.vr : 0,
+    sel, selR1: sel ? rDe(sel.r1) : null, selR2: sel ? rDe(sel.r2) : null,
+    arribaR: rDe(Math.floor(((wrap && wrap.scrollTop) || 0) / ALTO_FILA))
+  };
+}
+/* Espera a que nadie esté escribiendo en una celda (la lista no se cambia
+   con un editor abierto: el editor recuerda la posición de su fila). */
+async function esperarSinEdicion(){
+  while(S.editando) await new Promise(r => setTimeout(r, 400));
+}
+function recalcularVistaConservando(lugar){
+  if(S.editando){ S.vistaSucia = true; return; }
+  if(!S.cargado) return;
+  const wrap = $('gridWrap');
+  const { focoR, focoPos, focoVrViejo, sel, selR1, selR2, arribaR } = lugar || capturarLugar();
+  recalcularVista();
+  const vrDe = r => r == null ? -1 : S.vista.findIndex(i => S.filas[i] && S.filas[i].r === r);
+  if(focoR != null){
+    let vr = vrDe(focoR);
+    if(vr < 0){ const i = indicePorR(focoR); if(i > -1){ vr = Math.min(focoVrViejo, S.vista.length); S.vista.splice(vr, 0, i); } }
+    if(vr > -1){
+      S.foco = { vr, pos: focoPos };
+      const a = vrDe(selR1), b = vrDe(selR2);
+      S.sel = (sel && a > -1 && b > -1) ? { r1: a, c1: sel.c1, r2: b, c2: sel.c2 } : { r1: vr, c1: focoPos, r2: vr, c2: focoPos };
+    }
+  }
+  const nuevoArriba = vrDe(arribaR);
+  if(nuevoArriba > -1) wrap.scrollTop = nuevoArriba * ALTO_FILA;
+  S.vistaSucia = false;
+  render(); actualizarPie();
+}
+
 function recalcularVista(){
   const q = S.busqueda.trim().toLowerCase();
   const cols = Object.keys(S.filtros).map(Number);
@@ -21707,6 +21892,7 @@ function editarCelda(td, inicial){
     input.remove();
     if(guardar && nuevo !== String(actual)) cambiar(idx, c, 'valor', nuevo);
     else render();
+    if(S.vistaSucia) setTimeout(() => recalcularVistaConservando(), 0);
   };
   input.addEventListener('keydown', e=>{
     e.stopPropagation();
@@ -21766,7 +21952,7 @@ function cambiar(idx, c, tipo, valor, op){
   S.cola.push({ idx, fila:f.r, col:c+1, c, tipo, valor: valor === undefined ? '' : valor, previo });
 
   if(tipo !== 'nota'){
-    const reverso = { idx, c, tipo, valor: previo };
+    const reverso = { idx, c, tipo, valor: previo, fila: f.r };
     if(op.grupo) op.grupo.push(reverso);
     else if(!op.sinDeshacer) S.deshacer.push([reverso]);
   }
@@ -21794,14 +21980,34 @@ function enLote(celdas, fn, etiqueta){
   return g.length;
 }
 
+/* La fila por su NUMERO en la hoja, no por su posición en la lista: la
+   lista se completa y se actualiza por detrás (historial completo,
+   refresco cada 2 min) y las posiciones cambian; el número de fila no. */
+let _porR = null, _porRlen = -1, _porRref = null;
+function filaPorR(r){
+  if(_porRref !== S.filas || _porRlen !== S.filas.length){
+    _porR = new Map(); S.filas.forEach((f, i) => _porR.set(f.r, i));
+    _porRref = S.filas; _porRlen = S.filas.length;
+  }
+  const i = _porR.get(Number(r));
+  return i === undefined ? null : S.filas[i];
+}
+function indicePorR(r){ const f = filaPorR(r); return f ? _porR.get(f.r) : -1; }
+
 let temporizador = null;
 function programarEnvio(){
   clearTimeout(temporizador);
   temporizador = setTimeout(enviarCola, 700);
 }
 function refrescarPendientes(){
-  const n = S.cola.length;
-  $('pendientes').textContent = n ? n + (n === 1 ? ' cambio pendiente' : ' cambios pendientes') : '';
+  const n = S.cola.length, env = S.enviandoN || 0;
+  /* Lo que el operario ve tiene que decir qué pasa de verdad: guardando
+     ahora, esperando para reintentar, o en cola. */
+  let t = '';
+  if(env) t = 'Guardando ' + env + (env === 1 ? ' cambio' : ' cambios') + '…' + (n ? ' · ' + n + ' en cola' : '');
+  else if(n && S.reintentosCola) t = n + (n === 1 ? ' cambio pendiente' : ' cambios pendientes') + ' · reintento automático (Guardar para intentar ya)';
+  else if(n) t = n + (n === 1 ? ' cambio pendiente' : ' cambios pendientes');
+  $('pendientes').textContent = t;
   $('btnGuardar').disabled = n === 0;
   $('btnDeshacer').disabled = S.deshacer.length === 0;
 }
@@ -21815,6 +22021,7 @@ async function enviarCola(){
   enviando = true;
 
   const lote = S.cola.splice(0, S.cola.length);
+  S.enviandoN = lote.length;
   refrescarPendientes();
   estado('busy', 'Guardando…');
 
@@ -21830,7 +22037,7 @@ async function enviarCola(){
       if(!res.resultados && res.error) throw new Error(res.error);
 
       (res.resultados || []).forEach(r=>{
-        const f = S.filas.find(x => x.r === r.fila);
+        const f = filaPorR(r.fila);
         if(!f) return;
         const c = r.col - 1;
         if(r.nota) f.n[c] = r.nota;
@@ -21852,7 +22059,7 @@ async function enviarCola(){
       }
 
       parte.forEach(x=>{
-        const f = S.filas[x.idx];
+        const f = filaPorR(x.fila);
         if(f && f._p) delete f._p[x.c];
       });
 
@@ -21865,7 +22072,8 @@ async function enviarCola(){
     if(S.reintentosCola) aviso('Listo: los cambios pendientes quedaron guardados en la hoja.');
     S.reintentosCola = 0;
     estado('ok', 'Guardado en la hoja');
-    render(); refrescarPendientes(); mostrarDetalle();
+    S.enviandoN = 0;
+    recalcularVistaConservando(); refrescarPendientes(); mostrarDetalle();
     clearTimeout(window._ok);
     window._ok = setTimeout(()=>{ S.filas.forEach(f => { delete f._ok; }); render(); }, 1500);
 
@@ -21902,13 +22110,15 @@ async function enviarCola(){
     render(); refrescarPendientes();
   }finally{
     enviando = false;
+    S.enviandoN = 0;
+    refrescarPendientes();
     if(S.esperaReintento) S.esperaReintento = false;
     else if(S.cola.length) programarEnvio();
   }
 }
 
 function revertir(c){
-  const f = S.filas[c.idx];
+  const f = filaPorR(c.fila) || S.filas[c.idx];
   if(!f) return;
   if(c.tipo === 'valor') f.v[c.c] = c.previo;
   else if(c.tipo === 'fuente'){ if(c.previo) f.f[c.c] = c.previo; else delete f.f[c.c]; }
@@ -21920,7 +22130,10 @@ function revertir(c){
 function deshacer(){
   const g = S.deshacer.pop();
   if(!g || !g.length){ aviso('No hay nada que deshacer.'); return; }
-  g.forEach(u => cambiar(u.idx, u.c, u.tipo, u.valor, { sinDeshacer:true }));
+  g.forEach(u => {
+    const i = u.fila !== undefined ? indicePorR(u.fila) : u.idx;
+    if(i > -1) cambiar(i, u.c, u.tipo, u.valor, { sinDeshacer:true });
+  });
   aviso(g.length === 1
     ? 'Cambio revertido. La reversión también queda en el historial de la celda.'
     : g.length + ' cambios revertidos. La reversión queda en el historial de cada celda.');
@@ -22608,18 +22821,21 @@ async function sondearIA(){
   _iaSondeando = true;
   try{
     /* Se piden solo las filas que todavía no tienen resultado, las más recientes. */
-    const sinColor = S.filas.filter(f => !f.ia && !f.bo && !f.iaFuera).slice(-60).map(f => f.r);
-    const res = await llamar({ accion:'auditIAProgreso', filas: sinColor });
+    /* Las recientes sin resultado y las novedades abiertas (una re-evaluación
+       las puede cambiar). */
+    const sinColor = S.filas.filter(f => !f.ia && !f.bo && !f.iaFuera).slice(-50).map(f => f.r);
+    const abiertas = S.filas.filter(f => f.ia && (f.ia.estado === 'no_coincide' || f.ia.estado === 'ojo')).slice(-30).map(f => f.r);
+    const res = await llamar({ accion:'auditIAProgreso', filas: sinColor.concat(abiertas) });
     if(!res || !res.success) throw new Error('sin respuesta');
     const antes = S.iaProgreso ? S.iaProgreso.fila : null;
     S.iaProgreso = res.analizando || null;
     let cambio = antes !== (S.iaProgreso ? S.iaProgreso.fila : null);
     Object.keys(res.ia || {}).forEach(k => {
-      const f = S.filas.find(x => x.r === Number(k));
-      if(f && !f.ia){ f.ia = res.ia[k]; delete f.iaSinFoto; cambio = true; }
+      const f = filaPorR(k);
+      if(f && JSON.stringify(f.ia || null) !== JSON.stringify(res.ia[k])){ f.ia = res.ia[k]; delete f.iaSinFoto; cambio = true; }
     });
     pintarProgresoIA();
-    if(cambio){ actualizarChipIA(); render(); mostrarDetalle(); }
+    if(cambio){ actualizarChipIA(); recalcularVistaConservando(); mostrarDetalle(); if(S.bandejaIA) pintarBandejaIA(); }
   }catch(e){ /* un sondeo que falla no molesta: se vuelve a intentar */ }
   finally{
     _iaSondeando = false;
@@ -22653,7 +22869,7 @@ async function encenderIA(){
     const res = await llamar({ accion:'auditIAActivar', desde: incluirAyer ? ayer.getTime() : undefined });
     if(!res.success) throw new Error(res.error || 'No se pudo encender.');
     aviso('Revisión IA encendida' + (incluirAyer ? ', incluyendo lo que entró desde ayer.' : ': revisa lo que entre desde ahora.'));
-    await cargar();
+    await refrescarRecientes();
   }catch(e){
     aviso('No se pudo encender la revisión IA: ' + e.message, true);
     b.disabled = false;
@@ -22678,7 +22894,7 @@ async function apagarIA(){
     if(!res || !res.success) throw new Error((res && res.error) || 'No se pudo apagar.');
     aviso('Revisión IA apagada. Los ingresos se guardan normal, sin revisión.');
     if(S.revisionIA) S.revisionIA.activa = false;
-    await cargar();
+    await refrescarRecientes();
   }catch(e){
     aviso('No se pudo apagar la revisión IA: ' + e.message, true);
   }finally{
@@ -22700,7 +22916,8 @@ async function reevaluarIA(){
     const res = await llamar({ accion:'auditIAReevaluar' });
     if(!res || !res.success) throw new Error((res && res.error) || 'No se pudo.');
     aviso('Re-evaluadas ' + (res.hechas || 0) + ' novedades: ' + (res.cambiaron || 0) + ' pasaron a OK.' + (res.quedan ? ' Quedan más: vuelva a pulsar el botón.' : ''));
-    await cargar();
+    await refrescarRecientes();
+    traerHistorialCompleto(_genCarga);   // las novedades pueden ser de días anteriores
   }catch(e){
     aviso('No se pudieron re-evaluar las novedades: ' + e.message, true);
   }finally{
@@ -22724,7 +22941,7 @@ async function ponerAlDiaIA(){
     if(!res.success) throw new Error(res.error || 'No se pudo.');
     aviso('La IA revisó ' + (res.hechas || 0) + ' viaje' + (res.hechas === 1 ? '' : 's') + '.' +
           (res.quedan ? ' Quedan más: sigue sola en un minuto.' : '') + (res.error ? ' Aviso: ' + res.error : ''), !!res.error);
-    await cargar();
+    await refrescarRecientes();
   }catch(e){
     aviso('No se pudo poner al día la revisión IA: ' + e.message, true);
   }finally{
@@ -23133,7 +23350,7 @@ function guiaPanelIA(f){
     if(c === 8) return `<div class="ia-guia-item duda"><b>Formato del documento</b>: ${esc(iac.ia)}. Revise la foto: puede que la IA haya pasado algo por alto.
            <div class="ia-guia-btns">${verFoto}</div></div>`;
     return iac.e === 'no'
-      ? `<div class="ia-guia-item"><b>${esc(nombre)}</b>: el sistema dice <s>${esc(f.v[c] ?? '')}</s> · en ${esc(iac.foto)} dice <b>${esc(iac.ia)}</b>
+      ? `<div class="ia-guia-item"><b>${esc(nombre)}</b> · 📄 en el sistema: <b>${esc(f.v[c] ?? '')}</b> · 🤖 la IA leyó en ${esc(iac.foto)}: <b>${esc(iac.ia)}</b>
            <div class="ia-guia-btns">${sug ? `<button type="button" class="fuerte" data-ia-corregir="${c}">Corregir a ${esc(sug)}</button>` : ''}
            <button type="button" data-ia-editar="${c}">Corregir a mano</button>${verFoto}</div></div>`
       : `<div class="ia-guia-item duda"><b>${esc(nombre)}</b>: en ${esc(iac.foto)} no se lee claro (${esc(iac.ia)}). Mírelo en la foto.
@@ -23454,9 +23671,11 @@ function pintarBandejaIA(){
     const res = f._resIA && f._resIA[c];
     const colF = IA_FOTO_COL[iac.foto];
     const celdaSis = letraCol(c + 1) + f.r, celdaFoto = colF !== undefined ? letraCol(colF + 1) + f.r : '';
-    const comp = `<div class="bj-comp">Sistema <span class="bj-celda" title="Celda de la hoja">${celdaSis}</span>: <s>${esc(f.v[c] ?? '') || '(vacío)'}</s> · ${noVerificadoIA(iac)
-      ? '<span class="lee">la IA no lo pudo verificar en las fotos</span> <em>— revíselo con ojo humano y escríbalo mirando el baucher</em>'
-      : esc(iac.foto) + (celdaFoto ? ` <span class="bj-celda" title="Celda donde está la foto del baucher">${celdaFoto}</span>` : '') + ` dice <span class="lee">${esc(iac.ia)}</span>${iac.e === 'duda' ? ' <em>(se lee dudoso)</em>' : ''}`}
+    const comp = `<div class="bj-comp bj-dos">
+      <div class="bj-lado sis"><span class="bj-et">📄 En el sistema <span class="bj-celda" title="Celda de la hoja">${celdaSis}</span></span><span class="bj-val">${esc(f.v[c] ?? '') || '(vacío)'}</span></div>
+      ${noVerificadoIA(iac)
+        ? '<div class="bj-lado ia"><span class="bj-et">🤖 La IA</span><span class="bj-val">no lo pudo verificar en las fotos</span><em>Revíselo con ojo humano y escríbalo mirando el baucher</em></div>'
+        : `<div class="bj-lado ia"><span class="bj-et">🤖 La IA leyó en ${esc(iac.foto)}${celdaFoto ? ` <span class="bj-celda" title="Celda donde está la foto del baucher">${celdaFoto}</span>` : ''}</span><span class="bj-val">${esc(iac.ia)}</span>${iac.e === 'duda' ? '<em>se lee dudoso</em>' : ''}</div>`}
       <button type="button" class="bj-ir" data-bj-ir="${c}" data-idx="${idx}" title="Cerrar la bandeja y llevar el cursor a ${celdaSis}">Ver en la hoja ↗</button></div>`;
     if(res) return `<div class="bj-campo resuelto"><b>${esc(nombre)}</b>${comp}<div class="bj-accion">✔ ${res.tipo === 'reemplazo' ? 'Reemplazado por ' + esc(res.valor) : 'Se deja como está'}</div></div>`;
     if(c === 8) return `<div class="bj-campo duda" data-idx="${idx}" data-c="${c}"><b>Formato del documento</b>
