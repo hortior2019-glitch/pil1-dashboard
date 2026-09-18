@@ -5950,6 +5950,10 @@ const PESTANAS_CONTROLABLES = [
   // "voz" no es una pestaña del nav: controla el botón flotante del
   // Asistente de Voz. Se administra desde acá igual que las demás.
   { id:'voz',             label:'🎙 Asistente de Voz' },
+  // "precios" tampoco es una pestaña: deja ver los valores en pesos (botón $
+  // de Ingreso por Cliente). Por defecto NADIE lo tiene salvo los admins:
+  // hay que marcarlo a propósito.
+  { id:'precios',         label:'💲 Ver precios', porDefecto:false },
   { id:'clientes',        label:'Ingreso por Cliente' },
   { id:'ingreso',         label:'Ingreso de Material' },
   { id:'ProduccionHumus', label:'Producción Humus' },
@@ -6000,6 +6004,7 @@ function aplicarPermisosNav() {
     });
     _aplicarRestriccionUsuariosTab();
     aplicarPermisoVoz();
+    aplicarPermisoPrecios();
     return;
   }
   // Usuario normal: aplicar config (si no hay config para él, ve todo por defecto)
@@ -6014,6 +6019,7 @@ function aplicarPermisosNav() {
   });
   _aplicarRestriccionUsuariosTab();
   aplicarPermisoVoz();
+  aplicarPermisoPrecios();
   // Si la pestaña activa quedó oculta, activar la primera pestaña visible
   const activa = document.querySelector('.nav-tab.active');
   if (activa && activa.style.display === 'none') {
@@ -6043,6 +6049,31 @@ function vozUsuarioPermitido() {
   const permitidas = _permisosConfig[u.usuario];
   if (!permitidas) return true;                         // sin config: ve todo por defecto
   return permitidas.includes('voz');
+}
+
+/* ── PERMISO PARA VER PRECIOS ──
+   Muestra u oculta el botón $ de Ingreso por Cliente. Es solo la cara:
+   el servidor vuelve a comprobarlo con la sesión antes de mandar un
+   precio, así que esconder o mostrar el botón a mano no da acceso. */
+function preciosUsuarioPermitido() {
+  const u = _usuarioActual;
+  if (!u) return false;
+  if (u.admin) return true;
+  const permitidas = _permisosConfig[u.usuario];
+  if (!permitidas) return false;                 // sin config: los precios NO se ven
+  return permitidas.includes('precios');
+}
+function aplicarPermisoPrecios() {
+  const b = document.getElementById('pv-dinero');
+  const card = document.getElementById('cli-valor-card');
+  const puede = preciosUsuarioPermitido();
+  if (b) b.style.display = puede ? '' : 'none';
+  if (!puede && card && card.style.display !== 'none') {
+    card.style.display = 'none';
+    if (b) b.classList.remove('on');
+  }
+  /* Si cambió quién es (otro usuario), no quedan precios del anterior en memoria. */
+  if (!puede && typeof PRECIOS !== 'undefined') { PRECIOS = []; PRECIOS_CARGADOS = false; }
 }
 
 function aplicarPermisoVoz() {
@@ -6108,7 +6139,7 @@ function renderPermisosTabla() {
 
   // Filas: cada usuario con un checkbox por pestaña
   tbody.innerHTML = usuarios.map(u => {
-    const permitidas = _permisosConfig[u.usuario] || PESTANAS_CONTROLABLES.map(p=>p.id); // por defecto todas
+    const permitidas = _permisosConfig[u.usuario] || PESTANAS_CONTROLABLES.filter(p => p.porDefecto !== false).map(p=>p.id); // por defecto todas (menos precios)
     const celdas = PESTANAS_CONTROLABLES.map(p => {
       const checked = permitidas.includes(p.id) ? 'checked' : '';
       return `<td style="text-align:center"><input type="checkbox" class="perm-chk" data-usuario="${u.usuario}" data-panel="${p.id}" ${checked} style="width:16px;height:16px;accent-color:var(--navy);cursor:pointer"></td>`;
@@ -8026,9 +8057,10 @@ function calcularValorViajes(regs){
 async function cargarPrecios(){
   try{
     const r = await fetch(PRECIOS_API, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' },
-                                         body: JSON.stringify({ accion:'preciosListar' }) });
+                                         body: JSON.stringify({ accion:'preciosListar', token: (typeof _authToken !== 'undefined' && _authToken) || '' }) });
     const j = await r.json();
     if(j && j.success){ PRECIOS = j.precios || []; PRECIOS_CARGADOS = true; }
+    else if(j && j.sinPermiso){ PRECIOS = []; PRECIOS_CARGADOS = 'sinPermiso'; window._pvMotivo = j.error; }
     else throw new Error((j && j.error) || 'sin respuesta');
   }catch(e){
     PRECIOS_CARGADOS = 'error';
@@ -8066,6 +8098,10 @@ function renderValorClientes(filtered, lbl){
   document.getElementById('pv-con-iva').classList.toggle('on', PV_CON_IVA);
   if(!PRECIOS_CARGADOS){ cont.innerHTML = '<div class="pv-nota">Cargando precios…</div>'; cargarPrecios(); PRECIOS_CARGADOS = 'cargando'; return; }
   if(PRECIOS_CARGADOS === 'cargando'){ cont.innerHTML = '<div class="pv-nota">Cargando precios…</div>'; return; }
+  if(PRECIOS_CARGADOS === 'sinPermiso'){
+    cont.innerHTML = '<div class="pv-nota alerta">🔒 ' + escPv(window._pvMotivo || 'Tu usuario no tiene permiso para ver los precios.') + '</div>';
+    return;
+  }
   if(PRECIOS_CARGADOS === 'error'){
     cont.innerHTML = '<div class="pv-nota alerta">No se pudieron leer los precios del servidor. <a href="#" onclick="PRECIOS_CARGADOS=false;renderValorClientes(window._cliFiltrados,window._cliLbl);return false">Reintentar</a>' +
       ' · Si el Apps Script no está publicado con esta versión, todavía no conoce los precios.</div>';
@@ -8114,6 +8150,7 @@ function vigenteDe(op, mat){
   return l.length ? l[l.length - 1] : null;
 }
 function abrirPrecios(soloSin){
+  if(!preciosUsuarioPermitido() || PRECIOS_CARGADOS === 'sinPermiso'){ alert('Tu usuario no tiene permiso para ver ni cambiar precios.'); return; }
   const combos = new Map();
   (window.dataIngreso || []).forEach(r => {
     const op = opDeRegistro(r); if(!op) return;
@@ -8213,7 +8250,7 @@ async function guardarPrecios(){
   b.disabled = true; b.textContent = 'Guardando…';
   try{
     const r = await fetch(PRECIOS_API, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' },
-      body: JSON.stringify({ accion:'preciosGuardar', pin, desde, filas,
+      body: JSON.stringify({ accion:'preciosGuardar', pin, desde, filas, token: (typeof _authToken !== 'undefined' && _authToken) || '',
         autor: (typeof _usuarioActual !== 'undefined' && _usuarioActual && (_usuarioActual.nombre || _usuarioActual.usuario)) || '' }) });
     const j = await r.json();
     document.getElementById('pv-pin').value = '';
