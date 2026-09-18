@@ -5258,7 +5258,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <div class="sec-title">Ingreso de Material por Cliente</div>
     <div class="sec-sub" id="clientes-period">Hoy</div>
     <div class="pv-botones">
-      <button type="button" class="pv-dinero pv-editar" id="pv-editar" onclick="abrirPrecios()" title="Actualizar la lista de precios" style="display:none">✎</button>
+      <button type="button" class="pv-dinero pv-editar" id="pv-editar" onclick="abrirPrecios()" title="Actualizar la lista de precios (Ctrl+D)" style="display:none">✎</button>
       <button type="button" class="pv-dinero" id="pv-dinero" onclick="pvMostrar()" title="Ver en pesos" aria-pressed="false">$</button>
     </div>
   </div>
@@ -8053,14 +8053,18 @@ async function cargarPrecios(){
     console.warn('Precios: no se pudieron leer', e && e.message);
   }
   if(window._cliFiltrados) renderValorClientes(window._cliFiltrados, window._cliLbl);
-  if(pvActivo()) pintarBarrasPesos();
+  if(pvActivo()) pintarBarrasPesos();   // también si falló: muestra "—" o el candado
 }
 
 /* ¿Se está mostrando en pesos? Con el $ encendido, permiso y precios leídos. */
 let PV_ON = false;   // el $ encendido
+/* Con el $ encendido la pestaña está "en pesos" YA, aunque los precios
+   todavía no hayan llegado del servidor: el título cambia al instante y
+   las cifras se completan cuando llegan (antes, si el servidor tardaba o
+   no contestaba, la tarjeta se quedaba en kilos y parecía que el $ no hacía
+   nada). */
 function pvActivo(){
-  return !!(PV_ON && PRECIOS_CARGADOS === true &&
-            (typeof preciosUsuarioPermitido !== 'function' || preciosUsuarioPermitido()));
+  return !!(PV_ON && (typeof preciosUsuarioPermitido !== 'function' || preciosUsuarioPermitido()));
 }
 
 /* "Kilogramos por operación" pasa a "Valor por operación": la misma barra,
@@ -8071,12 +8075,33 @@ function pintarBarrasPesos(){
   const tit = document.getElementById('bar-h-kg-titulo');
   const grupos = window._cliGruposKg || [];
   if(!cont) return;
+  if(tit) tit.textContent = 'Valor por operación';
+  /* Mientras no hay precios leídos: las mismas barras, con la cifra en
+     espera ("…") o con lo que pasó (sin permiso, sin respuesta). */
+  if(PRECIOS_CARGADOS !== true){
+    const marca = PRECIOS_CARGADOS === 'sinPermiso' ? '🔒' : PRECIOS_CARGADOS === 'error' ? '—' : '…';
+    const maxKg = Math.max(1, ...grupos.map(([op, regs]) => regs.reduce((a, r) => a + (getPesoNeto(r) || 0), 0)));
+    cont.innerHTML = grupos.map(([op, regs]) => {
+      const kg = regs.reduce((a, r) => a + (getPesoNeto(r) || 0), 0);
+      const color = getClientColor(op), logo = getClientLogo(op);
+      return '<div style="display:flex;flex-direction:column;gap:6px;opacity:.55">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px">' +
+          '<div style="display:flex;align-items:center;gap:10px;min-width:0">' +
+            (logo ? '<img src="' + logo + '" style="width:68px;height:68px;object-fit:contain;flex-shrink:0" onerror="this.style.display=\'none\'">' : '<div style="width:12px;height:12px;border-radius:50%;background:' + color + ';flex-shrink:0"></div>') +
+            '<span style="font-family:\'Playfair Display\',serif;font-size:16px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escPv(op) + '</span>' +
+          '</div>' +
+          '<span style="font-family:\'Libre Baskerville\',serif;font-size:20px;font-weight:700;color:' + color + '">' + marca + '</span>' +
+        '</div>' +
+        '<div style="background:var(--rule-l);border-radius:2px;height:14px;overflow:hidden"><div style="width:' + Math.round(kg * 100 / maxKg) + '%;height:100%;background:' + color + ';border-radius:2px"></div></div>' +
+      '</div>';
+    }).join('') || '<div style="font-size:11px;color:var(--ink-l);padding:8px">Sin datos</div>';
+    return;
+  }
   const valores = grupos.map(([op, regs]) => {
     const t = calcularValorViajes(regs).tot;
     return { op, valor: t.material + t.transporte + t.iva, sinPrecio: t.sinPrecio, viajes: t.viajes };
   }).sort((a, b) => b.valor - a.valor);
   const max = Math.max(1, ...valores.map(v => v.valor));
-  if(tit) tit.textContent = 'Valor por operación';
   cont.innerHTML = valores.map(v => {
     const pct = Math.round((v.valor / max) * 100);
     const color = getClientColor(v.op);
@@ -8244,18 +8269,44 @@ document.addEventListener('change', ev => {
   if(ev.target.matches && ev.target.matches('#pv-filas select[data-k]')) ev.target.dispatchEvent(new Event('input', { bubbles:true }));
 });
 
-/* Ctrl+D (o Cmd+D en Mac) guarda la lista de precios, SOLO con esta
-   ventana abierta: ahí no abre el "agregar a favoritos" del navegador. En
-   el resto del tablero Ctrl+D sigue haciendo lo de siempre. */
+/* Ctrl+D (o Cmd+D en Mac) en Ingreso por Cliente:
+     · con la lista de precios cerrada, la ABRE;
+     · con la lista abierta, GUARDA lo que se cambió.
+   Solo para quien tiene permiso de ver precios. En esta pestaña no abre el
+   "agregar a favoritos" del navegador; en las demás, Ctrl+D hace lo de
+   siempre. */
+async function abrirPreciosConAtajo(){
+  if(PRECIOS_CARGADOS !== true){
+    await cargarPrecios();
+    if(PRECIOS_CARGADOS !== true){
+      alert(PRECIOS_CARGADOS === 'sinPermiso'
+        ? 'Tu usuario no tiene permiso para ver los precios.'
+        : 'No se pudieron leer los precios del servidor. Si el Apps Script no se publicó con la última versión, todavía no los conoce.');
+      return;
+    }
+  }
+  abrirPrecios();
+}
 document.addEventListener('keydown', ev => {
+  if(!((ev.ctrlKey || ev.metaKey) && !ev.altKey && (ev.key === 'd' || ev.key === 'D'))){
+    if(ev.key === 'Escape'){
+      const v = document.getElementById('pv-velo');
+      if(v && v.style.display !== 'none'){ ev.preventDefault(); cerrarPrecios(); }
+    }
+    return;
+  }
   const velo = document.getElementById('pv-velo');
-  if(!velo || velo.style.display === 'none') return;
-  if((ev.ctrlKey || ev.metaKey) && !ev.altKey && (ev.key === 'd' || ev.key === 'D')){
+  const abierta = velo && velo.style.display !== 'none';
+  if(abierta){
     ev.preventDefault(); ev.stopPropagation();
     if(!document.getElementById('pv-guardar').disabled) guardarPrecios();
-  } else if(ev.key === 'Escape'){
-    ev.preventDefault(); cerrarPrecios();
+    return;
   }
+  const panel = document.getElementById('panel-clientes');
+  if(!panel || !panel.classList.contains('active')) return;
+  if(typeof preciosUsuarioPermitido === 'function' && !preciosUsuarioPermitido()) return;
+  ev.preventDefault(); ev.stopPropagation();
+  abrirPreciosConAtajo();
 }, true);
 
 async function guardarPrecios(){
