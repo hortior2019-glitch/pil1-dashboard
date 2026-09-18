@@ -528,13 +528,18 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 /* El boton $: los valores en pesos no se ven hasta que alguien lo toca
    (la pantalla se muestra en la planta y no todos tienen que ver precios). */
 #panel-clientes .sec-hdr{position:relative}
-.pv-dinero{position:absolute;right:0;top:50%;transform:translateY(-50%);width:38px;height:38px;border-radius:4px;
+.pv-botones{position:absolute;right:0;top:50%;transform:translateY(-50%);display:flex;gap:6px}
+.pv-dinero{width:38px;height:38px;border-radius:4px;
   border:1px solid var(--rule);background:#fff;color:var(--navy);font:600 19px/1 'Playfair Display',serif;cursor:pointer;
   display:flex;align-items:center;justify-content:center;padding:0;
   box-shadow:0 1px 2px rgba(0,0,0,.06);transition:border-color .15s,background .15s,color .15s,box-shadow .15s}
 .pv-dinero:hover{border-color:var(--gold);color:var(--gold);box-shadow:0 2px 8px rgba(0,0,0,.1)}
 .pv-dinero.on{background:var(--navy);border-color:var(--navy);color:var(--gold)}
 .pv-dinero:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.pv-editar{font:400 17px/1 'Source Sans 3',sans-serif}
+/* La caja de Peso Neto convertida en Valor total */
+.kpi.pv-kpi-on{--ac:var(--green,#2e7d32) !important}
+.kpi.pv-kpi-on .kpi-val{color:var(--green,#2e7d32);font-size:clamp(22px,2.3vw,34px) !important;white-space:nowrap;letter-spacing:-.5px}
 .pv-cab{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:14px}
 .pv-eyebrow{font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink-l)}
 .pv-titulo{font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink)}
@@ -5252,27 +5257,13 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <div class="sec-hdr">
     <div class="sec-title">Ingreso de Material por Cliente</div>
     <div class="sec-sub" id="clientes-period">Hoy</div>
-    <button type="button" class="pv-dinero" id="pv-dinero" onclick="pvMostrar()" title="Ver lo que vale en pesos lo que ingresó (con los precios cargados)" aria-pressed="false">$</button>
+    <div class="pv-botones">
+      <button type="button" class="pv-dinero pv-editar" id="pv-editar" onclick="abrirPrecios()" title="Actualizar la lista de precios" style="display:none">✎</button>
+      <button type="button" class="pv-dinero" id="pv-dinero" onclick="pvMostrar()" title="Ver en pesos" aria-pressed="false">$</button>
+    </div>
   </div>
 
   <div id="kpi-clientes" style="margin-bottom:24px;"></div>
-
-  <!-- ══ VALOR EN PESOS ══════════════════════════════════════════════
-       Lo que vale lo que ingresó en el periodo, con los precios de cada
-       operación y material: valor por kilo, transporte (por kilo o por
-       viaje) e IVA. Los precios se cargan con "Actualizar precios". -->
-  <div class="card pv-card" id="cli-valor-card" style="margin-bottom:24px;display:none">
-    <div class="pv-cab">
-      <div>
-        <div class="pv-eyebrow">Valor en pesos</div>
-        <div class="pv-titulo">Lo que vale lo que ingresó <small id="pv-periodo"></small></div>
-      </div>
-      <div class="pv-acciones">
-        <button type="button" class="pv-btn" onclick="abrirPrecios()">Actualizar precios</button>
-      </div>
-    </div>
-    <div id="cli-valor"><div class="pv-nota">Cargando precios…</div></div>
-  </div>
 
   <div class="pv-velo" id="pv-velo" style="display:none" onclick="if(event.target===this)cerrarPrecios()">
     <div class="pv-modal" role="dialog" aria-label="Precios por operación y material">
@@ -6063,13 +6054,11 @@ function preciosUsuarioPermitido() {
 }
 function aplicarPermisoPrecios() {
   const b = document.getElementById('pv-dinero');
-  const card = document.getElementById('cli-valor-card');
   const puede = preciosUsuarioPermitido();
   if (b) b.style.display = puede ? '' : 'none';
-  if (!puede && card && card.style.display !== 'none') {
-    card.style.display = 'none';
-    if (b) b.classList.remove('on');
-  }
+  if (!puede && typeof PV_ON !== 'undefined' && PV_ON) pvMostrar(false);
+  const ed = document.getElementById('pv-editar');
+  if (ed && !puede) ed.style.display = 'none';
   /* Si cambió quién es (otro usuario), no quedan precios del anterior en memoria. */
   if (!puede && typeof PRECIOS !== 'undefined') { PRECIOS = []; PRECIOS_CARGADOS = false; }
 }
@@ -8068,9 +8057,9 @@ async function cargarPrecios(){
 }
 
 /* ¿Se está mostrando en pesos? Con el $ encendido, permiso y precios leídos. */
+let PV_ON = false;   // el $ encendido
 function pvActivo(){
-  const card = document.getElementById('cli-valor-card');
-  return !!(card && card.style.display !== 'none' && PRECIOS_CARGADOS === true &&
+  return !!(PV_ON && PRECIOS_CARGADOS === true &&
             (typeof preciosUsuarioPermitido !== 'function' || preciosUsuarioPermitido()));
 }
 
@@ -8119,71 +8108,46 @@ function repintarBarrasKg(){
   if(cont && window._cliBarrasKgHtml != null) cont.innerHTML = window._cliBarrasKgHtml;
 }
 
-function pvMostrar(){
-  const card = document.getElementById('cli-valor-card');
-  const b = document.getElementById('pv-dinero');
-  const ver = card.style.display === 'none';
-  card.style.display = ver ? '' : 'none';
-  b.classList.toggle('on', ver);
-  b.setAttribute('aria-pressed', ver ? 'true' : 'false');
-  b.title = ver ? 'Ocultar los valores en pesos' : 'Ver lo que vale en pesos lo que ingresó (con los precios cargados)';
-  if(ver && window._cliFiltrados) renderValorClientes(window._cliFiltrados, window._cliLbl);
+/* El $ cambia la pestaña a pesos: la caja de Peso Neto pasa a Valor total
+   y las barras de kilos por operación, a valor por operación. Otro toque
+   vuelve a kilos. El lápiz de al lado abre la lista de precios. */
+function pvMostrar(forzar){
+  PV_ON = forzar === undefined ? !PV_ON : !!forzar;
+  const b = document.getElementById('pv-dinero'), ed = document.getElementById('pv-editar');
+  if(b){ b.classList.toggle('on', PV_ON); b.setAttribute('aria-pressed', PV_ON ? 'true' : 'false'); b.title = PV_ON ? 'Volver a kilos' : 'Ver en pesos'; }
+  if(ed) ed.style.display = PV_ON ? '' : 'none';
+  if(window._cliFiltrados) renderValorClientes(window._cliFiltrados, window._cliLbl);
   repintarBarrasKg();
 }
 
 function renderValorClientes(filtered, lbl){
   window._cliFiltrados = filtered; window._cliLbl = lbl;
-  const cont = document.getElementById('cli-valor');
-  if(!cont) return;
-  /* Oculto: no se calcula ni se piden precios hasta que se toque el $. */
-  const card = document.getElementById('cli-valor-card');
-  if(card && card.style.display === 'none') return;
-  const per = document.getElementById('pv-periodo'); if(per) per.textContent = lbl ? '· ' + lbl : '';
-  if(!PRECIOS_CARGADOS){ cont.innerHTML = '<div class="pv-nota">Cargando precios…</div>'; cargarPrecios(); PRECIOS_CARGADOS = 'cargando'; return; }
-  if(PRECIOS_CARGADOS === 'cargando'){ cont.innerHTML = '<div class="pv-nota">Cargando precios…</div>'; return; }
-  if(PRECIOS_CARGADOS === 'sinPermiso'){
-    cont.innerHTML = '<div class="pv-nota alerta">🔒 ' + escPv(window._pvMotivo || 'Tu usuario no tiene permiso para ver los precios.') + '</div>';
+  const caja = document.getElementById('kpi-neto');
+  const et = document.getElementById('kpi-neto-lbl'), val = document.getElementById('kpi-neto-val'), desc = document.getElementById('kpi-neto-desc');
+  if(!caja || !et || !val || !desc) return;
+  /* Lo que la caja decía en kilos, para volver a eso al apagar el $. */
+  if(!caja.dataset.kg || caja.dataset.periodo !== String(lbl) || caja.dataset.filas !== String(filtered.length)){
+    if(!caja.classList.contains('pv-kpi-on')){
+      caja.dataset.kg = val.innerHTML; caja.dataset.periodo = String(lbl); caja.dataset.filas = String(filtered.length);
+    }
+  }
+  if(!PV_ON){
+    caja.classList.remove('pv-kpi-on');
+    et.textContent = 'Peso Neto Total';
+    if(caja.dataset.kg) val.innerHTML = caja.dataset.kg;
+    desc.textContent = 'material dispuesto';
     return;
   }
-  if(PRECIOS_CARGADOS === 'error'){
-    cont.innerHTML = '<div class="pv-nota alerta">No se pudieron leer los precios del servidor. <a href="#" onclick="PRECIOS_CARGADOS=false;renderValorClientes(window._cliFiltrados,window._cliLbl);return false">Reintentar</a>' +
-      ' · Si el Apps Script no está publicado con esta versión, todavía no conoce los precios.</div>';
-    return;
-  }
-  if(!PRECIOS.length){
-    cont.innerHTML = '<div class="pv-nota">Todavía no hay precios cargados. Tocá <b>Actualizar precios</b> para poner el valor por kilo, el transporte y el IVA de cada operación: ahí salen todas las operaciones y materiales que tiene el sistema.</div>';
-    return;
-  }
-  const { tot, porOp } = calcularValorViajes(filtered);
-  /* El IVA no se elige acá: cada operación lo trae en su precio (19 %, 5 %
-     o sin IVA), y se cambia en la lista de precios. El total ya lo suma. */
-  const total = tot.material + tot.transporte + tot.iva;
-  const col = (g) => g.material + g.transporte + g.iva;
-  const textoIva = (g) => { const t = Object.keys(g.tasas).map(Number).sort((a, b) => a - b);
-    if(!t.length) return '—';
-    if(t.length > 1) return 'mixto';
-    return t[0] ? t[0] + ' %' : 'sin IVA'; };
-  cont.innerHTML =
-    '<div class="pv-tiles">' +
-      '<div class="pv-tile"><div class="l">Material</div><div class="v">' + copFmt(tot.material) + '</div><div class="d">kg × valor por kg</div></div>' +
-      '<div class="pv-tile"><div class="l">Transporte</div><div class="v">' + copFmt(tot.transporte) + '</div><div class="d">por kilo o por viaje</div></div>' +
-      '<div class="pv-tile"><div class="l">IVA</div><div class="v">' + copFmt(tot.iva) + '</div><div class="d">el de cada operación</div></div>' +
-      '<div class="pv-tile total"><div class="l">Total</div><div class="v">' + copFmt(total) + '</div><div class="d">' + tot.viajes + ' viajes · ' + Math.round(tot.kg).toLocaleString('es-CO') + ' kg</div></div>' +
-    '</div>' +
-    (tot.sinPrecio ? '<div class="pv-nota alerta">⚠ ' + tot.sinPrecio + ' viaje' + (tot.sinPrecio === 1 ? '' : 's') + ' (' + Math.round(tot.kgSinPrecio).toLocaleString('es-CO') +
-      ' kg) sin precio: no suman. <a href="#" onclick="abrirPrecios(true);return false">Poner precios</a></div>' : '') +
-    '<div style="overflow-x:auto"><table class="pv-t"><thead><tr><th>Operación</th><th class="n">Viajes</th><th class="n ocultable">Kg</th>' +
-      '<th class="n ocultable">Material</th><th class="n ocultable">Transporte</th><th class="ocultable">IVA</th><th class="n ocultable">Valor IVA</th><th class="n">Total</th></tr></thead><tbody>' +
-    porOp.map(g => '<tr' + (g.sinPrecio === g.viajes ? ' class="sin"' : '') + '><td>' + escPv(g.op) +
-        (g.sinPrecio ? ' <small title="' + escPv(Object.keys(g.materiales).join(', ')) + '">(' + g.sinPrecio + ' sin precio)</small>' : '') + '</td>' +
-        '<td class="n">' + g.viajes + '</td><td class="n ocultable">' + Math.round(g.kg).toLocaleString('es-CO') + '</td>' +
-        '<td class="n ocultable">' + copFmt(g.material) + '</td><td class="n ocultable">' + copFmt(g.transporte) + '</td>' +
-        '<td class="iva ocultable">' + textoIva(g) + '</td>' +
-        '<td class="n ocultable">' + copFmt(g.iva) + '</td><td class="n"><b>' + copFmt(col(g)) + '</b></td></tr>').join('') +
-    '<tr class="tot"><td>Total</td><td class="n">' + tot.viajes + '</td><td class="n ocultable">' + Math.round(tot.kg).toLocaleString('es-CO') + '</td>' +
-      '<td class="n ocultable">' + copFmt(tot.material) + '</td><td class="n ocultable">' + copFmt(tot.transporte) + '</td><td class="ocultable"></td><td class="n ocultable">' + copFmt(tot.iva) + '</td>' +
-      '<td class="n">' + copFmt(total) + '</td></tr>' +
-    '</tbody></table></div>';
+  caja.classList.add('pv-kpi-on');
+  et.textContent = 'Valor total';
+  if(!PRECIOS_CARGADOS){ val.textContent = '…'; desc.textContent = 'leyendo precios'; PRECIOS_CARGADOS = 'cargando'; cargarPrecios(); return; }
+  if(PRECIOS_CARGADOS === 'cargando'){ val.textContent = '…'; desc.textContent = 'leyendo precios'; return; }
+  if(PRECIOS_CARGADOS === 'sinPermiso'){ val.textContent = '🔒'; desc.textContent = 'sin permiso para ver precios'; return; }
+  if(PRECIOS_CARGADOS === 'error'){ val.textContent = '—'; desc.innerHTML = 'no se leyeron los precios · <a href="#" onclick="PRECIOS_CARGADOS=false;renderValorClientes(window._cliFiltrados,window._cliLbl);return false">reintentar</a>'; return; }
+  if(!PRECIOS.length){ val.textContent = '$ 0'; desc.textContent = 'sin precios: tocá ✎ para ponerlos'; return; }
+  const { tot } = calcularValorViajes(filtered);
+  val.textContent = copFmt(tot.material + tot.transporte + tot.iva);
+  desc.textContent = 'IVA incluido' + (tot.sinPrecio ? ' · ' + tot.sinPrecio + (tot.sinPrecio === 1 ? ' viaje' : ' viajes') + ' sin precio' : '');
 }
 
 /* ── LA VENTANA PARA ACTUALIZAR PRECIOS ──────────────────────────────
@@ -8408,7 +8372,6 @@ function renderClientes(data, filter) {
     lbl = {ayer:'Ayer',hoy:'Hoy',semana:'Esta semana',mes:'Este mes',total:'Total acumulado'}[filter];
   }
   document.getElementById('clientes-period').textContent = lbl;
-  try { renderValorClientes(filtered, lbl); } catch(e) { console.error('Valor en pesos:', e); }
 
   // Helper normalizar operacion
   const normOp = normEmpresa;
@@ -8492,7 +8455,7 @@ function renderClientes(data, filter) {
   const topViajes  = topCliente ? fmt(sorted[0][1].length) : '';
   document.getElementById('kpi-clientes').innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--rule);border:1px solid var(--rule);margin-bottom:24px">
-      <div class="kpi" style="--ac:var(--gold)"><div class="kpi-lbl">Peso Neto Total</div><div class="kpi-val">${fmtPeso(totalPesoNeto)}</div><div class="kpi-desc">material dispuesto</div><div class="kpi-period">${lbl}</div></div>
+      <div class="kpi" id="kpi-neto" style="--ac:var(--gold)"><div class="kpi-lbl" id="kpi-neto-lbl">Peso Neto Total</div><div class="kpi-val" id="kpi-neto-val">${fmtPeso(totalPesoNeto)}</div><div class="kpi-desc" id="kpi-neto-desc">material dispuesto</div><div class="kpi-period">${lbl}</div></div>
       <div class="kpi" style="--ac:var(--navy)"><div class="kpi-lbl">Total Viajes</div><div class="kpi-val">${fmt(totalReg)}</div><div class="kpi-desc">ingresos en el periodo</div><div class="kpi-period">${lbl}</div></div>
       <div class="kpi" style="--ac:var(--green)"><div class="kpi-lbl">Operaciones</div><div class="kpi-val">${fmt(totalClientes)}</div><div class="kpi-desc">operaciones distintas</div><div class="kpi-period">${lbl}</div></div>
       <!-- Cliente más activo -->
@@ -8514,6 +8477,7 @@ function renderClientes(data, filter) {
       </div>
     </div>
   `;
+  try { renderValorClientes(filtered, lbl); } catch(e) { console.error('Valor en pesos:', e); }
 
   // Cards por cliente
   if (sorted.length === 0) {
