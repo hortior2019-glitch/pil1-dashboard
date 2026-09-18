@@ -5306,7 +5306,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
       <div id="bar-h-viajes" style="display:flex;flex-direction:column;gap:12px;padding:8px 0"></div>
     </div>
     <div class="card">
-      <div class="card-hdr">Kilogramos por operación</div>
+      <div class="card-hdr" id="bar-h-kg-titulo">Kilogramos por operación</div>
       <div id="bar-h-kg" style="display:flex;flex-direction:column;gap:12px;padding:8px 0"></div>
     </div>
   </div>
@@ -8064,6 +8064,59 @@ async function cargarPrecios(){
     console.warn('Precios: no se pudieron leer', e && e.message);
   }
   if(window._cliFiltrados) renderValorClientes(window._cliFiltrados, window._cliLbl);
+  if(pvActivo()) pintarBarrasPesos();
+}
+
+/* ¿Se está mostrando en pesos? Con el $ encendido, permiso y precios leídos. */
+function pvActivo(){
+  const card = document.getElementById('cli-valor-card');
+  return !!(card && card.style.display !== 'none' && PRECIOS_CARGADOS === true &&
+            (typeof preciosUsuarioPermitido !== 'function' || preciosUsuarioPermitido()));
+}
+
+/* "Kilogramos por operación" pasa a "Valor por operación": la misma barra,
+   con lo que vale cada operación (material + transporte + su IVA) en vez
+   de sus kilos, ordenada de la que más vale a la que menos. */
+function pintarBarrasPesos(){
+  const cont = document.getElementById('bar-h-kg');
+  const tit = document.getElementById('bar-h-kg-titulo');
+  const grupos = window._cliGruposKg || [];
+  if(!cont) return;
+  const valores = grupos.map(([op, regs]) => {
+    const t = calcularValorViajes(regs).tot;
+    return { op, valor: t.material + t.transporte + t.iva, sinPrecio: t.sinPrecio, viajes: t.viajes };
+  }).sort((a, b) => b.valor - a.valor);
+  const max = Math.max(1, ...valores.map(v => v.valor));
+  if(tit) tit.textContent = 'Valor por operación';
+  cont.innerHTML = valores.map(v => {
+    const pct = Math.round((v.valor / max) * 100);
+    const color = getClientColor(v.op);
+    const logo = getClientLogo(v.op);
+    return `<div style="display:flex;flex-direction:column;gap:6px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0">
+          ${logo ? `<img src="${logo}" style="width:68px;height:68px;object-fit:contain;flex-shrink:0" onerror="this.style.display='none'">` : `<div style="width:12px;height:12px;border-radius:50%;background:${color};flex-shrink:0"></div>`}
+          <span style="font-family:'Playfair Display',serif;font-size:16px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escPv(v.op)}</span>
+        </div>
+        <span style="font-family:'Libre Baskerville',serif;font-size:20px;font-weight:700;color:${color};flex-shrink:0;font-variant-numeric:lining-nums tabular-nums;text-align:right">${
+          v.sinPrecio === v.viajes ? '<span style="font-size:12px;color:#8a6d1f;font-family:\'Source Sans 3\',sans-serif">sin precio</span>'
+          : copFmt(v.valor) + (v.sinPrecio ? '<div style="font-size:10.5px;color:#8a6d1f;font-family:\'Source Sans 3\',sans-serif;font-weight:600">' + v.sinPrecio + ' sin precio</div>' : '')}</span>
+      </div>
+      <div style="background:var(--rule-l);border-radius:2px;height:14px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:${color};border-radius:2px;transition:width .5s ease"></div>
+      </div>
+    </div>`;
+  }).join('') || '<div style="font-size:11px;color:var(--ink-l);padding:8px">Sin datos</div>';
+}
+
+/* Al prender o apagar el $, o al cambiar los precios, las barras se
+   repintan: en pesos si está activo, en kilos si no. */
+function repintarBarrasKg(){
+  if(!window._cliGruposKg) return;
+  if(pvActivo()) { pintarBarrasPesos(); return; }
+  const tit = document.getElementById('bar-h-kg-titulo'), cont = document.getElementById('bar-h-kg');
+  if(tit) tit.textContent = 'Kilogramos por operación';
+  if(cont && window._cliBarrasKgHtml != null) cont.innerHTML = window._cliBarrasKgHtml;
 }
 
 function pvMostrar(){
@@ -8075,6 +8128,7 @@ function pvMostrar(){
   b.setAttribute('aria-pressed', ver ? 'true' : 'false');
   b.title = ver ? 'Ocultar los valores en pesos' : 'Ver lo que vale en pesos lo que ingresó (con los precios cargados)';
   if(ver && window._cliFiltrados) renderValorClientes(window._cliFiltrados, window._cliLbl);
+  repintarBarrasKg();
 }
 
 function renderValorClientes(filtered, lbl){
@@ -8258,6 +8312,7 @@ async function guardarPrecios(){
     pintarTablaPrecios();
     pvAviso('✔ ' + j.guardados + (j.guardados === 1 ? ' precio guardado' : ' precios guardados') + ', rigen desde el ' + desde.split('-').reverse().join('/') + '.', true);
     if(window._cliFiltrados) renderValorClientes(window._cliFiltrados, window._cliLbl);
+    if(pvActivo()) pintarBarrasPesos();
   }catch(e){
     pvAviso('Error de red: ' + e.message + '. Revise si quedó guardado antes de repetir.');
   }finally{
@@ -8383,6 +8438,9 @@ function renderClientes(data, filter) {
     </div>`;
   }).join('') || '<div style="font-size:11px;color:var(--ink-l);padding:8px">Sin datos</div>';
 
+  window._cliGruposKg = sorted;     // para repintar en pesos sin recalcular todo
+  if (pvActivo()) { pintarBarrasPesos(); } else {
+  document.getElementById('bar-h-kg-titulo').textContent = 'Kilogramos por operación';
   document.getElementById('bar-h-kg').innerHTML = kgPorOp.map(([op, kg]) => {
     const pct = Math.round((kg / maxKg) * 100);
     const color = getClientColor(op);
@@ -8401,6 +8459,8 @@ function renderClientes(data, filter) {
       </div>
     </div>`;
   }).join('') || '<div style="font-size:11px;color:var(--ink-l);padding:8px">Sin datos</div>';
+  window._cliBarrasKgHtml = document.getElementById('bar-h-kg').innerHTML;   // para volver a kilos sin recalcular
+  }
 
 
   // KPIs resumen
