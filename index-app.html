@@ -1293,6 +1293,8 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-auditoria table.grid td.placa2h-placa{box-shadow:inset 0 0 0 999px color-mix(in srgb, var(--p2h) 32%, transparent);color:color-mix(in srgb, var(--p2h) 75%, #000);font-weight:700}
 #panel-auditoria table.grid td.num.placa2h{box-shadow:inset 4px 0 0 var(--p2h), inset 0 0 0 999px color-mix(in srgb, var(--p2h) 20%, transparent);color:color-mix(in srgb, var(--p2h) 80%, #000);font-weight:700}
 #panel-auditoria .p2h-ir{border:0;background:none;padding:0 2px;color:#5b1780;font:700 12px var(--sans);text-decoration:underline;cursor:pointer}
+#panel-auditoria .p2h-aviso:hover{background:#ead7f5 !important}
+#panel-auditoria .p2h-esconder{display:inline-block;margin-top:5px;font-size:11px;opacity:.75;text-decoration:underline}
 #panel-auditoria .tb.placa2h-chip{color:#5b1780;border-color:#cfb3e0;background:#f6effa;font-weight:700}
 #panel-auditoria table.grid td.num.dup{background:#f3c4c4;color:#8a1c1c;font-weight:700}
 #panel-auditoria table.grid tr:hover td.num.dup{background:#eab0b0}
@@ -1861,6 +1863,15 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
   box-shadow:0 10px 40px rgba(0,0,0,.5);background:#fff;border-radius:2px;
 }
 #panel-auditoria #visorImg.zoom{max-width:none;max-height:none;width:auto;cursor:zoom-out}
+/* El giro es solo para VER: la foto en Drive no se toca. Se recuerda por
+   baucher, así que al volver a abrirlo ya sale derecho. */
+#panel-auditoria #visorImg{transition:transform .18s ease}
+#panel-auditoria .bj-girar{
+  position:absolute;right:8px;top:8px;z-index:3;
+  background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.45);color:#fff;
+  border-radius:4px;padding:4px 9px;font:700 13px var(--sans);cursor:pointer;line-height:1.2;
+}
+#panel-auditoria .bj-girar:hover{background:rgba(0,0,0,.8)}
 #panel-auditoria #visorFrame{width:100%;height:100%;border:0;background:#fff;border-radius:2px;position:relative;z-index:1}
 #panel-auditoria .visor-nav{
   position:absolute;top:50%;transform:translateY(-50%);z-index:5;
@@ -4333,6 +4344,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <button class="tb ia-revisar" id="btnIARevisar" title="La IA revisa los últimos 5 registros. Los que ya revisó no se vuelven a cobrar: muestra lo que dijo y abre un ejemplo con su baucher.">Revisar 5 IA</button>
   <button class="tb ia-confirmar" id="btnIAConfirmar" style="display:none" title="Confirmar como revisada por usted la novedad IA de los viajes seleccionados (Ctrl+P)">Confirmar IA</button>
   <button class="tb placa2h-chip" id="btnPlaca2h" style="display:none" title="Misma placa registrada dos veces con 2 horas o menos de diferencia. Clic: ir a la siguiente."></button>
+  <button class="tb placa2h-chip" id="btnPlaca2hVer" style="display:none" title="Volver a mostrar las marcas moradas que escondiste">↺ moradas ocultas</button>
   <button class="tb alerta" id="btnDups" style="display:none" title="Viajes repetidos: mismo tiquete, placa, pesos, operación y residuo">⚠ <span id="dupsTexto"></span> ▾</button>
   <button class="tb" id="btnComent" style="display:none" title="Comentarios de hilo del archivo (los que deja otra app)">💬 <span id="comentTexto"></span></button>
   <button class="tb" id="btnComentario" title="Agregar un comentario a la celda">✎ Comentar</button>
@@ -4594,6 +4606,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
       <p id="visorSub"></p>
     </div>
     <span class="contador" id="visorContador"></span>
+    <button class="visor-btn" id="visorGirar" title="Girar la foto 90° (tecla R). Se recuerda para este baucher.">⟲ Girar</button>
     <button class="visor-btn" id="visorZoom">⤢ Tamaño real</button>
     <a class="visor-btn" id="visorAbrir" href="#" target="_blank" rel="noopener">Abrir en Drive ↗</a>
     <button class="visor-btn cerrar" id="visorCerrar" title="Cerrar (Esc)">×</button>
@@ -4608,7 +4621,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   </div>
   <div class="visor-ia" id="visorIA" style="display:none"></div>
   <div class="visor-pie">
-    <span>← → cambiar de foto · Esc o Ctrl+F cerrar · clic en la imagen para acercar</span>
+    <span>← → cambiar de foto · R girar · Esc o Ctrl+F cerrar · clic en la imagen para acercar</span>
     <span style="flex:1"></span>
     <span id="visorFila"></span>
   </div>
@@ -17470,10 +17483,31 @@ function viewSinDatos(){
     '<div style="margin-top:16px"><button class="btn btn-primary" onclick="cscReintentar()">Reintentar</button></div>';
 }
 
+/* Lo que se ve mientras el servidor contesta. No es una tabla vacía —eso
+   se lee como "la bodega no tiene nada"—: son renglones grises que dicen
+   que los datos vienen en camino. */
+function viewCargando(){
+  const titulo = activeTab === 'inventario' ? 'Inventario' : 'Cadena de abastecimiento';
+  const fila = '<div class="csc-esq-fila"><div class="csc-esq csc-esq-foto"></div>' +
+               '<div style="flex:1;min-width:0"><div class="csc-esq csc-esq-linea" style="width:44%"></div>' +
+               '<div class="csc-esq csc-esq-linea" style="width:26%"></div></div></div>';
+  return `<style>
+      .csc-esq{background:linear-gradient(90deg,#ececea 25%,#f6f6f4 37%,#ececea 63%);background-size:400% 100%;animation:cscBrillo 1.4s ease infinite;border-radius:6px}
+      @keyframes cscBrillo{0%{background-position:100% 50%}100%{background-position:0 50%}}
+      .csc-esq-fila{display:flex;gap:14px;align-items:center;padding:10px 0;border-bottom:1px solid var(--csc-line,#e4e6e3)}
+      .csc-esq-foto{width:92px;height:92px;flex-shrink:0}
+      .csc-esq-linea{height:12px;margin:7px 0}
+    </style>
+    <div class="page-head"><div><div class="eyebrow">Bodega</div><h2>${titulo}</h2>
+      <p>Trayendo los datos del servidor. La primera consulta del día tarda más porque Google tiene que despertar el script; las fotos se cargan al final, para que la lista salga antes.</p></div></div>
+    <div class="card" style="padding:4px 14px 10px">${fila + fila + fila + fila}</div>`;
+}
+
 function render(){
   const v=document.getElementById(CSC_MOUNT); if(!v) return; v.style.opacity='0';
   setTimeout(()=>{
     if(cscErrorCarga) v.innerHTML=viewSinDatos();
+    else if(MODO === 'remoto' && !cscCargado) v.innerHTML=viewCargando();
     else if(activeTab==='dash') v.innerHTML=viewDash();
     else if(activeTab==='lider') v.innerHTML=viewQueue('lider');
     else if(activeTab==='gerente') v.innerHTML=viewQueue('gerente');
@@ -17481,8 +17515,59 @@ function render(){
     else if(activeTab==='almacen') v.innerHTML=viewQueue('almacen');
     else if(activeTab==='inventario') v.innerHTML=viewInventario();
     bindView();
+    cscFotosPerezosas();
     v.style.transition='opacity .18s'; v.style.opacity='1';
   },60);
+}
+
+/* ── LAS FOTOS, DESPUES DE LOS DATOS ────────────────────────────────
+   Cada foto del inventario es un pedido aparte a Drive y tarda lo suyo.
+   Pidiéndolas todas juntas al dibujar la tabla, el navegador se ocupa en
+   ellas y la lista —que ya está lista— se siente trabada.
+   Ahora la tabla sale sin fotos y cada una se pide cuando su renglón se
+   acerca a la pantalla: se ven las de arriba enseguida y el resto al
+   bajar. Si el navegador no tiene IntersectionObserver, se cargan todas
+   como antes. */
+const CSC_FOTOS_TANDA = 6;      // cuantas se piden juntas
+const CSC_FOTOS_PAUSA = 900;    // y cada cuanto entra la tanda siguiente
+let _cscObsFotos = null, _cscRelojFotos = null;
+function cscCargarFoto(img){
+  if (!img || !img.dataset.lazy) return;
+  delete img.dataset.lazy;
+  img.src = img.dataset.orig || '';
+}
+function cscFotosPerezosas(){
+  const v = document.getElementById(CSC_MOUNT); if(!v) return;
+  const fotos = Array.prototype.slice.call(v.querySelectorAll('img[data-lazy]'));
+  clearTimeout(_cscRelojFotos);
+  if(!fotos.length) return;
+
+  /* Las primeras salen ya: son las que se ven sin bajar. */
+  fotos.slice(0, CSC_FOTOS_TANDA).forEach(cscCargarFoto);
+
+  /* Las demas, cuando su renglon se acerca a la pantalla. */
+  if('IntersectionObserver' in window){
+    if(_cscObsFotos) _cscObsFotos.disconnect();
+    _cscObsFotos = new IntersectionObserver(function(entradas, obs){
+      entradas.forEach(function(e){
+        if(!e.isIntersecting) return;
+        obs.unobserve(e.target);
+        cscCargarFoto(e.target);
+      });
+    }, { rootMargin: '400px 0px' });   // se adelanta una pantalla: al llegar ya esta
+    fotos.slice(CSC_FOTOS_TANDA).forEach(function(i){ _cscObsFotos.observe(i); });
+  }
+
+  /* Y pase lo que pase, el resto entra por tandas: asi no quedan fotos sin
+     aparecer si el navegador no avisa que el renglon ya se ve, y nunca se
+     piden las treinta de golpe. */
+  const siguiente = function(){
+    const faltan = Array.prototype.slice.call(v.querySelectorAll('img[data-lazy]'));
+    if(!faltan.length) return;
+    faltan.slice(0, CSC_FOTOS_TANDA).forEach(cscCargarFoto);
+    _cscRelojFotos = setTimeout(siguiente, CSC_FOTOS_PAUSA);
+  };
+  _cscRelojFotos = setTimeout(siguiente, CSC_FOTOS_PAUSA);
 }
 
 /* ---------- HELPERS UI ---------- */
@@ -17515,7 +17600,7 @@ function card(it,actionsHtml){
     <div class="card-body">
       <div class="card-top">
         <div class="card-id">${it.id}</div>
-        ${it.foto?`<img src="${esc(it.foto)}" alt="" onerror="this.style.display='none'" onclick="window.open('${esc(it.foto)}','_blank')" style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--csc-line);flex-shrink:0;cursor:zoom-in;margin-right:10px">`:''}
+        ${it.foto?`<img data-lazy="1" data-orig="${esc(it.foto)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'" onclick="window.open('${esc(it.foto)}','_blank')" style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--csc-line);flex-shrink:0;cursor:zoom-in;margin-right:10px">`:''}
         <div class="card-main">
           <div class="card-title">${esc(it.descripcion)}</div>
           <div class="card-sub">${it.cantidad.toLocaleString('es-CO')} ${esc(it.unidad)} · creado por ${esc(it.creadoPor)}</div>
@@ -17641,7 +17726,7 @@ function viewInventario(){
       <td>
         <div style="display:flex;align-items:center;gap:14px;padding:6px 0">
           ${i.foto
-            ? `<img src="${urlFotoDriveMini(i.foto,400)}" data-orig="${urlFotoDriveMini(i.foto,400)}" data-alt="${urlFotoDriveMiniAlt(i.foto,400)}" alt=""
+            ? `<img data-lazy="1" data-orig="${urlFotoDriveMini(i.foto,400)}" data-alt="${urlFotoDriveMiniAlt(i.foto,400)}" alt="" loading="lazy" decoding="async"
                  title="Ver la foto en grande"
                  onclick="abrirFotoBaucher('${String(i.foto).replace(/'/g,'')}','${String(i.item).replace(/'/g,'')}')"
                  onerror="cscFotoFallo(this)"
@@ -18541,11 +18626,23 @@ function openDetail(it){
 const CSC_MOUNTS = ['csc-view-dash','csc-view-lider','csc-view-gerente','csc-view-conta','csc-view-almacen','csc-view-inventario'];
 let CSC_MOUNT = 'csc-view-dash';
 
-async function cscEnsureSession(){
+/* La sesión se arma en el acto (no pregunta nada al servidor): así la
+   pantalla se puede pintar antes de que lleguen los datos. */
+function cscSesionLocal(){
   if (session) return;
   let u = null;
   try { u = (typeof _usuarioActual !== 'undefined') ? _usuarioActual : null; } catch(e) { u = null; }
   session = { usuario: (u && u.usuario) || 'usuario', nombre: (u && u.nombre) || (u && u.usuario) || 'Usuario', rol: 'admin' };
+}
+
+/* Una sola consulta al abrir (la de siempre). Ya no se puede mirar
+   "si hay sesion" para saber si toca cargar: la sesion se arma antes,
+   al pintar. */
+let cscIntentoCarga = false;
+async function cscEnsureSession(){
+  cscSesionLocal();
+  if (cscIntentoCarga) return;
+  cscIntentoCarga = true;
   if (MODO === 'remoto') {
     try {
       cscErrorCarga = '';
@@ -18584,12 +18681,21 @@ window.cscRefrescarInventario = function(estado){
   try { if (estado && estado.inventario) { DB.inventario = estado.inventario; render(); } } catch(e){}
 };
 
+/* ── ABRIR LA PESTAÑA: PRIMERO LA PANTALLA, DESPUES LOS DATOS ────────
+   Antes se esperaba la respuesta del servidor ANTES de dibujar nada: la
+   pestaña quedaba en blanco todo lo que tardara Google, que en la primera
+   consulta del día puede ser medio minuto (arranque en frío). Ahora se
+   pinta en el acto —con lo que ya esté cargado, o con el esqueleto que
+   dice que se están trayendo— y se vuelve a pintar cuando llegan los
+   datos. Las fotos van después de todo (ver cscFotosPerezosas). */
 window.cscActivar = function(mountId, tab){
+  cscSesionLocal();
+  CSC_MOUNT = mountId;
+  activeTab = tab;
+  filterCat=''; search='';
+  CSC_MOUNTS.forEach(function(id){ if (id !== mountId) { const el = document.getElementById(id); if (el) el.innerHTML=''; } });
+  render();
   cscEnsureSession().then(function(){
-    CSC_MOUNT = mountId;
-    activeTab = tab;
-    filterCat=''; search='';
-    CSC_MOUNTS.forEach(function(id){ if (id !== mountId) { const el = document.getElementById(id); if (el) el.innerHTML=''; } });
     render();
     cscRefrescarSiToca(CSC_AL_VOLVER_MS);
   });
@@ -21286,7 +21392,24 @@ function recalcularVistaConservando(lugar){
   render(); actualizarPie();
 }
 
-function recalcularVista(){
+/* Deja la pantalla en el ÚLTIMO resultado. Al filtrar, lo que se busca
+   casi siempre es lo más nuevo, y lo más nuevo está abajo: quedarse
+   arriba obligaba a bajar toda la lista cada vez. */
+function verFinalDeLaVista(){
+  const n = S.vista.length;
+  if(!n) return;
+  const vr = n - 1;
+  S.foco = { vr, pos: 0 };
+  S.sel  = { r1: vr, c1: 0, r2: vr, c2: 0 };
+  const wrap = $('gridWrap');
+  if(wrap) wrap.scrollTop = Math.max(0, n * ALTO_FILA - wrap.clientHeight + 44);
+  render();
+  actualizarPie();
+  mostrarDetalle();
+}
+
+/* alFinal: cuando el filtro lo puso una persona (no un repintado interno). */
+function recalcularVista(alFinal){
   const q = S.busqueda.trim().toLowerCase();
   const cols = Object.keys(S.filtros).map(Number);
 
@@ -21320,6 +21443,7 @@ function recalcularVista(){
   render();
   actualizarPie();
   marcarFiltrosActivos();
+  if(alFinal) verFinalDeLaVista();
 }
 
 function abrirFiltro(c, btn){
@@ -21385,7 +21509,7 @@ function aplicarFiltro(){
   if(marcados.length === cajas.length) delete S.filtros[c];
   else S.filtros[c] = new Set(marcados);
   cerrarPop('popFiltro');
-  recalcularVista();
+  recalcularVista(true);
 }
 
 function cerrarPop(id){ $(id).classList.remove('abierto'); }
@@ -22458,11 +22582,15 @@ function mostrarDetalle(){
          Se devuelve con <b>Filas y columnas → Restaurar la fila</b>.
        </div></div>` : '';
   const p2hPanel = S.placa2h ? S.placa2h.get(S.vista[S.foco.vr]) : null;
+  /* Todo el aviso es un botón para esconderlo: cuando ya se revisó y el
+     viaje corto era real, un clic y deja de pintarse (los enlaces a las
+     otras filas siguen funcionando). */
   const avisoPlaca2h = p2hPanel
-    ? `<div class="campo"><div class="val" style="background:#f1e6f7;border-color:#cfb3e0;color:#5b1780;font-family:var(--sans);font-size:12px">
+    ? `<div class="campo"><div class="val p2h-aviso" data-p2h-ocultar="${esc(p2hPanel.clave || '')}" title="Clic para esconder esta marca morada" style="background:#f1e6f7;border-color:#cfb3e0;color:#5b1780;font-family:var(--sans);font-size:12px;cursor:pointer">
          <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${p2hPanel.color};vertical-align:-1px"></span>
          <b>Placa repetida en 2 horas o menos</b> · grupo ${p2hPanel.grupo}: ${esc(textoPlaca2h(p2hPanel))}.<br>
-         Viajes del grupo: ${(p2hPanel.filasGrupo || []).map(r => r === f.r ? '<b>fila ' + r + ' (esta)</b>' : '<button type="button" class="p2h-ir" data-ir-fila="' + r + '" title="Ir a esa fila">fila ' + r + '</button>').join(' · ')}. Revise si es un registro doble.
+         Viajes del grupo: ${(p2hPanel.filasGrupo || []).map(r => r === f.r ? '<b>fila ' + r + ' (esta)</b>' : '<button type="button" class="p2h-ir" data-ir-fila="' + r + '" title="Ir a esa fila">fila ' + r + '</button>').join(' · ')}. Revise si es un registro doble.<br>
+         <span class="p2h-esconder">Clic acá para esconder esta marca</span>
        </div></div>` : '';
   const avisoDup = S.dups.has(S.vista[S.foco.vr])
     ? `<div class="campo"><div class="val" style="background:#fbdada;border-color:#e0b4b4;color:#8a1c1c;font-family:var(--sans);font-size:12px">
@@ -22498,6 +22626,8 @@ function mostrarDetalle(){
     $('panelCuerpo').addEventListener('click', ev=>{
       if(ev.target.closest('[data-ia-confirmar-panel]')) return confirmarNovedadesIA();
       if(ev.target.closest('[data-ia-fisico-panel]')) return marcarFisicoNovedadesIA();
+      const p2hOc = ev.target.closest('[data-p2h-ocultar]');
+      if(p2hOc && !ev.target.closest('[data-ir-fila]')) return ocultarPlaca2h(p2hOc.dataset.p2hOcultar);
       const irF = ev.target.closest('[data-ir-fila]');
       if(irF){ irAFilaNumero(+irF.dataset.irFila, 4); return; }
       const br = ev.target.closest('[data-bj-ref],[data-bj-omitir]');
@@ -22568,6 +22698,41 @@ function exportarCSV(){
    13b. VISOR DE FOTOS (dentro del mismo sistema)
    ══════════════════════════════════════════════════════════════ */
 const VISOR = { fotos: [], i: 0, zoom: false, fila: null, abierto: false };
+
+/* ══ GIRAR UNA FOTO QUE SE TOMÓ DE LADO ═══════════════════════════════
+   El baucher se fotografía con el celular y a veces sale acostado o de
+   cabeza. Acá se gira de a 90° para poder leerlo, y el ángulo queda
+   guardado POR FOTO en este navegador: al volver a abrir ese baucher —en
+   el visor o en la bandeja— ya sale derecho.
+   La foto de Drive NO se modifica: es la prueba de lo que entró y se deja
+   como está. Lo que cambia es cómo se ve acá.                          */
+const GIRO_LLAVE = 'horti_giro_fotos_v1';
+let GIROS = {};
+try { GIROS = JSON.parse(localStorage.getItem(GIRO_LLAVE) || '{}') || {}; } catch(e) { GIROS = {}; }
+function giroDeFoto(id){ return (id && GIROS[id]) || 0; }
+function girarFoto(id, paso){
+  if(!id) return 0;
+  const g = ((giroDeFoto(id) + (paso || 90)) % 360 + 360) % 360;
+  if(g) GIROS[id] = g; else delete GIROS[id];
+  try { localStorage.setItem(GIRO_LLAVE, JSON.stringify(GIROS)); } catch(e) {}
+  return g;
+}
+/* Gira la imagen y, si quedó de lado, la encoge lo justo para que siga
+   entrando en su caja (girar no cambia el espacio que ocupa un elemento). */
+function aplicarGiroImagen(img, grados, caja){
+  if(!img) return;
+  img.style.transform = '';
+  if(!grados) return;
+  let escala = 1;
+  if(grados % 180 !== 0 && caja){
+    const r = img.getBoundingClientRect();
+    const anchoCaja = caja.clientWidth, altoCaja = caja.clientHeight;
+    if(r.width && r.height && anchoCaja && altoCaja && (r.height > anchoCaja || r.width > altoCaja)){
+      escala = Math.min(anchoCaja / r.height, altoCaja / r.width);
+    }
+  }
+  img.style.transform = 'rotate(' + grados + 'deg)' + (escala < 1 ? ' scale(' + escala.toFixed(3) + ')' : '');
+}
 
 function fotosDeFila(idx){
   const f = S.filas[idx];
@@ -22642,6 +22807,8 @@ function pintarVisor(){
   $('visorAnt').style.display = VISOR.fotos.length > 1 ? '' : 'none';
   $('visorSig').style.display = VISOR.fotos.length > 1 ? '' : 'none';
   $('visorZoom').textContent = VISOR.zoom ? '⤡ Ajustar' : '⤢ Tamaño real';
+  const giro = giroDeFoto(f.id || f.url);
+  $('visorGirar').textContent = giro ? '⟲ ' + giro + '°' : '⟲ Girar';
 
   const img = $('visorImg'), frame = $('visorFrame'), err = $('visorError');
   const esMF = esFotoEntregaMF(f.c);
@@ -22654,8 +22821,21 @@ function pintarVisor(){
     img.style.display = '';
     frame.style.display = 'none'; frame.src = '';
     err.style.display = 'none';
+    img.style.transform = '';
     img.src = fuente;
   }
+  /* El giro se aplica cuando la imagen ya tiene tamaño: si todavía está
+     cargando, se espera a que cargue. */
+  const ponerGiro = () => aplicarGiroImagen(img, giroDeFoto(f.id || f.url), $('visorCuerpo'));
+  if(img.complete) ponerGiro(); else img.addEventListener('load', ponerGiro, { once: true });
+}
+
+function girarVisor(){
+  const f = VISOR.fotos[VISOR.i];
+  if(!f) return;
+  girarFoto(f.id || f.url, 90);
+  pintarVisor();
+  if(S.bandejaIA) pintarBandejaIA();   // la bandeja muestra la misma foto
 }
 
 // si la miniatura de Drive no carga, se intenta el visor de Drive incrustado
@@ -22684,6 +22864,7 @@ function moverVisor(paso){
 $('visorCerrar').addEventListener('click', cerrarVisor);
 $('visorAnt').addEventListener('click', ()=>moverVisor(-1));
 $('visorSig').addEventListener('click', ()=>moverVisor(1));
+$('visorGirar').addEventListener('click', girarVisor);
 $('visorZoom').addEventListener('click', ()=>{ VISOR.zoom = !VISOR.zoom; pintarVisor(); });
 $('visorImg').addEventListener('click', ()=>{ VISOR.zoom = !VISOR.zoom; pintarVisor(); });
 $('veloVisor').addEventListener('click', ev=>{ if(ev.target.id === 'veloVisor' || ev.target.id === 'visorCuerpo') cerrarVisor(); });
@@ -22695,6 +22876,7 @@ _audDocOn('keydown', ev=>{
   else if(ev.key === 'Escape'){ ev.preventDefault(); ev.stopPropagation(); cerrarVisor(); }
   else if(ev.key === 'ArrowLeft'){ ev.preventDefault(); ev.stopPropagation(); moverVisor(-1); }
   else if(ev.key === 'ArrowRight'){ ev.preventDefault(); ev.stopPropagation(); moverVisor(1); }
+  else if(ev.key === 'r' || ev.key === 'R'){ ev.preventDefault(); ev.stopPropagation(); girarVisor(); }
 }, true);
 
 /* Ctrl+F abre las fotos del registro seleccionado empezando por el
@@ -22763,6 +22945,36 @@ function detectarDuplicados(){
    calcula sobre lo cargado en la grilla; las filas borradas no cuentan.
    S.placa2h: índice de fila -> { placa, con: [filas], minutos } */
 const PLACA_2H_MS = 2 * 60 * 60 * 1000;
+/* ── MARCAS MORADAS ESCONDIDAS ───────────────────────────────────────
+   Muchos pares de ≤ 2 h son viajes cortos de verdad (la misma volqueta
+   yendo y viniendo). Una vez que alguien mira un grupo y ve que está
+   bien, puede esconderlo desde el panel y deja de pintarse. Se guarda en
+   este navegador (no en la hoja): es una decisión de quien revisa, no un
+   dato del viaje. La clave es la placa + la hora del primer viaje del
+   grupo, así sigue sirviendo aunque las filas se corran. */
+const P2H_LLAVE_GUARDADA = 'horti_p2h_ocultos_v1';
+let P2H_OCULTOS = new Set();
+try { P2H_OCULTOS = new Set(JSON.parse(localStorage.getItem(P2H_LLAVE_GUARDADA) || '[]')); } catch(e) {}
+function guardarPlacas2hOcultas(){
+  try { localStorage.setItem(P2H_LLAVE_GUARDADA, JSON.stringify([...P2H_OCULTOS])); } catch(e) {}
+}
+function ocultarPlaca2h(clave){
+  if(!clave) return;
+  P2H_OCULTOS.add(clave);
+  guardarPlacas2hOcultas();
+  detectarPlacas2h();
+  recalcularVista();
+  mostrarDetalle();
+  aviso('Marca morada escondida. Se vuelve a ver con el botón "↺ moradas ocultas".');
+}
+function mostrarPlacas2hOcultas(){
+  if(!P2H_OCULTOS.size) return;
+  P2H_OCULTOS.clear();
+  guardarPlacas2hOcultas();
+  detectarPlacas2h();
+  recalcularVista();
+  mostrarDetalle();
+}
 /* Tonos morados/violetas bien distintos entre sí, en orden fijo: dos grupos
    seguidos nunca quedan con el mismo tono. */
 const PLACA_2H_TONOS = ['#7a1fa2', '#c2185b', '#3949ab', '#00838f', '#8e24aa', '#ad1457', '#5e35b1', '#6d4c41'];
@@ -22801,19 +23013,35 @@ function detectarPlacas2h(){
       });
     }
   });
+  let escondidos = 0;
   grupos.sort((a, b) => a.inicio - b.inicio).forEach((g, n) => {
     const color = PLACA_2H_TONOS[n % PLACA_2H_TONOS.length];
     const filas = g.miembros.map(m => m.r);
+    const clave = g.placa + '|' + g.inicio;
+    /* Un grupo escondido sale del mapa: no se pinta, no se cuenta y el
+       botón de saltar al siguiente tampoco lo visita. */
+    if(P2H_OCULTOS.has(clave)){
+      escondidos++;
+      g.miembros.forEach(m => S.placa2h.delete(m.i));
+      return;
+    }
     g.miembros.forEach(m => {
       const reg = S.placa2h.get(m.i);
-      reg.grupo = n + 1; reg.color = color; reg.filasGrupo = filas;
+      reg.grupo = n + 1; reg.color = color; reg.filasGrupo = filas; reg.clave = clave;
     });
   });
+  S.p2hEscondidos = escondidos;
   const b = $('btnPlaca2h');
   if(b){
     const n = S.placa2h.size;
     b.style.display = n ? '' : 'none';
     b.textContent = '🟪 ' + n + ' con placa repetida ≤ 2 h';
+  }
+  const v = $('btnPlaca2hVer');
+  if(v){
+    v.style.display = escondidos ? '' : 'none';
+    v.textContent = '↺ ' + escondidos + (escondidos === 1 ? ' morada oculta' : ' moradas ocultas');
+    v.title = 'Volver a mostrar ' + (escondidos === 1 ? 'la marca morada escondida' : 'las ' + escondidos + ' marcas moradas escondidas');
   }
 }
 function textoPlaca2h(p){
@@ -23121,7 +23349,7 @@ function aplicarFiltroIA(id){
   S.filtroIA = id;
   cerrarPop('popIA');
   actualizarChipIA();
-  recalcularVista();
+  recalcularVista(true);
   render();
   const x = FILTROS_IA.find(f => f.id === id);
   aviso(id ? 'Mostrando: ' + x.texto + ' (' + S.vista.length + ').' : 'Mostrando todos los registros.');
@@ -23867,7 +24095,7 @@ function pintarBandejaIA(){
   const conError = new Set(celdas.map(x => IA_FOTO_COL[x.iac.foto]));
   const visor = `<div class="bj-visor">
     ${idFoto
-      ? `<div class="bj-foto" data-bj-foto="${colFoto}" data-idx="${idx}" title="Abrir en grande (zoom)"><img src="https://drive.google.com/thumbnail?id=${esc(idFoto)}&sz=w1200" alt="" onerror="this.onerror=null;this.src='https://lh3.googleusercontent.com/d/${esc(idFoto)}=w1200'"><span>${esc(COL_FOTOS[colFoto] || '')} · celda ${letraCol(colFoto + 1)}${f.r} · clic para ampliar</span></div>`
+      ? `<div class="bj-foto" data-bj-foto="${colFoto}" data-idx="${idx}" title="Abrir en grande (zoom)"><img src="https://drive.google.com/thumbnail?id=${esc(idFoto)}&sz=w1200" alt="" onerror="this.onerror=null;this.src='https://lh3.googleusercontent.com/d/${esc(idFoto)}=w1200'"><button type="button" class="bj-girar" data-bj-girar="${esc(idFoto)}" title="Girar 90°: la foto se tomó de lado">⟲</button><span>${esc(COL_FOTOS[colFoto] || '')} · celda ${letraCol(colFoto + 1)}${f.r} · clic para ampliar</span></div>`
       : '<div class="bj-foto sin">Este viaje no tiene foto de baucher</div>'}
     ${bloqueReferenciaIA(f, idx, idFoto ? colFoto : undefined, 'bj-ref-visor')}
     ${conFoto.length > 1 ? '<div class="bj-fotos-tabs">' + conFoto.map(k => `<button type="button" data-bj-ver="${k}" class="${k === colFoto ? 'activo' : ''} ${conError.has(k) ? 'error' : ''}" title="${conError.has(k) ? 'En esta foto está el dato con novedad' : ''}">${esc(COL_FOTOS[k])} · ${letraCol(k + 1)}${f.r}</button>`).join('') + '</div>' : ''}
@@ -23918,11 +24146,20 @@ function pintarBandejaIA(){
       </div>
       ${campos}${detalle}${pie}
     </div></div>`;
+  /* La foto de la bandeja sale con el mismo giro que se le puso en el visor. */
+  const fotoBj = $('bjLista').querySelector('.bj-foto img');
+  if(fotoBj){
+    const caja = fotoBj.closest('.bj-foto');
+    const idBj = (fotoBj.closest('.bj-foto').querySelector('[data-bj-girar]') || {}).dataset;
+    const poner = () => aplicarGiroImagen(fotoBj, giroDeFoto(idBj && idBj.bjGirar), caja);
+    if(fotoBj.complete) poner(); else fotoBj.addEventListener('load', poner, { once: true });
+  }
   const primero = $('bjLista').querySelector('.bj-valor') || $('bjLista').querySelector('[data-bj-confirmar]');
   if(primero){ primero.focus(); if(primero.select) primero.select(); }
 }
 
 async function accionBandejaIA(b){
+  if(b.dataset.bjGirar !== undefined){ girarFoto(b.dataset.bjGirar, 90); pintarBandejaIA(); return; }
   if(b.dataset.bjFoto !== undefined){ abrirVisor(+b.dataset.idx, +b.dataset.bjFoto); return; }
   if(b.dataset.bjVer !== undefined){ S.bjCola[S.bjPos]._bjFoto = +b.dataset.bjVer; pintarBandejaIA(); return; }
   if(b.dataset.bjIr !== undefined){ irACeldaIA(S.filas[+b.dataset.idx], +b.dataset.bjIr); return; }
@@ -24293,7 +24530,7 @@ $('btnCargar').addEventListener('click', ()=>{
 $('buscar').addEventListener('input', ()=>{
   S.busqueda = $('buscar').value;
   clearTimeout(window._b);
-  window._b = setTimeout(recalcularVista, 220);
+  window._b = setTimeout(() => recalcularVista(true), 220);
 });
 $('btnLimpiarFiltros').addEventListener('click', ()=>{
   S.filtros = {}; S.orden = null; S.busqueda = ''; $('buscar').value = '';
@@ -24378,6 +24615,7 @@ $('btnIA').addEventListener('click', ev=>{
 $('btnIAConfirmar').addEventListener('click', ()=> confirmarNovedadesIA());
 $('btnIARevisar').addEventListener('click', ()=> revisarUltimosConIA(5));
 $('btnPlaca2h').addEventListener('click', siguientePlaca2h);
+$('btnPlaca2hVer').addEventListener('click', mostrarPlacas2hOcultas);
 $('btnCalidad').addEventListener('click', abrirCalidadIA);
 $('cqCerrar').addEventListener('click', cerrarCalidadIA);
 $('calidadIA').addEventListener('click', ev => {
@@ -24400,7 +24638,7 @@ $('bandejaIA').addEventListener('keydown', ev => {
 });
 $('bandejaIA').addEventListener('click', ev => {
   if(ev.target === $('bandejaIA')) return cerrarBandejaIA();
-  const b = ev.target.closest('[data-bj-reemplazar],[data-bj-mantener],[data-bj-confirmar],[data-bj-fisico],[data-bj-foto],[data-bj-ver],[data-bj-ir],[data-bj-ref],[data-bj-omitir]');
+  const b = ev.target.closest('[data-bj-girar],[data-bj-reemplazar],[data-bj-mantener],[data-bj-confirmar],[data-bj-fisico],[data-bj-foto],[data-bj-ver],[data-bj-ir],[data-bj-ref],[data-bj-omitir]');
   if(b) accionBandejaIA(b);
 });
 $('bjAnterior').addEventListener('click', () => moverBandejaIA(-1));
@@ -24427,7 +24665,7 @@ $('btnDups').addEventListener('click', ev=>{
 $('dupSolo').addEventListener('click', ()=>{
   S.soloDups = !S.soloDups;
   cerrarPop('popDups');
-  recalcularVista();
+  recalcularVista(true);
   actualizarChipDups();
 });
 $('dupResaltar').addEventListener('click', ()=>{
