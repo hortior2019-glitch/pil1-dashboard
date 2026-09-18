@@ -528,17 +528,19 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 /* El boton $: los valores en pesos no se ven hasta que alguien lo toca
    (la pantalla se muestra en la planta y no todos tienen que ver precios). */
 #panel-clientes .sec-hdr{position:relative}
-.pv-dinero{position:absolute;right:0;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;border:2px solid var(--green,#2e7d32);background:#fff;color:var(--green,#2e7d32);font:800 22px 'Libre Baskerville',serif;cursor:pointer;line-height:1;box-shadow:0 2px 6px rgba(0,0,0,.08)}
-.pv-dinero:hover{background:#eef6ef}
-.pv-dinero.on{background:var(--green,#2e7d32);color:#fff}
+.pv-dinero{position:absolute;right:0;top:50%;transform:translateY(-50%);width:38px;height:38px;border-radius:4px;
+  border:1px solid var(--rule);background:#fff;color:var(--navy);font:600 19px/1 'Playfair Display',serif;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;padding:0;
+  box-shadow:0 1px 2px rgba(0,0,0,.06);transition:border-color .15s,background .15s,color .15s,box-shadow .15s}
+.pv-dinero:hover{border-color:var(--gold);color:var(--gold);box-shadow:0 2px 8px rgba(0,0,0,.1)}
+.pv-dinero.on{background:var(--navy);border-color:var(--navy);color:var(--gold)}
+.pv-dinero:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .pv-cab{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:14px}
 .pv-eyebrow{font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink-l)}
 .pv-titulo{font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink)}
 .pv-titulo small{font-family:'Source Sans 3',sans-serif;font-size:12px;font-weight:400;color:var(--ink-l);margin-left:6px}
 .pv-acciones{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.pv-iva{display:flex;border:1px solid var(--rule)}
-.pv-iva button{padding:7px 14px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:none;background:transparent;color:var(--ink-m);cursor:pointer;font-family:'Source Sans 3',sans-serif}
-.pv-iva button.on{background:var(--navy);color:#fff}
+.pv-t td.iva{font-size:11px;color:var(--ink-l);white-space:nowrap}
 .pv-btn{padding:8px 14px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;border:1px solid var(--navy);background:#fff;color:var(--navy);cursor:pointer;font-family:'Source Sans 3',sans-serif}
 .pv-btn.primario{background:var(--navy);color:#fff}
 .pv-btn:disabled{opacity:.5;cursor:default}
@@ -5266,10 +5268,6 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
         <div class="pv-titulo">Lo que vale lo que ingresó <small id="pv-periodo"></small></div>
       </div>
       <div class="pv-acciones">
-        <div class="pv-iva" role="group" aria-label="Con o sin IVA">
-          <button type="button" id="pv-sin-iva" class="on" onclick="pvCambiarIva(false)">Sin IVA</button>
-          <button type="button" id="pv-con-iva" onclick="pvCambiarIva(true)">Con IVA</button>
-        </div>
         <button type="button" class="pv-btn" onclick="abrirPrecios()">Actualizar precios</button>
       </div>
     </div>
@@ -5280,7 +5278,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <div class="pv-modal" role="dialog" aria-label="Precios por operación y material">
       <div class="pv-modal-cab">
         <div><b>Precios por operación y material</b>
-          <small>Valores SIN IVA. "Todos los materiales" es el precio general de la operación: vale para los materiales que no tengan precio propio.</small></div>
+          <small>Escriba los valores SIN IVA y elija en cada fila si esa operación lleva IVA (y cuál): el total en pesos lo suma solo. "Todos los materiales" es el precio general de la operación: vale para los materiales que no tengan precio propio.</small></div>
         <button type="button" onclick="cerrarPrecios()">Cerrar</button>
       </div>
       <div class="pv-modal-filtro">
@@ -5288,7 +5286,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
         <label class="pv-solo"><input type="checkbox" id="pv-solo-sin" onchange="pintarTablaPrecios()"> Solo los que no tienen precio</label>
       </div>
       <div class="pv-tabla-wrap"><table class="pv-tabla">
-        <thead><tr><th>Operación / material</th><th>$ por kg</th><th>Transporte $</th><th>Transporte por</th><th>IVA %</th><th>Vigente</th></tr></thead>
+        <thead><tr><th>Operación / material</th><th>$ por kg</th><th>Transporte $</th><th>Transporte por</th><th>IVA</th><th>Vigente</th></tr></thead>
         <tbody id="pv-filas"></tbody>
       </table></div>
       <div class="pv-modal-pie">
@@ -7993,8 +7991,6 @@ const PRECIOS_API = 'https://script.google.com/macros/s/AKfycbz1CznJcepKoBIJXwnQ
 function escPv(x){ return String(x == null ? '' : x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 let PRECIOS = [];            // historial completo, como lo manda el servidor
 let PRECIOS_CARGADOS = false;
-let PV_CON_IVA = false;
-try { PV_CON_IVA = localStorage.getItem('horti_pv_iva') === '1'; } catch(e) {}
 
 function clavePv(t){
   return String(t == null ? '' : t).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -8042,12 +8038,13 @@ function calcularValorViajes(regs){
     const mat = matDeRegistro(r);
     const kg = getPesoNeto(r) || 0;
     const p = precioPara(op, mat, fechaIsoDeRegistro(r));
-    const g = porOp[op] = porOp[op] || { op, viajes: 0, kg: 0, material: 0, transporte: 0, iva: 0, sinPrecio: 0, materiales: {} };
+    const g = porOp[op] = porOp[op] || { op, viajes: 0, kg: 0, material: 0, transporte: 0, iva: 0, sinPrecio: 0, materiales: {}, tasas: {} };
     g.viajes++; g.kg += kg; tot.viajes++; tot.kg += kg;
     if(!p){ g.sinPrecio++; tot.sinPrecio++; tot.kgSinPrecio += kg; g.materiales[mat || '(sin material)'] = true; return; }
     const vm = kg * p.valorKg;
     const vt = p.transportePor === 'viaje' ? p.transporte : kg * p.transporte;
     const iv = (vm + vt) * (p.iva || 0) / 100;
+    g.tasas[p.iva || 0] = true;
     g.material += vm; g.transporte += vt; g.iva += iv;
     tot.material += vm; tot.transporte += vt; tot.iva += iv;
   });
@@ -8066,12 +8063,6 @@ async function cargarPrecios(){
     PRECIOS_CARGADOS = 'error';
     console.warn('Precios: no se pudieron leer', e && e.message);
   }
-  if(window._cliFiltrados) renderValorClientes(window._cliFiltrados, window._cliLbl);
-}
-
-function pvCambiarIva(con){
-  PV_CON_IVA = !!con;
-  try { localStorage.setItem('horti_pv_iva', con ? '1' : '0'); } catch(e) {}
   if(window._cliFiltrados) renderValorClientes(window._cliFiltrados, window._cliLbl);
 }
 
@@ -8094,8 +8085,6 @@ function renderValorClientes(filtered, lbl){
   const card = document.getElementById('cli-valor-card');
   if(card && card.style.display === 'none') return;
   const per = document.getElementById('pv-periodo'); if(per) per.textContent = lbl ? '· ' + lbl : '';
-  document.getElementById('pv-sin-iva').classList.toggle('on', !PV_CON_IVA);
-  document.getElementById('pv-con-iva').classList.toggle('on', PV_CON_IVA);
   if(!PRECIOS_CARGADOS){ cont.innerHTML = '<div class="pv-nota">Cargando precios…</div>'; cargarPrecios(); PRECIOS_CARGADOS = 'cargando'; return; }
   if(PRECIOS_CARGADOS === 'cargando'){ cont.innerHTML = '<div class="pv-nota">Cargando precios…</div>'; return; }
   if(PRECIOS_CARGADOS === 'sinPermiso'){
@@ -8112,27 +8101,33 @@ function renderValorClientes(filtered, lbl){
     return;
   }
   const { tot, porOp } = calcularValorViajes(filtered);
-  const sub = tot.material + tot.transporte;
-  const total = PV_CON_IVA ? sub + tot.iva : sub;
-  const col = (g) => PV_CON_IVA ? g.material + g.transporte + g.iva : g.material + g.transporte;
+  /* El IVA no se elige acá: cada operación lo trae en su precio (19 %, 5 %
+     o sin IVA), y se cambia en la lista de precios. El total ya lo suma. */
+  const total = tot.material + tot.transporte + tot.iva;
+  const col = (g) => g.material + g.transporte + g.iva;
+  const textoIva = (g) => { const t = Object.keys(g.tasas).map(Number).sort((a, b) => a - b);
+    if(!t.length) return '—';
+    if(t.length > 1) return 'mixto';
+    return t[0] ? t[0] + ' %' : 'sin IVA'; };
   cont.innerHTML =
     '<div class="pv-tiles">' +
       '<div class="pv-tile"><div class="l">Material</div><div class="v">' + copFmt(tot.material) + '</div><div class="d">kg × valor por kg</div></div>' +
       '<div class="pv-tile"><div class="l">Transporte</div><div class="v">' + copFmt(tot.transporte) + '</div><div class="d">por kilo o por viaje</div></div>' +
-      '<div class="pv-tile"><div class="l">IVA</div><div class="v">' + copFmt(tot.iva) + '</div><div class="d">' + (PV_CON_IVA ? 'incluido en el total' : 'no incluido en el total') + '</div></div>' +
-      '<div class="pv-tile total"><div class="l">Total ' + (PV_CON_IVA ? 'con IVA' : 'sin IVA') + '</div><div class="v">' + copFmt(total) + '</div><div class="d">' + tot.viajes + ' viajes · ' + Math.round(tot.kg).toLocaleString('es-CO') + ' kg</div></div>' +
+      '<div class="pv-tile"><div class="l">IVA</div><div class="v">' + copFmt(tot.iva) + '</div><div class="d">el de cada operación</div></div>' +
+      '<div class="pv-tile total"><div class="l">Total</div><div class="v">' + copFmt(total) + '</div><div class="d">' + tot.viajes + ' viajes · ' + Math.round(tot.kg).toLocaleString('es-CO') + ' kg</div></div>' +
     '</div>' +
     (tot.sinPrecio ? '<div class="pv-nota alerta">⚠ ' + tot.sinPrecio + ' viaje' + (tot.sinPrecio === 1 ? '' : 's') + ' (' + Math.round(tot.kgSinPrecio).toLocaleString('es-CO') +
       ' kg) sin precio: no suman. <a href="#" onclick="abrirPrecios(true);return false">Poner precios</a></div>' : '') +
     '<div style="overflow-x:auto"><table class="pv-t"><thead><tr><th>Operación</th><th class="n">Viajes</th><th class="n ocultable">Kg</th>' +
-      '<th class="n ocultable">Material</th><th class="n ocultable">Transporte</th><th class="n ocultable">IVA</th><th class="n">' + (PV_CON_IVA ? 'Total con IVA' : 'Total sin IVA') + '</th></tr></thead><tbody>' +
+      '<th class="n ocultable">Material</th><th class="n ocultable">Transporte</th><th class="ocultable">IVA</th><th class="n ocultable">Valor IVA</th><th class="n">Total</th></tr></thead><tbody>' +
     porOp.map(g => '<tr' + (g.sinPrecio === g.viajes ? ' class="sin"' : '') + '><td>' + escPv(g.op) +
         (g.sinPrecio ? ' <small title="' + escPv(Object.keys(g.materiales).join(', ')) + '">(' + g.sinPrecio + ' sin precio)</small>' : '') + '</td>' +
         '<td class="n">' + g.viajes + '</td><td class="n ocultable">' + Math.round(g.kg).toLocaleString('es-CO') + '</td>' +
         '<td class="n ocultable">' + copFmt(g.material) + '</td><td class="n ocultable">' + copFmt(g.transporte) + '</td>' +
+        '<td class="iva ocultable">' + textoIva(g) + '</td>' +
         '<td class="n ocultable">' + copFmt(g.iva) + '</td><td class="n"><b>' + copFmt(col(g)) + '</b></td></tr>').join('') +
     '<tr class="tot"><td>Total</td><td class="n">' + tot.viajes + '</td><td class="n ocultable">' + Math.round(tot.kg).toLocaleString('es-CO') + '</td>' +
-      '<td class="n ocultable">' + copFmt(tot.material) + '</td><td class="n ocultable">' + copFmt(tot.transporte) + '</td><td class="n ocultable">' + copFmt(tot.iva) + '</td>' +
+      '<td class="n ocultable">' + copFmt(tot.material) + '</td><td class="n ocultable">' + copFmt(tot.transporte) + '</td><td class="ocultable"></td><td class="n ocultable">' + copFmt(tot.iva) + '</td>' +
       '<td class="n">' + copFmt(total) + '</td></tr>' +
     '</tbody></table></div>';
 }
@@ -8208,7 +8203,10 @@ function pintarTablaPrecios(){
       '<td><input class="' + marca('valorKg') + '" data-k="valorKg" inputmode="decimal" value="' + escPv(kg === '' ? '' : kg) + '" placeholder="—"></td>' +
       '<td><input class="' + marca('transporte') + '" data-k="transporte" inputmode="decimal" value="' + escPv(tr === '' ? '' : tr) + '" placeholder="0"></td>' +
       '<td><select class="' + marca('transportePor') + '" data-k="transportePor"><option value="kg"' + (por === 'kg' ? ' selected' : '') + '>por kg</option><option value="viaje"' + (por === 'viaje' ? ' selected' : '') + '>por viaje</option></select></td>' +
-      '<td><input class="' + marca('iva') + '" data-k="iva" inputmode="decimal" value="' + escPv(iva) + '" style="max-width:70px"></td>' +
+      '<td><select class="' + marca('iva') + '" data-k="iva">' +
+        [[0, 'Sin IVA'], [5, 'Con IVA 5 %'], [19, 'Con IVA 19 %']].concat([0, 5, 19].indexOf(Number(iva)) === -1 ? [[Number(iva), 'Con IVA ' + iva + ' %']] : [])
+          .map(o => '<option value="' + o[0] + '"' + (Number(iva) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') +
+      '</select></td>' +
       '<td class="vig">' + (f.actual ? 'desde ' + escPv(f.actual.desde.split('-').reverse().join('/')) + (f.actual.por ? ' · ' + escPv(f.actual.por) : '') : 'sin precio') + '</td></tr>';
   }).join('') || '<tr><td colspan="6" class="pv-nota">Nada coincide con la búsqueda.</td></tr>';
   const n = PV_FILAS.filter(f => f.cambio).length;
