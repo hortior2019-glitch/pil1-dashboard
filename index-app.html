@@ -1451,6 +1451,7 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-auditoria .ia-motor::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--motor,#9aa39c)}
 #panel-auditoria .ia-motor.gemini{--motor:#1a73e8;color:#1a5fb4}
 #panel-auditoria .ia-motor.claude{--motor:#c26a2b;color:#8a4b1c}
+#panel-auditoria .ia-motor.openrouter{--motor:#6b5bd6;color:#4a3fa0}
 #panel-auditoria .tb.ia-chip .banderin{width:8px;height:8px;vertical-align:0;margin-right:1px}
 #panel-auditoria .ia-aviso{font-size:11px !important;padding:5px 7px !important;line-height:1.35}
 #panel-auditoria .ia-aviso .banderin{width:8px;height:8px;vertical-align:0}
@@ -24040,10 +24041,21 @@ function pintarMotorIA(r){
   let txt, cls, det;
   if(!g.clave){ txt = 'Lee: Claude'; cls = 'claude'; det = 'Gemini no está configurado: falta GEMINI_API_KEY en las propiedades del script.'; }
   else if(g.apagado){ txt = 'Lee: Claude'; cls = 'claude'; det = 'Gemini está apagado a propósito (IA_PROVEEDOR = claude).'; }
-  else if(g.pausaHoy){ txt = 'Lee: Claude · Gemini en pausa'; cls = 'claude'; det = 'Gemini quedó en pausa hasta mañana: ' + (e.texto || 'sin detalle') + (cuando ? ' (' + cuando + ')' : '') + '.'; }
+  else if(g.pausaHoy){ txt = 'Lee: Claude · Gemini en pausa'; cls = 'claude'; det = 'Gemini en pausa: ' + (e.texto || 'sin detalle') + '. Vuelve solo' + (g.pausaHasta ? ' el ' + g.pausaHasta : '') + ', sin que nadie lo reactive.'; }
   else if(e.ok){ txt = 'Lee: Gemini'; cls = 'gemini'; det = 'Gemini (' + (e.modelo || 'gemini') + ') leyó bien la última foto' + (cuando ? ' · ' + cuando : '') + '. Claude queda de respaldo.'; }
   else if(e.texto){ txt = 'Lee: Claude · Gemini falla'; cls = 'claude'; det = 'La última vez Gemini falló: ' + e.texto + (cuando ? ' (' + cuando + ')' : '') + '. Esa foto la leyó Claude.'; }
   else { txt = 'Gemini listo'; cls = 'gemini'; det = 'Gemini está configurado; todavía no leyó ninguna foto con esta versión.'; }
+  /* Si Gemini no está leyendo, el segundo en la fila es OpenRouter (gratis):
+     si su última lectura salió bien, es él quien lee, no Claude. */
+  const o = r.openrouter;
+  if(cls === 'claude' && o && o.clave && !o.apagado && !o.pausaHoy && o.estado && o.estado.ok){
+    txt = txt.replace('Lee: Claude', 'Lee: OpenRouter');
+    cls = 'openrouter';
+    det = det.replace(' Esa foto la leyó Claude.', '');
+    det += ' OpenRouter (' + (o.estado.modelo || 'gratis') + ') ' + (o.estado.texto || 'leyó bien') + '. Claude queda de último respaldo.';
+  } else if(o && o.clave && o.estado && !o.estado.ok){
+    det += ' OpenRouter: ' + o.estado.texto + '.';
+  }
   el.className = 'ia-motor ' + cls;
   el.textContent = txt;
   el.title = det;
