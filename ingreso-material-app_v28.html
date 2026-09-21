@@ -501,20 +501,20 @@ input.campo-error-resaltado,select.campo-error-resaltado,textarea.campo-error-re
 }
 
 /* ══ VIAJES INTERNOS ══
-   Morado propio (normal y noche) para que se distinga de un vistazo del
-   formulario de ingreso, que es verde. */
-.btn-vi{display:inline-flex;align-items:center;gap:6px;margin:0 0 14px;padding:7px 14px;border:1.5px solid #6a3fb5;background:#f3edfc;
-  color:#4a2c82;font:700 11px 'Source Sans 3',sans-serif;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border-radius:20px}
-.btn-vi:hover{background:#e7dcf9}
-.btn-vi .vi-n{background:#6a3fb5;color:#fff;border-radius:10px;padding:0 6px;font-size:10px;letter-spacing:0}
-html.modo-noche .btn-vi{background:#2a2040;border-color:#9b7fd6;color:#d9ccf5}
-html.modo-noche .btn-vi .vi-n{background:#9b7fd6;color:#1a1426}
+   Verde claro propio (normal y noche): mas luminoso que el verde oscuro
+   del formulario de ingreso, para que se distinga de un vistazo. */
+.btn-vi{display:inline-flex;align-items:center;gap:6px;margin:0 0 14px;padding:7px 14px;border:1.5px solid #3fae6a;background:#eaf8ef;
+  color:#1f7a45;font:700 11px 'Source Sans 3',sans-serif;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border-radius:20px}
+.btn-vi:hover{background:#d6f2e0}
+.btn-vi .vi-n{background:#3fae6a;color:#fff;border-radius:10px;padding:0 6px;font-size:10px;letter-spacing:0}
+html.modo-noche .btn-vi{background:#173323;border-color:#6fd197;color:#c9f2d8}
+html.modo-noche .btn-vi .vi-n{background:#6fd197;color:#0f1f16}
 
 #pantalla-internos{display:none;min-height:100vh;
-  --vi-fondo:#f4f0fb;--vi-caja:#ffffff;--vi-borde:#dccff3;--vi-acento:#6a3fb5;--vi-oscuro:#4a2c82;--vi-tinta:#2a1f3d;--vi-suave:#7a6c93;--vi-campo:#faf7ff;
+  --vi-fondo:#ffffff;--vi-caja:#ffffff;--vi-borde:#c9ead6;--vi-acento:#2f9e5e;--vi-oscuro:#3aa86a;--vi-tinta:#173a26;--vi-suave:#5f8a70;--vi-campo:#f6fcf8;
   background:var(--vi-fondo);color:var(--vi-tinta)}
 html.modo-noche #pantalla-internos{
-  --vi-fondo:#15101f;--vi-caja:#221a33;--vi-borde:#3d3057;--vi-acento:#a88be0;--vi-oscuro:#2e2147;--vi-tinta:#eee8fa;--vi-suave:#a99cc2;--vi-campo:#2b2140}
+  --vi-fondo:#0e1a13;--vi-caja:#15271c;--vi-borde:#2a4a36;--vi-acento:#6fd197;--vi-oscuro:#1f4a31;--vi-tinta:#e6f7ec;--vi-suave:#9cc4ab;--vi-campo:#1b3124}
 .vi-top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;padding:12px 60px 12px 14px;background:var(--vi-oscuro);color:#fff}
 .vi-top button{background:none;border:1px solid rgba(255,255,255,.45);color:#fff;padding:5px 10px;font:700 11px 'Source Sans 3',sans-serif;cursor:pointer;border-radius:4px}
 .vi-top b{font:700 15px 'Source Sans 3',sans-serif;letter-spacing:1px;text-transform:uppercase}
@@ -532,7 +532,7 @@ html.modo-noche #pantalla-internos{
 .vi-foto button{background:none;border:none;color:var(--vi-acento);font:700 12px 'Source Sans 3',sans-serif;cursor:pointer;text-decoration:underline}
 .vi-ok{width:100%;margin-top:12px;padding:14px;border:none;background:var(--vi-acento);color:#fff;font:700 13px 'Source Sans 3',sans-serif;
   letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;border-radius:4px}
-html.modo-noche .vi-ok{color:#15101f}
+html.modo-noche .vi-ok{color:#0e1a13}
 .vi-ok:disabled{opacity:.45;cursor:default}
 .vi-msg{font-size:12.5px;margin-top:8px;min-height:1em}
 .vi-msg.mal{color:#c0392b}
@@ -5013,6 +5013,23 @@ function mostrarBienvenida() {
 //    por detrás; si no hay señal, se reintenta solo. El operario no se
 //    queda esperando.
 //  - El ID lo pone el celular: si un envío se repite, no se duplica.
+// Los viajes internos van a su PROPIO Apps Script (y su propio Google
+// Sheets), aparte de la recepcion de residuos.
+var VI_URL = 'https://script.google.com/macros/s/AKfycbzTGxVSWztnaTMV1YNUsy-pNEdqCo3YimXz8C-w_omdLROU__kfGr854jtmy039u96OKw/exec';
+async function viPost(cuerpo, limiteMs) {
+  var ctl = window.AbortController ? new AbortController() : null;
+  var reloj = ctl ? setTimeout(function () { ctl.abort(); }, limiteMs) : null;
+  try {
+    var res = await fetch(VI_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(cuerpo), signal: ctl ? ctl.signal : undefined });
+    var texto = await res.text();
+    try { return JSON.parse(texto); }
+    catch (e) { var e1 = new Error('Google no devolvió la respuesta'); e1.sinRespuesta = true; throw e1; }
+  } catch (err) {
+    if (!err.sinRespuesta) { var e2 = new Error(err.name === 'AbortError' ? 'sin respuesta' : err.message); e2.sinRespuesta = true; throw e2; }
+    throw err;
+  } finally { if (reloj) clearTimeout(reloj); }
+}
 var VI_FOTO_MAX_DIM = 1024;
 var VI_FOTO_CALIDAD = 0.6;
 var VI_COLA_KEY = 'pil1_vi_cola_v1';
@@ -5060,11 +5077,23 @@ function viCerrar() {
   viPintarContadorMenu();
 }
 
+/* Placas y conductores salen de los mismos CSV del formulario de ingreso
+   (Placas_maximos.csv y conductores.csv): las filas cuya OPERACION es
+   "Internos". Para agregar uno, se agrega la fila en el CSV. */
+var VI_OPERACION = 'internos';
+function viEsInterno(op) {
+  return String(op || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') === VI_OPERACION;
+}
 function viLlenarPlacas() {
   var sel = document.getElementById('vi-placa');
   var actual = sel.value;
-  sel.innerHTML = '<option value="">Elija la placa…</option>' +
-    FLOTA_INTERNA.map(function (p) { return '<option value="' + p + '">' + p + '</option>'; }).join('') +
+  var placas = [];
+  Object.keys(typeof placasPorOperacionDB !== 'undefined' ? placasPorOperacionDB : {}).forEach(function (op) {
+    if (viEsInterno(op)) placasPorOperacionDB[op].forEach(function (p) { if (placas.indexOf(p) === -1) placas.push(p); });
+  });
+  placas.sort();
+  sel.innerHTML = (placas.length ? '<option value="">Elija la placa…</option>' : '<option value="">Sin placas "Internos" en el listado</option>') +
+    placas.map(function (p) { return '<option value="' + viEsc(p) + '">' + viEsc(p) + '</option>'; }).join('') +
     '<option value="otra">Otra placa…</option>';
   if (actual) sel.value = actual;
 }
@@ -5081,9 +5110,27 @@ function viPlacaElegida() {
 }
 function viLlenarConductores() {
   var vistos = {};
-  var nombres = (typeof conductoresDB !== 'undefined' ? conductoresDB : []).map(function (c) { return c.nombre; })
-    .filter(function (n) { var k = n.toLowerCase(); if (!n || vistos[k]) return false; vistos[k] = 1; return true; }).sort();
-  document.getElementById('vi-conductores').innerHTML = nombres.map(function (n) { return '<option value="' + viEsc(n) + '">'; }).join('');
+  var nombres = (typeof conductoresDB !== 'undefined' ? conductoresDB : [])
+    .filter(function (c) { return viEsInterno(c.operacion); })
+    .map(function (c) { return c.nombre; })
+    .filter(function (n) { var k = n.toLowerCase(); if (!n || vistos[k]) return false; vistos[k] = 1; return true; })
+    .sort(function (a, b) { return a.localeCompare(b, 'es'); });
+  var sel = document.getElementById('vi-conductor-sel');
+  var actual = sel.value;
+  sel.innerHTML = (nombres.length ? '<option value="">Elija el conductor…</option>' : '<option value="">Sin conductores "Internos" en el listado</option>') +
+    nombres.map(function (n) { return '<option value="' + viEsc(n) + '">' + viEsc(n) + '</option>'; }).join('') +
+    '<option value="otro">Otro conductor…</option>';
+  if (actual) sel.value = actual;
+}
+function viCambioConductor() {
+  var otro = document.getElementById('vi-conductor-sel').value === 'otro';
+  var inp = document.getElementById('vi-conductor');
+  inp.style.display = otro ? '' : 'none';
+  if (otro) inp.focus();
+}
+function viConductorElegido() {
+  var v = document.getElementById('vi-conductor-sel').value;
+  return (v === 'otro' ? document.getElementById('vi-conductor').value : v).trim();
 }
 
 function viTomarFoto(targetId) {
@@ -5108,9 +5155,9 @@ function viRecibirFoto(targetId, dataUrl) {
 
 function viRegistrarSalida() {
   var placa = viPlacaElegida();
-  var conductor = document.getElementById('vi-conductor').value.trim();
+  var conductor = viConductorElegido();
   var msg = document.getElementById('vi-msg-salida');
-  var falta = placa.length < 5 ? 'Elija la placa.' : !conductor ? 'Escriba el nombre del conductor.' : !VI.fotoCargue ? 'Falta la foto del cargue.' : '';
+  var falta = placa.length < 5 ? 'Elija la placa.' : !conductor ? 'Elija el conductor.' : !VI.fotoCargue ? 'Falta la foto del cargue.' : '';
   if (falta) { msg.textContent = falta; msg.className = 'vi-msg mal'; return; }
   var item = { tipo: 'salida', id: viNuevoId(), placa: placa, conductor: conductor, hora: new Date().toISOString(), foto: VI.fotoCargue,
                operario: sesionUsuario ? sesionUsuario.nombre : '' };
@@ -5121,6 +5168,8 @@ function viRegistrarSalida() {
   document.getElementById('vi-placa-otra').value = '';
   document.getElementById('vi-placa-otra').style.display = 'none';
   document.getElementById('vi-conductor').value = '';
+  document.getElementById('vi-conductor').style.display = 'none';
+  document.getElementById('vi-conductor-sel').value = '';
   document.getElementById('vi-cargue-zona').innerHTML = '<button type="button" class="vi-cam" onclick="viTomarFoto(\'vi-cargue\')">📷 Foto del cargue</button>';
   msg.textContent = 'Salida de ' + placa + ' registrada.'; msg.className = 'vi-msg';
   setTimeout(function () { if (msg.textContent.indexOf(placa) > -1) msg.textContent = ''; }, 4000);
@@ -5152,7 +5201,7 @@ async function viProcesarCola() {
       var cuerpo = { accion: it.tipo === 'salida' ? 'viSalida' : 'viRegreso', id: it.id, hora: it.hora, foto: it.foto, operario: it.operario,
                      placa: it.placa, conductor: it.conductor };
       var r;
-      try { r = await mfPost(cuerpo, 90000); }
+      try { r = await viPost(cuerpo, 90000); }
       catch (e) { VI.errores = {}; viPintarRed('Sin conexión: ' + cola.length + ' pendiente(s), se reintenta solo.'); break; }
       cola = viCola();
       if (r && r.success) {
@@ -5194,7 +5243,7 @@ function viActualizarLocal(it) {
 
 async function viTraerLista() {
   try {
-    var r = await mfPost({ accion: 'viListar' }, 45000);
+    var r = await viPost({ accion: 'viListar' }, 45000);
     if (r && r.success) {
       VI.servidor = { abiertos: r.abiertos || [], hoy: r.hoy || [] };
       viGuardar(VI_LISTA_KEY, VI.servidor);
@@ -6693,8 +6742,8 @@ async function mfReportarErrorFila(btn, marcaTemporal, tiquete, placa) {
       <select id="vi-placa" onchange="viCambioPlaca()"></select>
       <input type="text" id="vi-placa-otra" placeholder="ABC123" maxlength="6" autocomplete="off" style="display:none;margin-top:6px;text-transform:uppercase" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')">
       <label class="vi-lbl" for="vi-conductor">Conductor</label>
-      <input type="text" id="vi-conductor" list="vi-conductores" placeholder="Nombre del conductor" autocomplete="off">
-      <datalist id="vi-conductores"></datalist>
+      <select id="vi-conductor-sel" onchange="viCambioConductor()"></select>
+      <input type="text" id="vi-conductor" placeholder="Nombre del conductor" autocomplete="off" style="display:none;margin-top:6px">
       <div id="vi-cargue-zona"><button type="button" class="vi-cam" onclick="viTomarFoto('vi-cargue')">📷 Foto del cargue</button></div>
       <button type="button" class="vi-ok" id="vi-btn-salida" onclick="viRegistrarSalida()">Registrar salida</button>
       <div class="vi-msg" id="vi-msg-salida"></div>
