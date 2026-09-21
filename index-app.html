@@ -4421,7 +4421,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <button class="tb ia-reevaluar" id="btnIAReevaluar" style="display:none" title="Vuelve a mirar las novedades IA abiertas con las reglas de ahora. Las fotos leídas en las últimas 6 horas no se vuelven a cobrar.">↻ Re-evaluar novedades</button>
   <button class="tb ia-calidad" id="btnCalidad" title="Cuántos registros llegan bien ingresados y cuántos con errores: por dato, por operario y por operación">📊 Calidad de ingreso</button>
   <button class="tb ia-revisar" id="btnIARevisar" title="La IA revisa los últimos 5 registros. Los que ya revisó no se vuelven a cobrar: muestra lo que dijo y abre un ejemplo con su baucher.">Revisar 5 IA</button>
-  <button class="tb ia-confirmar" id="btnIAConfirmar" style="display:none" title="Confirmar como revisada por usted la novedad IA de los viajes seleccionados (Ctrl+P)">Confirmar IA</button>
+  <button class="tb ia-confirmar" id="btnIAConfirmar" style="display:none" title="Confirmar como revisada por usted la novedad IA de los viajes seleccionados (Ctrl+D)">Confirmar IA</button>
   <button class="tb placa2h-chip" id="btnPlaca2h" style="display:none" title="Viajes de la misma placa con 2 horas o menos de diferencia. Clic: dejar de mostrarlos en morado (otro clic los vuelve a mostrar)."></button>
   <button class="tb placa2h-chip" id="btnPlaca2hSig" style="display:none" title="Ir al siguiente viaje con placa repetida">›</button>
   <button class="tb placa2h-chip" id="btnPlaca2hVer" style="display:none" title="Volver a mostrar las marcas moradas que escondiste">↺ moradas ocultas</button>
@@ -4469,7 +4469,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <span id="pieSel"></span>
   <span class="sep"></span>
   <span id="pieStats"></span>
-  <span id="pieAtajos" style="cursor:help" title="Ctrl+C copiar · Ctrl+X cortar · Ctrl+V pegar · Ctrl+A seleccionar todo · Ctrl+I pintar el fondo · Ctrl+Shift+I color de letra · Ctrl+O pintar con el color de la celda de arriba · Shift+O (o Ctrl+Shift+O) abre la barra de colores · Ctrl+B negrilla · Ctrl+Espacio columna · Shift+Espacio fila · Ctrl+Z deshacer · Ctrl+S guardar · Ctrl+G abre y cierra las fotos · Ctrl+P confirma la novedad IA de los viajes seleccionados · Ctrl+F queda para el navegador (buscar) · Ctrl+Tab cambia de pestaña · arrastre el encabezado para reordenar">Atajos ⌨</span>
+  <span id="pieAtajos" style="cursor:help" title="Ctrl+C copiar · Ctrl+X cortar · Ctrl+V pegar · Ctrl+A seleccionar todo · Ctrl+I pintar el fondo · Ctrl+Shift+I color de letra · Ctrl+O pintar con el color de la celda de arriba · Shift+O (o Ctrl+Shift+O) abre la barra de colores · Ctrl+B negrilla · Ctrl+Espacio columna · Shift+Espacio fila · Ctrl+Z deshacer · Ctrl+S guardar · Ctrl+G abre y cierra las fotos · Ctrl+D confirma la novedad IA de los viajes seleccionados (o los marcados para verificar en físico) · Ctrl+F queda para el navegador (buscar) · Ctrl+Tab cambia de pestaña · arrastre el encabezado para reordenar">Atajos ⌨</span>
   <span id="pieVersion">Operaciones v2.2</span>
 </footer>
 
@@ -6060,7 +6060,12 @@ function aplicarPermisoPrecios() {
   const ed = document.getElementById('pv-editar');
   if (ed && !puede) ed.style.display = 'none';
   /* Si cambió quién es (otro usuario), no quedan precios del anterior en memoria. */
-  if (!puede && typeof PRECIOS !== 'undefined') { PRECIOS = []; PRECIOS_CARGADOS = false; }
+  if (!puede && typeof PRECIOS !== 'undefined') { PRECIOS = []; PRECIOS_CARGADOS = false; PV_EDITOR = false; }
+  /* Quien sí puede: la lista se pide YA, por detrás, para que el $ y el
+     Ctrl+D la tengan lista al instante (el servidor tarda unos segundos). */
+  try {
+    if (puede && PRECIOS_CARGADOS === false && _authToken) { PRECIOS_CARGADOS = 'cargando'; cargarPrecios(); }
+  } catch (e) { /* todavia cargando la pagina: se pide al tocar el $ */ }
 }
 
 function aplicarPermisoVoz() {
@@ -8040,12 +8045,19 @@ function calcularValorViajes(regs){
   return { tot, porOp: Object.values(porOp).sort((a, b) => (b.material + b.transporte) - (a.material + a.transporte) || b.kg - a.kg) };
 }
 
-async function cargarPrecios(){
+let PV_EDITOR = false;       // el servidor dijo que este usuario guarda sin clave
+let _pvCargando = null;      // la consulta en vuelo, para no pedir dos veces
+function cargarPrecios(){
+  if(_pvCargando) return _pvCargando;
+  _pvCargando = _cargarPreciosAhora().finally(() => { _pvCargando = null; });
+  return _pvCargando;
+}
+async function _cargarPreciosAhora(){
   try{
     const r = await fetch(PRECIOS_API, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' },
                                          body: JSON.stringify({ accion:'preciosListar', token: (typeof _authToken !== 'undefined' && _authToken) || '' }) });
     const j = await r.json();
-    if(j && j.success){ PRECIOS = j.precios || []; PRECIOS_CARGADOS = true; }
+    if(j && j.success){ PRECIOS = j.precios || []; PRECIOS_CARGADOS = true; PV_EDITOR = !!j.editorSinClave; }
     else if(j && j.sinPermiso){ PRECIOS = []; PRECIOS_CARGADOS = 'sinPermiso'; window._pvMotivo = j.error; }
     else throw new Error((j && j.error) || 'sin respuesta');
   }catch(e){
@@ -8212,6 +8224,8 @@ function abrirPrecios(soloSin){
   });
   document.getElementById('pv-desde').value = hoyIsoPv();
   document.getElementById('pv-pin').value = '';
+  /* juan y gerencia (lo decide el servidor) guardan sin clave. */
+  document.getElementById('pv-pin').closest('label').style.display = PV_EDITOR ? 'none' : '';
   document.getElementById('pv-buscar').value = '';
   document.getElementById('pv-solo-sin').checked = !!soloSin;
   pvAviso('');
@@ -8277,7 +8291,12 @@ document.addEventListener('change', ev => {
    siempre. */
 async function abrirPreciosConAtajo(){
   if(PRECIOS_CARGADOS !== true){
+    /* La ventana se abre YA con un aviso; se llena cuando llega la lista. */
+    document.getElementById('pv-filas').innerHTML = '<tr><td colspan="6" class="pv-nota">Trayendo la lista de precios…</td></tr>';
+    document.getElementById('pv-velo').style.display = 'flex';
+    if(PRECIOS_CARGADOS !== 'cargando') PRECIOS_CARGADOS = 'cargando';
     await cargarPrecios();
+    document.getElementById('pv-velo').style.display = 'none';
     if(PRECIOS_CARGADOS !== true){
       alert(PRECIOS_CARGADOS === 'sinPermiso'
         ? 'Tu usuario no tiene permiso para ver los precios.'
@@ -8326,7 +8345,7 @@ async function guardarPrecios(){
   const desde = document.getElementById('pv-desde').value;
   const pin = document.getElementById('pv-pin').value;
   if(!desde){ pvAviso('Elija desde qué fecha rigen.'); return; }
-  if(!pin){ pvAviso('Escriba la clave de administrador.'); document.getElementById('pv-pin').focus(); return; }
+  if(!pin && !PV_EDITOR){ pvAviso('Escriba la clave de administrador.'); document.getElementById('pv-pin').focus(); return; }
   const b = document.getElementById('pv-guardar');
   b.disabled = true; b.textContent = 'Guardando…';
   try{
@@ -22536,7 +22555,9 @@ _audDocOn('keydown', ev=>{
        de Operaciones deja de imprimir (a pedido): esta grilla no se
        imprime, y confirmar es lo que se hace cien veces al día. Fuera de
        esta pestaña Ctrl+P sigue siendo imprimir. */
-    if(k === 'p'){ ev.preventDefault(); confirmarNovedadesIA(); return; }
+    /* A pedido, el atajo pasa a Ctrl+D (Cmd+D en Mac). Ctrl+P se deja
+       funcionando igual, para que la costumbre no imprima por error. */
+    if(k === 'd' || k === 'p'){ ev.preventDefault(); confirmarNovedadesIA(); return; }
     /* Las fotos abren con Ctrl+G. Antes fue Ctrl+F, que se devolvió al
        navegador porque su búsqueda rápida sirve para encontrar un tiquete
        en pantalla. Ctrl+G es lo que queda libre de verdad: en el
@@ -23199,7 +23220,7 @@ function mostrarDetalle(){
     else if(e.estado === 'fisico') cuerpo = esc(e.detalle) +
       '<br><b>Esperando el documento físico:</b> ' + esc(textoMarcaFisico(e)) +
       (e.conclusion ? '<br><b>Nota:</b> ' + esc(e.conclusion) : '') +
-      '<br><button type="button" class="ia-btn-confirmar" data-ia-confirmar-panel="1" title="Ya se miró el papel: cierra la novedad a su nombre (Ctrl+P)">Ya lo verifiqué en físico</button>';
+      '<br><button type="button" class="ia-btn-confirmar" data-ia-confirmar-panel="1" title="Ya se miró el papel: cierra la novedad a su nombre (Ctrl+D)">Ya lo verifiqué en físico</button>';
     else cuerpo = esc(e.detalle) +
       (e.estado === 'confirmada'
         ? '<br><b>Confirmó:</b> ' + esc(e.confirmadoPor || '—') + (e.fechaConfirmacion ? ' · ' + esc(e.fechaConfirmacion) : '') +
@@ -23408,6 +23429,8 @@ function pintarVisor(){
   const fuente = f.id ? 'https://drive.google.com/thumbnail?id=' + f.id + '&sz=w1600' : f.url;
   if(img.dataset.fuente !== fuente){
     img.dataset.fuente = fuente;
+    delete img.dataset.alterna;
+    frame.style.transform = '';
     img.style.display = '';
     frame.style.display = 'none'; frame.src = '';
     err.style.display = 'none';
@@ -23416,8 +23439,14 @@ function pintarVisor(){
   }
   /* El giro se aplica cuando la imagen ya tiene tamaño: si todavía está
      cargando, se espera a que cargue. */
-  const ponerGiro = () => aplicarGiroImagen(img, giroDeFoto(f.id || f.url), $('visorCuerpo'));
-  if(img.complete) ponerGiro(); else img.addEventListener('load', ponerGiro, { once: true });
+  /* El giro va sobre lo que se esté viendo: la imagen, o el visor de Drive
+     si la imagen no se pudo cargar. */
+  const ponerGiro = () => {
+    const viendoMarco = frame.style.display !== 'none';
+    aplicarGiroImagen(viendoMarco ? frame : img, giroDeFoto(f.id || f.url), $('visorCuerpo'));
+    if(viendoMarco) img.style.transform = ''; else frame.style.transform = '';
+  };
+  if(img.complete || frame.style.display !== 'none') ponerGiro(); else img.addEventListener('load', ponerGiro, { once: true });
 }
 
 function girarVisor(){
@@ -23432,6 +23461,16 @@ function girarVisor(){
 $('visorImg').addEventListener('error', ()=>{
   const f = VISOR.fotos[VISOR.i];
   if(!f) return;
+  /* Primero la segunda dirección de Drive (la misma que usa la bandeja IA):
+     es una imagen, así que se puede girar. El visor incrustado de Drive
+     queda de último recurso. Antes se iba directo a ese visor y el giro
+     "se trababa": se giraba la imagen escondida, no lo que se veía. */
+  const img = $('visorImg');
+  if(f.id && img.dataset.alterna !== f.id){
+    img.dataset.alterna = f.id;
+    img.src = 'https://lh3.googleusercontent.com/d/' + f.id + '=w1600';
+    return;
+  }
   $('visorImg').style.display = 'none';
   if(f.id){
     const frame = $('visorFrame');
@@ -23477,7 +23516,17 @@ function alternarVisorFila(){
     aviso('Seleccione primero una celda del registro.', true);
     return;
   }
-  abrirVisor(S.vista[S.foco.vr], 21);   // 21 = BAUCHER I; si no tiene, abre la primera que haya
+  /* La foto que abre es la misma que mira la bandeja IA: la del primer
+     dato con novedad (o la que se eligió en la bandeja). Antes abría
+     siempre BAUCHER I, y si la IA había leído BAUCHER II parecía otra foto
+     (y el giro que se le puso a una no aparecía en la otra). */
+  const idx = S.vista[S.foco.vr], f = S.filas[idx];
+  let col = 21;   // BAUCHER I; si no tiene, abre la primera que haya
+  const campos = f && f.ia && f.ia.campos ? Object.keys(f.ia.campos).map(k => f.ia.campos[k]) : [];
+  const conNovedad = campos.find(x => x && (x.e === 'no' || x.e === 'duda') && IA_FOTO_COL[x.foto] !== undefined);
+  if(conNovedad) col = IA_FOTO_COL[conNovedad.foto];
+  if(f && f._bjFoto !== undefined) col = f._bjFoto;
+  abrirVisor(idx, col);
 }
 
 // clic en cualquier enlace de foto (grilla o panel) → visor interno.
@@ -23944,7 +23993,7 @@ function pintarMenuIA(){
     `<button type="button" data-accion-ia="confirmar"${seleccion.pendientes.length ? '' : ' disabled'}>
        ${banderin('confirmada')}<span>Confirmar revisión de lo seleccionado<small>${seleccion.pendientes.length
          ? seleccion.pendientes.length + (seleccion.pendientes.length === 1 ? ' novedad pendiente' : ' novedades pendientes') + ' en la selección'
-         : 'Seleccione viajes en rojo o ámbar'}</small></span><span class="cuenta">Ctrl+P</span></button>
+         : 'Seleccione viajes en rojo, ámbar o café'}</small></span><span class="cuenta">Ctrl+D</span></button>
      <button type="button" data-accion-ia="fisico"${seleccion.pendientes.length ? '' : ' disabled'}>
        ${banderin('fisico')}<span>Verificar en físico<small>${seleccion.pendientes.length
          ? 'La foto no se puede leer: quedan esperando el papel'
@@ -24137,7 +24186,10 @@ async function revisarUltimosConIA(cantidad){
 function filasParaConfirmar(){
   let filas = filasSeleccionadas();
   if(!filas.length && S.foco){ const f = S.filas[S.vista[S.foco.vr]]; if(f) filas = [f]; }
-  return { filas, pendientes: filas.filter(f => f.ia && (f.ia.estado === 'no_coincide' || f.ia.estado === 'ojo')) };
+  /* "Verificar en físico" también se cierra así: cuando alguien consigue el
+     papel, confirma y el viaje pasa a revisado por una persona (azul).
+     Antes quedaban fuera y el botón "Ya lo verifiqué en físico" no hacía nada. */
+  return { filas, pendientes: filas.filter(f => f.ia && (f.ia.estado === 'no_coincide' || f.ia.estado === 'ojo' || f.ia.estado === 'fisico')) };
 }
 
 /* Ctrl+P confirma EN SILENCIO: sin preguntar observaciones y sin avisos.
@@ -24448,7 +24500,7 @@ function guiaPanelIA(f){
     ${pos > -1 ? `<div class="ia-guia-cont">Novedad ${pos + 1} de ${pend.length}</div>` : ''}
     ${items || (hechas ? '' : '<div class="ia-guia-item duda">No hay un dato puntual marcado: revise el detalle y la foto.</div>')}${hechas}
     <div class="ia-guia-pie">
-      <button type="button" class="ia-btn-confirmar" data-ia-confirmar-panel="1" title="Confirma la novedad sin cambiar nada (Ctrl+P)">Está bien así · Ctrl+P</button>
+      <button type="button" class="ia-btn-confirmar" data-ia-confirmar-panel="1" title="Confirma la novedad sin cambiar nada (Ctrl+D)">Está bien así · Ctrl+D</button>
       <button type="button" class="ia-btn-fisico" data-ia-fisico-panel="1" title="La foto no se puede leer: el viaje queda a la espera de que alguien mire el papel">📄 Verificar en físico</button>
       <button type="button" data-ia-siguiente="1">Siguiente novedad →</button>
     </div></div>`;
@@ -30179,7 +30231,7 @@ window.mapaActivar = function(){ cargarMapa(false); refrescarMapaSiToca(MAPA_AL_
   // aparece cuando alguien navega DIRECTO a la URL del Apps Script, no cuando una página
   // externa lo consulta por fetch). Déjalo vacío ('') si todavía no lo has subido: en ese
   // caso el QR sigue apuntando al Apps Script y se muestra el aviso de cómo cerrarlo.
-  const VERIFICACION_GITHUB_URL = ''; // Ej: 'https://tuusuario.github.io/turepo/verificar.html'
+  const VERIFICACION_GITHUB_URL = 'https://hortior2019-glitch.github.io/pil1-dashboard/verificar.html';
 
   function recolectarDatosParrafo1(){
     return {
