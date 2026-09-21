@@ -1423,6 +1423,11 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-auditoria .tb.ia-apagar{color:#6d6d64;border-color:#c9c9bf}
 #panel-auditoria .tb.ia-reevaluar{color:#8a4b00;border-color:#e8cf94}
 #panel-auditoria .tb.ia-chip{padding-left:6px;padding-right:6px;gap:0}
+/* Quién está leyendo las fotos: Gemini (gratis) o Claude (respaldo). */
+#panel-auditoria .ia-motor{display:inline-flex;align-items:center;gap:5px;font:600 11px var(--sans);padding:0 7px;white-space:nowrap;cursor:help;color:#54605a}
+#panel-auditoria .ia-motor::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--motor,#9aa39c)}
+#panel-auditoria .ia-motor.gemini{--motor:#1a73e8;color:#1a5fb4}
+#panel-auditoria .ia-motor.claude{--motor:#c26a2b;color:#8a4b1c}
 #panel-auditoria .tb.ia-chip .banderin{width:8px;height:8px;vertical-align:0;margin-right:1px}
 #panel-auditoria .ia-aviso{font-size:11px !important;padding:5px 7px !important;line-height:1.35}
 #panel-auditoria .ia-aviso .banderin{width:8px;height:8px;vertical-align:0}
@@ -4414,6 +4419,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <button class="tb viaje-btn" id="btnViajeNuevo" title="Añadir un viaje completo (manifiesto, placa, pesos y fotos) en la fila siguiente a la última">＋ Añadir viaje</button>
   <button class="tb" id="btnColumnas" title="Borrar filas · crear, ocultar u ordenar columnas">▦ Filas y columnas ▾</button>
   <button class="tb ia-chip" id="btnIA" style="display:none" title="Revisión IA de bauchers · filtrar por etiqueta"></button>
+  <span class="ia-motor" id="iaMotor" style="display:none"></span>
   <span class="ia-progreso" id="iaProgreso" style="display:none"></span>
   <button class="tb ia-aldia" id="btnIAAlDia" style="display:none"></button>
   <button class="tb ia-apagar" id="btnIAApagar" style="display:none" title="Apagar la revisión IA: los ingresos nuevos se guardan igual, sin revisión ni consumo de créditos. Lo ya revisado conserva su banderín.">⏻ Apagar IA</button>
@@ -23803,6 +23809,28 @@ function atrasadosIA(){
   const limite = Date.now() - 10 * 60000;
   return S.filas.filter(f => !f.bo && !f.ia && !f.iaFuera && !f.iaSinFoto && (() => { const t = marcaMs(f.v[0]); return t && t < limite; })());
 }
+/* Al lado del chip de la IA: quién lee las fotos ahora y, si no es
+   Gemini, por qué. El detalle completo va en el cartelito al pasar. */
+function pintarMotorIA(r){
+  const el = $('iaMotor');
+  if(!el) return;
+  const g = r && r.gemini;
+  if(!r || !r.activa || !g){ el.style.display = 'none'; return; }
+  const e = g.estado || {};
+  const cuando = e.cuando ? new Date(e.cuando).toLocaleString('es-CO', { dateStyle:'short', timeStyle:'short' }) : '';
+  let txt, cls, det;
+  if(!g.clave){ txt = 'Lee: Claude'; cls = 'claude'; det = 'Gemini no está configurado: falta GEMINI_API_KEY en las propiedades del script.'; }
+  else if(g.apagado){ txt = 'Lee: Claude'; cls = 'claude'; det = 'Gemini está apagado a propósito (IA_PROVEEDOR = claude).'; }
+  else if(g.pausaHoy){ txt = 'Lee: Claude · Gemini en pausa'; cls = 'claude'; det = 'Gemini quedó en pausa hasta mañana: ' + (e.texto || 'sin detalle') + (cuando ? ' (' + cuando + ')' : '') + '.'; }
+  else if(e.ok){ txt = 'Lee: Gemini'; cls = 'gemini'; det = 'Gemini (' + (e.modelo || 'gemini') + ') leyó bien la última foto' + (cuando ? ' · ' + cuando : '') + '. Claude queda de respaldo.'; }
+  else if(e.texto){ txt = 'Lee: Claude · Gemini falla'; cls = 'claude'; det = 'La última vez Gemini falló: ' + e.texto + (cuando ? ' (' + cuando + ')' : '') + '. Esa foto la leyó Claude.'; }
+  else { txt = 'Gemini listo'; cls = 'gemini'; det = 'Gemini está configurado; todavía no leyó ninguna foto con esta versión.'; }
+  el.className = 'ia-motor ' + cls;
+  el.textContent = txt;
+  el.title = det;
+  el.style.display = '';
+}
+
 function pintarAvisoAlDia(){
   const b = $('btnIAAlDia');
   if(!b) return;
@@ -23813,6 +23841,7 @@ function pintarAvisoAlDia(){
     r.errorAgenda ? 'Error al agendar: ' + r.errorAgenda.slice(25) : '',
     r.ultimoError ? 'Último error de la IA: ' + r.ultimoError.slice(25) : ''
   ].filter(Boolean).join('\n');
+  pintarMotorIA(r);
   const bApagar = $('btnIAApagar');
   if(bApagar) bApagar.style.display = r.activa ? '' : 'none';
   const bRe = $('btnIAReevaluar');
