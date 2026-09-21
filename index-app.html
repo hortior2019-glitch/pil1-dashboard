@@ -1364,6 +1364,25 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-auditoria .p2h-aviso:hover{background:#ead7f5 !important}
 #panel-auditoria .p2h-esconder{display:inline-block;margin-top:5px;font-size:11px;opacity:.75;text-decoration:underline}
 #panel-auditoria .tb.placa2h-chip{color:#5b1780;border-color:#cfb3e0;background:#f6effa;font-weight:700}
+/* ── Viajes Internos ── */
+#panel-viajesinternos .vint-barra{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+#panel-viajesinternos select,#panel-viajesinternos .vint-btn{padding:7px 12px;font:600 12px 'Source Sans 3',sans-serif;border:1px solid var(--rule);border-radius:4px;background:var(--white);color:var(--ink);cursor:pointer}
+#panel-viajesinternos .vint-placas{display:flex;gap:6px;flex-wrap:wrap}
+#panel-viajesinternos .vint-placa{padding:6px 11px;border:1px solid var(--rule);border-radius:3px;background:var(--white);color:var(--ink-m);font:700 12px 'Source Sans 3',sans-serif;letter-spacing:.5px;cursor:pointer}
+#panel-viajesinternos .vint-placa small{font-weight:600;color:var(--ink-l);margin-left:4px}
+#panel-viajesinternos .vint-placa.activa{background:var(--navy);border-color:var(--navy);color:#fff}
+#panel-viajesinternos .vint-placa.activa small{color:rgba(255,255,255,.8)}
+#panel-viajesinternos .vint-placa.sin-viajes{opacity:.55}
+#panel-viajesinternos .vint-tabla{width:100%;border-collapse:collapse;font-size:13px;background:var(--white)}
+#panel-viajesinternos .vint-tabla th{text-align:left;font-size:10.5px;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);padding:9px 10px;border-bottom:2px solid var(--rule);white-space:nowrap}
+#panel-viajesinternos .vint-tabla td{padding:8px 10px;border-bottom:1px solid var(--rule-l, #eee);white-space:nowrap}
+#panel-viajesinternos .vint-tabla .num{text-align:right;font-variant-numeric:tabular-nums}
+#panel-viajesinternos .vint-tabla a{color:var(--navy);font-weight:600;text-decoration:none;margin-right:8px}
+#panel-viajesinternos .vint-tabla a:hover{text-decoration:underline}
+#panel-viajesinternos .vint-estado{font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px}
+#panel-viajesinternos .vint-estado.curso{background:#fff3cd;color:#8a6100}
+#panel-viajesinternos .vint-estado.ok{background:#e8f3ec;color:#2f6b47}
+#panel-viajesinternos .vint-vacio{text-align:center;color:var(--ink-l);padding:26px}
 /* Manifiestos entregados en físico: solo la celda del manifiesto, en verde. */
 #panel-auditoria .tb.mf-chip{color:#54605a}
 #panel-auditoria .tb.mf-chip.activo{color:#1e6b3a;border-color:#9fd3b0;background:#e8f6ec;font-weight:700}
@@ -3745,6 +3764,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <div class="nav-tab" data-panel="auditoria" data-users-only="gerencia,sub-gerencia,juan,auditoria" onclick="showPanel('auditoria',this)" style="display:none"><span class="nav-lbl">Operaciones</span></div>
   <!-- Certificado de disposicion: misma lista blanca que Operaciones. -->
   <div class="nav-tab" data-panel="certificado" data-users-only="gerencia,sub-gerencia,juan,auditoria" onclick="showPanel('certificado',this)" style="display:none"><span class="nav-lbl">Certificado</span></div>
+  <div class="nav-tab" data-panel="viajesinternos" onclick="showPanel('viajesinternos',this)"><span class="nav-lbl">Viajes Internos</span></div>
   <div class="nav-tab" data-panel="mapa" onclick="showPanel('mapa',this)"><span class="nav-lbl">Mapa de Planta</span></div>
   <div class="nav-tab" data-panel="csc-inventario" onclick="showPanel('csc-inventario',this)"><span class="nav-lbl">Cadena · Inventario</span></div>
   <div class="nav-sep"></div>
@@ -5824,6 +5844,49 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <div id="veh-lista" style="display:flex;flex-direction:column;gap:14px"></div>
 </div>
 
+<!--
+  ═══════════════════════════════════════════════════════════
+  PANEL: VIAJES INTERNOS
+  - Los viajes que registra la app de ingreso v28 (salida con foto del
+    cargue, regreso con foto), desde su Apps Script propio.
+  - Menú de placas: las de Vehículos de Carga (más las que aparezcan en
+    los viajes aunque no estén en esa lista).
+  - Se llena con: cargarViajesInternos() / renderViajesInternos()
+  ═══════════════════════════════════════════════════════════
+-->
+<div class="panel" id="panel-viajesinternos">
+  <div class="sec-hdr">
+    <div class="sec-title">Viajes Internos</div>
+    <div class="sec-sub" id="vint-sub">Salidas y regresos de los vehículos de la planta</div>
+  </div>
+
+  <div class="vint-barra">
+    <select id="vint-periodo" onchange="renderViajesInternos()">
+      <option value="hoy">Hoy</option>
+      <option value="7" selected>Últimos 7 días</option>
+      <option value="30">Últimos 30 días</option>
+      <option value="todo">Todo</option>
+    </select>
+    <select id="vint-conductor" onchange="renderViajesInternos()"><option value="">Todos los conductores</option></select>
+    <button type="button" class="vint-btn" onclick="cargarViajesInternos(true)">Actualizar</button>
+  </div>
+  <div class="vint-placas" id="vint-placas"></div>
+
+  <div class="kpi-grid" style="margin:14px 0 20px">
+    <div class="kpi-box"><div class="kpi-lbl">Viajes</div><div class="kpi-val" id="vint-k-viajes">—</div><div class="kpi-desc">en el periodo</div></div>
+    <div class="kpi-box"><div class="kpi-lbl">En curso</div><div class="kpi-val" id="vint-k-curso">—</div><div class="kpi-desc">vehículos afuera ahora</div></div>
+    <div class="kpi-box"><div class="kpi-lbl">Duración promedio</div><div class="kpi-val" id="vint-k-dur">—</div><div class="kpi-desc">de los que ya volvieron</div></div>
+    <div class="kpi-box"><div class="kpi-lbl">Conductores</div><div class="kpi-val" id="vint-k-cond">—</div><div class="kpi-desc">distintos</div></div>
+  </div>
+
+  <div style="overflow-x:auto">
+    <table class="vint-tabla">
+      <thead><tr><th>Fecha</th><th>Placa</th><th>Conductor</th><th>Salida</th><th>Regreso</th><th class="num">Duración</th><th>Fotos</th><th>Registró</th><th>Estado</th></tr></thead>
+      <tbody id="vint-cuerpo"><tr><td colspan="9" class="vint-vacio">Abra la pestaña para cargar los viajes.</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
 </div><!-- /wrapper -->
 </div>
 
@@ -5958,6 +6021,7 @@ const PESTANAS_CONTROLABLES = [
   { id:'ingreso',         label:'Ingreso de Material' },
   { id:'ProduccionHumus', label:'Producción Humus' },
   { id:'vehiculos',       label:'Vehículos Carga' },
+  { id:'viajesinternos',  label:'Viajes Internos' },
   { id:'operaciones',     label:'Proveedores' },
   { id:'cortes',          label:'Cortes a Proveedor' },
   { id:'preopequipo',     label:'Preop. Equipo Pesado' },
@@ -7567,6 +7631,8 @@ function showPanel(id, el) {
         try { cargarHumusDetalle(); } catch(e) { console.error('cargarHumusDetalle:', e); }
       } else if (id === 'vehiculos') {
         try { cargarVehiculos(); } catch(e) { console.error('cargarVehiculos:', e); }
+      } else if (id === 'viajesinternos') {
+        try { cargarViajesInternos(); } catch(e) { console.error('cargarViajesInternos:', e); }
       } else if (id === 'permisos') {
         try { renderPermisosTabla(); } catch(e){}
       }
@@ -9215,6 +9281,118 @@ function reordenarHorasCircular(horasArr) {
   - Fotos: se comprimen en el navegador y se suben a Drive.
   ═══════════════════════════════════════════════════════════
 */
+/*
+  ═══════════════════════════════════════════════════════════
+  VIAJES INTERNOS
+  - Los registra la app de ingreso v28; viven en su propio Apps Script y
+    su propio Google Sheets (VIAJES_INTERNOS_API).
+  - El menú de placas sale de Vehículos de Carga (_vehiculos).
+  ═══════════════════════════════════════════════════════════
+*/
+const VIAJES_INTERNOS_API = 'https://script.google.com/macros/s/AKfycbzTGxVSWztnaTMV1YNUsy-pNEdqCo3YimXz8C-w_omdLROU__kfGr854jtmy039u96OKw/exec';
+function _escVint(x) { return String(x == null ? '' : x).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]); }
+let _vint = [];
+let _vintCargados = false;
+let _vintPlaca = '';          // placa elegida en el menú ('' = todas)
+
+async function cargarViajesInternos(forzar) {
+  const cuerpo = document.getElementById('vint-cuerpo');
+  if (_vintCargados && !forzar) { renderViajesInternos(); return; }
+  if (cuerpo && !_vint.length) cuerpo.innerHTML = '<tr><td colspan="9" class="vint-vacio">Cargando viajes internos…</td></tr>';
+  /* Las placas vienen de Vehículos de Carga: se traen a la par. */
+  const vehiculos = (!_vehiculosCargados && typeof cargarVehiculos === 'function') ? cargarVehiculos().catch(() => {}) : Promise.resolve();
+  const d = await fetchJSONTolerante(VIAJES_INTERNOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({ accion:'viHistorial' }) });
+  await vehiculos;
+  if (d && Array.isArray(d.viajes)) {
+    _vint = d.viajes;
+    _vintCargados = true;
+  } else if (cuerpo) {
+    const motivo = d && d.error ? d.error : 'no respondió';
+    cuerpo.innerHTML = '<tr><td colspan="9" class="vint-vacio">No se pudieron traer los viajes internos (' + _escVint(motivo) + '). Revise que el Apps Script de viajes internos esté publicado con la versión nueva.</td></tr>';
+    return;
+  }
+  renderViajesInternos();
+}
+
+function _vintFecha(v) { return v.fs ? new Date(v.fs + 'T' + (v.hs || '00:00') + ':00') : null; }
+function _vintFmtFecha(ymd) {
+  const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? (+m[3]) + '/' + (+m[2]) + '/' + m[1] : (ymd || '—');
+}
+function _vintDur(min) {
+  const n = Number(min);
+  if (min === '' || min == null || isNaN(n)) return '—';
+  return n >= 60 ? Math.floor(n / 60) + ' h ' + String(n % 60).padStart(2, '0') + ' min' : n + ' min';
+}
+
+function elegirPlacaViajesInternos(placa) {
+  _vintPlaca = _vintPlaca === placa ? '' : placa;
+  renderViajesInternos();
+}
+
+function renderViajesInternos() {
+  const cuerpo = document.getElementById('vint-cuerpo');
+  if (!cuerpo) return;
+  /* Periodo */
+  const per = (document.getElementById('vint-periodo') || {}).value || '7';
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const desde = per === 'todo' ? null : per === 'hoy' ? hoy : new Date(hoy.getTime() - (Number(per) - 1) * 86400000);
+  const enPeriodo = _vint.filter(v => { const f = _vintFecha(v); return !desde || (f && f >= desde) || v.estado === 'EN CURSO'; });
+
+  /* Menú de placas: las de Vehículos de Carga + las que tengan viajes */
+  const cuenta = {};
+  enPeriodo.forEach(v => { const p = String(v.placa || '').toUpperCase(); cuenta[p] = (cuenta[p] || 0) + 1; });
+  const placas = [];
+  (typeof _vehiculos !== 'undefined' ? _vehiculos : []).forEach(x => {
+    const p = String(x.placa || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (p && placas.indexOf(p) === -1) placas.push(p);
+  });
+  Object.keys(cuenta).forEach(p => { if (p && placas.indexOf(p) === -1) placas.push(p); });
+  placas.sort();
+  const menu = document.getElementById('vint-placas');
+  if (menu) menu.innerHTML =
+    '<button type="button" class="vint-placa' + (_vintPlaca ? '' : ' activa') + '" onclick="elegirPlacaViajesInternos(\'\')">Todas<small>' + enPeriodo.length + '</small></button>' +
+    placas.map(p => '<button type="button" class="vint-placa' + (_vintPlaca === p ? ' activa' : '') + (cuenta[p] ? '' : ' sin-viajes') +
+      '" onclick="elegirPlacaViajesInternos(\'' + _escVint(p) + '\')">' + _escVint(p) + '<small>' + (cuenta[p] || 0) + '</small></button>').join('');
+
+  /* Conductores del periodo (y de la placa elegida) */
+  const selCond = document.getElementById('vint-conductor');
+  const condActual = selCond ? selCond.value : '';
+  const porPlaca = enPeriodo.filter(v => !_vintPlaca || String(v.placa || '').toUpperCase() === _vintPlaca);
+  const conductores = [...new Set(porPlaca.map(v => v.conductor).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+  if (selCond) {
+    selCond.innerHTML = '<option value="">Todos los conductores</option>' + conductores.map(c => '<option value="' + _escVint(c) + '">' + _escVint(c) + '</option>').join('');
+    selCond.value = conductores.indexOf(condActual) > -1 ? condActual : '';
+  }
+  const cond = selCond ? selCond.value : '';
+  const lista = porPlaca.filter(v => !cond || v.conductor === cond);
+
+  /* Indicadores */
+  const cerrados = lista.filter(v => v.estado !== 'EN CURSO' && v.min !== '' && !isNaN(Number(v.min)));
+  const prom = cerrados.length ? Math.round(cerrados.reduce((a, v) => a + Number(v.min), 0) / cerrados.length) : null;
+  const put = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
+  put('vint-k-viajes', lista.length.toLocaleString('es-CO'));
+  put('vint-k-curso', lista.filter(v => v.estado === 'EN CURSO').length);
+  put('vint-k-dur', prom === null ? '—' : _vintDur(prom));
+  put('vint-k-cond', new Set(lista.map(v => v.conductor).filter(Boolean)).size);
+  put('vint-sub', (_vintPlaca ? 'Placa ' + _vintPlaca : 'Todas las placas') + (cond ? ' · ' + cond : '') + ' · ' +
+    ({ hoy: 'hoy', '7': 'últimos 7 días', '30': 'últimos 30 días', todo: 'todo el historial' })[per]);
+
+  /* Tabla */
+  if (!lista.length) { cuerpo.innerHTML = '<tr><td colspan="9" class="vint-vacio">Vacío</td></tr>'; return; }
+  const foto = (url, t) => /^https?:/.test(url || '') ? '<a href="' + _escVint(url) + '" target="_blank" rel="noopener">' + t + ' ↗</a>' : '';
+  cuerpo.innerHTML = lista.map(v => {
+    const curso = v.estado === 'EN CURSO';
+    const regreso = curso ? '—' : ((v.fr && v.fr !== v.fs ? _vintFmtFecha(v.fr) + ' ' : '') + (v.hr || ''));
+    const quien = [v.opSalida, v.opRegreso && v.opRegreso !== v.opSalida ? v.opRegreso : ''].filter(Boolean).join(' / ');
+    return '<tr><td>' + _escVint(_vintFmtFecha(v.fs)) + '</td><td><b>' + _escVint(v.placa) + '</b></td><td>' + _escVint(v.conductor) + '</td>' +
+      '<td>' + _escVint(v.hs || '') + '</td><td>' + _escVint(regreso) + '</td><td class="num">' + (curso ? '—' : _escVint(_vintDur(v.min))) + '</td>' +
+      '<td>' + foto(v.fotoCargue, 'Cargue') + foto(v.fotoRegreso, 'Regreso') + '</td><td>' + _escVint(quien || '—') + '</td>' +
+      '<td><span class="vint-estado ' + (curso ? 'curso' : 'ok') + '">' + (curso ? 'En curso' : 'Regresó') + '</span></td></tr>';
+  }).join('');
+}
+
 // Apps Script PROPIO de vehiculos (sheet aparte del de Ingreso de Material)
 const VEHICULOS_API = "https://script.google.com/macros/s/AKfycbwf1gu_r2HhyzrtFhYJUjcnu4e5Naksauk-Cn1nplh94rKH_Ha3dhTtiDqmPZzRhDEB/exec";
 
