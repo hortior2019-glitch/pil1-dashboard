@@ -1364,6 +1364,10 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-auditoria .p2h-aviso:hover{background:#ead7f5 !important}
 #panel-auditoria .p2h-esconder{display:inline-block;margin-top:5px;font-size:11px;opacity:.75;text-decoration:underline}
 #panel-auditoria .tb.placa2h-chip{color:#5b1780;border-color:#cfb3e0;background:#f6effa;font-weight:700}
+/* Manifiestos entregados en físico: solo la celda del manifiesto, en verde. */
+#panel-auditoria .tb.mf-chip{color:#54605a}
+#panel-auditoria .tb.mf-chip.activo{color:#1e6b3a;border-color:#9fd3b0;background:#e8f6ec;font-weight:700}
+#panel-auditoria table.grid td.mf-entregado{box-shadow:inset 0 0 0 999px rgba(46,160,90,.22);color:#145a2e;font-weight:700}
 #panel-auditoria .tb.placa2h-chip.apagado{background:#fff;color:#8a7394;border-style:dashed;font-weight:600}
 #panel-auditoria table.grid td.num.dup{background:#f3c4c4;color:#8a1c1c;font-weight:700}
 #panel-auditoria table.grid tr:hover td.num.dup{background:#eab0b0}
@@ -4428,6 +4432,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <button class="tb ia-calidad" id="btnCalidad" title="Cuántos registros llegan bien ingresados y cuántos con errores: por dato, por operario y por operación">📊 Calidad de ingreso</button>
   <button class="tb ia-revisar" id="btnIARevisar" title="La IA revisa los últimos 5 registros. Los que ya revisó no se vuelven a cobrar: muestra lo que dijo y abre un ejemplo con su baucher.">Revisar 5 IA</button>
   <button class="tb ia-confirmar" id="btnIAConfirmar" style="display:none" title="Confirmar como revisada por usted la novedad IA de los viajes seleccionados (Ctrl+D)">Confirmar IA</button>
+  <button class="tb mf-chip" id="btnMFVer" title="Ver qué manifiestos se entregaron en físico (planilla de entrega de la app de ingreso): esos viajes se pintan en verde. Clic otra vez para dejar de verlo.">Entregados físico</button>
   <button class="tb placa2h-chip" id="btnPlaca2h" style="display:none" title="Viajes de la misma placa con 2 horas o menos de diferencia. Clic: dejar de mostrarlos en morado (otro clic los vuelve a mostrar)."></button>
   <button class="tb placa2h-chip" id="btnPlaca2hSig" style="display:none" title="Ir al siguiente viaje con placa repetida">›</button>
   <button class="tb placa2h-chip" id="btnPlaca2hVer" style="display:none" title="Volver a mostrar las marcas moradas que escondiste">↺ moradas ocultas</button>
@@ -21188,6 +21193,37 @@ function registrarFotoEntregaMF(){
   if(MF_COL > -1) COL_FOTOS[MF_COL] = 'Manifiesto de entrega';
 }
 function esFotoEntregaMF(c){ return MF_COL > -1 && +c === MF_COL; }
+
+/* ── Ver lo entregado en físico ──
+   La app de ingreso marca MANIFIESTO FISICO = "CERTIFICADO ENTREGA FISICA"
+   cuando el operario relaciona el papel en la planilla de entrega. Con el
+   botón encendido, la celda del manifiesto (columna B) de esos viajes se
+   pinta de verde; los demás se ven como siempre. Se recuerda por equipo. */
+const MF_LLAVE_VER = 'horti_mf_ver_v1';
+let MF_VER = false;
+try { MF_VER = localStorage.getItem(MF_LLAVE_VER) === '1'; } catch(e) {}
+const MF_COL_MANIFIESTO = 1;   // columna B: número de manifiesto / tiquete
+function colEstadoMF(){
+  return (S.headers || []).findIndex(h => String(h || '').trim().toUpperCase() === 'MANIFIESTO FISICO');
+}
+function esEntregadoMF(f, col){
+  return col > -1 && String((f.v || [])[col] ?? '').trim().toUpperCase() === 'CERTIFICADO ENTREGA FISICA';
+}
+function pintarBotonMF(){
+  const b = $('btnMFVer');
+  if(!b) return;
+  const col = colEstadoMF();
+  const n = col > -1 ? S.filas.reduce((a, f) => a + (esEntregadoMF(f, col) ? 1 : 0), 0) : 0;
+  b.classList.toggle('activo', MF_VER);
+  b.textContent = (MF_VER ? '✓ ' : '') + 'Entregados físico' + (n ? ' · ' + n.toLocaleString('es-CO') : '');
+}
+function alternarVerMF(){
+  MF_VER = !MF_VER;
+  try { localStorage.setItem(MF_LLAVE_VER, MF_VER ? '1' : '0'); } catch(e) {}
+  pintarBotonMF();
+  render();
+  if(MF_VER && colEstadoMF() < 0) aviso('Todavía no hay manifiestos relacionados en físico desde la app de ingreso.');
+}
 function textoEntregaMF(f){
   const v = k => (MF_COLS[k] > -1 ? String(f.v[MF_COLS[k]] ?? '').trim() : '');
   return ['Verificado para la entrega',
@@ -22025,6 +22061,7 @@ function verFinalDeLaVista(){
 
 /* alFinal: cuando el filtro lo puso una persona (no un repintado interno). */
 function recalcularVista(alFinal){
+  pintarBotonMF();
   const q = S.busqueda.trim().toLowerCase();
   const cols = Object.keys(S.filtros).map(Number);
 
@@ -22132,7 +22169,9 @@ function cerrarPop(id){ $(id).classList.remove('abierto'); }
 /* ══════════════════════════════════════════════════════════════
    8. RENDER DE LA GRILLA (con ventana virtual)
    ══════════════════════════════════════════════════════════════ */
+let colEstadoMFCache = -1;
 function render(){
+  colEstadoMFCache = colEstadoMF();
   /* NUNCA se repinta la grilla con una celda abierta.
      render() reconstruye el cuerpo entero, asi que se lleva por delante el
      <input> del editor y lo que se estuviera escribiendo. Los renders que
@@ -22178,8 +22217,10 @@ function render(){
       const c = S.colsVista[pos];
       const val = f.v[c] ?? '';
       let cls = 'celda';
+      const colMF = c === MF_COL_MANIFIESTO && MF_VER ? colEstadoMFCache : -1;
       if(esDup) cls += ' dup';
       if(p2h) cls += c === 4 ? ' placa2h placa2h-placa' : ' placa2h';
+      if(MF_VER && c === MF_COL_MANIFIESTO && esEntregadoMF(f, colMF)) cls += ' mf-entregado';
       if(filaBo) cls += ' fila-borrada';
       if(S.coment.has(f.r + '_' + (c+1))) cls += ' coment';
       const colBorrada = S.borradas.has(c);
@@ -25374,6 +25415,7 @@ $('btnIA').addEventListener('click', ev=>{
 $('btnIAConfirmar').addEventListener('click', ()=> confirmarNovedadesIA());
 $('btnIARevisar').addEventListener('click', ()=> revisarUltimosConIA(5));
 $('btnPlaca2h').addEventListener('click', alternarPlacas2h);
+$('btnMFVer').addEventListener('click', alternarVerMF);
 $('btnPlaca2hSig').addEventListener('click', siguientePlaca2h);
 $('btnPlaca2hVer').addEventListener('click', mostrarPlacas2hOcultas);
 $('btnCalidad').addEventListener('click', abrirCalidadIA);
