@@ -3225,6 +3225,29 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
 #panel-mapa svg.relieve .z circle.forma{filter:url(#sombraRelieve)}
 #panel-mapa svg.relieve .base3d{fill:#6f7b72;opacity:.55;pointer-events:none}
 #panel-mapa svg.relieve .lustre{fill:url(#brilloRelieve);pointer-events:none}
+/* Barras por cliente y material (mismo lenguaje de Ingreso por Cliente). */
+#panel-mapa .tz-barras{margin-top:7px;display:flex;flex-direction:column;gap:4px}
+#panel-mapa .tz-barra{display:grid;grid-template-columns:minmax(90px,42%) 1fr auto;align-items:center;gap:7px;font-size:11.5px}
+#panel-mapa .tz-etq{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#374151}
+#panel-mapa .tz-pista{background:#e7e5e4;border-radius:2px;height:11px;overflow:hidden}
+#panel-mapa .tz-pista i{display:block;height:100%;border-radius:2px}
+#panel-mapa .tz-kg{font-variant-numeric:tabular-nums;font-weight:700;color:#1f2937;white-space:nowrap}
+
+/* ── EL PANEL DE LA DERECHA, POR FUNCIÓN ──
+   Cada bloque lleva el color de lo que muestra: inventario azul (como el
+   cuadro azul del plano), actividades ámbar, novedades rojo y lo
+   depositado verde. Así se sabe qué se está mirando sin leer el título. */
+#panel-mapa .mapa-bloque{border-radius:8px;padding:8px 10px 10px;margin:10px 0}
+#panel-mapa .mapa-bloque .mapa-sec{border-top:none;margin-top:4px;padding-top:0}
+#panel-mapa .b-inv{background:#eef4fb;border:1px solid #cfe0f2}
+#panel-mapa .b-inv .mapa-sec{color:#1d4e89}
+#panel-mapa .b-act{background:#fdf7e8;border:1px solid #f0e2bd}
+#panel-mapa .b-act .mapa-sec{color:#8a6d1f}
+#panel-mapa .b-nov{background:#fdf1f0;border:1px solid #f2d3d0}
+#panel-mapa .b-nov .mapa-sec{color:#9c2f26}
+#panel-mapa .b-pilas{background:#f4f6f5;border:1px solid #e0e4e1}
+#panel-mapa .b-pilas .mapa-sec{color:#41544a}
+#panel-mapa .traza-caja{border-color:#cfe6d8;background:#f2f9f5}
 #panel-mapa .traza-escala{display:flex;align-items:center;gap:6px;margin:8px 0 2px;font-size:11px;color:#57534e}
 #panel-mapa .traza-escala i{flex:1;height:9px;border-radius:2px;background:linear-gradient(90deg,#2e9e5b,#e0a800,#c0392b)}
 #panel-mapa .traza-punto{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
@@ -28026,6 +28049,12 @@ function trazaCalcular(){
     if(x.lista.length < 300) x.lista.push({ f: r.f, op: op, mat: mat, kg: kg, placa: r.p, tiq: r.t });
     x.mats[mat] = (x.mats[mat] || 0) + kg;
     if(op) x.ops[op] = (x.ops[op] || 0) + 1;
+    /* Igual que en Ingreso por Cliente: la unidad que se muestra es
+       "Operación - Material" (Recreo - Suero lácteo, Epz - Lixiviados…). */
+    var etq = splitOperacionMaterial(op, r.m || mat);
+    x.combos = x.combos || {};
+    if(!x.combos[etq]) x.combos[etq] = { etq: etq, op: op, kg: 0, viajes: 0 };
+    x.combos[etq].kg += kg; x.combos[etq].viajes++;
   });
   /* Dos escalas: las PILAS se comparan entre pilas y las ÁREAS entre
      áreas. Con una sola, la Piscina (que recibe muchísimo más) dejaba a
@@ -28105,12 +28134,27 @@ function trazaPanel(){
       var i = +btn.dataset.trazaVer, x = lista[i];
       var det = p.querySelector('[data-traza-det="' + i + '"]');
       if(det.style.display !== 'none'){ det.style.display = 'none'; btn.textContent = 'Ver descargues (' + x.viajes + ')'; return; }
-      if(!det.innerHTML) det.innerHTML = trazaViajesHtml(x);
+      if(!det.innerHTML) det.innerHTML = trazaBarrasHtml(x) + trazaViajesHtml(x);
       det.style.display = '';
       btn.textContent = 'Ocultar descargues';
     });
   });
 }
+/* Barras por cliente y material, con el color del cliente (el mismo de
+   Ingreso por Cliente). La más alta arriba. */
+function trazaBarrasHtml(x){
+  var lista = Object.keys(x.combos || {}).map(function(k){ return x.combos[k]; }).sort(function(a, b){ return b.kg - a.kg; });
+  if(!lista.length) return '';
+  var tope = lista[0].kg || 1;
+  return '<div class="tz-barras">' + lista.map(function(c){
+    var col = (typeof getClientColor === 'function') ? getClientColor(c.op) : '#2e9e5b';
+    return '<div class="tz-barra" title="' + esc(c.etq) + ' · ' + c.viajes + ' viaje' + (c.viajes === 1 ? '' : 's') + '">' +
+      '<span class="tz-etq">' + esc(c.etq) + '</span>' +
+      '<span class="tz-pista"><i style="width:' + Math.max(3, Math.round(100 * c.kg / tope)) + '%;background:' + col + '"></i></span>' +
+      '<span class="tz-kg">' + trazaKg(c.kg) + '</span></div>';
+  }).join('') + '</div>';
+}
+
 /* Los descargues de una sección, uno por uno (los más nuevos primero). */
 function trazaViajesHtml(x){
   var v = (x.lista || []).slice().sort(function(a, b){ return (b.f || '').localeCompare(a.f || ''); });
@@ -28132,7 +28176,7 @@ function trazaInsertar(p, zonaId, vano){
   var div = document.createElement('div');
   div.className = 'traza-caja';
   div.innerHTML = '<div class="t">Depositado aquí</div>' +
-    (x ? '<b>' + trazaKg(x.kg) + '</b> · ' + x.viajes + ' viaje' + (x.viajes === 1 ? '' : 's') + '<br>' + trazaMats(x)
+    (x ? '<b>' + trazaKg(x.kg) + '</b> · ' + x.viajes + ' viaje' + (x.viajes === 1 ? '' : 's') + trazaBarrasHtml(x)
        : 'Nada en este periodo.') +
     '<div class="traza-filtro">' + esc(trazaEtiquetaFiltro(T.f)) + '</div>';
   var ancla = p.querySelector('.sub') || p.querySelector('h3');
@@ -28164,7 +28208,7 @@ function verZona(){
 
   h += '<div class="mapa-acciones"><button class="mapa-guardar" id="zActividad">Nueva actividad en esta área</button></div>';
 
-  h += '<div class="mapa-sec">Artículos ubicados acá (' + its.length + ')</div>';
+  h += '<div class="mapa-bloque b-inv"><div class="mapa-sec">Artículos ubicados acá (' + its.length + ')</div>';
   h += its.length
       ? its.map(function(i){
           return '<div class="inv-fila">' + cajaFoto(i.foto, 'inv-foto', i.item) +
@@ -28172,13 +28216,15 @@ function verZona(){
                  '<span>' + esc(String(i.stock)) + ' ' + esc(i.unidad || '') + '</span></div></div>';
         }).join('')
       : '<div class="mapa-linea" style="color:var(--ink-l)">Ninguno asignado todavía.</div>';
+  h += '</div>';
 
   if(pilas.length){
-    h += '<div class="mapa-sec">Pilas (' + pilas.length + ')</div>';
+    h += '<div class="mapa-bloque b-pilas"><div class="mapa-sec">Pilas (' + pilas.length + ')</div>';
     h += pilas.sort(function(a,b){ return a.vano - b.vano; }).map(function(x){
       return '<div class="mapa-linea"><b>Pila ' + x.vano + '</b> ' + esc(x.observacion || '') +
              ' <span class="cuando"><span class="et-estado et-' + esc(x.estado) + '">' + esc(x.estado.replace('_',' ')) + '</span></span></div>';
     }).join('');
+    h += '</div>';
   }
 
   /* ── EL AREA SE PUEDE RENOMBRAR ───────────────────────────────────
@@ -28276,6 +28322,7 @@ function bloqueReportes(zonaId, vano){
       '</div>'
     : '<div class="mapa-linea" style="color:var(--ink-l)">Nadie reportó todavía cómo está.</div>';
 
+  h += '<div class="mapa-bloque b-nov">';
   h += '<div class="mapa-sec">Novedades (' + abiertas.length + ' abierta' +
        (abiertas.length === 1 ? '' : 's') + ')</div>';
   h += abiertas.length
@@ -28286,6 +28333,7 @@ function bloqueReportes(zonaId, vano){
          (resueltas.length === 1 ? '' : 's') + '</summary>' +
          resueltas.slice(0, 10).map(lineaNovedad).join('') + '</details>';
   }
+  h += '</div>';
 
   h += '<div class="mapa-acciones">' +
          '<button type="button" class="mapa-guardar" data-rep-estado="' + esc(zonaId) + '" data-vano="' + (vano || '') + '">Reportar estado</button>' +
@@ -28491,6 +28539,7 @@ function bloqueActividades(acts, donde){
   var cerradas = acts.filter(function(a){ return a.estado === 'cerrada'; });
   var h = '';
 
+  h += '<div class="mapa-bloque b-act">';
   h += '<div class="mapa-sec">En curso (' + abiertas.length + ')</div>';
   h += abiertas.length
       ? abiertas.map(lineaActividad).join('')
@@ -28507,6 +28556,7 @@ function bloqueActividades(acts, donde){
   }else{
     h += '<div class="mapa-linea" style="color:var(--ink-l)">Todavía no se terminó ninguna.</div>';
   }
+  h += '</div>';
   return h;
 }
 
