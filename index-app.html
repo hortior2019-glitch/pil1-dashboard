@@ -3034,6 +3034,12 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
   html.imprimiendo-cert #dash-login,
   html.imprimiendo-cert #salir-solo-panel{display:none !important}
 
+  /* La barra de "⚙ Herramientas / ⛶ Ampliar" es para manejar la pantalla,
+     no parte del documento: en el PDF que se le entrega al cliente no
+     tiene nada que hacer. En papel se esconde siempre, se imprima lo que
+     se imprima. */
+  .barra-movil{display:none !important}
+
   /* El wrapper centra y limita a 1280px: en papel eso deja el
      certificado corrido a un lado y con margenes de mas. */
   html.imprimiendo-cert .wrapper{padding:0 !important;margin:0 !important;max-width:none !important}
@@ -3281,6 +3287,21 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
 #panel-mapa .traza-escala i{flex:1;height:9px;border-radius:2px;background:linear-gradient(90deg,#2e9e5b,#e0a800,#c0392b)}
 #panel-mapa .traza-punto{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
 #panel-mapa .traza-ver{background:none;border:0;padding:2px 0;margin-top:4px;color:#1a5c35;font:700 11px var(--sans);cursor:pointer;text-decoration:underline}
+/* La tira de evidencias: cerrada no pide nada; abierta, miniaturas
+   chicas que se amplian con el visor de siempre. */
+#panel-mapa .tz-fotos{margin-top:10px}
+#panel-mapa .tz-fotos > summary{
+  cursor:pointer;color:#1a5c35;font:800 12px var(--sans);padding:4px 0;list-style:none;
+}
+#panel-mapa .tz-fotos > summary::-webkit-details-marker{display:none}
+#panel-mapa .tz-fotos > summary::before{content:'📷 ';font-size:12px}
+#panel-mapa .tz-fotos[open] > summary{margin-bottom:6px}
+#panel-mapa .tz-tira{display:flex;flex-wrap:wrap;gap:8px}
+#panel-mapa .tz-foto{margin:0;width:86px}
+#panel-mapa .tz-foto .tz-img{display:block;width:86px;height:64px;border-radius:5px;overflow:hidden;border:1px solid var(--rule,#dcdcdc);background:#fff}
+#panel-mapa .tz-foto .tz-img img{width:100%;height:100%;object-fit:cover;display:block}
+#panel-mapa .tz-foto .tz-img.sin-foto{display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--ink-l,#8a8f8a)}
+#panel-mapa .tz-foto figcaption{font-size:10px;color:var(--ink-m,#54605a);margin-top:3px;line-height:1.25;word-break:break-word}
 #panel-mapa .traza-viajes{margin:4px 0 0;padding:0;list-style:none;border-top:1px dashed #d4d4d8}
 #panel-mapa .traza-viajes li{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:#3f3f46;padding:3px 0;border-bottom:1px solid #f1f1f0;cursor:default}
 #panel-mapa .traza-viajes li span:last-child{white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -28037,7 +28058,11 @@ function trazaFilaMinima(r){
   return { f: getMarcaTemporal(r) || '', s: String(r['SECCION DEPOSITAR'] || r['SECCION DEPOSITARIA'] || '').trim(),
            k: (typeof getPesoNeto === 'function' ? getPesoNeto(r) : 0) || 0,
            o: normEmpresa(r['OPERACION'] || ''), m: String(r['RESIDUO'] || r['Residuo'] || r['residuo'] || '').trim(),
-           p: String(r['PLACA'] || '').trim(), t: String(r['NUMERO TIQUETE'] || '').trim() };
+           p: String(r['PLACA'] || '').trim(), t: String(r['NUMERO TIQUETE'] || '').trim(),
+           /* La evidencia del vehiculo, la misma que se ve en Operaciones.
+              Se guarda solo el id de Drive (33 letras) y no la direccion
+              entera: la direccion se arma cuando hace falta. */
+           v: idDriveMapa(r['VEHICULO'] || r['VEHICULO II'] || '') };
 }
 function trazaGuardarDatos(filas){
   try { localStorage.setItem(TRAZA_DATOS, JSON.stringify({ cuando: Date.now(), filas: filas })); } catch(e) {}
@@ -28121,7 +28146,7 @@ function trazaCalcular(){
     x.kg += kg; x.viajes++;
     /* El historial viaje a viaje NO se muestra de entrada: queda guardado
        acá y se despliega solo si alguien lo pide (máx. 300 por sección). */
-    if(x.lista.length < 300) x.lista.push({ f: r.f, op: op, mat: mat, kg: kg, placa: r.p, tiq: r.t });
+    if(x.lista.length < 300) x.lista.push({ f: r.f, op: op, mat: mat, kg: kg, placa: r.p, tiq: r.t, foto: r.v || '' });
     x.mats[mat] = (x.mats[mat] || 0) + kg;
     if(op) x.ops[op] = (x.ops[op] || 0) + 1;
     /* Igual que en Ingreso por Cliente: la unidad que se muestra es
@@ -28213,7 +28238,7 @@ function trazaPanel(){
       var i = +btn.dataset.trazaVer, x = lista[i];
       var det = p.querySelector('[data-traza-det="' + i + '"]');
       if(det.style.display !== 'none'){ det.style.display = 'none'; btn.textContent = 'Ver descargues (' + x.viajes + ')'; return; }
-      if(!det.innerHTML) det.innerHTML = trazaBarrasHtml(x) + trazaViajesHtml(x);
+      if(!det.innerHTML) det.innerHTML = trazaBarrasHtml(x) + trazaFotosHtml(x, T) + trazaViajesHtml(x);
       det.style.display = '';
       btn.textContent = 'Ocultar descargues';
     });
@@ -28243,6 +28268,46 @@ function trazaBarrasHtml(x){
   }).join('') + '</div>';
 }
 
+/* ── LA EVIDENCIA DEL VEHICULO, A UN CLIC ──────────────────────────
+   Cada descargue trae la foto del vehiculo (la misma columna que muestra
+   Operaciones). Van dentro de un desplegable: mientras esta cerrado el
+   navegador no pide ninguna imagen, asi que no pesa nada abrir el panel.
+
+   CUANTAS SE MUESTRAN
+   Con un periodo de un dia (hoy, ayer o un rango de menos de una semana)
+   se muestran todas las de esa seccion. Con una semana o mas —y con
+   "este mes" o "todo el historial"— solo las 10 ultimas: en un mes hay
+   cientos de viajes y pedirle a Drive cientos de miniaturas de golpe
+   deja el panel pegado. */
+function trazaTopeFotos(f){
+  if(f.fd || f.fh){
+    var d1 = new Date((f.fd || f.fh) + 'T00:00:00'), d2 = new Date((f.fh || f.fd) + 'T00:00:00');
+    var dias = Math.abs(d2 - d1) / 86400000 + 1;
+    return dias >= 7 ? 10 : 0;
+  }
+  return (f.per === 'hoy' || f.per === 'ayer') ? 0 : 10;
+}
+function trazaFotosHtml(x, T){
+  var con = (x.lista || []).filter(function(t){ return t.foto; })
+            .sort(function(a, b){ return (b.f || '').localeCompare(a.f || ''); });
+  if(!con.length) return '';
+  var tope = trazaTopeFotos(T.f);
+  var recorte = tope && con.length > tope;
+  var ver = recorte ? con.slice(0, tope) : con;
+  return '<details class="tz-fotos"><summary>Fotos del vehículo (' + ver.length +
+    (recorte ? ' de ' + con.length : '') + ')</summary>' +
+    '<div class="tz-tira">' + ver.map(function(t){
+      var url = 'https://drive.google.com/file/d/' + t.foto + '/view';
+      var pie = (t.placa || '') + (t.f ? ' · ' + (t.f || '').split(' ')[0] : '');
+      var tit = (t.op || '') + (t.mat ? ' · ' + t.mat : '') + (t.placa ? ' · ' + t.placa : '') +
+                (t.f ? ' · ' + t.f : '') + ' · ' + trazaKg(t.kg);
+      return '<figure class="tz-foto">' + cajaFoto(url, 'tz-img', tit) +
+             '<figcaption>' + esc(pie) + '</figcaption></figure>';
+    }).join('') + '</div>' +
+    (recorte ? '<div class="mapa-vacio" style="padding:4px 2px">Con una semana o más se muestran las 10 más recientes.</div>' : '') +
+    '</details>';
+}
+
 /* Los descargues de una sección, uno por uno (los más nuevos primero). */
 function trazaViajesHtml(x){
   var v = (x.lista || []).slice().sort(function(a, b){ return (b.f || '').localeCompare(a.f || ''); });
@@ -28264,7 +28329,8 @@ function trazaInsertar(p, zonaId, vano){
   var div = document.createElement('div');
   div.className = 'traza-caja';
   div.innerHTML = '<div class="t">Depositado aquí</div>' +
-    (x ? '<b>' + trazaKg(x.kg) + '</b> · ' + x.viajes + ' viaje' + (x.viajes === 1 ? '' : 's') + trazaBarrasHtml(x)
+    (x ? '<b>' + trazaKg(x.kg) + '</b> · ' + x.viajes + ' viaje' + (x.viajes === 1 ? '' : 's') +
+         trazaBarrasHtml(x) + trazaFotosHtml(x, T)
        : 'Nada en este periodo.') +
     '<div class="traza-filtro">' + esc(trazaEtiquetaFiltro(T.f)) + '</div>';
   var ancla = p.querySelector('.sub') || p.querySelector('h3');
