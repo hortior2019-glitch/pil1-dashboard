@@ -3227,8 +3227,11 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
 #panel-mapa svg.relieve .lustre{fill:url(#brilloRelieve);pointer-events:none}
 /* Barras por cliente y material (mismo lenguaje de Ingreso por Cliente). */
 #panel-mapa .tz-barras{margin-top:7px;display:flex;flex-direction:column;gap:4px}
-#panel-mapa .tz-barra{display:grid;grid-template-columns:minmax(90px,42%) 1fr auto;align-items:center;gap:7px;font-size:11.5px}
-#panel-mapa .tz-etq{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#374151}
+#panel-mapa .tz-barra{display:grid;grid-template-columns:minmax(110px,44%) 1fr auto;align-items:center;gap:7px;font-size:11.5px}
+#panel-mapa .tz-etq{display:flex;align-items:center;gap:5px;min-width:0;color:#374151}
+#panel-mapa .tz-etq > span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#panel-mapa .tz-logo{width:20px;height:20px;object-fit:contain;flex:0 0 20px;background:#fff;border-radius:3px}
+#panel-mapa .tz-punto{width:10px;height:10px;border-radius:50%;flex:0 0 10px;display:inline-block}
 #panel-mapa .tz-pista{background:#e7e5e4;border-radius:2px;height:11px;overflow:hidden}
 #panel-mapa .tz-pista i{display:block;height:100%;border-radius:2px}
 #panel-mapa .tz-kg{font-variant-numeric:tabular-nums;font-weight:700;color:#1f2937;white-space:nowrap}
@@ -3253,8 +3256,12 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
 #panel-mapa .b-nov{background:#fdf1f0;border:1px solid #f2d3d0}
 #panel-mapa .b-nov .mapa-sec{color:#9c2f26}
 #panel-mapa .b-pilas{background:#f4f6f5;border:1px solid #e0e4e1}
+#panel-mapa .b-estado{background:#eef6f5;border:1px solid #cfe3e0}
+#panel-mapa .b-estado .mapa-sec{color:#1f5f57}
 #panel-mapa .b-pilas .mapa-sec{color:#41544a}
-#panel-mapa .traza-caja{border-color:#cfe6d8;background:#f2f9f5}
+/* Lo depositado: verde, el color de la trazabilidad. */
+#panel-mapa .traza-caja{border:1px solid #9fd3b0;background:#e7f5ec}
+#panel-mapa .traza-caja .t{color:#1e6b3a}
 #panel-mapa .traza-escala{display:flex;align-items:center;gap:6px;margin:8px 0 2px;font-size:11px;color:#57534e}
 #panel-mapa .traza-escala i{flex:1;height:9px;border-radius:2px;background:linear-gradient(90deg,#2e9e5b,#e0a800,#c0392b)}
 #panel-mapa .traza-punto{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
@@ -3268,7 +3275,7 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
 #panel-mapa .traza-lista b{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;color:#1f2937;cursor:pointer}
 #panel-mapa .traza-lista li.sin b{color:#3f3f46}
 #panel-mapa .traza-lista small{display:block;font-size:11.5px;color:#57534e;margin-top:2px;line-height:1.4}
-#panel-mapa .traza-caja{border:1px solid #e4e4e7;background:#fafafa;border-radius:6px;padding:8px 10px;margin:8px 0 10px;font-size:12px}
+#panel-mapa .traza-caja{border:1px solid #9fd3b0;background:#e7f5ec;border-radius:6px;padding:8px 10px;margin:8px 0 10px;font-size:12px}
 #panel-mapa .traza-caja .t{font-weight:800;color:#3f6b50;font-size:11px;letter-spacing:.6px;text-transform:uppercase}
 #panel-mapa .traza-filtro{font-size:11px;color:#6b7280;margin-top:2px}
 #panel-mapa .ley-act{border-radius:50%;background:conic-gradient(#2f8f52 0 33%,#b8891f 0 66%,#b23b3b 0)}
@@ -28159,8 +28166,15 @@ function trazaBarrasHtml(x){
   var tope = lista[0].kg || 1;
   return '<div class="tz-barras">' + lista.map(function(c){
     var col = (typeof getClientColor === 'function') ? getClientColor(c.op) : '#2e9e5b';
+    /* El logo del cliente, igual que en Ingreso por Cliente. Si no tiene,
+       queda un punto del color del cliente para no dejar el hueco. */
+    var logo = (typeof getClientLogo === 'function') ? getClientLogo(c.op) : null;
+    /* El logo del cliente, igual que en Ingreso por Cliente. Si el logo no
+       carga se esconde y queda el punto del color del cliente. */
+    var marca = '<i class="tz-punto" style="background:' + col + '"></i>' +
+      (logo ? '<img class="tz-logo" src="' + esc(logo) + '" alt="" onerror="this.style.display=&quot;none&quot;">' : '');
     return '<div class="tz-barra" title="' + esc(c.etq) + ' · ' + c.viajes + ' viaje' + (c.viajes === 1 ? '' : 's') + '">' +
-      '<span class="tz-etq">' + esc(c.etq) + '</span>' +
+      '<span class="tz-etq">' + marca + '<span>' + esc(c.etq) + '</span></span>' +
       '<span class="tz-pista"><i style="width:' + Math.max(3, Math.round(100 * c.kg / tope)) + '%;background:' + col + '"></i></span>' +
       '<span class="tz-kg">' + trazaKg(c.kg) + '</span></div>';
   }).join('') + '</div>';
@@ -28322,7 +28336,7 @@ function bloqueReportes(zonaId, vano){
   var cond = est ? CONDICIONES.filter(function(c){ return c[0] === est.condicion; })[0] : null;
   var h = '';
 
-  h += '<div class="mapa-sec">Estado' + (vano ? ' de la pila' : ' del área') + '</div>';
+  h += '<div class="mapa-bloque b-estado"><div class="mapa-sec">Estado' + (vano ? ' de la pila' : ' del área') + '</div>';
   h += est
     ? '<div class="rep-estado">' +
         cajaFoto(est.foto, 'act-foto-mini', 'Estado del ' + cuando(est.fecha)) +
@@ -28333,6 +28347,7 @@ function bloqueReportes(zonaId, vano){
       '</div>'
     : '<div class="mapa-linea" style="color:var(--ink-l)">Nadie reportó todavía cómo está.</div>';
 
+  h += '</div>';
   h += '<div class="mapa-bloque b-nov">';
   h += '<div class="mapa-sec">Novedades (' + abiertas.length + ' abierta' +
        (abiertas.length === 1 ? '' : 's') + ')</div>';
