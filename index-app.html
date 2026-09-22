@@ -3237,6 +3237,13 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
    Cada bloque lleva el color de lo que muestra: inventario azul (como el
    cuadro azul del plano), actividades ámbar, novedades rojo y lo
    depositado verde. Así se sabe qué se está mirando sin leer el título. */
+/* El panel entero toma un tinte suave según la vista. */
+#panel-mapa .mapa-panel{transition:background .18s}
+#panel-mapa .mapa-panel.p-inv{background:#f2f7fd}
+#panel-mapa .mapa-panel.p-act{background:#fdfaf1}
+#panel-mapa .mapa-panel.p-nov{background:#fdf5f4}
+#panel-mapa .mapa-panel.p-traza{background:#f4faf6}
+#panel-mapa .mapa-panel.p-zona{background:var(--white,#fff)}
 #panel-mapa .mapa-bloque{border-radius:8px;padding:8px 10px 10px;margin:10px 0}
 #panel-mapa .mapa-bloque .mapa-sec{border-top:none;margin-top:4px;padding-top:0}
 #panel-mapa .b-inv{background:#eef4fb;border:1px solid #cfe0f2}
@@ -28014,7 +28021,7 @@ function trazaFilas(f, origen){
 function trazaDiccionario(){
   var d = {};
   M.zonas.forEach(function(z){
-    if(!z.activa || z.tipo === 'perfil') return;
+    if(!z.activa || z.tipo === 'perfil' || TRAZA_ZONAS_NO[z.id]) return;
     d[trazaNorm(z.nombre)] = { zona: z.id, vano: null, nombre: z.nombre };
     var n = 0; try { n = vanosDe(z) || 0; } catch(e) {}
     for(var v = 1; v <= n; v++){
@@ -28090,7 +28097,11 @@ function trazaColor(x, T){
 /* Las secciones donde de verdad se descarga (las mismas de la app de
    ingreso). Solo estas muestran el recuadro "Depositado aquí". */
 const TRAZA_PILAS_OK = { 'Z-PILAS-1':1, 'Z-PILAS-2':1, 'Z-ORG-B':1, 'Z-ORG-D':1 };
-const TRAZA_ZONAS_OK = { 'Z-PISC-R':1, 'Z-PISCINA':1, 'Z-SEC1':1, 'Z-CHORIZ':1, 'Z-LACTEO':1 };
+/* El recuadro grande del lácteo es de REFERENCIA: ahí no se descarga. Lo
+   que recibe material es el círculo (Piscina americana) y el cuadrado
+   chico (Tanque australiano). */
+const TRAZA_ZONAS_OK = { 'Z-PISC-R':1, 'Z-PISCINA':1, 'Z-SEC1':1, 'Z-CHORIZ':1 };
+const TRAZA_ZONAS_NO = { 'Z-LACTEO':1 };
 function esSeccionDescargue(zonaId, vano){ return vano ? !!TRAZA_PILAS_OK[zonaId] : !!TRAZA_ZONAS_OK[zonaId]; }
 
 /* El resumen en el panel de la derecha */
@@ -28177,7 +28188,7 @@ function trazaInsertar(p, zonaId, vano){
   div.className = 'traza-caja';
   div.innerHTML = '<div class="t">Depositado aquí</div>' +
     (x ? '<b>' + trazaKg(x.kg) + '</b> · ' + x.viajes + ' viaje' + (x.viajes === 1 ? '' : 's') + trazaBarrasHtml(x)
-       : 'Nada en este periodo.') +
+       : (vano ? 'Sin descargues registrados en esta pila. Los ingresos anteriores traían la sección escrita a mano (F16, C14…), que no se puede ubicar en el mapa; las pilas se llenan con los viajes que se registren eligiéndola en el plano de la app.' : 'Nada en este periodo.')) +
     '<div class="traza-filtro">' + esc(trazaEtiquetaFiltro(T.f)) + '</div>';
   var ancla = p.querySelector('.sub') || p.querySelector('h3');
   if(ancla && ancla.nextSibling) p.insertBefore(div, ancla.nextSibling); else p.appendChild(div);
@@ -30179,6 +30190,35 @@ window.addEventListener('focus', function(){ refrescarMapaSiToca(MAPA_AL_VOLVER_
 
 /* showPanel llama a esto al entrar a la pestaña */
 /* La llama el tablero apenas termina de bajar los ingresos. */
+/* ── EL FONDO DEL PANEL DICE QUÉ SE ESTÁ VIENDO ───────────────────
+   Azul: inventario. Ámbar: actividades y pendientes. Rojo: novedades.
+   Verde: lo depositado. Se decide mirando el título de la vista, así
+   funciona para todas sin tocarlas una por una. */
+function tintarPanel(){
+  var p = $m('mapaPanel');
+  if(!p) return;
+  var t = ((p.querySelector('h3') || {}).textContent || '').toLowerCase();
+  var clase = 'p-zona';
+  if(/art[ií]culo|ubicar|inventario|d[oó]nde est[aá]/.test(t)) clase = 'p-inv';
+  else if(/actividad|pendiente/.test(t)) clase = 'p-act';
+  else if(/novedad/.test(t)) clase = 'p-nov';
+  else if(/trazabilidad|descargue|depositado/.test(t)) clase = 'p-traza';
+  if(p.dataset.tinte !== clase){
+    p.classList.remove('p-zona', 'p-inv', 'p-act', 'p-nov', 'p-traza');
+    p.classList.add(clase);
+    p.dataset.tinte = clase;
+  }
+}
+/* Se vuelve a teñir cada vez que el panel cambia de contenido. */
+(function vigilarPanel(){
+  var p = $m('mapaPanel');
+  if(!p){ setTimeout(vigilarPanel, 500); return; }
+  try {
+    new MutationObserver(function(){ tintarPanel(); }).observe(p, { childList: true, subtree: false });
+    tintarPanel();
+  } catch(e) {}
+})();
+
 window.mapaTrazaActualizar = function(){
   try {
     TRAZA_CACHE = { clave: '', r: null };
