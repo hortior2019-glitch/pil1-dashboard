@@ -1970,7 +1970,13 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
   max-width:100%;max-height:100%;object-fit:contain;cursor:zoom-in;
   box-shadow:0 10px 40px rgba(0,0,0,.5);background:#fff;border-radius:2px;
 }
-#panel-auditoria #visorImg.zoom{max-width:none;max-height:none;width:auto;cursor:zoom-out}
+/* Zoom al punto: el lienzo se escala y se corre para que lo que está bajo
+   el mouse quede bajo el mouse. Con zoom, la foto se arrastra. */
+#panel-auditoria #visorLienzo{position:absolute;inset:18px;display:flex;align-items:center;justify-content:center;transform-origin:0 0;will-change:transform}
+#panel-auditoria .visor-cuerpo.con-zoom{overflow:hidden}
+#panel-auditoria .visor-cuerpo.con-zoom #visorImg{cursor:grab}
+#panel-auditoria .visor-cuerpo.arrastrando #visorImg{cursor:grabbing}
+#panel-auditoria #visorImg{user-select:none;-webkit-user-drag:none;touch-action:none}
 /* El giro es solo para VER: la foto en Drive no se toca. Se recuerda por
    baucher, así que al volver a abrirlo ya sale derecho. */
 #panel-auditoria #visorImg{transition:transform .18s ease}
@@ -4731,14 +4737,16 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     </div>
     <span class="contador" id="visorContador"></span>
     <button class="visor-btn" id="visorGirar" title="Girar la foto 90° (tecla R). Se recuerda para este baucher.">⟲ Girar</button>
-    <button class="visor-btn" id="visorZoom">⤢ Tamaño real</button>
+    <button class="visor-btn" id="visorZoom" title="Acercar. También: rueda del mouse o clic sobre el punto que quiere ver; arrastre para moverse; tecla 0 para ajustar.">🔍 Acercar</button>
     <a class="visor-btn" id="visorAbrir" href="#" target="_blank" rel="noopener">Abrir en Drive ↗</a>
     <button class="visor-btn cerrar" id="visorCerrar" title="Cerrar (Esc)">×</button>
   </div>
   <div class="visor-cuerpo" id="visorCuerpo">
     <button class="visor-nav izq" id="visorAnt" title="Anterior (←)">‹</button>
-    <img id="visorImg" alt="">
-    <iframe id="visorFrame" style="display:none" allow="autoplay"></iframe>
+    <div id="visorLienzo">
+      <img id="visorImg" alt="" draggable="false">
+      <iframe id="visorFrame" style="display:none" allow="autoplay"></iframe>
+    </div>
     <div class="visor-marca-mf" id="visorMarcaMF" style="display:none" aria-hidden="true"><span id="visorMarcaMFTexto"></span></div>
     <div id="visorError" style="display:none"></div>
     <button class="visor-nav der" id="visorSig" title="Siguiente (→)">›</button>
@@ -23609,6 +23617,7 @@ function abrirVisor(idx, col, lecturaIA){
 
 function cerrarVisor(){
   VISOR.abierto = false;
+  ajustarZoomVisor();
   $('veloVisor').classList.remove('abierto');
   $('visorImg').src = '';
   $('visorFrame').src = '';
@@ -23654,7 +23663,7 @@ function pintarVisor(){
   $('visorAbrir').href = f.url;
   $('visorAnt').style.display = VISOR.fotos.length > 1 ? '' : 'none';
   $('visorSig').style.display = VISOR.fotos.length > 1 ? '' : 'none';
-  $('visorZoom').textContent = VISOR.zoom ? '⤡ Ajustar' : '⤢ Tamaño real';
+  aplicarZoomVisor();
   const giro = giroDeFoto(f.id || f.url);
   $('visorGirar').textContent = giro ? '⟲ ' + giro + '°' : '⟲ Girar';
 
@@ -23662,10 +23671,10 @@ function pintarVisor(){
   const esMF = esFotoEntregaMF(f.c);
   $('visorMarcaMF').style.display = esMF ? '' : 'none';
   if(esMF) $('visorMarcaMFTexto').textContent = '📋 Manifiesto de entrega · ' + textoEntregaMF(fila);
-  img.classList.toggle('zoom', VISOR.zoom);
   const fuente = f.id ? 'https://drive.google.com/thumbnail?id=' + f.id + '&sz=w1600' : f.url;
   if(img.dataset.fuente !== fuente){
     img.dataset.fuente = fuente;
+    ajustarZoomVisor();
     delete img.dataset.alterna;
     frame.style.transform = '';
     img.style.display = '';
@@ -23731,9 +23740,76 @@ $('visorCerrar').addEventListener('click', cerrarVisor);
 $('visorAnt').addEventListener('click', ()=>moverVisor(-1));
 $('visorSig').addEventListener('click', ()=>moverVisor(1));
 $('visorGirar').addEventListener('click', girarVisor);
-$('visorZoom').addEventListener('click', ()=>{ VISOR.zoom = !VISOR.zoom; pintarVisor(); });
-$('visorImg').addEventListener('click', ()=>{ VISOR.zoom = !VISOR.zoom; pintarVisor(); });
-$('veloVisor').addEventListener('click', ev=>{ if(ev.target.id === 'veloVisor' || ev.target.id === 'visorCuerpo') cerrarVisor(); });
+/* ── ZOOM AL PUNTO ──
+   Antes la lupa solo cambiaba a "tamaño real" y siempre mostraba el mismo
+   sector. Ahora:
+     - rueda del mouse: acerca/aleja justo donde está el puntero;
+     - clic en la foto: acerca en ese punto (cada clic un poco más);
+     - arrastrar: mueve la foto cuando está acercada;
+     - botón "Ajustar" o tecla 0: vuelve a verla entera. */
+const VZ = { s: 1, x: 0, y: 0, arr: null, movio: false };
+const VZ_MAX = 8;
+function aplicarZoomVisor(){
+  const l = $('visorLienzo');
+  if(!l) return;
+  l.style.transform = (VZ.s === 1 && !VZ.x && !VZ.y) ? '' : 'translate(' + VZ.x + 'px,' + VZ.y + 'px) scale(' + VZ.s + ')';
+  $('visorCuerpo').classList.toggle('con-zoom', VZ.s > 1);
+  $('visorZoom').textContent = VZ.s > 1 ? '⤡ Ajustar · ' + Math.round(VZ.s * 100) + '%' : '🔍 Acercar';
+}
+function ajustarZoomVisor(){ VZ.s = 1; VZ.x = 0; VZ.y = 0; VZ.arr = null; aplicarZoomVisor(); }
+/* El punto de la foto que está bajo (cx, cy) se queda ahí al cambiar la escala. */
+function zoomVisorEn(factor, cx, cy){
+  const l = $('visorLienzo');
+  const r = l.getBoundingClientRect();
+  const ox = r.left - VZ.x, oy = r.top - VZ.y;          // dónde estaría el lienzo sin zoom
+  const ux = (cx - ox - VZ.x) / VZ.s, uy = (cy - oy - VZ.y) / VZ.s;
+  const s2 = Math.min(VZ_MAX, Math.max(1, VZ.s * factor));
+  if(s2 === 1){ ajustarZoomVisor(); return; }
+  VZ.x = cx - ox - s2 * ux;
+  VZ.y = cy - oy - s2 * uy;
+  VZ.s = s2;
+  aplicarZoomVisor();
+}
+$('visorZoom').addEventListener('click', ()=>{
+  if(VZ.s > 1){ ajustarZoomVisor(); return; }
+  const r = $('visorCuerpo').getBoundingClientRect();
+  zoomVisorEn(2.5, r.left + r.width / 2, r.top + r.height / 2);
+});
+$('visorCuerpo').addEventListener('wheel', ev=>{
+  if(!VISOR.abierto || $('visorImg').style.display === 'none') return;
+  ev.preventDefault();
+  zoomVisorEn(ev.deltaY < 0 ? 1.25 : 0.8, ev.clientX, ev.clientY);
+}, { passive: false });
+$('visorImg').addEventListener('pointerdown', ev=>{
+  VZ.movio = false;
+  if(VZ.s <= 1 || ev.button !== 0) return;
+  VZ.arr = { x0: ev.clientX, y0: ev.clientY, bx: VZ.x, by: VZ.y };
+  try { $('visorImg').setPointerCapture(ev.pointerId); } catch(e) {}
+  $('visorCuerpo').classList.add('arrastrando');
+});
+$('visorImg').addEventListener('pointermove', ev=>{
+  if(!VZ.arr) return;
+  const dx = ev.clientX - VZ.arr.x0, dy = ev.clientY - VZ.arr.y0;
+  if(Math.abs(dx) + Math.abs(dy) > 4) VZ.movio = true;
+  VZ.x = VZ.arr.bx + dx; VZ.y = VZ.arr.by + dy;
+  aplicarZoomVisor();
+});
+const soltarVisor = ()=>{ VZ.arr = null; $('visorCuerpo').classList.remove('arrastrando'); };
+$('visorImg').addEventListener('pointerup', soltarVisor);
+$('visorImg').addEventListener('pointercancel', soltarVisor);
+$('visorImg').addEventListener('click', ev=>{
+  if(VZ.movio){ VZ.movio = false; return; }         // fue un arrastre, no un clic
+  if(VZ.s >= VZ_MAX) return;
+  zoomVisorEn(VZ.s === 1 ? 2.5 : 1.8, ev.clientX, ev.clientY);
+});
+_audDocOn('keydown', ev=>{
+  if(!VISOR.abierto || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+  if(ev.target && /INPUT|TEXTAREA|SELECT/.test(ev.target.tagName)) return;
+  if(ev.key === '0'){ ev.preventDefault(); ajustarZoomVisor(); }
+  else if(ev.key === '+' || ev.key === '='){ ev.preventDefault(); const r = $('visorCuerpo').getBoundingClientRect(); zoomVisorEn(1.4, r.left + r.width / 2, r.top + r.height / 2); }
+  else if(ev.key === '-'){ ev.preventDefault(); const r = $('visorCuerpo').getBoundingClientRect(); zoomVisorEn(0.7, r.left + r.width / 2, r.top + r.height / 2); }
+});
+$('veloVisor').addEventListener('click', ev=>{ if(ev.target.id === 'veloVisor' || ev.target.id === 'visorCuerpo' || (ev.target.id === 'visorLienzo' && VZ.s === 1)) cerrarVisor(); });
 
 _audDocOn('keydown', ev=>{
   if(!VISOR.abierto) return;
