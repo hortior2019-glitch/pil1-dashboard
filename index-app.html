@@ -3223,13 +3223,6 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
 #panel-mapa svg.relieve .z rect,
 #panel-mapa svg.relieve .z polygon,
 #panel-mapa svg.relieve .z circle.forma{filter:url(#sombraRelieve)}
-/* Las CARAS del bloque: la de abajo (más oscura, mira al piso) y la del
-   costado derecho (más clara, le da la luz). Con esto el área deja de
-   parecer una figura con sombra y se lee como un cubo. */
-#panel-mapa svg.relieve .cara{pointer-events:none}
-#panel-mapa svg.relieve .cara-lado{fill:#9aa79f}
-#panel-mapa svg.relieve .cara-piso{fill:#6e7b73}
-#panel-mapa svg.relieve .cara-borde{fill:none;stroke:#4f5b54;stroke-width:.7;opacity:.5;pointer-events:none}
 #panel-mapa svg.relieve .base3d{fill:#6f7b72;opacity:.55;pointer-events:none}
 #panel-mapa svg.relieve .lustre{fill:url(#brilloRelieve);pointer-events:none}
 #panel-mapa .traza-escala{display:flex;align-items:center;gap:6px;margin:8px 0 2px;font-size:11px;color:#57534e}
@@ -4390,7 +4383,6 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <span style="flex:1"></span>
     <label class="mapa-ver"><input type="checkbox" id="mapaVerItems" checked> <span class="ley-item"></span>Artículos</label>
     <label class="mapa-ver"><input type="checkbox" id="mapaVerActs" checked> <span class="ley-act"></span>Actividades</label>
-    <label class="mapa-ver" title="Le da volumen a las áreas: sombra abajo y brillo arriba. Es solo visual."><input type="checkbox" id="mapaVer3D" checked> Relieve 3D</label>
     <label class="mapa-ver" title="Qué material se depositó en cada sección, con los mismos filtros de Ingreso por Cliente (periodo, fechas, horas y operaciones)"><input type="checkbox" id="mapaVerTraza" checked> <span class="ley-traza"></span>Trazabilidad</label>
   </div>
 
@@ -7416,6 +7408,9 @@ async function loadAllData() {
     try { renderIngreso(dataIngreso, currentFilter); } catch(e2) { console.error('renderIngreso error:', e2); }
     try { window.dataIngreso = dataIngreso; renderCmpChart(dataIngreso); } catch(e2) { console.error('renderCmpChart error:', e2); }
     try { renderCliCmpChart(dataIngreso); } catch(e3) { console.error('renderCliCmpChart error:', e3); }
+    /* El mapa depende de estos datos para la trazabilidad: apenas llegan,
+       se pone al día solo (antes mostraba ceros hasta que alguien lo tocaba). */
+    try { if(window.mapaTrazaActualizar) window.mapaTrazaActualizar(); } catch(e4) { console.error('mapaTrazaActualizar error:', e4); }
     try { renderClientes(dataIngreso, currentFilter); } catch(e2) { console.error('renderClientes error:', e2); }
     try { OPS_DINAMICO = construirOpsDesdeSheet(); renderOps(_opsFiltered || opsActuales()); } catch(e2) { console.error('renderOps error:', e2); }
     try { initCortesProveedores(); } catch(e2) { console.error('initCortes error:', e2); }
@@ -26557,8 +26552,7 @@ function limitarVista(){
   VIS.y = Math.max(VISTA_COMPLETA.y - margen, Math.min(VIS.y, VISTA_COMPLETA.h - VIS.h + margen));
 }
 
-/* Volver a ver todo el plano, llegando de a poco (lo usan el botón de la
-   barra y la lupa del plano). */
+/* Volver a ver todo el plano, llegando de a poco. */
 function vistaGeneral(){
   encuadrarSuave({ x: VISTA_COMPLETA.x, y: VISTA_COMPLETA.y, w: VISTA_COMPLETA.w, h: VISTA_COMPLETA.h });
 }
@@ -27491,44 +27485,6 @@ function repartir(nombre, ancho, alto){
   return { linea: [ nombre.length > cupo ? nombre.slice(0, cupo - 1) + '…' : nombre ], tam: tamMin };
 }
 
-/* ── EL BLOQUE: caras laterales de una figura ──────────────────────
-   Se dibuja la figura corrida (dx, dy) y las caras que unen cada arista
-   con su copia. Lo que quedaría oculto lo tapa después la cara de arriba,
-   que es la figura de siempre. Es geometría simple: no usa filtros ni
-   librerías, y son unas pocas figuras más por área. */
-function carasBloque(z, dx, dy){
-  var g = [];
-  var quad = function(ax, ay, bx, by, clase){
-    g.push('<polygon class="cara ' + clase + '" points="' + ax + ',' + ay + ' ' + bx + ',' + by + ' ' +
-           (bx + dx) + ',' + (by + dy) + ' ' + (ax + dx) + ',' + (ay + dy) + '"></polygon>');
-  };
-  if(z.puntos){
-    var ps = z.puntos.trim().split(/\s+/).map(function(p){ var q = p.split(','); return [parseFloat(q[0]), parseFloat(q[1])]; });
-    g.push('<polygon class="cara cara-piso" points="' + ps.map(function(p){ return (p[0] + dx) + ',' + (p[1] + dy); }).join(' ') + '"></polygon>');
-    for(var i = 0; i < ps.length; i++){
-      var a = ps[i], b = ps[(i + 1) % ps.length];
-      /* Solo las aristas que miran hacia la luz: las de arriba y las de la
-         izquierda quedarían tapadas y no hace falta dibujarlas. */
-      var mira = (b[0] - a[0]) * dy - (b[1] - a[1]) * dx;
-      if(mira > 0) quad(a[0], a[1], b[0], b[1], (b[1] > a[1] || a[1] > b[1]) && Math.abs(b[1] - a[1]) > Math.abs(b[0] - a[0]) ? 'cara-lado' : 'cara-piso');
-    }
-  } else if(z.forma === 'circulo'){
-    var cx = z.x + z.w / 2, cy = z.y + z.h / 2, r = Math.min(z.w, z.h) / 2;
-    /* Cilindro: la base corrida y varias copias intermedias hacen el costado. */
-    for(var k = 6; k >= 1; k--){
-      g.push('<circle class="cara cara-lado" cx="' + (cx + dx * k / 6) + '" cy="' + (cy + dy * k / 6) + '" r="' + r + '"></circle>');
-    }
-  } else {
-    var x = z.x, y = z.y, w = z.w, h = z.h;
-    g.push('<rect class="cara cara-piso" x="' + (x + dx) + '" y="' + (y + dy) + '" width="' + w + '" height="' + h + '" rx="2"></rect>');
-    quad(x + w, y, x + w, y + h, 'cara-lado');        // costado derecho
-    quad(x, y + h, x + w, y + h, 'cara-piso');        // frente (hacia abajo)
-    g.push('<polygon class="cara-borde" points="' + (x + w) + ',' + y + ' ' + (x + w + dx) + ',' + (y + dy) + ' ' +
-           (x + w + dx) + ',' + (y + h + dy) + ' ' + (x + dx) + ',' + (y + h + dy) + ' ' + x + ',' + (y + h) + ' ' + (x + w) + ',' + (y + h) + '"></polygon>');
-  }
-  return g.join('');
-}
-
 function pintar(){
   var cont = $m('mapaSvg');
   if(!cont) return;
@@ -27537,7 +27493,7 @@ function pintar(){
   var verPilas = true;   /* las pilas se ven siempre: la casilla para ocultarlas se quitó */
   var verItems = $m('mapaVerItems') ? $m('mapaVerItems').checked : true;
   var verActs  = $m('mapaVerActs')  ? $m('mapaVerActs').checked  : true;
-  var ver3D    = $m('mapaVer3D')    ? $m('mapaVer3D').checked    : false;
+  var ver3D    = true;   // el relieve va siempre (ya no hay casilla)
   var TZ = null;
   if(trazaActiva()){ try { TZ = trazaCalcular(); } catch(e) { console.warn('Trazabilidad:', e); } }
   /* Lo que se está por marcar como lugar de una actividad nueva. */
@@ -27579,11 +27535,11 @@ function pintar(){
              ? ' elegida'
              : '';
     var g = ['<g class="z t-' + esc(z.tipo) + sel + eleg + '" data-zona="' + esc(z.id) + '">'];
-    /* El bloque: caras laterales hacia abajo y a la derecha. Las áreas
-       grandes se levantan un poco más que las chicas, como en una maqueta. */
+    /* El costado del bloque: la misma figura, corrida 3 px abajo. */
     if(ver3D){
-      var alto3d = Math.max(3, Math.min(9, Math.sqrt(Math.max(1, z.w * z.h)) / 11));
-      g.push(carasBloque(z, alto3d * 0.62, alto3d));
+      if(z.puntos) g.push('<polygon class="base3d" transform="translate(2,3.2)" points="' + esc(z.puntos) + '"></polygon>');
+      else if(z.forma === 'circulo') g.push('<circle class="base3d" transform="translate(2,3.2)" cx="' + (z.x + z.w/2) + '" cy="' + (z.y + z.h/2) + '" r="' + (Math.min(z.w, z.h)/2) + '"></circle>');
+      else g.push('<rect class="base3d" transform="translate(2,3.2)" x="' + z.x + '" y="' + z.y + '" width="' + z.w + '" height="' + z.h + '" rx="2"></rect>');
     }
     if(z.puntos){
       g.push('<polygon points="' + esc(z.puntos) + '"></polygon>');
@@ -27801,7 +27757,7 @@ function pintar(){
       '<stop offset="0.55" stop-color="#ffffff" stop-opacity=".06"/>' +
       '<stop offset="1" stop-color="#000000" stop-opacity=".10"/></linearGradient>' +
     '<filter id="sombraRelieve" x="-20%" y="-20%" width="145%" height="150%">' +
-      '<feDropShadow dx="1.2" dy="2" stdDeviation="2.2" flood-color="#1f2a24" flood-opacity=".22"/></filter>' +
+      '<feDropShadow dx="1.6" dy="2.6" stdDeviation="1.4" flood-color="#1f2a24" flood-opacity=".34"/></filter>' +
     '</defs>';
   cont.innerHTML = '<svg class="plano' + (ver3D ? ' relieve' : '') + '" viewBox="' + VIS.x + ' ' + VIS.y + ' ' + VIS.w + ' ' + VIS.h +
                    '" preserveAspectRatio="xMidYMid meet">' + defs3d + partes.join('') + '</svg>';
@@ -27971,15 +27927,49 @@ function trazaEtiquetaFiltro(f){
   t += ops.length ? ' · ' + (ops.length === 1 ? ops[0] : ops.length + ' operaciones') : ' · todas las operaciones';
   return t;
 }
+/* ── LO QUE TARDA ────────────────────────────────────────────────────
+   La trazabilidad sale de los INGRESOS, y esa descarga es la lenta (son
+   varios MB y el Apps Script a veces tarda medio minuto). Antes el panel
+   mostraba ceros hasta que llegaban. Ahora se guarda en el equipo una
+   versión mínima de lo necesario —fecha, sección, kilos, operación y
+   material— y con eso se pinta al instante; cuando llegan los ingresos
+   frescos se reemplaza solo. Son unos 250 KB. */
+var TRAZA_DATOS = 'horti_traza_datos_v1';
+function trazaFilaMinima(r){
+  return { f: getMarcaTemporal(r) || '', s: String(r['SECCION DEPOSITAR'] || r['SECCION DEPOSITARIA'] || '').trim(),
+           k: (typeof getPesoNeto === 'function' ? getPesoNeto(r) : 0) || 0,
+           o: normEmpresa(r['OPERACION'] || ''), m: String(r['RESIDUO'] || r['Residuo'] || r['residuo'] || '').trim(),
+           p: String(r['PLACA'] || '').trim(), t: String(r['NUMERO TIQUETE'] || '').trim() };
+}
+function trazaGuardarDatos(filas){
+  try { localStorage.setItem(TRAZA_DATOS, JSON.stringify({ cuando: Date.now(), filas: filas })); } catch(e) {}
+}
+function trazaDatosGuardados(){
+  try { var x = JSON.parse(localStorage.getItem(TRAZA_DATOS) || 'null'); return (x && x.filas && x.filas.length) ? x : null; }
+  catch(e) { return null; }
+}
+/* Las filas mínimas a usar: las frescas si ya llegaron; si no, las del equipo. */
+function trazaOrigen(){
+  var d = (typeof dataIngreso !== 'undefined' && dataIngreso) ? dataIngreso : [];
+  if(d.length){
+    var filas = d.map(trazaFilaMinima);
+    if(!TRAZA_ULTIMO_GUARDADO || TRAZA_ULTIMO_GUARDADO !== d.length){ trazaGuardarDatos(filas); TRAZA_ULTIMO_GUARDADO = d.length; }
+    return { filas: filas, guardado: 0 };
+  }
+  var g = trazaDatosGuardados();
+  return g ? { filas: g.filas, guardado: g.cuando } : { filas: [], guardado: 0 };
+}
+var TRAZA_ULTIMO_GUARDADO = 0;
+
 /* Las filas que hoy muestra Ingreso por Cliente (misma lógica que renderClientes). */
-function trazaFilas(f){
-  var data = (typeof dataIngreso !== 'undefined' && dataIngreso) ? dataIngreso : [];
+function trazaFilas(f, origen){
+  var data = origen ? origen.filas : [];
   var filas;
   if(f.fd || f.fh) filas = data.slice();
-  else filas = data.filter(function(r){ return inPeriod(getMarcaTemporal(r) || '', f.per); });
+  else filas = data.filter(function(r){ return inPeriod(r.f || '', f.per); });
   if(f.fd || f.fh || f.hd || f.hh){
     filas = filas.filter(function(r){
-      var mt = getMarcaTemporal(r); if(!mt) return true;
+      var mt = r.f; if(!mt) return true;
       var dt = parseDateTime(mt); if(!dt) return true;
       var p2 = function(n){ return String(n).padStart(2, '0'); };
       var fecha = dt.getFullYear() + '-' + p2(dt.getMonth() + 1) + '-' + p2(dt.getDate());
@@ -27993,9 +27983,7 @@ function trazaFilas(f){
   }
   var ops = f.ops.length ? f.ops : (f.op ? [f.op] : []);
   if(ops.length){
-    filas = filas.filter(function(r){
-      return ops.indexOf(splitOperacionMaterial(normEmpresa(r['OPERACION'] || ''), r['RESIDUO'] || r['Residuo'] || r['residuo'] || '')) > -1;
-    });
+    filas = filas.filter(function(r){ return ops.indexOf(splitOperacionMaterial(r.o, r.m)) > -1; });
   }
   return filas;
 }
@@ -28015,17 +28003,16 @@ function trazaDiccionario(){
 }
 function trazaCalcular(){
   var f = trazaFiltros();
-  var data = (typeof dataIngreso !== 'undefined' && dataIngreso) ? dataIngreso : [];
-  var clave = JSON.stringify(f) + '|' + data.length + '|' + M.zonas.length + '|' + M.pilas.length;
+  var origen = trazaOrigen();
+  var clave = JSON.stringify(f) + '|' + origen.filas.length + '|' + origen.guardado + '|' + M.zonas.length + '|' + M.pilas.length;
   if(TRAZA_CACHE.clave === clave && TRAZA_CACHE.r) return TRAZA_CACHE.r;
   var dic = trazaDiccionario();
   var lugares = {}, sin = {}, total = { kg: 0, viajes: 0 };
-  trazaFilas(f).forEach(function(r){
-    var txt = String(r['SECCION DEPOSITAR'] || r['SECCION DEPOSITARIA'] || '').trim();
-    var kg = (typeof getPesoNeto === 'function' ? getPesoNeto(r) : 0) || 0;
-    var mat = String(r['RESIDUO'] || r['Residuo'] || r['residuo'] || '').trim();
-    mat = mat ? (typeof materialCanonico === 'function' ? materialCanonico(mat) : mat) : 'Sin material';
-    var op = normEmpresa(r['OPERACION'] || '');
+  trazaFilas(f, origen).forEach(function(r){
+    var txt = r.s;
+    var kg = r.k || 0;
+    var mat = r.m ? (typeof materialCanonico === 'function' ? materialCanonico(r.m) : r.m) : 'Sin material';
+    var op = r.o;
     total.kg += kg; total.viajes++;
     var n = trazaNorm(txt);
     var lugar = dic[TRAZA_ALIAS[n] || n];
@@ -28036,7 +28023,7 @@ function trazaCalcular(){
     x.kg += kg; x.viajes++;
     /* El historial viaje a viaje NO se muestra de entrada: queda guardado
        acá y se despliega solo si alguien lo pide (máx. 300 por sección). */
-    if(x.lista.length < 300) x.lista.push({ f: getMarcaTemporal(r) || '', op: op, mat: mat, kg: kg, placa: String(r['PLACA'] || '').trim(), tiq: String(r['NUMERO TIQUETE'] || '').trim() });
+    if(x.lista.length < 300) x.lista.push({ f: r.f, op: op, mat: mat, kg: kg, placa: r.p, tiq: r.t });
     x.mats[mat] = (x.mats[mat] || 0) + kg;
     if(op) x.ops[op] = (x.ops[op] || 0) + 1;
   });
@@ -28050,7 +28037,7 @@ function trazaCalcular(){
     if(x.vano){ if(x.kg > maxPila) maxPila = x.kg; }
     else if(x.kg > maxArea) maxArea = x.kg;
   });
-  TRAZA_CACHE = { clave: clave, r: { f: f, lugares: lugares, sin: sin, total: total, max: max, maxPila: maxPila, maxArea: maxArea } };
+  TRAZA_CACHE = { clave: clave, r: { f: f, lugares: lugares, sin: sin, total: total, max: max, maxPila: maxPila, maxArea: maxArea, guardado: origen.guardado, vacio: !origen.filas.length } };
   return TRAZA_CACHE.r;
 }
 function trazaKg(kg){ return typeof fmtTon === 'function' ? fmtTon(kg) : Math.round(kg).toLocaleString('es-CO') + ' kg'; }
@@ -28085,8 +28072,11 @@ function trazaPanel(){
   var lista = Object.keys(T.lugares).map(function(k){ return T.lugares[k]; }).sort(function(a, b){ return b.kg - a.kg; });
   var sin = Object.keys(T.sin).map(function(k){ return T.sin[k]; }).sort(function(a, b){ return b.kg - a.kg; });
   var kgUb = lista.reduce(function(a, x){ return a + x.kg; }, 0);
+  var aviso = T.vacio ? '<div class="traza-caja">Trayendo los ingresos del servidor… (tarda entre 10 s y un minuto). Esto se llena solo cuando lleguen.</div>'
+            : T.guardado ? '<div class="traza-caja">Mostrando lo último guardado en este equipo (' + new Date(T.guardado).toLocaleString('es-CO', { dateStyle:'short', timeStyle:'short' }) + ') · actualizando con el servidor…</div>'
+            : '';
   p.innerHTML = '<h3>Trazabilidad de material</h3>' +
-    '<div class="traza-filtro">Filtros de Ingreso por Cliente: ' + esc(trazaEtiquetaFiltro(T.f)) + '</div>' +
+    '<div class="traza-filtro">Filtros de Ingreso por Cliente: ' + esc(trazaEtiquetaFiltro(T.f)) + '</div>' + aviso +
     '<div class="traza-caja">' + T.total.viajes + ' viajes · ' + trazaKg(T.total.kg) + ' · ubicados en el mapa: ' + trazaKg(kgUb) + '</div>' +
     (lista.length ? '<div class="traza-escala"><span>menos flujo</span><i></i><span>más</span></div>' +
       '<ul class="traza-lista">' + lista.map(function(x, i){
@@ -30100,12 +30090,6 @@ document.addEventListener('DOMContentLoaded', function(){
   var bg = $m('mapaVistaGeneral'); if(bg) bg.onclick = vistaGeneral;
   var vi = $m('mapaVerItems'); if(vi) vi.onchange = pintar;
   var va = $m('mapaVerActs');  if(va) va.onchange = pintar;
-  var v3 = $m('mapaVer3D');
-  if(v3){
-    /* Viene prendido; solo se respeta lo guardado si el usuario ya lo tocó. */
-    try { var g3 = localStorage.getItem('horti_mapa_3d_v1'); if(g3 !== null) v3.checked = g3 === '1'; } catch(e) {}
-    v3.onchange = function(){ try { localStorage.setItem('horti_mapa_3d_v1', v3.checked ? '1' : '0'); } catch(e) {} pintar(); };
-  }
   var vt = $m('mapaVerTraza'); if(vt) vt.onchange = function(){
     pintar();
     if(vt.checked) trazaPanel();
@@ -30144,6 +30128,15 @@ document.addEventListener('visibilitychange', function(){ if(!document.hidden) r
 window.addEventListener('focus', function(){ refrescarMapaSiToca(MAPA_AL_VOLVER_MS); });
 
 /* showPanel llama a esto al entrar a la pestaña */
+/* La llama el tablero apenas termina de bajar los ingresos. */
+window.mapaTrazaActualizar = function(){
+  try {
+    TRAZA_CACHE = { clave: '', r: null };
+    if(!trazaActiva()) return;
+    pintar();
+    if(!SEL.zona) trazaPanel();
+  } catch(e) {}
+};
 window.mapaActivar = function(){
   cargarMapa(false); refrescarMapaSiToca(MAPA_AL_VOLVER_MS);
   /* Si se cambiaron los filtros en Ingreso por Cliente, la trazabilidad se pone al día. */
