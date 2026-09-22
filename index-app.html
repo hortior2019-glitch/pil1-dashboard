@@ -3201,8 +3201,15 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
 /* Marcas de articulos ubicados en una zona */
 #panel-mapa .leyenda{font-size:9px;fill:#54605a;pointer-events:none}
 #panel-mapa .leyenda.tit{font-size:9.5px;font-weight:800;letter-spacing:1px;fill:#8a8f8a}
-#panel-mapa .marca-item{pointer-events:none}
-#panel-mapa .marca-item circle{fill:#b8891f;stroke:#fff;stroke-width:1.4}
+#panel-mapa .marca-item{pointer-events:auto}
+/* La muestra de color al lado de cada casilla: cuadrado azul = artículos, círculo = actividades. */
+#panel-mapa .ley-item,#panel-mapa .ley-act{display:inline-block;width:10px;height:10px;margin-right:4px;vertical-align:-1px}
+#panel-mapa .ley-item{background:#2563a8;border-radius:2px}
+#panel-mapa .ley-act{border-radius:50%;background:conic-gradient(#2f8f52 0 33%,#b8891f 0 66%,#b23b3b 0)}
+/* Artículos: cuadrado AZUL. Las actividades van en círculo verde/dorado/rojo
+   (según cómo van): antes los artículos eran un círculo dorado y se
+   confundían con una actividad "a medias". */
+#panel-mapa .marca-item rect{fill:#2563a8;stroke:#fff;stroke-width:1.4}
 #panel-mapa .marca-item text{font-size:8px;font-weight:800;fill:#fff;text-anchor:middle;dominant-baseline:central}
 
 /* Panel lateral */
@@ -4334,8 +4341,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <button class="mapa-btn" id="mapaUbicar">Asignar ubicación</button>
     <button class="mapa-btn" id="mapaNuevaZona">Nueva área</button>
     <span style="flex:1"></span>
-    <label class="mapa-ver"><input type="checkbox" id="mapaVerItems" checked> Artículos</label>
-    <label class="mapa-ver"><input type="checkbox" id="mapaVerActs" checked> Actividades</label>
+    <label class="mapa-ver"><input type="checkbox" id="mapaVerItems" checked> <span class="ley-item"></span>Artículos</label>
+    <label class="mapa-ver"><input type="checkbox" id="mapaVerActs" checked> <span class="ley-act"></span>Actividades</label>
   </div>
 
   <div class="mapa-area">
@@ -26892,9 +26899,9 @@ var MAPA_BASE = [
      y van DESPUÉS del recinto para quedar encima. */
   {id:'Z-LACTEO',nombre:'Área lodo lácteo',tipo:'produccion',parales:0,color:'',x:462,y:461,w:76,h:97,orientacion:'vertical',activa:true,puntos:'',
     etiquetaArriba:true, lineaBase:539},
-  {id:'Z-PISC-R',nombre:'Piscina redonda',tipo:'servicio',parales:0,color:'',x:467,y:511,w:28,h:28,orientacion:'vertical',activa:true,puntos:'',
+  {id:'Z-PISC-R',nombre:'Piscina americana',tipo:'servicio',parales:0,color:'',x:467,y:511,w:28,h:28,orientacion:'vertical',activa:true,puntos:'',
     forma:'circulo', sinEtiqueta:true, dentro:'Z-LACTEO'},
-  {id:'Z-PISCINA',nombre:'Piscina cuadrada',tipo:'servicio',parales:0,color:'',x:508,y:509,w:19,h:30,orientacion:'vertical',activa:true,puntos:'',
+  {id:'Z-PISCINA',nombre:'Tanque australiano',tipo:'servicio',parales:0,color:'',x:508,y:509,w:19,h:30,orientacion:'vertical',activa:true,puntos:'',
     sinEtiqueta:true, dentro:'Z-LACTEO'},
   /* Pre molino: la franja entre el bloque inferior de pilas y el molino,
      del mismo ancho que el molino. */
@@ -26970,7 +26977,7 @@ function zonasDeBase(){ return MAPA_BASE.map(clonarZona); }
 function fusionarZonas(cambios){
   var salida = zonasDeBase();
   var porId = {};
-  salida.forEach(function(z){ porId[z.id] = z; });
+  salida.forEach(function(z){ porId[z.id] = z; if(ZONAS_NOMBRE_FIJO[z.id]) z.nombre = ZONAS_NOMBRE_FIJO[z.id]; });
 
   (cambios || []).forEach(function(c){
     if(!c || !c.id) return;
@@ -27233,9 +27240,24 @@ function textoPilaDerecho(nombre, cx, cy, ancho, alto){
            return i === 0 ? esc(l) : '<tspan x="' + cx + '" dy="' + alto1.toFixed(1) + '">' + esc(l) + '</tspan>';
          }).join('') + '</text>';
 }
+/* ── NOMBRES FIJOS DE LAS PILAS (y áreas renombradas) ──────────────
+   Copiados de la hoja el 22/09/2026. Salen en el plano AL INSTANTE, sin
+   esperar al servidor (que tarda 10 a 20 s en despertar). Cuando el
+   servidor contesta, un nombre que se haya cambiado desde la pantalla
+   manda sobre este; lo de acá es solo para no ver el plano sin nombres.
+   Para renombrar una pila de forma permanente, se cambia aquí también. */
+var PILAS_NOMBRE_FIJO = {
+  'Z-ORG-B': { 1: 'c1', 2: '5', 3: '4', 4: '3', 5: '2', 6: '1' },
+  'Z-ORG-D': { 1: '12', 2: '11', 3: '10', 4: '9', 5: '8' },
+  'Z-PILAS-1': { 1: '14', 2: '13', 3: '12', 4: '11', 5: '9', 6: '8', 7: '7', 8: '6', 9: '5', 10: '4', 11: '3', 12: '2' },
+  'Z-PILAS-2': { 1: '26', 2: '25', 3: '24', 4: '23', 5: '22', 6: '21', 7: '20', 8: '19', 9: '18', 10: '17', 11: '16', 12: 'Corredor compostera' }
+};
+var ZONAS_NOMBRE_FIJO = {'Z-LACTEO':'Piscina'};
 function nombrePila(zonaId, vano){
   var pl = pilaDe(zonaId, vano);
-  return (pl && pl.nombre) ? pl.nombre : '';
+  if(pl && pl.nombre) return pl.nombre;
+  var z = PILAS_NOMBRE_FIJO[zonaId];
+  return (z && z[vano]) ? z[vano] : '';
 }
 function pilaDe(zonaId, vano){
   for(var i=0;i<M.pilas.length;i++){
@@ -27470,13 +27492,15 @@ function pintar(){
                     (SEL.zona === z.id && SEL.vano === v ? ' sel' : '');
           g.push('<rect class="' + cls + '" x="' + vx + '" y="' + (z.y+3) + '" width="' + paso +
                  '" height="' + (z.h-6) + '" data-zona="' + esc(z.id) + '" data-vano="' + v +
-                 '"><title>' + esc(z.nombre) + ' · ' + (pl && pl.nombre ? esc(pl.nombre) : 'pila sin nombre') +
+                 '"><title>' + esc(z.nombre) + ' · ' + (nombrePila(z.id, v) ? esc(nombrePila(z.id, v)) : 'pila sin nombre') +
                  (pl && pl.estado ? ' · ' + esc(pl.estado.replace('_',' ')) : ' · vacía') +
                  '</title></rect>');
           /* El nombre de la pila, adentro y DERECHO (se lee sin torcer la
              cabeza). Antes, en las pilas angostas iba de canto. */
-          if(pl && pl.nombre){
-            g.push(textoPilaDerecho(pl.nombre, vx + paso/2, z.y + z.h/2, paso - 3, z.h - 8));
+          /* Con el nombre fijo, sale aunque el servidor todavía no haya contestado. */
+          var nomV = nombrePila(z.id, v);
+          if(nomV){
+            g.push(textoPilaDerecho(nomV, vx + paso/2, z.y + z.h/2, paso - 3, z.h - 8));
           }
         }
       }
@@ -27528,8 +27552,9 @@ function pintar(){
     if(verItems){
       var its = itemsEn(z.nombre);
       if(its.length){
-        g.push('<g class="marca-item"><circle cx="' + (z.x + z.w - 9) + '" cy="' + (z.y + 9) + '" r="8"></circle>' +
-               '<text x="' + (z.x + z.w - 9) + '" y="' + (z.y + 9) + '">' + its.length + '</text></g>');
+        g.push('<g class="marca-item"><rect x="' + (z.x + z.w - 17) + '" y="' + (z.y + 1) + '" width="16" height="16" rx="3"></rect>' +
+               '<text x="' + (z.x + z.w - 9) + '" y="' + (z.y + 9) + '">' + its.length + '</text>' +
+               '<title>' + its.length + ' artículo' + (its.length === 1 ? '' : 's') + ' del inventario acá</title></g>');
       }
     }
     g.push('</g>');
