@@ -3225,16 +3225,26 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
 #panel-mapa svg.relieve .z circle.forma{filter:url(#sombraRelieve)}
 #panel-mapa svg.relieve .base3d{fill:#6f7b72;opacity:.55;pointer-events:none}
 #panel-mapa svg.relieve .lustre{fill:url(#brilloRelieve);pointer-events:none}
-/* Barras por cliente y material (mismo lenguaje de Ingreso por Cliente). */
-#panel-mapa .tz-barras{margin-top:7px;display:flex;flex-direction:column;gap:4px}
-#panel-mapa .tz-barra{display:grid;grid-template-columns:minmax(110px,44%) 1fr auto;align-items:center;gap:7px;font-size:11.5px}
-#panel-mapa .tz-etq{display:flex;align-items:center;gap:5px;min-width:0;color:#374151}
-#panel-mapa .tz-etq > span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#panel-mapa .tz-logo{width:20px;height:20px;object-fit:contain;flex:0 0 20px;background:#fff;border-radius:3px}
-#panel-mapa .tz-punto{width:10px;height:10px;border-radius:50%;flex:0 0 10px;display:inline-block}
-#panel-mapa .tz-pista{background:#e7e5e4;border-radius:2px;height:11px;overflow:hidden}
-#panel-mapa .tz-pista i{display:block;height:100%;border-radius:2px}
-#panel-mapa .tz-kg{font-variant-numeric:tabular-nums;font-weight:700;color:#1f2937;white-space:nowrap}
+/* ── LAS BARRAS, COMO EN INGRESO POR CLIENTE ──────────────────────
+   Mismas medidas y mismas letras que las barras de "Kilogramos por
+   operacion": logo de 68 px, el nombre en Playfair de 16, la cifra en
+   Libre Baskerville de 22 y la barra de 14 px de alto debajo. */
+#panel-mapa .tz-barras{margin-top:12px;display:flex;flex-direction:column;gap:14px}
+#panel-mapa .tz-barra{display:flex;flex-direction:column;gap:6px}
+#panel-mapa .tz-fila{display:flex;justify-content:space-between;align-items:center;gap:10px}
+#panel-mapa .tz-marca{display:flex;align-items:center;gap:10px;min-width:0}
+#panel-mapa .tz-logo{width:68px;height:68px;object-fit:contain;flex-shrink:0}
+#panel-mapa .tz-punto{width:12px;height:12px;border-radius:50%;flex-shrink:0;display:inline-block}
+#panel-mapa .tz-etq{
+  font-family:'Playfair Display',serif;font-size:16px;font-weight:700;color:var(--ink,#1f2a24);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+#panel-mapa .tz-pista{display:block;background:var(--rule-l,#e7e5e4);border-radius:2px;height:14px;overflow:hidden}
+#panel-mapa .tz-pista i{display:block;height:100%;border-radius:2px;transition:width .5s ease}
+#panel-mapa .tz-kg{
+  font-family:'Libre Baskerville',serif;font-size:22px;font-weight:700;flex-shrink:0;
+  font-variant-numeric:lining-nums tabular-nums;white-space:nowrap;
+}
 
 /* ── EL PANEL DE LA DERECHA, POR FUNCIÓN ──
    Cada bloque lleva el color de lo que muestra: inventario azul (como el
@@ -3301,8 +3311,6 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
 /* Con ese ancho el texto puede respirar: todo un punto mas grande. */
 #panel-mapa .mapa-panel .mapa-linea{font-size:12.5px;padding:6px 0}
 #panel-mapa .mapa-panel .mapa-sec{font-size:10.5px;letter-spacing:.9px}
-#panel-mapa .mapa-panel .tz-barra{font-size:12.5px}
-#panel-mapa .mapa-panel .tz-pista{height:13px}
 #panel-mapa .mapa-panel .traza-caja{font-size:12.5px}
 #panel-mapa .mapa-vacio{color:var(--ink-l,#8a8f8a);font-size:12.5px;line-height:1.5;padding:20px 4px}
 /* En el computador nunca se ve: el panel está siempre a la derecha */
@@ -28182,17 +28190,19 @@ function trazaBarrasHtml(x){
   var tope = lista[0].kg || 1;
   return '<div class="tz-barras">' + lista.map(function(c){
     var col = (typeof getClientColor === 'function') ? getClientColor(c.op) : '#2e9e5b';
-    /* El logo del cliente, igual que en Ingreso por Cliente. Si no tiene,
-       queda un punto del color del cliente para no dejar el hueco. */
+    /* El logo del cliente, como en Ingreso por Cliente: si no hay logo va
+       un punto del color del cliente; si el logo no carga, se esconde. */
     var logo = (typeof getClientLogo === 'function') ? getClientLogo(c.op) : null;
-    /* El logo del cliente, igual que en Ingreso por Cliente. Si el logo no
-       carga se esconde y queda el punto del color del cliente. */
-    var marca = '<i class="tz-punto" style="background:' + col + '"></i>' +
-      (logo ? '<img class="tz-logo" src="' + esc(logo) + '" alt="" onerror="this.style.display=&quot;none&quot;">' : '');
+    var marca = logo
+      ? '<img class="tz-logo" src="' + esc(logo) + '" alt="" onerror="this.style.display=&quot;none&quot;">'
+      : '<i class="tz-punto" style="background:' + col + '"></i>';
     return '<div class="tz-barra" title="' + esc(c.etq) + ' · ' + c.viajes + ' viaje' + (c.viajes === 1 ? '' : 's') + '">' +
-      '<span class="tz-etq">' + marca + '<span>' + esc(c.etq) + '</span></span>' +
+      '<div class="tz-fila">' +
+        '<div class="tz-marca">' + marca + '<span class="tz-etq">' + esc(c.etq) + '</span></div>' +
+        '<span class="tz-kg" style="color:' + col + '">' + trazaKg(c.kg) + '</span>' +
+      '</div>' +
       '<span class="tz-pista"><i style="width:' + Math.max(3, Math.round(100 * c.kg / tope)) + '%;background:' + col + '"></i></span>' +
-      '<span class="tz-kg">' + trazaKg(c.kg) + '</span></div>';
+      '</div>';
   }).join('') + '</div>';
 }
 
