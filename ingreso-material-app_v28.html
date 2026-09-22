@@ -529,6 +529,31 @@ html.modo-noche .zd-piscina{background:#1c2a20}
 .zd-piscina .zd-area{flex:1;background:#fff;border-width:1.5px}
 .zd-piscina .zd-area.redonda{border-radius:24px}
 .zd-sel,.zd-pila.zd-sel,.zd-area.zd-sel{background:#2e9e5b !important;color:#fff !important}
+/* El plano de planta, con los colores del tablero. Lo que no se puede
+   elegir queda apagado; lo elegible se resalta al tocarlo. */
+.zd-mapa{min-width:0;max-width:100%;box-sizing:border-box}
+.pl-marco{width:100%;max-width:calc(100vw - 48px);box-sizing:border-box;overflow:auto;max-height:min(62vh,520px);border:1px solid var(--rule);background:#f4f6f2;-webkit-overflow-scrolling:touch}
+.pl-marco svg{display:block}
+.pl-marco .perfil{fill:#fff;stroke:#1a1a1a;stroke-width:3.2;stroke-linejoin:round;pointer-events:none}
+.pl-marco .trama{stroke:#5a6058;stroke-width:.5;opacity:.55;pointer-events:none}
+.pl-marco .z rect,.pl-marco .z polygon,.pl-marco .z circle.forma{stroke:#2b3a31;stroke-width:1.6;fill:#fff}
+.pl-marco .z text{font-size:9.5px;font-weight:700;fill:#2b3a31;pointer-events:none;text-anchor:middle;font-family:'Source Sans 3',sans-serif}
+.pl-marco .z.t-produccion rect{fill:#f2f9f4}.pl-marco .z.t-secado rect{fill:#fdf8ee}.pl-marco .z.t-servicio rect,.pl-marco .z circle.forma{fill:#f3f7fb}
+.pl-marco .z.t-admin rect{fill:#f7f5fc}.pl-marco .z.t-acceso rect{fill:#fbf4f2}.pl-marco .z.t-futura rect{fill:#fff;stroke-dasharray:5 4;stroke:#9aa39d}
+.pl-marco .z.t-almacen rect,.pl-marco .z.t-almacen polygon{fill:#fcfdfc}.pl-marco .z.t-lombriz rect{fill:#f7f3ef}.pl-marco .z.t-compost rect{fill:#f6f4f0}
+.pl-marco .z .linea-base{stroke:#2b3a31;stroke-width:1.8;pointer-events:none}
+.pl-marco .paral{stroke-width:1.6;opacity:.85;pointer-events:none}
+.pl-marco .z text.pila-nombre{font-weight:600;fill:#23405e}
+/* Lo que no se puede elegir: apagado. */
+.pl-marco .z:not(.elegible):not(.con-pilas){opacity:.45}
+.pl-marco .z rect.vano{fill:transparent;stroke:none}
+.pl-marco .vano.elegible,.pl-marco .z.elegible{cursor:pointer}
+.pl-marco .z rect.vano.elegible:hover{fill:rgba(46,158,91,.18)}
+.pl-marco .z rect.vano.zd-sel{fill:#2e9e5b}
+.pl-marco .z rect.vano.zd-sel + text{fill:#fff}
+.pl-marco .z.zd-sel rect,.pl-marco .z.zd-sel polygon,.pl-marco .z.zd-sel circle.forma{fill:#2e9e5b;stroke:#155d33;stroke-width:2.6}
+.pl-marco .z.zd-sel text{fill:#fff}
+.pl-ayuda{font-size:11.5px;color:var(--ink-l);margin:5px 2px 8px}
 .zd-otra{display:flex;gap:8px;align-items:center;margin-top:2px}
 .zd-otra .zd-area{flex:0 0 auto;width:auto;min-height:40px;background:transparent}
 .zd-otra input{flex:1;min-width:0;padding:10px;border:1.5px solid var(--rule);font:15px 'Source Sans 3',sans-serif}
@@ -5387,49 +5412,259 @@ var ZD_SECCIONES = [
 var ZD_ARMADO = false;
 
 function zdEsc(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
-function zdArmar() {
-  var filas = {};
-  ZD_SECCIONES.forEach(function (sec) {
-    var h = '<div class="zd-bloque' + (sec.chico ? ' chico' : '') + '">';
-    if (sec.pilas) {
-      h += '<div class="zd-tit">' + zdEsc(sec.tit) + '</div><div class="zd-pilas">' + sec.pilas.map(function (p) {
-        var valor = p + ' ' + sec.tit;
-        var cls = 'zd-pila' + ((sec.anchas || []).indexOf(p) > -1 ? ' ancha' : '') + (p.length > 3 ? ' texto' : '');
-        return '<button type="button" class="' + cls + '" data-zd="' + zdEsc(valor) + '" title="' + zdEsc(valor) + '">' + zdEsc(p) + '</button>';
-      }).join('') + '</div>';
-    } else if (sec.piscina) {
-      h += '<div class="zd-tit">' + zdEsc(sec.tit) + '</div><div class="zd-piscina">' + sec.piscina.map(function (p, i) {
-        return '<button type="button" class="zd-area' + (i === 0 ? ' redonda' : '') + '" data-zd="' + zdEsc(p) + '">' + zdEsc(p) + '</button>';
-      }).join('') + '</div>';
-    } else {
-      h += '<div class="zd-tit">&nbsp;</div><button type="button" class="zd-area" data-zd="' + zdEsc(sec.tit) + '">' + zdEsc(sec.tit) + '</button>';
+// ══ EL PLANO DE PLANTA (el mismo del tablero) ════════════════════════
+// Geometría, nombres de pilas y funciones de dibujo copiados del Mapa de
+// planta del tablero (index-app, 22/09/2026). Va dentro de la app: abre al
+// instante, sin pedir nada al servidor. Solo se pueden tocar las secciones
+// de descargue; lo demás se ve en gris, como referencia.
+var PLANO = (function () {
+  var esc = zdEsc;
+var MAPA_BASE = [
+  {id:'Z-PERFIL',nombre:'Predio',tipo:'perfil',parales:0,color:'',x:0,y:0,w:0,h:0,orientacion:'vertical',activa:true,puntos:'10,13 677,13 677,375 636,412 636,543 561,657 479,694 404,712 345,712 287,671 205,619 82,578 10,523'},
+  {id:'Z-PERFIL2',nombre:'Lote oriental',tipo:'perfil',parales:0,color:'',x:0,y:0,w:0,h:0,orientacion:'vertical',activa:true,puntos:'681,13 1000,82 1000,206 897,323 692,375 681,375'},
+  {id:'Z-PORT2',nombre:'Portería Vehicular II',tipo:'acceso',parales:0,color:'',x:540,y:14,w:103,h:34,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-PORT1',nombre:'Portería Vehicular I',tipo:'acceso',parales:0,color:'',x:81,y:540,w:66,h:38,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-RESER',nombre:'Reservorio',tipo:'servicio',parales:0,color:'',x:684,y:244,w:72,h:69,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-CABAL',nombre:'Caballeriza',tipo:'produccion',parales:0,color:'',x:506,y:157,w:161,h:36,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-LIQ',nombre:'Área líquidos',tipo:'produccion',parales:0,color:'',x:585,y:213,w:82,h:58,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-LOMB',nombre:'Lombricultivo',tipo:'lombriz',parales:0,color:'',x:448,y:213,w:202,h:103,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-INV2',nombre:'Invernadero 2',tipo:'produccion',parales:0,color:'',x:274,y:175,w:154,h:134,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-HUERTA',nombre:'Huerta',tipo:'produccion',parales:0,color:'',x:116,y:318,w:67,h:147,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-SEC1',nombre:'Secadero (planchas)',tipo:'secado',parales:0,color:'',x:274,y:318,w:154,h:67,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-COMPOS',nombre:'Compostera',tipo:'compost',parales:0,color:'',x:445,y:329,w:205,h:56,orientacion:'vertical',activa:true,puntos:''},
+  /* A la mitad de ancho, corrida a la izquierda: la mitad derecha queda libre. */
+  {id:'Z-NEBUL',nombre:'Área nebulización',tipo:'servicio',parales:0,color:'',x:444,y:404,w:26,h:48,orientacion:'vertical',activa:true,puntos:''},
+  /* Área lodo lácteo, como el dibujo: el nombre arriba y, abajo sobre una
+     línea de base, las dos piscinas — una redonda y una cuadrada. Las
+     piscinas son áreas propias (se tocan, tienen actividades y reportes)
+     y van DESPUÉS del recinto para quedar encima. */
+  {id:'Z-LACTEO',nombre:'Área lodo lácteo',tipo:'produccion',parales:0,color:'',x:462,y:461,w:76,h:97,orientacion:'vertical',activa:true,puntos:'',
+    etiquetaArriba:true, lineaBase:539},
+  {id:'Z-PISC-R',nombre:'Piscina americana',tipo:'servicio',parales:0,color:'',x:467,y:511,w:28,h:28,orientacion:'vertical',activa:true,puntos:'',
+    forma:'circulo', sinEtiqueta:true, dentro:'Z-LACTEO'},
+  {id:'Z-PISCINA',nombre:'Tanque australiano',tipo:'servicio',parales:0,color:'',x:508,y:509,w:19,h:30,orientacion:'vertical',activa:true,puntos:'',
+    sinEtiqueta:true, dentro:'Z-LACTEO'},
+  /* Pre molino: la franja entre el bloque inferior de pilas y el molino,
+     del mismo ancho que el molino. */
+  {id:'Z-PREMOL',nombre:'Pre molino',tipo:'produccion',parales:0,color:'',x:253,y:527,w:137,h:33,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-MOLINO',nombre:'Molino',tipo:'produccion',parales:0,color:'',x:253,y:564,w:137,h:48,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-SEC2',nombre:'Secadero (molino)',tipo:'secado',parales:0,color:'',x:393,y:564,w:99,h:96,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-EMPAQ',nombre:'Zona de empaque',tipo:'produccion',parales:0,color:'',x:253,y:612,w:75,h:34,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-COMPRE',nombre:'Bodega inventarios',tipo:'servicio',parales:0,color:'',x:339,y:616,w:51,h:38,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-COMEDOR',nombre:'Comedor',tipo:'servicio',parales:0,color:'',x:330,y:660,w:44,h:32,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-TALLER',nombre:'Taller',tipo:'servicio',parales:0,color:'',x:378,y:660,w:44,h:32,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-CHORIZ',nombre:'Z2',tipo:'secado',parales:0,color:'',x:636,y:567,w:144,h:93,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-OFIC',nombre:'Oficina admin.',tipo:'admin',parales:0,color:'',x:14,y:413,w:65,h:62,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-CASA',nombre:'Casa quinta',tipo:'admin',parales:0,color:'',x:14,y:331,w:33,h:54,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-COCIN',nombre:'Cocineta',tipo:'admin',parales:0,color:'',x:47,y:318,w:25,h:26,orientacion:'vertical',activa:true,puntos:''},
+  /* ── LAS PILAS, COMO EL ESQUEMA ──────────────────────────────────
+     Cuatro bloques. Cada pila es un espacio entre dos parales y se nombra
+     por separado (el nombre vive en la hoja Pilas). 'anchos' da el ancho
+     relativo de cada pila tal como está en el esquema: no todas miden
+     igual (la primera del bloque superior derecho es casi el triple).
+     Las carpas anteriores quedan RETIRADAS: no se dibujan, pero sus datos
+     (pilas, actividades, reportes) siguen en la hoja. */
+  {id:'Z-PILAS-1',nombre:'Pilas bloque 1',tipo:'almacen',parales:13,color:'#2f5fa8',x:219,y:398,w:225,h:60,orientacion:'vertical',activa:true,puntos:'',
+    anchos:[75,60,73,72,70,68,67,68,67,67,70,81]},
+  {id:'Z-PILAS-2',nombre:'Pilas bloque 2',tipo:'almacen',parales:13,color:'#2f5fa8',x:221,y:458,w:236,h:65,orientacion:'vertical',activa:true,puntos:''},
+  {id:'Z-ORG-B',nombre:'Orgánicos B',tipo:'almacen',parales:7,color:'#8fd14f',x:497,y:398,w:133,h:60,orientacion:'vertical',activa:true,puntos:'',
+    anchos:[158,67,60,63,67,72]},
+  {id:'Z-ORG-D',nombre:'Orgánicos D',tipo:'almacen',parales:6,color:'#8fd14f',x:543,y:458,w:87,h:66,orientacion:'vertical',activa:true,
+    puntos:'543,458 630,458 630,514 620,524 543,524', anchos:[68,62,58,57,70]},
+  {id:'Z-LODO-A',nombre:'Lodo papelero A',tipo:'almacen',parales:6,color:'#2f5fa8',x:219,y:398,w:51,h:80,orientacion:'vertical',activa:false,retirada:true,puntos:''},
+  {id:'Z-LODO-B',nombre:'Lodo papelero B',tipo:'almacen',parales:9,color:'#2f5fa8',x:274,y:398,w:53,h:80,orientacion:'vertical',activa:false,retirada:true,puntos:''},
+  {id:'Z-ORG-A',nombre:'Orgánicos A',tipo:'almacen',parales:6,color:'#8fd14f',x:330,y:398,w:94,h:80,orientacion:'vertical',activa:false,retirada:true,puntos:''},
+  {id:'Z-TROMEL',nombre:'Tromel',tipo:'almacen',parales:5,color:'#2f7d32',x:238,y:482,w:83,h:76,orientacion:'vertical',activa:false,retirada:true,puntos:''},
+  {id:'Z-ORG-C',nombre:'Orgánicos C',tipo:'almacen',parales:5,color:'#8fd14f',x:328,y:482,w:96,h:76,orientacion:'vertical',activa:false,retirada:true,puntos:''}
+];
+var PILAS_NOMBRE_FIJO = {
+  'Z-ORG-B': { 1: 'c1', 2: '5', 3: '4', 4: '3', 5: '2', 6: '1' },
+  'Z-ORG-D': { 1: '12', 2: '11', 3: '10', 4: '9', 5: '8' },
+  'Z-PILAS-1': { 1: '14', 2: '13', 3: '12', 4: '11', 5: '9', 6: '8', 7: '7', 8: '6', 9: '5', 10: '4', 11: '3', 12: '2' },
+  'Z-PILAS-2': { 1: '26', 2: '25', 3: '24', 4: '23', 5: '22', 6: '21', 7: '20', 8: '19', 9: '18', 10: '17', 11: '16', 12: 'Corredor compostera' }
+};
+var ZONAS_NOMBRE_FIJO = {'Z-LACTEO':'Piscina'};
+function cortesDe(z){
+  var n = z.parales || 0, xs = [];
+  if(n < 2) return xs;
+  var a = (z.anchos && z.anchos.length === n - 1) ? z.anchos : null;
+  var total = a ? a.reduce(function(s, v){ return s + v; }, 0) : n - 1;
+  var acum = 0;
+  for(var i = 0; i < n; i++){
+    xs.push(z.x + z.w * acum / total);
+    if(i < n - 1) acum += a ? a[i] : 1;
+  }
+  return xs;
+}
+function repartir(nombre, ancho, alto){
+  nombre = (nombre || '').trim();
+  if(!nombre || ancho < 18 || alto < 12) return { linea:[], tam:9.5 };
+
+  var tams = [9.5, 8.5, 7.5, 6.5];
+  for(var t = 0; t < tams.length; t++){
+    var tam = tams[t];
+    var porLinea = Math.floor((ancho - 4) / (tam * 0.55));
+    if(porLinea < 3) continue;
+    var maxLineas = Math.max(1, Math.floor((alto - 4) / (tam + 1.5)));
+
+    var palabras = nombre.split(' ');
+    var lineas = [], actual = '';
+    for(var i = 0; i < palabras.length; i++){
+      var prueba = actual ? actual + ' ' + palabras[i] : palabras[i];
+      if(prueba.length <= porLinea){ actual = prueba; }
+      else { if(actual) lineas.push(actual); actual = palabras[i]; }
     }
-    (filas[sec.fila] = filas[sec.fila] || []).push(h + '</div>');
-  });
-  var html = Object.keys(filas).map(function (f) { return '<div class="zd-fila">' + filas[f].join('') + '</div>'; }).join('') +
+    if(actual) lineas.push(actual);
+
+    /* Una palabra sola mas larga que el renglon: se parte igual, porque
+       dejarla entera la sacaria de la caja. */
+    var cabe = lineas.every(function(l){ return l.length <= porLinea; });
+    if(cabe && lineas.length <= maxLineas) return { linea: lineas, tam: tam };
+  }
+
+  /* Ni en la letra mas chica: se recorta. El nombre completo esta en el
+     tooltip. */
+  var tamMin = 6.5;
+  var cupo = Math.max(3, Math.floor((ancho - 4) / (tamMin * 0.55)));
+  return { linea: [ nombre.length > cupo ? nombre.slice(0, cupo - 1) + '…' : nombre ], tam: tamMin };
+}
+function textoPilaDerecho(nombre, cx, cy, ancho, alto){
+  var PROP = 0.6;                   // ancho de un carácter respecto del tamaño de letra
+  var MAX = 8, MIN = 3.4;
+  var palabras = String(nombre).trim().split(/\s+/);
+  var lineas = [String(nombre).trim()];
+  var tamDe = function(ls){
+    var masLarga = ls.reduce(function(m, l){ return Math.max(m, l.length); }, 1);
+    return Math.min(MAX, ancho / (masLarga * PROP), alto / (ls.length * 1.15));
+  };
+  var tam = tamDe(lineas);
+  if(tam < 4.5 && palabras.length > 1){
+    var enRenglones = tamDe(palabras);
+    if(enRenglones > tam){ lineas = palabras; tam = enRenglones; }
+  }
+  /* Un nombre largo en una pila angosta ("Corredor compostera") derecho
+     queda en letra de 3 px, ilegible. Solo en ese caso va de canto, que
+     es como se lee: todo lo que entra derecho, va derecho. */
+  if(tam < 4.5){
+    var tamCanto = Math.min(MAX, ancho * 0.8, alto / (String(nombre).trim().length * PROP));
+    if(tamCanto >= 4.5){
+      return '<text class="pila-nombre" x="' + cx + '" y="' + cy + '" style="font-size:' + tamCanto.toFixed(1) + 'px"' +
+             ' transform="rotate(-90 ' + cx + ' ' + cy + ')" dominant-baseline="middle">' + esc(String(nombre).trim()) + '</text>';
+    }
+  }
+  if(tam < MIN){
+    tam = MIN;
+    var caben = Math.max(1, Math.floor(ancho / (tam * PROP)));
+    lineas = lineas.map(function(l){ return l.length > caben ? l.slice(0, Math.max(1, caben - 1)) + '…' : l; });
+    var renglones = Math.max(1, Math.floor(alto / (tam * 1.15)));
+    if(lineas.length > renglones){ lineas = lineas.slice(0, renglones); lineas[renglones - 1] += '…'; }
+  }
+  var alto1 = tam * 1.15;
+  var y0 = cy - (lineas.length - 1) * alto1 / 2;
+  return '<text class="pila-nombre" x="' + cx + '" y="' + y0.toFixed(1) + '" style="font-size:' + tam.toFixed(1) + 'px"' +
+         ' dominant-baseline="middle">' +
+         lineas.map(function(l, i){
+           return i === 0 ? esc(l) : '<tspan x="' + cx + '" dy="' + alto1.toFixed(1) + '">' + esc(l) + '</tspan>';
+         }).join('') + '</text>';
+}
+  /* Dónde se puede descargar: todas las pilas con nombre de estos bloques
+     y estas áreas. (Área nebulización quedó fuera, a pedido.) */
+  var PILAS_ELEGIBLES = { 'Z-PILAS-1': 1, 'Z-PILAS-2': 1, 'Z-ORG-B': 1, 'Z-ORG-D': 1 };
+  var ZONAS_ELEGIBLES = { 'Z-PISC-R': 1, 'Z-PISCINA': 1, 'Z-SEC1': 1, 'Z-CHORIZ': 1 };
+  var ESCALA = 1.4;          // px por unidad del plano: una pila mide ~26 px, fácil de tocar
+  function nombreZona(z) { return ZONAS_NOMBRE_FIJO[z.id] || z.nombre; }
+  function nombrePila(z, v) { var m = PILAS_NOMBRE_FIJO[z.id]; return (m && m[v]) ? m[v] : ''; }
+
+  function svg() {
+    var partes = [];
+    MAPA_BASE.filter(function (z) { return z.activa !== false && z.tipo === 'perfil' && z.puntos; }).forEach(function (z) {
+      partes.push('<polygon class="perfil" points="' + esc(z.puntos) + '"></polygon>');
+    });
+    MAPA_BASE.filter(function (z) { return z.activa !== false && z.tipo !== 'perfil' && !z.retirada; })
+      .slice().sort(function (a, b) { return (b.w * b.h) - (a.w * a.h); })
+      .forEach(function (z) {
+        var nombre = nombreZona(z);
+        var elegible = !!ZONAS_ELEGIBLES[z.id];
+        var g = ['<g class="z t-' + esc(z.tipo) + (elegible ? ' elegible' : '') + (PILAS_ELEGIBLES[z.id] ? ' con-pilas' : '') + '"' +
+                 (elegible ? ' data-zd="' + esc(nombre) + '"' : '') + '>'];
+        if (z.puntos) {
+          g.push('<polygon points="' + esc(z.puntos) + '"></polygon>');
+          if (z.tipo === 'almacen') g.push('<clipPath id="pclip-' + esc(z.id) + '"><polygon points="' + esc(z.puntos) + '"></polygon></clipPath>');
+        } else if (z.forma === 'circulo') {
+          g.push('<circle class="forma" cx="' + (z.x + z.w / 2) + '" cy="' + (z.y + z.h / 2) + '" r="' + (Math.min(z.w, z.h) / 2) + '"></circle>');
+        } else {
+          g.push('<rect x="' + z.x + '" y="' + z.y + '" width="' + z.w + '" height="' + z.h + '" rx="2"></rect>');
+        }
+        if (z.lineaBase) g.push('<line class="linea-base" x1="' + (z.x + 1) + '" y1="' + z.lineaBase + '" x2="' + (z.x + z.w - 1) + '" y2="' + z.lineaBase + '"></line>');
+        if (z.tipo === 'secado' || z.tipo === 'compost') {
+          for (var y = z.y + 6; y < z.y + z.h - 2; y += 6) g.push('<line class="trama" x1="' + (z.x + 2) + '" y1="' + y + '" x2="' + (z.x + z.w - 2) + '" y2="' + y + '"></line>');
+        }
+        /* El nombre, ajustado a su caja (misma regla del tablero). */
+        var cx = z.x + z.w / 2, cy = z.y + z.h / 2, anchoUtil = z.w;
+        if (z.tipo === 'lombriz') { cx = z.x + z.w * 0.32; anchoUtil = z.w * 0.6; }
+        var tapaPilas = z.tipo === 'almacen' && z.parales > 1;
+        var deCanto = !z.puntos && z.forma !== 'circulo' && z.w < 34 && z.h > z.w * 1.5;
+        var altoUtil = z.etiquetaArriba ? (z.lineaBase ? (z.lineaBase - z.y) * 0.5 : z.h * 0.45) : z.h;
+        if (z.etiquetaArriba) cy = z.y + altoUtil / 2 + 2;
+        var lineas = (tapaPilas || (z.sinEtiqueta && !elegible)) ? { linea: [] } : deCanto ? repartir(nombre || '', z.h, z.w) : repartir(nombre || '', anchoUtil, altoUtil);
+        if (lineas.linea.length) {
+          var alto = lineas.linea.length * (lineas.tam + 1.5), y0 = cy - alto / 2 + lineas.tam - 1;
+          var giro = deCanto ? ' transform="rotate(-90 ' + cx + ' ' + cy + ')"' : '';
+          lineas.linea.forEach(function (t, i) {
+            g.push('<text x="' + cx + '" y="' + (y0 + i * (lineas.tam + 1.5)) + '" style="font-size:' + lineas.tam + 'px"' + giro + '>' + esc(t) + '</text>');
+          });
+        }
+        /* Carpas de almacenamiento: parales y pilas (las pilas se tocan). */
+        if (tapaPilas) {
+          var n = z.parales, xs = cortesDe(z);
+          if (z.puntos) g.push('<g clip-path="url(#pclip-' + esc(z.id) + ')">');
+          for (var p = 0; p < n; p++) g.push('<line class="paral" x1="' + xs[p] + '" y1="' + (z.y + 3) + '" x2="' + xs[p] + '" y2="' + (z.y + z.h - 3) + '" stroke="' + esc(z.color || '#8fd14f') + '"></line>');
+          for (var v = 1; v <= n - 1; v++) {
+            var vx = xs[v - 1], paso = xs[v] - xs[v - 1], np = nombrePila(z, v);
+            var toca = PILAS_ELEGIBLES[z.id] && np;
+            g.push('<rect class="vano' + (toca ? ' elegible' : '') + '" x="' + vx + '" y="' + (z.y + 3) + '" width="' + paso + '" height="' + (z.h - 6) + '"' +
+                   (toca ? ' data-zd="' + esc(np + ' ' + nombre) + '"' : '') + '><title>' + esc(np ? np + ' ' + nombre : nombre) + '</title></rect>');
+            if (np) g.push(textoPilaDerecho(np, vx + paso / 2, z.y + z.h / 2, paso - 3, z.h - 8));
+          }
+          if (z.puntos) g.push('</g>');
+        }
+        g.push('</g>');
+        partes.push(g.join(''));
+      });
+    return '<svg class="plano" viewBox="0 0 1010 725" width="' + Math.round(1010 * ESCALA) + '" height="' + Math.round(725 * ESCALA) + '">' + partes.join('') + '</svg>';
+  }
+  /* Al abrir, se centra en la zona de pilas (no en la portería). */
+  function centrar(marco) {
+    if (!marco) return;
+    marco.scrollLeft = Math.max(0, 440 * ESCALA - marco.clientWidth / 2);
+    marco.scrollTop = Math.max(0, 470 * ESCALA - marco.clientHeight / 2);
+  }
+  return { svg: svg, centrar: centrar };
+})();
+
+/* Arma el plano + "Otra…" dentro de un contenedor. alElegir(valor, elemento). */
+function planoArmar(cont, idOtra, alOtra) {
+  cont.innerHTML = '<div class="pl-marco">' + PLANO.svg() + '</div>' +
+    '<div class="pl-ayuda">Toque la pila o el área. Deslice para moverse por el plano.</div>' +
     '<div class="zd-otra"><button type="button" class="zd-area" data-zd-otra="1">Otra…</button>' +
-    '<input type="text" id="zd-otra-txt" placeholder="Escriba la sección" style="display:none" oninput="zdPoner(this.value.trim(), true)"></div>';
+    '<input type="text" id="' + idOtra + '" placeholder="Escriba el lugar" style="display:none"></div>';
+  document.getElementById(idOtra).addEventListener('input', function () { alOtra(this.value.trim()); });
+}
+
+function zdArmar() {
   var cont = document.getElementById('zd-mapa');
-  cont.innerHTML = html;
-  /* Un solo escuchador para todo el mapa (no uno por pila). */
+  planoArmar(cont, 'zd-otra-txt', function (v) { zdPoner(v, true); });
+  /* Un solo escuchador para todo el plano (no uno por pila). */
   cont.addEventListener('click', function (ev) {
-    var b = ev.target.closest('button');
-    if (!b) return;
-    if (b.dataset.zdOtra) {
-      var inp = document.getElementById('zd-otra-txt');
-      inp.style.display = '';
-      zdMarcar(b);
-      zdPoner(inp.value.trim(), true);
-      inp.focus();
-      return;
-    }
-    if (b.dataset.zd) {
-      document.getElementById('zd-otra-txt').style.display = 'none';
-      zdMarcar(b);
-      zdPoner(b.dataset.zd);
-      /* Elegida la sección, el mapa se guarda solo. */
-      setTimeout(function () { zdAlternar(false); }, 250);
-    }
+    var b = ev.target.closest('[data-zd],[data-zd-otra]');
+    if (!b || !cont.contains(b)) return;
+    var inp = document.getElementById('zd-otra-txt');
+    if (b.dataset.zdOtra) { inp.style.display = ''; zdMarcar(b); zdPoner(inp.value.trim(), true); inp.focus(); return; }
+    inp.style.display = 'none';
+    zdMarcar(b);
+    zdPoner(b.dataset.zd);
+    /* Elegida la sección, el plano se guarda solo. */
+    setTimeout(function () { zdAlternar(false); }, 350);
   });
   ZD_ARMADO = true;
 }
@@ -5439,45 +5674,17 @@ function zdArmar() {
    input oculto con su mismo id. */
 var MP_ARMADO = {};
 function mpArmar(key) {
-  var filas = {};
-  ZD_SECCIONES.forEach(function (sec) {
-    var h = '<div class="zd-bloque' + (sec.chico ? ' chico' : '') + '">';
-    if (sec.pilas) {
-      h += '<div class="zd-tit">' + zdEsc(sec.tit) + '</div><div class="zd-pilas">' + sec.pilas.map(function (p) {
-        var valor = p + ' ' + sec.tit;
-        var cls = 'zd-pila' + ((sec.anchas || []).indexOf(p) > -1 ? ' ancha' : '') + (p.length > 3 ? ' texto' : '');
-        return '<button type="button" class="' + cls + '" data-zd="' + zdEsc(valor) + '" title="' + zdEsc(valor) + '">' + zdEsc(p) + '</button>';
-      }).join('') + '</div>';
-    } else if (sec.piscina) {
-      h += '<div class="zd-tit">' + zdEsc(sec.tit) + '</div><div class="zd-piscina">' + sec.piscina.map(function (p, i) {
-        return '<button type="button" class="zd-area' + (i === 0 ? ' redonda' : '') + '" data-zd="' + zdEsc(p) + '">' + zdEsc(p) + '</button>';
-      }).join('') + '</div>';
-    } else {
-      h += '<div class="zd-tit">&nbsp;</div><button type="button" class="zd-area" data-zd="' + zdEsc(sec.tit) + '">' + zdEsc(sec.tit) + '</button>';
-    }
-    (filas[sec.fila] = filas[sec.fila] || []).push(h + '</div>');
-  });
   var cont = document.getElementById(key + '-mapa');
-  cont.innerHTML = Object.keys(filas).map(function (f) { return '<div class="zd-fila">' + filas[f].join('') + '</div>'; }).join('') +
-    '<div class="zd-otra"><button type="button" class="zd-area" data-zd-otra="1">Otra…</button>' +
-    '<input type="text" id="' + key + '-otra-txt" placeholder="Escriba el lugar" style="display:none" oninput="mpPoner(\'' + key + '\', this.value.trim(), true)"></div>';
+  planoArmar(cont, key + '-otra-txt', function (v) { mpPoner(key, v, true); });
   cont.addEventListener('click', function (ev) {
-    var b = ev.target.closest('button');
-    if (!b) return;
+    var b = ev.target.closest('[data-zd],[data-zd-otra]');
+    if (!b || !cont.contains(b)) return;
     var inp = document.getElementById(key + '-otra-txt');
-    if (b.dataset.zdOtra) {
-      inp.style.display = '';
-      mpMarcar(key, b);
-      mpPoner(key, inp.value.trim(), true);
-      inp.focus();
-      return;
-    }
-    if (b.dataset.zd) {
-      inp.style.display = 'none';
-      mpMarcar(key, b);
-      mpPoner(key, b.dataset.zd);
-      setTimeout(function () { mpAlternar(key, false); }, 250);
-    }
+    if (b.dataset.zdOtra) { inp.style.display = ''; mpMarcar(key, b); mpPoner(key, inp.value.trim(), true); inp.focus(); return; }
+    inp.style.display = 'none';
+    mpMarcar(key, b);
+    mpPoner(key, b.dataset.zd);
+    setTimeout(function () { mpAlternar(key, false); }, 350);
   });
   MP_ARMADO[key] = true;
 }
@@ -5497,6 +5704,7 @@ function mpAlternar(key, abrir) {
   /* Un mapa abierto a la vez: más corto de recorrer en el celular. */
   if (abrir) ['vi-origen', 'vi-destino'].forEach(function (k) { if (k !== key && document.getElementById(k + '-mapa')) mpAlternar(k, false); });
   cont.style.display = abrir ? '' : 'none';
+  if (abrir) PLANO.centrar(cont.querySelector('.pl-marco'));
   document.getElementById(key + '-flecha').textContent = abrir ? '▴' : '▾';
 }
 function mpReiniciar(key) {
@@ -5526,6 +5734,7 @@ function zdAlternar(abrir) {
   if (abrir === undefined) abrir = cont.style.display === 'none';
   if (abrir && !ZD_ARMADO) zdArmar();
   cont.style.display = abrir ? '' : 'none';
+  if (abrir) PLANO.centrar(cont.querySelector('.pl-marco'));
   document.getElementById('zd-flecha').textContent = abrir ? '▴' : '▾';
 }
 function zdReiniciar() {
