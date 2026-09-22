@@ -3315,13 +3315,43 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
 }
 /* Con ese ancho el texto puede respirar: todo un punto mas grande. */
 #panel-mapa .mapa-panel .mapa-linea{font-size:12.5px;padding:6px 0}
-#panel-mapa .mapa-panel .mapa-sec{font-size:10.5px;letter-spacing:.9px}
 #panel-mapa .mapa-panel .traza-caja{font-size:12.5px}
+/* ── LOS TITULOS DE CADA BLOQUE ───────────────────────────────────
+   Antes eran gris claro de 10 px y se perdian entre los renglones.
+   Ahora van en negrilla, en tinta oscura y un poco mas grandes, con
+   una barrita del color del bloque al lado para ubicarlos de un
+   vistazo. */
+#panel-mapa .mapa-panel .mapa-sec{
+  font-size:12.5px;font-weight:800;letter-spacing:.4px;
+  color:var(--ink,#1f2a24);display:flex;align-items:center;gap:7px;
+}
+#panel-mapa .mapa-panel .mapa-sec::before{
+  content:'';flex:0 0 3px;width:3px;height:14px;border-radius:2px;background:currentColor;opacity:.75;
+}
+/* Dentro de un bloque de color, el titulo toma ese color (mas oscuro
+   que antes, para que se lea sobre el fondo tenue). */
+#panel-mapa .mapa-panel .b-inv   .mapa-sec{color:#16406f}
+#panel-mapa .mapa-panel .b-act   .mapa-sec{color:#7a5c13}
+#panel-mapa .mapa-panel .b-nov   .mapa-sec{color:#8a251d}
+#panel-mapa .mapa-panel .b-pilas .mapa-sec{color:#33463c}
+#panel-mapa .mapa-panel .b-estado .mapa-sec{color:#1f5b55}
+/* El PRIMER titulo de un bloque es el nombre del bloque: va mas grande y
+   con una linea debajo. Los que siguen son sus apartados (En curso,
+   Historial…) y van un punto mas chicos. */
+#panel-mapa .mapa-panel .mapa-bloque > .mapa-sec:first-child{
+  font-size:14px;margin:2px 0 9px;padding-bottom:6px;border-bottom:1px solid rgba(31,42,36,.14);
+}
+#panel-mapa .mapa-panel .mapa-bloque > .mapa-sec:first-child::before{height:16px;width:4px;flex-basis:4px;opacity:1}
+#panel-mapa .mapa-panel .mapa-bloque .mapa-sec{margin:14px 0 5px}
+#panel-mapa .mapa-panel .mapa-bloque > .mapa-sec:first-child + *{margin-top:0}
+/* El titulo de las cajas de trazabilidad, del mismo tamaño. */
+#panel-mapa .mapa-panel .traza-caja .t{font-size:12.5px;font-weight:800;letter-spacing:.4px;color:#14532d;margin-bottom:2px}
 #panel-mapa .mapa-vacio{color:var(--ink-l,#8a8f8a);font-size:12.5px;line-height:1.5;padding:20px 4px}
 /* En el computador nunca se ve: el panel está siempre a la derecha */
 #panel-mapa .mapa-volver{display:none}
 #panel-mapa .mapa-panel h3{
-  margin:0 0 3px;font-family:'Playfair Display',serif;font-size:19px;font-weight:700;color:var(--ink,#1f2a24);
+  margin:0 0 4px;font-family:'Playfair Display',serif;font-size:21px;font-weight:700;color:var(--ink,#1f2a24);
+  letter-spacing:-.2px;line-height:1.15;
 }
 #panel-mapa .mapa-panel .sub{font-size:11px;color:var(--ink-l,#8a8f8a);margin-bottom:12px}
 #panel-mapa .mapa-sec{
@@ -28235,7 +28265,7 @@ function trazaInsertar(p, zonaId, vano){
   div.className = 'traza-caja';
   div.innerHTML = '<div class="t">Depositado aquí</div>' +
     (x ? '<b>' + trazaKg(x.kg) + '</b> · ' + x.viajes + ' viaje' + (x.viajes === 1 ? '' : 's') + trazaBarrasHtml(x)
-       : (vano ? 'Sin descargues registrados en esta pila. Los ingresos anteriores traían la sección escrita a mano (F16, C14…), que no se puede ubicar en el mapa; las pilas se llenan con los viajes que se registren eligiéndola en el plano de la app.' : 'Nada en este periodo.')) +
+       : 'Nada en este periodo.') +
     '<div class="traza-filtro">' + esc(trazaEtiquetaFiltro(T.f)) + '</div>';
   var ancla = p.querySelector('.sub') || p.querySelector('h3');
   if(ancla && ancla.nextSibling) p.insertBefore(div, ancla.nextSibling); else p.appendChild(div);
@@ -28266,7 +28296,8 @@ function verZona(){
 
   h += '<div class="mapa-acciones"><button class="mapa-guardar" id="zActividad">Nueva actividad en esta área</button></div>';
 
-  h += '<div class="mapa-bloque b-inv"><div class="mapa-sec">Artículos ubicados acá (' + its.length + ')</div>';
+  h += '<div class="mapa-bloque b-inv"><div class="mapa-sec">Inventario</div>' +
+       '<div class="mapa-sec">Artículos ubicados acá (' + its.length + ')</div>';
   h += its.length
       ? its.map(function(i){
           return '<div class="inv-fila">' + cajaFoto(i.foto, 'inv-foto', i.item) +
@@ -28599,6 +28630,9 @@ function bloqueActividades(acts, donde){
   var h = '';
 
   h += '<div class="mapa-bloque b-act">';
+  /* El bloque abria directo en "En curso": el que llegaba no sabia de que
+     era esa lista. Ahora cada bloque dice su nombre primero. */
+  h += '<div class="mapa-sec">Actividades</div>';
   h += '<div class="mapa-sec">En curso (' + abiertas.length + ')</div>';
   h += abiertas.length
       ? abiertas.map(lineaActividad).join('')
@@ -28726,11 +28760,18 @@ function verPila(){
   var pl = pilaDe(z.id, SEL.vano) || { estado:'llenando', material:'', observacion:'' };
   var acts = actsDeVano(z.id, SEL.vano);
 
+  /* El titulo decia solo "26" y no se sabia que era. Si el nombre es un
+     numero o un codigo corto se le antepone "Pila"; si ya es un nombre
+     con letras ("Corredor compostera") se deja tal cual. */
+  var tituloPila = pl.nombre
+    ? (/^[0-9A-Za-zÁÉÍÓÚáéíóúñÑ]{1,4}$/.test(pl.nombre.trim()) ? 'Pila ' + esc(pl.nombre) : esc(pl.nombre))
+    : 'Pila sin nombre';
   p.innerHTML =
-    '<h3>' + (pl.nombre ? esc(pl.nombre) : 'Pila sin nombre') + '</h3>' +
+    '<h3>' + tituloPila + '</h3>' +
     '<div class="sub">' + esc(z.nombre) + ' · posición ' + SEL.vano + ' de ' + vanosDe(z) + '</div>' +
     /* Renombrar va aparte de guardar el estado: ponerle nombre a un espacio
        vacío no tiene que marcarlo como "llenando". */
+    '<div class="mapa-sec">Datos de la pila</div>' +
     '<div class="mapa-campo"><label>Nombre de la pila</label>' +
       '<div style="display:flex;gap:6px"><input id="plNombre" maxlength="40" value="' + esc(pl.nombre || '') + '" placeholder="Cómo le dicen en la planta" style="flex:1">' +
       '<button type="button" class="mapa-cancelar" id="plRenombrar" style="flex:0 0 auto">Renombrar</button></div></div>' +
