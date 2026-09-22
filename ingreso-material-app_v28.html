@@ -500,6 +500,39 @@ input.campo-error-resaltado,select.campo-error-resaltado,textarea.campo-error-re
   background:#fdecea !important;
 }
 
+/* ══ ZONA DE DESCARGUE: mapa para tocar la sección ══
+   Liviano a propósito: es HTML armado en el celular, sin pedir nada al
+   servidor. Las secciones y su orden son las del mapa de planta. */
+.zd-campo{width:100%;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px;border:1.5px solid var(--rule);
+  background:var(--white);color:var(--ink);font:600 15px 'Source Sans 3',sans-serif;cursor:pointer;text-align:left}
+.zd-campo.elegido{border-color:#2e9e5b;background:#e8f6ec;color:#155d33}
+html.modo-noche .zd-campo.elegido{background:#173323;color:#bfe9cf}
+.zd-flecha{font-size:12px;color:var(--ink-l)}
+.zd-mapa{margin-top:8px;padding:10px;border:1px solid var(--rule);background:var(--white)}
+.zd-fila{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.zd-bloque{flex:1 1 280px;min-width:0}
+.zd-bloque.chico{flex:0 1 150px}
+.zd-tit{font:700 10px 'Source Sans 3',sans-serif;letter-spacing:.8px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px}
+.zd-pilas{display:flex;border:2px solid #3b4a40;border-radius:4px;overflow:hidden;background:#fff}
+html.modo-noche .zd-pilas{background:#1b1e26;border-color:#9aa39c}
+.zd-pila{flex:1 1 0;min-width:0;min-height:44px;border:none;border-right:1px solid #9aa39c;background:transparent;color:#27323a;
+  font:700 12px 'Source Sans 3',sans-serif;cursor:pointer;padding:2px 0;line-height:1.1;word-break:break-word}
+html.modo-noche .zd-pila{color:#e6e6e6}
+.zd-pila:last-child{border-right:none}
+.zd-pila.ancha{flex:2.2 1 0}
+.zd-pila.texto{font-size:9px;font-weight:600}
+.zd-area{width:100%;min-height:44px;border:2px solid #3b4a40;border-radius:4px;background:#fbf6e6;color:#2b3a2f;
+  font:700 13px 'Source Sans 3',sans-serif;cursor:pointer;padding:6px}
+html.modo-noche .zd-area{background:#2a2616;color:#eee}
+.zd-piscina{display:flex;gap:8px;border:2px solid #3b4a40;border-radius:4px;padding:6px;background:#eef6ee;align-items:stretch}
+html.modo-noche .zd-piscina{background:#1c2a20}
+.zd-piscina .zd-area{flex:1;background:#fff;border-width:1.5px}
+.zd-piscina .zd-area.redonda{border-radius:24px}
+.zd-sel,.zd-pila.zd-sel,.zd-area.zd-sel{background:#2e9e5b !important;color:#fff !important}
+.zd-otra{display:flex;gap:8px;align-items:center;margin-top:2px}
+.zd-otra .zd-area{flex:0 0 auto;width:auto;min-height:40px;background:transparent}
+.zd-otra input{flex:1;min-width:0;padding:10px;border:1.5px solid var(--rule);font:15px 'Source Sans 3',sans-serif}
+
 /* ══ VIAJES INTERNOS ══
    Verde claro propio (normal y noche): mas luminoso que el verde oscuro
    del formulario de ingreso, para que se distinga de un vistazo. */
@@ -619,7 +652,7 @@ html.modo-noche .vi-est.error{background:#3a1d1d;color:#ef8a80}
     <button class="btn-accion verde" onclick="abrirFormulario()">Llenar Formulario de Ingreso</button>
     <button class="btn-accion gris" id="btn-admin-fotos" onclick="abrirPanelAdminFotos()" style="display:none">📸 Subir fotos a Drive (Admin)</button>
     <button class="btn-logout" onclick="cerrarSesion()">Cerrar sesion</button>
-    <div style="margin-top:14px"><button type="button" class="btn-vi" onclick="viAbrir()" title="Salidas y regresos de los vehículos de la planta">🚚 Viajes internos <span class="vi-n" id="vi-n-menu" style="display:none"></span></button></div>
+    <div style="margin-top:14px"><button type="button" class="btn-vi" onclick="viAbrir()" title="Salidas y regresos de los vehículos de la planta">Viajes internos <span class="vi-n" id="vi-n-menu" style="display:none"></span></button></div>
   </div>
 
   <!-- REGISTROS INLINE EN MENU -->
@@ -1220,8 +1253,14 @@ html.modo-noche .vi-est.error{background:#3a1d1d;color:#ef8a80}
     <div class="section-body">
       <div class="form-row single">
         <div class="form-group">
-          <label>Zona de descargue</label>
-          <input type="text" id="seccion_depositaria" placeholder="Numero o nombre de la seccion">
+          <label>Zona de descargue <span class="required">*</span></label>
+          <!-- Se elige tocando la sección en el mapa (se pinta de verde). El valor
+               viaja en el mismo campo de siempre: seccion_depositaria. -->
+          <input type="hidden" id="seccion_depositaria">
+          <button type="button" class="zd-campo" id="zd-campo" onclick="zdAlternar()">
+            <span id="zd-texto">Tocar para elegir en el mapa</span><span class="zd-flecha" id="zd-flecha">▾</span>
+          </button>
+          <div class="zd-mapa" id="zd-mapa" style="display:none"></div>
         </div>
       </div>
       <!-- Campos personalizados por operacion (definidos en TITULO del csv de operaciones) -->
@@ -2478,6 +2517,8 @@ var geoIntentado = false;
 // aprox. Full HD; calidad 0.85 conserva bien el detalle del texto.
 var FOTO_MAX_DIM = 1920;
 var FOTO_CALIDAD = 0.85;
+var VEH_FOTO_MAX_DIM = 1600;   // fotos del vehiculo: mas livianas
+var VEH_FOTO_CALIDAD = 0.75;
 /* La foto del manifiesto fisico va mas liviana: es la prueba de que el
    papel esta en la mano, no la que se lee numero por numero (esa es la
    del baucher). A 1920 px y 85 % pesaba cerca de 1 MB y con la señal de
@@ -2815,7 +2856,11 @@ function insertarExifSiHay(dataUrl, fecha) {
 function finalizarFotoProcesada(canvasOrigen, targetId) {
   var w = canvasOrigen.width, h = canvasOrigen.height;
   var ladoMax = Math.max(w, h);
-  var maxDim = targetId === 'manifiesto-fisico' ? MF_FOTO_MAX_DIM : (targetId.indexOf('vi-') === 0 ? VI_FOTO_MAX_DIM : FOTO_MAX_DIM);
+  /* Fotos del VEHICULO: mas livianas (1600 px, calidad 0.75) para que el
+     registro suba mas rapido. Solo sirven para identificar el camion. Las
+     del BAUCHER se quedan en la calidad completa: son las que lee la IA. */
+  var esVehiculo = targetId === 'vehiculo' || targetId.indexOf('vehiculo-') === 0;
+  var maxDim = targetId === 'manifiesto-fisico' ? MF_FOTO_MAX_DIM : (targetId.indexOf('vi-') === 0 ? VI_FOTO_MAX_DIM : (esVehiculo ? VEH_FOTO_MAX_DIM : FOTO_MAX_DIM));
   var escala = ladoMax > maxDim ? (maxDim / ladoMax) : 1;
 
   var canvas = document.createElement('canvas');
@@ -2835,7 +2880,7 @@ function finalizarFotoProcesada(canvasOrigen, targetId) {
   var textoGeo   = geoActual ? ('GPS: ' + geoActual.lat.toFixed(6) + ', ' + geoActual.lon.toFixed(6)) : 'GPS: no disponible';
   dibujarWatermark(ctx, canvas, textoFecha, textoGeo);
 
-  var dataUrl = canvas.toDataURL('image/jpeg', targetId === 'manifiesto-fisico' ? MF_FOTO_CALIDAD : (targetId.indexOf('vi-') === 0 ? VI_FOTO_CALIDAD : FOTO_CALIDAD));
+  var dataUrl = canvas.toDataURL('image/jpeg', targetId === 'manifiesto-fisico' ? MF_FOTO_CALIDAD : (targetId.indexOf('vi-') === 0 ? VI_FOTO_CALIDAD : (esVehiculo ? VEH_FOTO_CALIDAD : FOTO_CALIDAD)));
   dataUrl = insertarExifSiHay(dataUrl, ahora);
 
   console.log('[foto] finalizarFotoProcesada, targetId:', targetId, 'tamano final:', canvas.width + 'x' + canvas.height, 'largo dataUrl:', dataUrl.length);
@@ -3107,6 +3152,8 @@ async function enviarFormulario() {
   if (pesoEntradaNum <= pesoSalidaNum) { mostrarStatus('error','Peso inválido','El peso con carga debe ser mayor que el peso vacío. Verifique los valores.'); marcarCampoConError(['#peso_entrada','#peso_salida']); return; }
   if (!operacion) { mostrarStatus('error','Campo requerido','Seleccione la operacion de la lista.'); marcarCampoConError(document.getElementById('operacion').value === 'Otro' ? '#operacion-otro-text' : '#operacion'); return; }
   if (!residuo)   { mostrarStatus('error','Campo requerido','Seleccione el tipo de residuo de la lista.'); marcarCampoConError(document.getElementById('residuo').value === 'Otro' ? '#residuo-otro' : '#residuo'); return; }
+  /* Zona de descargue OBLIGATORIA: se elige tocando la seccion en el mapa (o 'Otra…'). */
+  if (!document.getElementById('seccion_depositaria').value.trim()) { mostrarStatus('error','Campo requerido','Elija en el mapa la zona de descargue (toque la seccion donde se descargo).'); zdAlternar(true); marcarCampoConError('#zd-campo'); return; }
   if (!fotosCapturadas['baucher-1']) { mostrarStatus('error','Campo requerido','Tome la foto del tiquete.'); marcarCampoConError('#bloque-foto-baucher-1'); return; }
   if (!fotosCapturadas['vehiculo'])  { mostrarStatus('error','Campo requerido','Tome la foto del vehiculo.'); marcarCampoConError('#bloque-foto-vehiculo'); return; }
 
@@ -3627,6 +3674,7 @@ function resetFormulario() {
   ['numero_tiquete','placa','conductor','conductor_celular','ultimos_cuatro_cedula','peso_entrada','observacion','seccion_depositaria'].forEach(function(id){
     var el=document.getElementById(id); if(el) el.value='';
   });
+  zdReiniciar();   // el mapa de zona de descargue vuelve a cero
   document.getElementById('peso_salida').value='';
   document.getElementById('operario').value='';
   document.getElementById('operacion').value='';
@@ -5157,10 +5205,13 @@ function viRegistrarSalida() {
   var placa = viPlacaElegida();
   var conductor = viConductorElegido();
   var msg = document.getElementById('vi-msg-salida');
-  var falta = placa.length < 5 ? 'Elija la placa.' : !conductor ? 'Elija el conductor.' : !VI.fotoCargue ? 'Falta la foto del cargue.' : '';
+  var origen = document.getElementById('vi-origen').value.trim();
+  var destino = document.getElementById('vi-destino').value.trim();
+  var falta = placa.length < 5 ? 'Elija la placa.' : !conductor ? 'Elija el conductor.' : !origen ? 'Elija el origen en el mapa.' :
+              !destino ? 'Elija la salida en el mapa.' : !VI.fotoCargue ? 'Falta la foto del cargue.' : '';
   if (falta) { msg.textContent = falta; msg.className = 'vi-msg mal'; return; }
-  var item = { tipo: 'salida', id: viNuevoId(), placa: placa, conductor: conductor, hora: new Date().toISOString(), foto: VI.fotoCargue,
-               operario: sesionUsuario ? sesionUsuario.nombre : '' };
+  var item = { tipo: 'salida', id: viNuevoId(), placa: placa, conductor: conductor, origen: origen, destino: destino,
+               hora: new Date().toISOString(), foto: VI.fotoCargue, operario: sesionUsuario ? sesionUsuario.nombre : '' };
   var cola = viCola(); cola.push(item);
   if (!viGuardar(VI_COLA_KEY, cola)) { msg.textContent = 'El celular no tiene espacio para guardar el viaje. Espere a que se envíen los pendientes.'; msg.className = 'vi-msg mal'; return; }
   VI.fotoCargue = '';
@@ -5170,6 +5221,8 @@ function viRegistrarSalida() {
   document.getElementById('vi-conductor').value = '';
   document.getElementById('vi-conductor').style.display = 'none';
   document.getElementById('vi-conductor-sel').value = '';
+  mpReiniciar('vi-origen');
+  mpReiniciar('vi-destino');
   document.getElementById('vi-cargue-zona').innerHTML = '<button type="button" class="vi-cam" onclick="viTomarFoto(\'vi-cargue\')">📷 Foto del cargue</button>';
   msg.textContent = 'Salida de ' + placa + ' registrada.'; msg.className = 'vi-msg';
   setTimeout(function () { if (msg.textContent.indexOf(placa) > -1) msg.textContent = ''; }, 4000);
@@ -5199,7 +5252,7 @@ async function viProcesarCola() {
       if (!cola.length) break;
       var it = cola[0];
       var cuerpo = { accion: it.tipo === 'salida' ? 'viSalida' : 'viRegreso', id: it.id, hora: it.hora, foto: it.foto, operario: it.operario,
-                     placa: it.placa, conductor: it.conductor };
+                     placa: it.placa, conductor: it.conductor, origen: it.origen, destino: it.destino };
       var r;
       try { r = await viPost(cuerpo, 90000); }
       catch (e) { VI.errores = {}; viPintarRed('Sin conexión: ' + cola.length + ' pendiente(s), se reintenta solo.'); break; }
@@ -5232,7 +5285,7 @@ function viActualizarLocal(it) {
   var s = VI.servidor;
   if (it.tipo === 'salida') {
     if (!s.abiertos.some(function (v) { return v.id === it.id; }))
-      s.abiertos.push({ id: it.id, placa: it.placa, conductor: it.conductor, hs: viHoraTexto(it.hora) });
+      s.abiertos.push({ id: it.id, placa: it.placa, conductor: it.conductor, o: it.origen, d: it.destino, hs: viHoraTexto(it.hora) });
   } else {
     var v = null;
     s.abiertos = s.abiertos.filter(function (x) { if (x.id === it.id) { v = x; return false; } return true; });
@@ -5262,10 +5315,10 @@ function viPintar() {
   cola.forEach(function (x) { enCola[x.tipo + x.id] = x; });
   /* En curso = los del servidor + las salidas que aún no se envían,
      menos los que ya tienen el regreso en camino. */
-  var lista = VI.servidor.abiertos.map(function (v) { return { id: v.id, placa: v.placa, conductor: v.conductor, hs: v.hs, fs: v.fs }; });
+  var lista = VI.servidor.abiertos.map(function (v) { return { id: v.id, placa: v.placa, conductor: v.conductor, o: v.o, d: v.d, hs: v.hs, fs: v.fs }; });
   cola.forEach(function (x) {
     if (x.tipo === 'salida' && !lista.some(function (v) { return v.id === x.id; }))
-      lista.push({ id: x.id, placa: x.placa, conductor: x.conductor, hs: viHoraTexto(x.hora) });
+      lista.push({ id: x.id, placa: x.placa, conductor: x.conductor, o: x.origen, d: x.destino, hs: viHoraTexto(x.hora) });
   });
   var hoy = VI.servidor.hoy.slice();
   lista = lista.filter(function (v) {
@@ -5285,7 +5338,8 @@ function viPintar() {
         '<button type="button" class="vi-ok" onclick="viRegistrarRegreso(\'' + v.id + '\')">Registrar regreso</button>'
       : '<button type="button" class="vi-cam" onclick="viTomarFoto(\'vi-regreso-' + v.id + '\')">📷 Foto de regreso</button>';
     return '<div class="vi-viaje"><div class="vi-l1"><span>' + viEsc(v.placa) + ' · ' + viEsc(v.conductor) + '</span>' + est + '</div>' +
-      '<div class="vi-l2">Salió ' + viEsc((v.fs && v.fs !== fechaLocalYYYYMMDD(new Date()) ? v.fs + ' ' : '') + (v.hs || '')) + (err ? ' · ' + viEsc(err) : '') + '</div>' + accion + '</div>';
+      '<div class="vi-l2">Salió ' + viEsc((v.fs && v.fs !== fechaLocalYYYYMMDD(new Date()) ? v.fs + ' ' : '') + (v.hs || '')) +
+      (v.o || v.d ? ' · ' + viEsc(v.o || '?') + ' → ' + viEsc(v.d || '?') : '') + (err ? ' · ' + viEsc(err) : '') + '</div>' + accion + '</div>';
   }).join('');
   var cajaHoy = document.getElementById('vi-caja-hoy');
   cajaHoy.style.display = hoy.length ? '' : 'none';
@@ -5314,6 +5368,175 @@ function viPintarContadorMenu(n) {
    esté cerrada. */
 window.addEventListener('online', function () { if (viCola().length) viProcesarCola(); });
 setTimeout(function () { try { viPintarContadorMenu(); if (viCola().length) viProcesarCola(); } catch (e) {} }, 4000);
+
+// ══ ZONA DE DESCARGUE: MAPA PARA TOCAR ═══════════════════════════════
+// Las secciones de descargue, en el orden y la disposición del mapa de
+// planta (de izquierda a derecha). Va escrito aquí para que abra al
+// instante, sin pedir nada al servidor. Lo que se guarda es el nombre de
+// la pila y la sección, por ejemplo "5 Orgánicos B".
+var ZD_SECCIONES = [
+  { fila: 1, tit: 'Pilas bloque 1', pilas: ['14','13','12','11','9','8','7','6','5','4','3','2'] },
+  { fila: 1, tit: 'Área nebulización', area: true, chico: true },
+  { fila: 1, tit: 'Orgánicos B', pilas: ['c1','5','4','3','2','1'], anchas: ['c1'] },
+  { fila: 2, tit: 'Pilas bloque 2', pilas: ['26','25','24','23','22','21','20','19','18','17','16','Corredor compostera'] },
+  { fila: 2, tit: 'Piscina', piscina: ['Piscina americana', 'Tanque australiano'], chico: true },
+  { fila: 2, tit: 'Orgánicos D', pilas: ['12','11','10','9','8'] },
+  { fila: 3, tit: 'Secadero (planchas)', area: true },
+  { fila: 3, tit: 'Z2', area: true }
+];
+var ZD_ARMADO = false;
+
+function zdEsc(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function zdArmar() {
+  var filas = {};
+  ZD_SECCIONES.forEach(function (sec) {
+    var h = '<div class="zd-bloque' + (sec.chico ? ' chico' : '') + '">';
+    if (sec.pilas) {
+      h += '<div class="zd-tit">' + zdEsc(sec.tit) + '</div><div class="zd-pilas">' + sec.pilas.map(function (p) {
+        var valor = p + ' ' + sec.tit;
+        var cls = 'zd-pila' + ((sec.anchas || []).indexOf(p) > -1 ? ' ancha' : '') + (p.length > 3 ? ' texto' : '');
+        return '<button type="button" class="' + cls + '" data-zd="' + zdEsc(valor) + '" title="' + zdEsc(valor) + '">' + zdEsc(p) + '</button>';
+      }).join('') + '</div>';
+    } else if (sec.piscina) {
+      h += '<div class="zd-tit">' + zdEsc(sec.tit) + '</div><div class="zd-piscina">' + sec.piscina.map(function (p, i) {
+        return '<button type="button" class="zd-area' + (i === 0 ? ' redonda' : '') + '" data-zd="' + zdEsc(p) + '">' + zdEsc(p) + '</button>';
+      }).join('') + '</div>';
+    } else {
+      h += '<div class="zd-tit">&nbsp;</div><button type="button" class="zd-area" data-zd="' + zdEsc(sec.tit) + '">' + zdEsc(sec.tit) + '</button>';
+    }
+    (filas[sec.fila] = filas[sec.fila] || []).push(h + '</div>');
+  });
+  var html = Object.keys(filas).map(function (f) { return '<div class="zd-fila">' + filas[f].join('') + '</div>'; }).join('') +
+    '<div class="zd-otra"><button type="button" class="zd-area" data-zd-otra="1">Otra…</button>' +
+    '<input type="text" id="zd-otra-txt" placeholder="Escriba la sección" style="display:none" oninput="zdPoner(this.value.trim(), true)"></div>';
+  var cont = document.getElementById('zd-mapa');
+  cont.innerHTML = html;
+  /* Un solo escuchador para todo el mapa (no uno por pila). */
+  cont.addEventListener('click', function (ev) {
+    var b = ev.target.closest('button');
+    if (!b) return;
+    if (b.dataset.zdOtra) {
+      var inp = document.getElementById('zd-otra-txt');
+      inp.style.display = '';
+      zdMarcar(b);
+      zdPoner(inp.value.trim(), true);
+      inp.focus();
+      return;
+    }
+    if (b.dataset.zd) {
+      document.getElementById('zd-otra-txt').style.display = 'none';
+      zdMarcar(b);
+      zdPoner(b.dataset.zd);
+      /* Elegida la sección, el mapa se guarda solo. */
+      setTimeout(function () { zdAlternar(false); }, 250);
+    }
+  });
+  ZD_ARMADO = true;
+}
+/* ── Selector de mapa para cualquier campo (origen/destino de viajes
+   internos). Mismas secciones (ZD_SECCIONES) y estilos que la zona de
+   descargue; cada campo tiene su propio mapa y guarda su valor en el
+   input oculto con su mismo id. */
+var MP_ARMADO = {};
+function mpArmar(key) {
+  var filas = {};
+  ZD_SECCIONES.forEach(function (sec) {
+    var h = '<div class="zd-bloque' + (sec.chico ? ' chico' : '') + '">';
+    if (sec.pilas) {
+      h += '<div class="zd-tit">' + zdEsc(sec.tit) + '</div><div class="zd-pilas">' + sec.pilas.map(function (p) {
+        var valor = p + ' ' + sec.tit;
+        var cls = 'zd-pila' + ((sec.anchas || []).indexOf(p) > -1 ? ' ancha' : '') + (p.length > 3 ? ' texto' : '');
+        return '<button type="button" class="' + cls + '" data-zd="' + zdEsc(valor) + '" title="' + zdEsc(valor) + '">' + zdEsc(p) + '</button>';
+      }).join('') + '</div>';
+    } else if (sec.piscina) {
+      h += '<div class="zd-tit">' + zdEsc(sec.tit) + '</div><div class="zd-piscina">' + sec.piscina.map(function (p, i) {
+        return '<button type="button" class="zd-area' + (i === 0 ? ' redonda' : '') + '" data-zd="' + zdEsc(p) + '">' + zdEsc(p) + '</button>';
+      }).join('') + '</div>';
+    } else {
+      h += '<div class="zd-tit">&nbsp;</div><button type="button" class="zd-area" data-zd="' + zdEsc(sec.tit) + '">' + zdEsc(sec.tit) + '</button>';
+    }
+    (filas[sec.fila] = filas[sec.fila] || []).push(h + '</div>');
+  });
+  var cont = document.getElementById(key + '-mapa');
+  cont.innerHTML = Object.keys(filas).map(function (f) { return '<div class="zd-fila">' + filas[f].join('') + '</div>'; }).join('') +
+    '<div class="zd-otra"><button type="button" class="zd-area" data-zd-otra="1">Otra…</button>' +
+    '<input type="text" id="' + key + '-otra-txt" placeholder="Escriba el lugar" style="display:none" oninput="mpPoner(\'' + key + '\', this.value.trim(), true)"></div>';
+  cont.addEventListener('click', function (ev) {
+    var b = ev.target.closest('button');
+    if (!b) return;
+    var inp = document.getElementById(key + '-otra-txt');
+    if (b.dataset.zdOtra) {
+      inp.style.display = '';
+      mpMarcar(key, b);
+      mpPoner(key, inp.value.trim(), true);
+      inp.focus();
+      return;
+    }
+    if (b.dataset.zd) {
+      inp.style.display = 'none';
+      mpMarcar(key, b);
+      mpPoner(key, b.dataset.zd);
+      setTimeout(function () { mpAlternar(key, false); }, 250);
+    }
+  });
+  MP_ARMADO[key] = true;
+}
+function mpMarcar(key, b) {
+  Array.prototype.forEach.call(document.getElementById(key + '-mapa').querySelectorAll('.zd-sel'), function (x) { x.classList.remove('zd-sel'); });
+  if (b) b.classList.add('zd-sel');
+}
+function mpPoner(key, valor, esOtra) {
+  document.getElementById(key).value = valor || '';
+  document.getElementById(key + '-campo').classList.toggle('elegido', !!valor);
+  document.getElementById(key + '-texto').textContent = valor ? valor : (esOtra ? 'Otra: escriba el lugar' : 'Tocar para elegir en el mapa');
+}
+function mpAlternar(key, abrir) {
+  var cont = document.getElementById(key + '-mapa');
+  if (abrir === undefined) abrir = cont.style.display === 'none';
+  if (abrir && !MP_ARMADO[key]) mpArmar(key);
+  /* Un mapa abierto a la vez: más corto de recorrer en el celular. */
+  if (abrir) ['vi-origen', 'vi-destino'].forEach(function (k) { if (k !== key && document.getElementById(k + '-mapa')) mpAlternar(k, false); });
+  cont.style.display = abrir ? '' : 'none';
+  document.getElementById(key + '-flecha').textContent = abrir ? '▴' : '▾';
+}
+function mpReiniciar(key) {
+  if (!document.getElementById(key)) return;
+  mpPoner(key, '');
+  if (MP_ARMADO[key]) {
+    mpMarcar(key, null);
+    var inp = document.getElementById(key + '-otra-txt');
+    if (inp) { inp.value = ''; inp.style.display = 'none'; }
+  }
+  mpAlternar(key, false);
+}
+
+function zdMarcar(b) {
+  var cont = document.getElementById('zd-mapa');
+  Array.prototype.forEach.call(cont.querySelectorAll('.zd-sel'), function (x) { x.classList.remove('zd-sel'); });
+  if (b) b.classList.add('zd-sel');
+}
+function zdPoner(valor, esOtra) {
+  document.getElementById('seccion_depositaria').value = valor || '';
+  var campo = document.getElementById('zd-campo');
+  campo.classList.toggle('elegido', !!valor);
+  document.getElementById('zd-texto').textContent = valor ? valor : (esOtra ? 'Otra: escriba la sección' : 'Tocar para elegir en el mapa');
+}
+function zdAlternar(abrir) {
+  var cont = document.getElementById('zd-mapa');
+  if (abrir === undefined) abrir = cont.style.display === 'none';
+  if (abrir && !ZD_ARMADO) zdArmar();
+  cont.style.display = abrir ? '' : 'none';
+  document.getElementById('zd-flecha').textContent = abrir ? '▴' : '▾';
+}
+function zdReiniciar() {
+  zdPoner('');
+  if (ZD_ARMADO) {
+    zdMarcar(null);
+    var inp = document.getElementById('zd-otra-txt');
+    if (inp) { inp.value = ''; inp.style.display = 'none'; }
+  }
+  zdAlternar(false);
+}
 
 function volverAlMenu() {
   cerrarModalesFotoResiduales();
@@ -6744,6 +6967,19 @@ async function mfReportarErrorFila(btn, marcaTemporal, tiquete, placa) {
       <label class="vi-lbl" for="vi-conductor">Conductor</label>
       <select id="vi-conductor-sel" onchange="viCambioConductor()"></select>
       <input type="text" id="vi-conductor" placeholder="Nombre del conductor" autocomplete="off" style="display:none;margin-top:6px">
+      <!-- De qué nave sale y a qué nave va: el mismo mapa de la zona de descargue. -->
+      <label class="vi-lbl">Origen</label>
+      <input type="hidden" id="vi-origen">
+      <button type="button" class="zd-campo" id="vi-origen-campo" onclick="mpAlternar('vi-origen')">
+        <span id="vi-origen-texto">Tocar para elegir en el mapa</span><span class="zd-flecha" id="vi-origen-flecha">▾</span>
+      </button>
+      <div class="zd-mapa" id="vi-origen-mapa" style="display:none"></div>
+      <label class="vi-lbl">Salida</label>
+      <input type="hidden" id="vi-destino">
+      <button type="button" class="zd-campo" id="vi-destino-campo" onclick="mpAlternar('vi-destino')">
+        <span id="vi-destino-texto">Tocar para elegir en el mapa</span><span class="zd-flecha" id="vi-destino-flecha">▾</span>
+      </button>
+      <div class="zd-mapa" id="vi-destino-mapa" style="display:none"></div>
       <div id="vi-cargue-zona"><button type="button" class="vi-cam" onclick="viTomarFoto('vi-cargue')">📷 Foto del cargue</button></div>
       <button type="button" class="vi-ok" id="vi-btn-salida" onclick="viRegistrarSalida()">Registrar salida</button>
       <div class="vi-msg" id="vi-msg-salida"></div>

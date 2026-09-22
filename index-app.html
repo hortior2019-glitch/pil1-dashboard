@@ -3205,6 +3205,18 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
 /* La muestra de color al lado de cada casilla: cuadrado azul = artículos, círculo = actividades. */
 #panel-mapa .ley-item,#panel-mapa .ley-act{display:inline-block;width:10px;height:10px;margin-right:4px;vertical-align:-1px}
 #panel-mapa .ley-item{background:#2563a8;border-radius:2px}
+/* Trazabilidad: VIOLETA (no lo usa nadie más en el plano). Más intenso = más kilos. */
+#panel-mapa .ley-traza{display:inline-block;width:10px;height:10px;margin-right:4px;vertical-align:-1px;border-radius:2px;background:#7c3aed}
+#panel-mapa .traza{fill:#7c3aed;stroke:#5b21b6;stroke-width:1;pointer-events:none}
+#panel-mapa .traza-lista{margin:8px 0 0;padding:0;list-style:none}
+#panel-mapa .traza-lista li{border-left:4px solid #7c3aed;background:#f5f0ff;padding:7px 9px;margin-bottom:6px;border-radius:0 5px 5px 0;cursor:pointer}
+#panel-mapa .traza-lista li.sin{border-left-color:#a1a1aa;background:#f4f4f5;cursor:default}
+#panel-mapa .traza-lista b{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;color:#2e1065}
+#panel-mapa .traza-lista li.sin b{color:#3f3f46}
+#panel-mapa .traza-lista small{display:block;font-size:11.5px;color:#57534e;margin-top:2px;line-height:1.4}
+#panel-mapa .traza-caja{border:1px solid #ddd6fe;background:#faf7ff;border-radius:6px;padding:8px 10px;margin:8px 0 10px;font-size:12px}
+#panel-mapa .traza-caja .t{font-weight:800;color:#5b21b6;font-size:11px;letter-spacing:.6px;text-transform:uppercase}
+#panel-mapa .traza-filtro{font-size:11px;color:#6b7280;margin-top:2px}
 #panel-mapa .ley-act{border-radius:50%;background:conic-gradient(#2f8f52 0 33%,#b8891f 0 66%,#b23b3b 0)}
 /* Artículos: cuadrado AZUL. Las actividades van en círculo verde/dorado/rojo
    (según cómo van): antes los artículos eran un círculo dorado y se
@@ -4343,6 +4355,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <span style="flex:1"></span>
     <label class="mapa-ver"><input type="checkbox" id="mapaVerItems" checked> <span class="ley-item"></span>Artículos</label>
     <label class="mapa-ver"><input type="checkbox" id="mapaVerActs" checked> <span class="ley-act"></span>Actividades</label>
+    <label class="mapa-ver" title="Qué material se depositó en cada sección, con los mismos filtros de Ingreso por Cliente (periodo, fechas, horas y operaciones)"><input type="checkbox" id="mapaVerTraza"> <span class="ley-traza"></span>Trazabilidad</label>
   </div>
 
   <div class="mapa-area">
@@ -5908,8 +5921,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 
   <div style="overflow-x:auto">
     <table class="vint-tabla">
-      <thead><tr><th>Fecha</th><th>Placa</th><th>Conductor</th><th>Salida</th><th>Regreso</th><th class="num">Duración</th><th>Fotos</th><th>Registró</th><th>Estado</th></tr></thead>
-      <tbody id="vint-cuerpo"><tr><td colspan="9" class="vint-vacio">Abra la pestaña para cargar los viajes.</td></tr></tbody>
+      <thead><tr><th>Fecha</th><th>Placa</th><th>Conductor</th><th>Ruta</th><th>Salida</th><th>Regreso</th><th class="num">Duración</th><th>Fotos</th><th>Registró</th><th>Estado</th></tr></thead>
+      <tbody id="vint-cuerpo"><tr><td colspan="10" class="vint-vacio">Abra la pestaña para cargar los viajes.</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -9325,7 +9338,7 @@ let _vintPlaca = '';          // placa elegida en el menú ('' = todas)
 async function cargarViajesInternos(forzar) {
   const cuerpo = document.getElementById('vint-cuerpo');
   if (_vintCargados && !forzar) { renderViajesInternos(); return; }
-  if (cuerpo && !_vint.length) cuerpo.innerHTML = '<tr><td colspan="9" class="vint-vacio">Cargando viajes internos…</td></tr>';
+  if (cuerpo && !_vint.length) cuerpo.innerHTML = '<tr><td colspan="10" class="vint-vacio">Cargando viajes internos…</td></tr>';
   /* Las placas vienen de Vehículos de Carga: se traen a la par. */
   const vehiculos = (!_vehiculosCargados && typeof cargarVehiculos === 'function') ? cargarVehiculos().catch(() => {}) : Promise.resolve();
   const d = await fetchJSONTolerante(VIAJES_INTERNOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
@@ -9336,7 +9349,7 @@ async function cargarViajesInternos(forzar) {
     _vintCargados = true;
   } else if (cuerpo) {
     const motivo = d && d.error ? d.error : 'no respondió';
-    cuerpo.innerHTML = '<tr><td colspan="9" class="vint-vacio">No se pudieron traer los viajes internos (' + _escVint(motivo) + '). Revise que el Apps Script de viajes internos esté publicado con la versión nueva.</td></tr>';
+    cuerpo.innerHTML = '<tr><td colspan="10" class="vint-vacio">No se pudieron traer los viajes internos (' + _escVint(motivo) + '). Revise que el Apps Script de viajes internos esté publicado con la versión nueva.</td></tr>';
     return;
   }
   renderViajesInternos();
@@ -9407,13 +9420,14 @@ function renderViajesInternos() {
     ({ hoy: 'hoy', '7': 'últimos 7 días', '30': 'últimos 30 días', todo: 'todo el historial' })[per]);
 
   /* Tabla */
-  if (!lista.length) { cuerpo.innerHTML = '<tr><td colspan="9" class="vint-vacio">Vacío</td></tr>'; return; }
+  if (!lista.length) { cuerpo.innerHTML = '<tr><td colspan="10" class="vint-vacio">Vacío</td></tr>'; return; }
   const foto = (url, t) => /^https?:/.test(url || '') ? '<a href="' + _escVint(url) + '" target="_blank" rel="noopener">' + t + ' ↗</a>' : '';
   cuerpo.innerHTML = lista.map(v => {
     const curso = v.estado === 'EN CURSO';
     const regreso = curso ? '—' : ((v.fr && v.fr !== v.fs ? _vintFmtFecha(v.fr) + ' ' : '') + (v.hr || ''));
     const quien = [v.opSalida, v.opRegreso && v.opRegreso !== v.opSalida ? v.opRegreso : ''].filter(Boolean).join(' / ');
     return '<tr><td>' + _escVint(_vintFmtFecha(v.fs)) + '</td><td><b>' + _escVint(v.placa) + '</b></td><td>' + _escVint(v.conductor) + '</td>' +
+      '<td>' + (v.origen || v.destino ? _escVint(v.origen || '?') + ' → ' + _escVint(v.destino || '?') : '—') + '</td>' +
       '<td>' + _escVint(v.hs || '') + '</td><td>' + _escVint(regreso) + '</td><td class="num">' + (curso ? '—' : _escVint(_vintDur(v.min))) + '</td>' +
       '<td>' + foto(v.fotoCargue, 'Cargue') + foto(v.fotoRegreso, 'Regreso') + '</td><td>' + _escVint(quien || '—') + '</td>' +
       '<td><span class="vint-estado ' + (curso ? 'curso' : 'ok') + '">' + (curso ? 'En curso' : 'Regresó') + '</span></td></tr>';
@@ -27353,6 +27367,8 @@ function pintar(){
   var verPilas = true;   /* las pilas se ven siempre: la casilla para ocultarlas se quitó */
   var verItems = $m('mapaVerItems') ? $m('mapaVerItems').checked : true;
   var verActs  = $m('mapaVerActs')  ? $m('mapaVerActs').checked  : true;
+  var TZ = null;
+  if(trazaActiva()){ try { TZ = trazaCalcular(); } catch(e) { console.warn('Trazabilidad:', e); } }
   /* Lo que se está por marcar como lugar de una actividad nueva. */
   var elegida  = (BORRADOR && BORRADOR.zonas && BORRADOR.zonas.length) ? BORRADOR : RESALTE;
 
@@ -27405,6 +27421,14 @@ function pintar(){
     /* Línea de base: el piso sobre el que están apoyadas las piscinas. */
     if(z.lineaBase){
       g.push('<line class="linea-base" x1="' + (z.x + 1) + '" y1="' + z.lineaBase + '" x2="' + (z.x + z.w - 1) + '" y2="' + z.lineaBase + '"></line>');
+    }
+    /* Trazabilidad a nivel de área (lo depositado en el área, no en una pila). */
+    var tzZ = TZ && TZ.lugares[z.id + '|'];
+    if(tzZ){
+      var opZ = trazaOpacidad(tzZ, TZ);
+      if(z.puntos) g.push('<polygon class="traza" style="fill-opacity:' + opZ + '" points="' + esc(z.puntos) + '"></polygon>');
+      else if(z.forma === 'circulo') g.push('<circle class="traza" style="fill-opacity:' + opZ + '" cx="' + (z.x + z.w/2) + '" cy="' + (z.y + z.h/2) + '" r="' + (Math.min(z.w, z.h)/2) + '"></circle>');
+      else g.push('<rect class="traza" style="fill-opacity:' + opZ + '" x="' + z.x + '" y="' + z.y + '" width="' + z.w + '" height="' + z.h + '" rx="2"></rect>');
     }
 
     /* Tramas que copian el plano: el secado va rayado en horizontal, la
@@ -27495,6 +27519,11 @@ function pintar(){
                  '"><title>' + esc(z.nombre) + ' · ' + (nombrePila(z.id, v) ? esc(nombrePila(z.id, v)) : 'pila sin nombre') +
                  (pl && pl.estado ? ' · ' + esc(pl.estado.replace('_',' ')) : ' · vacía') +
                  '</title></rect>');
+          var tzP = TZ && TZ.lugares[z.id + '|' + v];
+          if(tzP){
+            g.push('<rect class="traza" style="fill-opacity:' + trazaOpacidad(tzP, TZ) + '" x="' + vx + '" y="' + (z.y+3) + '" width="' + paso +
+                   '" height="' + (z.h-6) + '"></rect>');
+          }
           /* El nombre de la pila, adentro y DERECHO (se lee sin torcer la
              cabeza). Antes, en las pilas angostas iba de canto. */
           /* Con el nombre fijo, sale aunque el servidor todavía no haya contestado. */
@@ -27696,6 +27725,153 @@ function engancharGestos(svg){
 function zonaPorId(id){
   for(var i=0;i<M.zonas.length;i++) if(M.zonas[i].id === id) return M.zonas[i];
   return null;
+}
+
+/* ══ TRAZABILIDAD: qué material se depositó en cada sección ══════════
+   Lee la columna "SECCION DEPOSITAR" de los ingresos (la llena la app de
+   ingreso tocando el mapa: "5 Orgánicos B") y la cruza con el plano. Usa
+   LOS MISMOS filtros de Ingreso por Cliente —periodo, fechas, horas y
+   operaciones marcadas— solo para esta función. Lo escrito a mano antes
+   del mapa (F16, C14, "Exterior"…) no se adivina: va en "Sin ubicar". */
+var TRAZA_CACHE = { clave: '', r: null };
+function trazaActiva(){ var c = $m('mapaVerTraza'); return !!(c && c.checked); }
+function trazaNorm(t){ return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
+/* Solo alias que no dejan duda (se vieron en los datos). */
+var TRAZA_ALIAS = { 'z 2': 'z2', 'zona 2': 'z2', 'piscina australiana': 'tanque australiano' };
+
+function trazaFiltros(){
+  var v = function(id){ var e = document.getElementById(id); return e ? e.value : ''; };
+  var ops = (typeof _cliOpsSeleccionadas !== 'undefined' && _cliOpsSeleccionadas) ? _cliOpsSeleccionadas.slice() : [];
+  return { fd: v('cli-fecha-desde'), fh: v('cli-fecha-hasta'), hd: v('cli-hora-desde'), hh: v('cli-hora-hasta'),
+           op: v('cli-operacion'), ops: ops, per: (typeof currentFilter !== 'undefined' ? currentFilter : 'total') };
+}
+function trazaEtiquetaFiltro(f){
+  var per = { hoy:'hoy', ayer:'ayer', semana:'esta semana', mes:'este mes', total:'todo el historial', custom:'periodo elegido' }[f.per] || f.per;
+  var t = (f.fd || f.fh) ? ((f.fd || '…') + ' → ' + (f.fh || '…')) : per;
+  if(f.hd || f.hh) t += ' · ' + (f.hd || '00:00') + '–' + (f.hh || '23:59');
+  var ops = f.ops.length ? f.ops : (f.op ? [f.op] : []);
+  t += ops.length ? ' · ' + (ops.length === 1 ? ops[0] : ops.length + ' operaciones') : ' · todas las operaciones';
+  return t;
+}
+/* Las filas que hoy muestra Ingreso por Cliente (misma lógica que renderClientes). */
+function trazaFilas(f){
+  var data = (typeof dataIngreso !== 'undefined' && dataIngreso) ? dataIngreso : [];
+  var filas;
+  if(f.fd || f.fh) filas = data.slice();
+  else filas = data.filter(function(r){ return inPeriod(getMarcaTemporal(r) || '', f.per); });
+  if(f.fd || f.fh || f.hd || f.hh){
+    filas = filas.filter(function(r){
+      var mt = getMarcaTemporal(r); if(!mt) return true;
+      var dt = parseDateTime(mt); if(!dt) return true;
+      var p2 = function(n){ return String(n).padStart(2, '0'); };
+      var fecha = dt.getFullYear() + '-' + p2(dt.getMonth() + 1) + '-' + p2(dt.getDate());
+      if(f.fd && fecha < f.fd) return false;
+      if(f.fh && fecha > f.fh) return false;
+      var hora = p2(dt.getHours()) + ':' + p2(dt.getMinutes());
+      if(f.hd && hora < f.hd) return false;
+      if(f.hh && hora > f.hh) return false;
+      return true;
+    });
+  }
+  var ops = f.ops.length ? f.ops : (f.op ? [f.op] : []);
+  if(ops.length){
+    filas = filas.filter(function(r){
+      return ops.indexOf(splitOperacionMaterial(normEmpresa(r['OPERACION'] || ''), r['RESIDUO'] || r['Residuo'] || r['residuo'] || '')) > -1;
+    });
+  }
+  return filas;
+}
+/* Diccionario texto -> lugar del plano, armado con los nombres actuales. */
+function trazaDiccionario(){
+  var d = {};
+  M.zonas.forEach(function(z){
+    if(!z.activa || z.tipo === 'perfil') return;
+    d[trazaNorm(z.nombre)] = { zona: z.id, vano: null, nombre: z.nombre };
+    var n = 0; try { n = vanosDe(z) || 0; } catch(e) {}
+    for(var v = 1; v <= n; v++){
+      var np = nombrePila(z.id, v);
+      if(np) d[trazaNorm(np + ' ' + z.nombre)] = { zona: z.id, vano: v, nombre: np + ' ' + z.nombre };
+    }
+  });
+  return d;
+}
+function trazaCalcular(){
+  var f = trazaFiltros();
+  var data = (typeof dataIngreso !== 'undefined' && dataIngreso) ? dataIngreso : [];
+  var clave = JSON.stringify(f) + '|' + data.length + '|' + M.zonas.length + '|' + M.pilas.length;
+  if(TRAZA_CACHE.clave === clave && TRAZA_CACHE.r) return TRAZA_CACHE.r;
+  var dic = trazaDiccionario();
+  var lugares = {}, sin = {}, total = { kg: 0, viajes: 0 };
+  trazaFilas(f).forEach(function(r){
+    var txt = String(r['SECCION DEPOSITAR'] || r['SECCION DEPOSITARIA'] || '').trim();
+    var kg = (typeof getPesoNeto === 'function' ? getPesoNeto(r) : 0) || 0;
+    var mat = String(r['RESIDUO'] || r['Residuo'] || r['residuo'] || '').trim();
+    mat = mat ? (typeof materialCanonico === 'function' ? materialCanonico(mat) : mat) : 'Sin material';
+    var op = normEmpresa(r['OPERACION'] || '');
+    total.kg += kg; total.viajes++;
+    var n = trazaNorm(txt);
+    var lugar = dic[TRAZA_ALIAS[n] || n];
+    var clave2, dest;
+    if(lugar){ clave2 = lugar.zona + '|' + (lugar.vano || ''); dest = lugares; }
+    else { clave2 = txt || '(sin sección)'; dest = sin; }
+    var x = dest[clave2] || (dest[clave2] = { nombre: lugar ? lugar.nombre : clave2, zona: lugar ? lugar.zona : '', vano: lugar ? lugar.vano : null, kg: 0, viajes: 0, mats: {}, ops: {} });
+    x.kg += kg; x.viajes++;
+    x.mats[mat] = (x.mats[mat] || 0) + kg;
+    if(op) x.ops[op] = (x.ops[op] || 0) + 1;
+  });
+  var max = 0;
+  Object.keys(lugares).forEach(function(k){ if(lugares[k].kg > max) max = lugares[k].kg; });
+  TRAZA_CACHE = { clave: clave, r: { f: f, lugares: lugares, sin: sin, total: total, max: max } };
+  return TRAZA_CACHE.r;
+}
+function trazaKg(kg){ return typeof fmtTon === 'function' ? fmtTon(kg) : Math.round(kg).toLocaleString('es-CO') + ' kg'; }
+function trazaMats(x){
+  return Object.keys(x.mats).sort(function(a, b){ return x.mats[b] - x.mats[a]; })
+    .map(function(m){ return esc(m) + ' ' + trazaKg(x.mats[m]); }).join(' · ');
+}
+/* Opacidad del violeta según los kilos (siempre visible, más fuerte con más). */
+function trazaOpacidad(x, T){ return (0.22 + 0.5 * (T.max ? x.kg / T.max : 0)).toFixed(2); }
+
+/* El resumen en el panel de la derecha */
+function trazaPanel(){
+  var p = $m('mapaPanel');
+  if(!p) return;
+  var T = trazaCalcular();
+  var lista = Object.keys(T.lugares).map(function(k){ return T.lugares[k]; }).sort(function(a, b){ return b.kg - a.kg; });
+  var sin = Object.keys(T.sin).map(function(k){ return T.sin[k]; }).sort(function(a, b){ return b.kg - a.kg; });
+  var kgUb = lista.reduce(function(a, x){ return a + x.kg; }, 0);
+  p.innerHTML = '<h3>Trazabilidad de material</h3>' +
+    '<div class="traza-filtro">Filtros de Ingreso por Cliente: ' + esc(trazaEtiquetaFiltro(T.f)) + '</div>' +
+    '<div class="traza-caja">' + T.total.viajes + ' viajes · ' + trazaKg(T.total.kg) + ' · ubicados en el mapa: ' + trazaKg(kgUb) + '</div>' +
+    (lista.length ? '<ul class="traza-lista">' + lista.map(function(x){
+      return '<li data-traza-zona="' + esc(x.zona) + '" data-traza-vano="' + (x.vano || '') + '"><b><span>' + esc(x.nombre) + '</span><span>' + trazaKg(x.kg) + '</span></b>' +
+        '<small>' + x.viajes + ' viaje' + (x.viajes === 1 ? '' : 's') + ' · ' + trazaMats(x) + '</small></li>';
+    }).join('') + '</ul>' : '<div class="mapa-vacio">En este periodo no hay ingresos con una sección del mapa.</div>') +
+    (sin.length ? '<div class="traza-caja" style="margin-top:12px"><div class="t">Sin ubicar en el mapa</div>Escrito a mano antes del mapa (o un lugar que no está en el plano).</div>' +
+      '<ul class="traza-lista">' + sin.slice(0, 40).map(function(x){
+        return '<li class="sin"><b><span>' + esc(x.nombre) + '</span><span>' + trazaKg(x.kg) + '</span></b><small>' + x.viajes + ' viaje' + (x.viajes === 1 ? '' : 's') + ' · ' + trazaMats(x) + '</small></li>';
+      }).join('') + '</ul>' : '');
+  /* Tocar una sección de la lista la abre en el plano. */
+  Array.prototype.forEach.call(p.querySelectorAll('li[data-traza-zona]'), function(li){
+    li.addEventListener('click', function(){
+      SEL.zona = li.dataset.trazaZona; SEL.vano = li.dataset.trazaVano ? +li.dataset.trazaVano : null;
+      pintar(); if(SEL.vano) verPila(); else verZona();
+    });
+  });
+}
+/* Dentro del panel de una zona o pila: lo depositado ahí. */
+function trazaInsertar(p, zonaId, vano){
+  if(!p || !trazaActiva()) return;
+  var T = trazaCalcular();
+  var x = T.lugares[zonaId + '|' + (vano || '')];
+  var div = document.createElement('div');
+  div.className = 'traza-caja';
+  div.innerHTML = '<div class="t">Depositado aquí</div>' +
+    (x ? '<b>' + trazaKg(x.kg) + '</b> · ' + x.viajes + ' viaje' + (x.viajes === 1 ? '' : 's') + '<br>' + trazaMats(x)
+       : 'Nada en este periodo.') +
+    '<div class="traza-filtro">' + esc(trazaEtiquetaFiltro(T.f)) + '</div>';
+  var ancla = p.querySelector('.sub') || p.querySelector('h3');
+  if(ancla && ancla.nextSibling) p.insertBefore(div, ancla.nextSibling); else p.appendChild(div);
 }
 
 function verZona(){
@@ -28164,6 +28340,11 @@ async function guardarZonaPanel(){
 
 
 /* ── PANEL: UNA PILA ──────────────────────────────────────────────── */
+/* Con la trazabilidad prendida, el panel de la zona o pila dice qué se depositó ahí. */
+var _verZonaSinTraza = verZona, _verPilaSinTraza = verPila;
+verZona = function(){ _verZonaSinTraza(); try { trazaInsertar($m('mapaPanel'), SEL.zona, null); } catch(e) {} };
+verPila = function(){ _verPilaSinTraza(); try { trazaInsertar($m('mapaPanel'), SEL.zona, SEL.vano); } catch(e) {} };
+
 function verPila(){
   var z = zonaPorId(SEL.zona);
   var p = $m('mapaPanel');
@@ -29643,6 +29824,11 @@ document.addEventListener('DOMContentLoaded', function(){
   var bt = $m('mapaTodo');  if(bt) bt.onclick = verTodo;
   var vi = $m('mapaVerItems'); if(vi) vi.onchange = pintar;
   var va = $m('mapaVerActs');  if(va) va.onchange = pintar;
+  var vt = $m('mapaVerTraza'); if(vt) vt.onchange = function(){
+    pintar();
+    if(vt.checked) trazaPanel();
+    else { var pp = $m('mapaPanel'); if(pp) pp.innerHTML = '<div class="mapa-vacio">Toca una zona del plano para ver qué hay y qué se hizo ahí.</div>'; }
+  };
 });
 
 /* ── ACTUALIZACIÓN AUTOMÁTICA ─────────────────────────────────────
@@ -29676,7 +29862,11 @@ document.addEventListener('visibilitychange', function(){ if(!document.hidden) r
 window.addEventListener('focus', function(){ refrescarMapaSiToca(MAPA_AL_VOLVER_MS); });
 
 /* showPanel llama a esto al entrar a la pestaña */
-window.mapaActivar = function(){ cargarMapa(false); refrescarMapaSiToca(MAPA_AL_VOLVER_MS); };
+window.mapaActivar = function(){
+  cargarMapa(false); refrescarMapaSiToca(MAPA_AL_VOLVER_MS);
+  /* Si se cambiaron los filtros en Ingreso por Cliente, la trazabilidad se pone al día. */
+  if(trazaActiva()){ try { pintar(); if(!SEL.zona) trazaPanel(); } catch(e) {} }
+};
 })();
 
 </script>
