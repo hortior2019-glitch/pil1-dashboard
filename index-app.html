@@ -6887,6 +6887,24 @@ function getMarcaTemporal(r) {
   return '';
 }
 
+/* ── LA FECHA DE UN VIAJE, UNA SOLA REGLA ──────────────────────────
+   Ingreso por Cliente, Ingreso de Material, Operaciones y Cortes a
+   Proveedor tienen que mostrar LO MISMO para el mismo intervalo. Todas
+   usan esta fecha:
+     1) la de disposición en planta (columna C + hora de la D);
+     2) si esa no está, la marca temporal del registro (columna A);
+     3) si la de disposición quedó más de 3 h DESPUÉS del registro, es un
+        error de digitación y vale la marca temporal.
+   Antes, Cortes y Operaciones usaban solo la columna C y descartaban el
+   viaje si estaba vacía: 5 viajes no aparecían en ningún corte y otros
+   22 caían en un día distinto al que mostraba Ingreso por Cliente. */
+function fechaEfectiva(r) {
+  const t = getMarcaTemporal(r);
+  if (!t) return null;
+  const d = parseDateTime(t);
+  return (d && !isNaN(d.getTime())) ? d : null;
+}
+
 function parseDateTime(str) {
   if (!str) return null;
   const s = str.trim();
@@ -6909,6 +6927,11 @@ function inPeriod(dateStr, filter) {
     const ayer = new Date(today); ayer.setDate(today.getDate() - 1);
     return d >= ayer && d < today;
   }
+  /* Nada del futuro entra en "hoy", "esta semana" ni "este mes": una fecha
+     de disposición mal digitada (mañana) inflaba el día de hoy en unas
+     pestañas y en otras no. */
+  const manana = new Date(today); manana.setDate(today.getDate() + 1);
+  if (d >= manana) return false;
   if (filter === 'hoy') return d >= today;
   if (filter === 'semana') {
     const wk = new Date(today); const dow = today.getDay(); const mondayOffset = dow === 0 ? 6 : dow - 1; wk.setDate(today.getDate() - mondayOffset);
@@ -13684,6 +13707,12 @@ function getFestivosColombia(anio) {
 // Obtiene la fecha de DISPOSICIÓN (columna C, "FECHA DISPOSICION PLANTA") de un registro como objeto Date.
 // Esta es la fecha que se usa para generar los cortes (no la marca temporal).
 function getFechaDisposicion(r) {
+  /* Misma regla que el resto del tablero (ver fechaEfectiva): la columna C
+     manda, la marca temporal es el respaldo. Así un viaje al que le falta
+     la fecha de disposición sigue entrando en su corte, en vez de
+     desaparecer. */
+  const efectiva = fechaEfectiva(r);
+  if (efectiva) return efectiva;
   const raw = (r['FECHA DISPOSICION PLANTA']||r['FECHA DISPOSICION']||r['Fecha Disposicion']||'').toString().trim();
   if (!raw) return null;
   // Formato YYYY-MM-DD (el que usa la columna en el Sheet)
