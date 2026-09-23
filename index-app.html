@@ -18860,7 +18860,10 @@ function viewInventario(){
                  onerror="cscFotoFallo(this)"
                  style="width:92px;height:92px;object-fit:cover;border-radius:8px;border:1px solid var(--csc-line);flex-shrink:0;cursor:zoom-in;background:var(--csc-bg,#f4f6f4)">`
             : '<span style="width:92px;height:92px;border-radius:8px;border:1px dashed var(--csc-line);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--csc-ink-l,#8a8f8a);text-align:center">sin foto</span>'}
-          <div style="min-width:0"><b style="font-size:14px">${esc(i.item)}</b><div class="help">${esc(i.ubicacion)}</div></div>
+          <div style="min-width:0">
+            <button type="button" class="act inv-traza" data-a="invkpi" data-id="${i.id}"
+              title="Ver cómo se movió este artículo en el mes">${esc(i.item)}</button>
+            <div class="help">${esc(i.ubicacion)}</div></div>
         </div>
       </td>
       <td>${catTag(i.categoria)}</td>
@@ -18884,6 +18887,20 @@ function viewInventario(){
          que era. Se alinea todo arriba para que la descripcion no quede
          flotando a media altura de la imagen. */
       #${CSC_MOUNT} tbody td{vertical-align:middle;padding-top:10px;padding-bottom:10px}
+      /* El nombre del articulo es el boton que abre su trazabilidad. */
+      #${CSC_MOUNT} .inv-traza{background:none;border:0;padding:0;font:700 14px 'Source Sans 3',sans-serif;
+        color:var(--csc-ink,#1f2a24);cursor:pointer;text-align:left;line-height:1.25}
+      #${CSC_MOUNT} .inv-traza:hover{color:#1c5636;text-decoration:underline}
+      /* La ficha de movimiento de un articulo */
+      .csc-root .mv-graf{margin-top:16px}
+      .csc-root .mv-graf h4{margin:0 0 2px;font-size:13px;font-weight:700;color:var(--csc-ink,#1f2a24)}
+      .csc-root .mv-leg{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--csc-ink-l,#8a8f8a);margin-bottom:6px}
+      .csc-root .mv-leg i{display:inline-block;width:14px;height:3px;border-radius:2px;vertical-align:3px;margin-right:5px}
+      .csc-root .mv-lista{margin-top:16px;max-height:210px;overflow:auto}
+      .csc-root .mv-fila{display:flex;gap:10px;align-items:baseline;font-size:12px;padding:6px 0;border-bottom:1px solid var(--csc-line,#e7e7e7)}
+      .csc-root .mv-fila .cant{margin-left:auto;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+      .csc-root .mv-fila .mas{color:#2f8f52} .csc-root .mv-fila .menos{color:#b23b3b}
+      .csc-root .mv-fila .cuando{color:var(--csc-ink-l,#8a8f8a);white-space:nowrap}
     </style>
     <div class="page-head"><div><div class="eyebrow">Bodega</div>
       <h2>Inventario</h2><p>El stock sube cuando ingresa una compra o cuando se carga una existencia de bodega, y baja cuando se entrega o se usa.</p>
@@ -18927,6 +18944,209 @@ function estadoInvTag(e, nota){
   return `<span class="tag tag-state ${s.cls}" title="${esc(t)}"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${s.punto};margin-right:5px"></span>${s.txt}</span>`;
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   CÓMO SE MOVIÓ UN ARTÍCULO
+   ------------------------------------------------------------------
+   El stock de hoy dice cuánto hay, no qué pasó. Acá se ve lo segundo:
+   cuánto entró, cuánto salió, si terminó arriba o abajo, y la curva de
+   existencias día a día comparada con el mes pasado — la misma gráfica
+   de puntos de Ingreso de Material.
+
+   El stock de cada día no se guarda en ningún lado: se reconstruye.
+   Se parte de lo que hay hoy, se le restan todos los movimientos, y eso
+   da lo que había antes del primero; desde ahí se vuelve a sumar día por
+   día. Así la curva siempre cierra en el stock real.
+   ══════════════════════════════════════════════════════════════════ */
+function cscSigno(m){
+  var t = String(m.tipo || '').toLowerCase();
+  if(t === 'entrada' || t === 'ingreso') return 1;
+  if(t === 'salida'  || t === 'baja')    return -1;
+  return 0;                       /* 'estado' no mueve cantidad */
+}
+function cscMovsDe(inv){
+  return API.movimientos()
+    .filter(function(m){ return String(m.inventarioId) === String(inv.id); })
+    .map(function(m){ var d = new Date(m.fecha); return { m:m, d:d, q: Number(m.cantidad) || 0, s: cscSigno(m) }; })
+    .filter(function(x){ return !isNaN(x.d.getTime()); })
+    .sort(function(a,b){ return a.d - b.d; });
+}
+function cscDiasDe(anio, mes){ return new Date(anio, mes + 1, 0).getDate(); }
+
+/* Existencias al cierre de cada día del mes. */
+function cscSerieStock(movs, stockActual, anio, mes, hastaDia){
+  var total = movs.reduce(function(a,x){ return a + x.s * x.q; }, 0);
+  var acc = stockActual - total;                 /* lo que había antes de todo */
+  var inicio = new Date(anio, mes, 1);
+  movs.forEach(function(x){ if(x.d < inicio) acc += x.s * x.q; });
+  var dias = cscDiasDe(anio, mes), hasta = hastaDia || dias, serie = [];
+  for(var d = 1; d <= hasta; d++){
+    var desde = new Date(anio, mes, d), fin = new Date(anio, mes, d + 1);
+    movs.forEach(function(x){ if(x.d >= desde && x.d < fin) acc += x.s * x.q; });
+    serie.push(Math.round(acc * 100) / 100);
+  }
+  return serie;
+}
+/* Lo que salió (o entró) cada día del mes. */
+function cscSerieDiaria(movs, anio, mes, signo, hastaDia){
+  var dias = cscDiasDe(anio, mes), hasta = hastaDia || dias, serie = [];
+  for(var d = 1; d <= hasta; d++) serie.push(0);
+  movs.forEach(function(x){
+    if(x.s !== signo) return;
+    if(x.d.getFullYear() !== anio || x.d.getMonth() !== mes) return;
+    var i = x.d.getDate() - 1;
+    if(i < serie.length) serie[i] += x.q;
+  });
+  return serie;
+}
+function cscSuma(movs, anio, mes, signo){
+  return movs.reduce(function(a,x){
+    return (x.s === signo && x.d.getFullYear() === anio && x.d.getMonth() === mes) ? a + x.q : a;
+  }, 0);
+}
+
+/* La gráfica: misma letra, mismas guías y los mismos puntos con borde
+   blanco que la comparativa de Ingreso de Material. La línea punteada es
+   el mes pasado. */
+function cscGrafica(canvasId, serieA, serieB, labels, colorA, colorB){
+  var canvas = document.getElementById(canvasId);
+  if(!canvas) return;
+  var W = (canvas.parentElement && canvas.parentElement.offsetWidth) || 480, H = 180;
+  canvas.width = W; canvas.height = H;
+  var ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  var pad = { top:18, right:14, bottom:26, left:44 };
+  var cW = W - pad.left - pad.right, cH = H - pad.top - pad.bottom;
+  var n = labels.length || 1, step = cW / Math.max(n - 1, 1);
+  var maxY = Math.max.apply(null, serieA.concat(serieB).concat([1]));
+
+  var guias = 4;
+  ctx.strokeStyle = '#ede9e2'; ctx.lineWidth = 1;
+  for(var i = 0; i <= guias; i++){
+    var y = pad.top + cH * (1 - i / guias);
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W - pad.right, y); ctx.stroke();
+    ctx.fillStyle = '#8a8a8a'; ctx.font = '9px Source Sans 3'; ctx.textAlign = 'right';
+    ctx.fillText(Math.round(maxY * i / guias).toLocaleString('es-CO'), pad.left - 5, y + 3);
+  }
+
+  var linea = function(vals, color, punteada, radio){
+    if(!vals.length) return;
+    ctx.save();
+    if(punteada) ctx.setLineDash([6,4]);
+    ctx.strokeStyle = color; ctx.lineWidth = punteada ? 2 : 3.5; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    vals.forEach(function(v, i){
+      var x = pad.left + i * step, y = pad.top + cH * (1 - v / maxY);
+      if(i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+    vals.forEach(function(v, i){
+      var x = pad.left + i * step, y = pad.top + cH * (1 - v / maxY);
+      ctx.beginPath(); ctx.arc(x, y, radio, 0, Math.PI * 2);
+      ctx.fillStyle = color; ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+    });
+    ctx.restore();
+  };
+  linea(serieB, colorB, true, 2.6);
+  linea(serieA, colorA, false, 3.4);
+
+  ctx.fillStyle = '#4a4a4a'; ctx.font = '9px Source Sans 3'; ctx.textAlign = 'center';
+  labels.forEach(function(l, i){
+    if(i % 5 !== 0 && i !== labels.length - 1) return;
+    ctx.fillText(l, pad.left + i * step, H - pad.bottom + 14);
+  });
+}
+
+function cscFlecha(n){
+  if(n > 0) return '<span style="color:#2f8f52">▲ subió</span>';
+  if(n < 0) return '<span style="color:#b23b3b">▼ bajó</span>';
+  return '<span style="color:#8a8f8a">= igual</span>';
+}
+function cscComparar(hoy, antes, unidad){
+  if(!antes) return hoy ? 'sin dato del mes pasado para comparar' : 'nada en ninguno de los dos meses';
+  var dif = hoy - antes;
+  var pct = Math.round(Math.abs(dif) / antes * 100);
+  if(!dif) return 'igual que el mes pasado (' + antes.toLocaleString('es-CO') + ' ' + unidad + ')';
+  return (dif > 0 ? '▲ ' : '▼ ') + pct + '% ' + (dif > 0 ? 'más' : 'menos') + ' que el mes pasado (' +
+         antes.toLocaleString('es-CO') + ' ' + unidad + ')';
+}
+
+var MESES_MV = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+
+function openInvKpi(inv){
+  if(!inv) return;
+  var movs = cscMovsDe(inv);
+  var hoy = new Date();
+  var anio = hoy.getFullYear(), mes = hoy.getMonth(), diaHoy = hoy.getDate();
+  var anteA = new Date(anio, mes - 1, 1);
+  var anioP = anteA.getFullYear(), mesP = anteA.getMonth();
+
+  var entradas = cscSuma(movs, anio, mes, 1),  salidas = cscSuma(movs, anio, mes, -1);
+  var entradasP = cscSuma(movs, anioP, mesP, 1), salidasP = cscSuma(movs, anioP, mesP, -1);
+  var neto = entradas - salidas, netoP = entradasP - salidasP;
+
+  var serieA = cscSerieStock(movs, inv.stock, anio, mes, diaHoy);
+  var serieB = cscSerieStock(movs, inv.stock, anioP, mesP);
+  var salA = cscSerieDiaria(movs, anio, mes, -1, diaHoy);
+  var salB = cscSerieDiaria(movs, anioP, mesP, -1);
+  var labels = [];
+  for(var d = 1; d <= Math.max(cscDiasDe(anio, mes), cscDiasDe(anioP, mesP)); d++) labels.push(String(d));
+
+  var delMes = movs.filter(function(x){ return x.d.getFullYear() === anio && x.d.getMonth() === mes; })
+                   .sort(function(a,b){ return b.d - a.d; });
+  var u = esc(inv.unidad || '');
+  var verde = '#1c5636', ocre = '#b8891f';
+
+  modal('<div class="modal-head"><button class="modal-close" data-close>×</button>' +
+      '<h3>' + esc(inv.item) + '</h3>' +
+      '<p>Cómo se movió en ' + MESES_MV[mes] + ' · ' + esc(inv.categoria || '') + ' · ' + esc(inv.ubicacion || '') + '</p></div>' +
+    '<div class="modal-body">' +
+      '<div class="kpis" style="margin-bottom:4px">' +
+        '<div class="kpi"><div class="l">Stock hoy</div><div class="v">' + inv.stock.toLocaleString('es-CO') + ' <span style="font-size:13px">' + u + '</span></div></div>' +
+        '<div class="kpi"><div class="l">Entró en el mes</div><div class="v green">' + entradas.toLocaleString('es-CO') + '</div></div>' +
+        '<div class="kpi"><div class="l">Salió en el mes</div><div class="v gold">' + salidas.toLocaleString('es-CO') + '</div></div>' +
+        '<div class="kpi"><div class="l">Saldo del mes</div><div class="v">' + (neto > 0 ? '+' : '') + neto.toLocaleString('es-CO') + '</div></div>' +
+      '</div>' +
+      '<div class="note" style="margin-top:10px;font-size:12px">' +
+        'En ' + MESES_MV[mes] + ' el artículo ' + cscFlecha(neto) + ' ' + Math.abs(neto).toLocaleString('es-CO') + ' ' + u + '. ' +
+        'El mes pasado el saldo fue de ' + (netoP > 0 ? '+' : '') + netoP.toLocaleString('es-CO') + ' ' + u + '.<br>' +
+        '<b>Salidas:</b> ' + cscComparar(salidas, salidasP, u) + '<br>' +
+        '<b>Entradas:</b> ' + cscComparar(entradas, entradasP, u) +
+      '</div>' +
+
+      '<div class="mv-graf"><h4>Existencias día a día</h4>' +
+        '<div class="mv-leg"><span><i style="background:' + verde + '"></i>' + MESES_MV[mes] + '</span>' +
+        '<span><i style="background:' + ocre + '"></i>' + MESES_MV[mesP] + '</span></div>' +
+        '<canvas id="mv-canvas-stock"></canvas></div>' +
+
+      '<div class="mv-graf"><h4>Salidas por día</h4>' +
+        '<div class="mv-leg"><span><i style="background:' + verde + '"></i>' + MESES_MV[mes] + '</span>' +
+        '<span><i style="background:' + ocre + '"></i>' + MESES_MV[mesP] + '</span></div>' +
+        '<canvas id="mv-canvas-salidas"></canvas></div>' +
+
+      '<div class="mv-lista"><h4 style="margin:0 0 4px;font-size:13px">Qué pasó en ' + MESES_MV[mes] + ' (' + delMes.length + ')</h4>' +
+        (delMes.length ? delMes.map(function(x){
+          var m = x.m, signo = x.s;
+          var etq = signo > 0 ? 'entró' : (signo < 0 ? 'salió' : 'estado');
+          return '<div class="mv-fila"><span class="cuando">' + esc(String(m.fecha || '').slice(0, 10)) + '</span>' +
+            '<span>' + etq + (m.responsable ? ' · ' + esc(m.responsable) : '') +
+            (m.observacion ? ' · ' + esc(m.observacion) : '') + (m.receptor ? ' · para ' + esc(m.receptor) : '') + '</span>' +
+            (signo ? '<span class="cant ' + (signo > 0 ? 'mas' : 'menos') + '">' + (signo > 0 ? '+' : '−') + x.q.toLocaleString('es-CO') + ' ' + u + '</span>' : '') +
+            '</div>';
+        }).join('') : '<div class="help">Este mes no se movió: ni entró ni salió nada.</div>') +
+      '</div>' +
+    '</div>' +
+    '<div class="modal-foot"><button class="btn btn-ghost" data-close>Cerrar</button></div>');
+
+  /* Se dibujan después de que el modal ya tiene ancho. */
+  setTimeout(function(){
+    cscGrafica('mv-canvas-stock', serieA, serieB, labels, verde, ocre);
+    cscGrafica('mv-canvas-salidas', salA, salB, labels, verde, ocre);
+  }, 30);
+}
+
 function findItem(id){ return API.items().find(x=>x.id===id); }
 function findInv(id){ return API.inventario().find(x=>x.id===id); }
 
@@ -18950,6 +19170,7 @@ async function handleAction(a,id){
     case 'invedit': openInvEdit(findInv(id)); break;
     case 'investado': openInvEstado(findInv(id)); break;
     case 'invdel':  openInvDel(findInv(id)); break;
+    case 'invkpi':  openInvKpi(findInv(id)); break;
   }
 }
 function refresh(){ render(); }
