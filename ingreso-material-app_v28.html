@@ -379,15 +379,28 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 
 /* MODAL RECORTAR FOTO: pantalla completa (reemplaza la antigua camara embebida) */
 #modal-recortar-foto .modal-box{max-width:100vw;width:100vw;height:100vh;height:100dvh;padding:0;background:#000;border-top:none;display:flex;flex-direction:column;overflow:hidden}
-#recortar-wrap{position:relative;flex:1;min-height:0;background:#000;overflow:hidden;padding:26px;box-sizing:border-box}
+#recortar-wrap{position:relative;flex:1;min-height:0;background:#000;overflow:hidden;padding:0;box-sizing:border-box}
 /* Esquinas del recuadro de recorte mas grandes, para agarrarlas y mover/redimensionar la seleccion facilmente desde el celular */
 #modal-recortar-foto .cropper-point.point-nw{width:26px;height:26px;top:-13px;left:-13px;opacity:1;background-color:var(--gold);border:2px solid #fff;border-radius:50%;box-shadow:0 0 4px rgba(0,0,0,.6)}
 #modal-recortar-foto .cropper-point.point-ne{width:26px;height:26px;top:-13px;right:-13px;opacity:1;background-color:var(--gold);border:2px solid #fff;border-radius:50%;box-shadow:0 0 4px rgba(0,0,0,.6)}
 #modal-recortar-foto .cropper-point.point-sw{width:26px;height:26px;bottom:-13px;left:-13px;opacity:1;background-color:var(--gold);border:2px solid #fff;border-radius:50%;box-shadow:0 0 4px rgba(0,0,0,.6)}
 #modal-recortar-foto .cropper-point.point-se{width:26px;height:26px;bottom:-13px;right:-13px;opacity:1;background-color:var(--gold);border:2px solid #fff;border-radius:50%;box-shadow:0 0 4px rgba(0,0,0,.6)}
 #img-recortar{display:block;max-width:100%;max-height:100%}
-.rotar-btns-overlay{position:absolute;top:10px;right:10px;z-index:3;display:flex;gap:8px}
+/* Los BORDES del recuadro tambien se agarran, no solo las esquinas: en el
+   celular apuntarle a una esquina de 26 px es dificil, y un lado entero
+   es un blanco mucho mas grande. Se ven finos pero se tocan gruesos. */
+#modal-recortar-foto .cropper-line{background-color:var(--gold);opacity:.12}
+#modal-recortar-foto .cropper-line.line-n,#modal-recortar-foto .cropper-line.line-s{height:22px;margin-top:-11px}
+#modal-recortar-foto .cropper-line.line-e,#modal-recortar-foto .cropper-line.line-w{width:22px;margin-left:-11px}
+/* El borde del recuadro, visible sobre cualquier foto. */
+#modal-recortar-foto .cropper-view-box{outline:2px solid var(--gold)}
+#modal-recortar-foto .cropper-point{background-color:var(--gold)}
+/* La barra de herramientas del recorte, debajo de la foto: antes iba
+   encima y le tapaba la esquina de arriba a la derecha. */
+.recorte-herramientas{display:flex;gap:8px;justify-content:center;align-items:center;padding:10px 12px;background:#000;flex-shrink:0}
+.rotar-btns-overlay{position:absolute;top:10px;right:10px;z-index:3;display:flex;gap:8px;align-items:center}
 .btn-rotar{width:42px;height:42px;padding:0;font-size:20px;line-height:1;border:2px solid rgba(255,255,255,.6);background:rgba(0,0,0,.5);color:#fff;cursor:pointer;border-radius:6px;font-family:'Source Sans 3',sans-serif}
+.btn-rotar.texto{width:auto;padding:0 16px;font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase}
 .btn-rotar:active{background:rgba(255,255,255,.25)}
 .camara-status-overlay{position:absolute;top:0;left:0;right:0;padding:12px 14px;font-size:12px;line-height:1.4;color:#fff;background:linear-gradient(rgba(0,0,0,.65),transparent);text-align:center;z-index:2;pointer-events:none}
 .camara-btns-overlay{display:flex;gap:10px;padding:14px;padding-bottom:calc(14px + env(safe-area-inset-bottom));background:#000;flex-shrink:0}
@@ -2662,41 +2675,88 @@ function abrirRecorteFoto(img, targetId) {
   cropModalTargetId = targetId;
   var modal = document.getElementById('modal-recortar-foto');
   var imgEl = document.getElementById('img-recortar');
-  imgEl.src = img.src;
+  if (cropperFotoInstance) { cropperFotoInstance.destroy(); cropperFotoInstance = null; }
   modal.classList.add('open');
 
-  requestAnimationFrame(function () {
+  /* El recortador se arma CUANDO LA FOTO YA ESTA CARGADA. Antes se armaba
+     un instante despues de pedirla, y si todavia no tenia medidas —o el
+     modal no habia terminado de abrirse— quedaba calculado con el tamaño
+     equivocado: el recuadro no coincidia con la foto y no habia manera de
+     recortar bien. */
+  var armado = false;
+  var armar = function () {
+    if (armado || !window.Cropper) return;
+    armado = true;
     if (cropperFotoInstance) { cropperFotoInstance.destroy(); cropperFotoInstance = null; }
-    if (window.Cropper) {
-      cropperFotoInstance = new Cropper(imgEl, {
-        viewMode: 1,
-        autoCropArea: 1,
-        dragMode: 'move',
-        background: false,
-        responsive: true,
-        guides: true
-      });
-    }
-  });
+    cropperFotoInstance = new Cropper(imgEl, {
+      viewMode: 1,
+      /* 'crop': arrastrar sobre la foto dibuja un recuadro nuevo. Antes era
+         'move', que arrastraba la FOTO y dejaba el recuadro quieto: para
+         recortar tocaba acertarle a una esquina de 26 px. */
+      dragMode: 'crop',
+      autoCropArea: 1,
+      background: false,
+      responsive: true,
+      restore: false,
+      guides: true,
+      center: true,
+      highlight: false,
+      toggleDragModeOnDblclick: false,
+      cropBoxMovable: true,
+      cropBoxResizable: true,
+      minCropBoxWidth: 40,
+      minCropBoxHeight: 40,
+      ready: function () { encajarFotoEnPantalla(); }
+    });
+  };
+  imgEl.onload = function () { requestAnimationFrame(armar); };
+  imgEl.src = img.src;
+  if (imgEl.complete && imgEl.naturalWidth) requestAnimationFrame(armar);
 }
 
-// Gira la imagen dentro del recorte (izquierda -90, derecha +90).
-// Cropper.js reacomoda automaticamente el recuadro de recorte tras girar.
+/* ── LA FOTO ENTERA, CENTRADA ──────────────────────────────────────
+   Deja la imagen del tamaño que quepa en la pantalla, centrada, y el
+   recuadro cubriendola completa. Se usa al abrir y despues de girar.
+   El recuadro se encoge primero a proposito: mientras es grande, el
+   recortador no deja achicar la foto por debajo de el (viewMode 1) y la
+   imagen quedaba mas grande que la pantalla, corrida hacia un lado. */
+function encajarFotoEnPantalla() {
+  var cr = cropperFotoInstance;
+  if (!cr) return;
+  var cont = cr.getContainerData();
+  var cv = cr.getCanvasData();
+  if (!cont.width || !cont.height || !cv.naturalWidth || !cv.naturalHeight) return;
+
+  cr.setCropBoxData({ left: cont.width / 2 - 20, top: cont.height / 2 - 20, width: 40, height: 40 });
+
+  /* Un margen de 26 px alrededor: las esquinas y los bordes del recuadro
+     quedan enteros dentro de la pantalla y se pueden agarrar, y queda
+     espacio negro para dibujar una seleccion nueva arrastrando. */
+  var margen = 26;
+  var util = { w: Math.max(40, cont.width - margen * 2), h: Math.max(40, cont.height - margen * 2) };
+  var escala = Math.min(util.w / cv.naturalWidth, util.h / cv.naturalHeight);
+  var ancho = cv.naturalWidth * escala, alto = cv.naturalHeight * escala;
+  cr.setCanvasData({ left: (cont.width - ancho) / 2, top: (cont.height - alto) / 2, width: ancho, height: alto });
+
+  var cv2 = cr.getCanvasData();
+  cr.setCropBoxData({ left: cv2.left, top: cv2.top, width: cv2.width, height: cv2.height });
+}
+
+/* El boton "Toda la foto": deshace el recorte sin perder el giro. */
+function restablecerRecorteFoto() {
+  encajarFotoEnPantalla();
+}
+
+// Gira la foto (izquierda -90, derecha +90).
+// Al girar, el recortador NO vuelve a acomodar la imagen: la deja del
+// mismo tamaño que tenia, girada sobre su centro. Una foto acostada que
+// se pone de pie queda entonces mas alta que la pantalla y se ve corrida
+// y recortada: se perdia como se habia tomado. Por eso despues de cada
+// giro se vuelve a encajar entera y centrada, con el recuadro completo.
 function rotarRecorteFoto(grados) {
   if (!cropperFotoInstance) return;
   cropperFotoInstance.rotate(grados);
-  // Al girar, Cropper reajusta la imagen para que quepa en el
-  // contenedor, pero el recuadro de recorte NO se reajusta solo y se
-  // queda con el tamaño/posicion de antes de girar (por eso solo se
-  // veia/exportaba la mitad de la foto). Se vuelve a poner el
-  // recuadro cubriendo toda la imagen ya girada.
-  var canvasData = cropperFotoInstance.getCanvasData();
-  cropperFotoInstance.setCropBoxData({
-    left: canvasData.left,
-    top: canvasData.top,
-    width: canvasData.width,
-    height: canvasData.height
-  });
+  encajarFotoEnPantalla();
 }
 
 function cancelarRecorteFoto() {
@@ -7221,12 +7281,13 @@ async function mfReportarErrorFila(btn, marcaTemporal, tiquete, placa) {
     <div class="modal-box">
       <div id="recortar-wrap">
         <img id="img-recortar" src="" alt="Foto a recortar">
-        <div class="rotar-btns-overlay">
-          <button type="button" class="btn-rotar" onclick="rotarRecorteFoto(-90)" title="Girar a la izquierda">⟲</button>
-          <button type="button" class="btn-rotar" onclick="rotarRecorteFoto(90)" title="Girar a la derecha">⟳</button>
-        </div>
       </div>
-      <div class="camara-status-overlay" style="position:static;background:rgba(0,0,0,.65)">Ajuste el recorte y gire la foto si lo necesita (opcional) y confirme.</div>
+      <div class="recorte-herramientas">
+        <button type="button" class="btn-rotar" onclick="rotarRecorteFoto(-90)" title="Girar a la izquierda">⟲</button>
+        <button type="button" class="btn-rotar" onclick="rotarRecorteFoto(90)" title="Girar a la derecha">⟳</button>
+        <button type="button" class="btn-rotar texto" onclick="restablecerRecorteFoto()" title="Volver a la foto completa">Toda la foto</button>
+      </div>
+      <div class="camara-status-overlay" style="position:static;background:rgba(0,0,0,.65)">Arrastre sobre la foto para elegir el área; los bordes y las esquinas la ajustan. Si no toca nada se usa la foto completa.</div>
       <div class="camara-btns-overlay">
         <button class="modal-btn cancel" onclick="cancelarRecorteFoto()">Cancelar</button>
         <button class="modal-btn confirm" onclick="confirmarRecorteFoto()">Usar foto</button>
