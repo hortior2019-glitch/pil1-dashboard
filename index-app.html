@@ -6239,6 +6239,31 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #per-area-modal .per-btns .cancelar{background:var(--bg);border:1px solid var(--rule);color:var(--ink-m)}
 #per-area-modal .per-error{color:#b23b3b;font-size:12px;margin-top:10px;min-height:15px}
 #per-area-modal .ayuda{font-size:11px;color:var(--ink-l);margin-top:4px}
+#per-area-modal .ar-turno-dias{display:flex;gap:3px;margin:0 0 9px 0}
+#per-area-modal .ar-turno-dias button{width:26px;height:24px;font-size:10.5px;border:1px solid var(--rule);
+  background:var(--white);color:var(--ink-l);cursor:pointer;font-family:'Source Sans 3',sans-serif;padding:0}
+#per-area-modal .ar-turno-dias button.on{background:#e7f1ea;border-color:#1c5636;color:#1c5636;font-weight:700}
+#per-area-modal .ar-turno-dias span{font-size:10.5px;color:var(--ink-l);margin-left:6px;align-self:center}
+#panel-personal .ar-foto{width:100%;height:120px;object-fit:cover;display:block;margin:-14px -14px 10px;
+  width:calc(100% + 28px);border-bottom:1px solid var(--rule-l,#ececec)}
+/* El cuadro de la semana, chico, para leerlo antes de guardar */
+#per-area-modal .cuadro{border:1px solid var(--rule);margin-top:14px;padding:12px;background:var(--bg)}
+#per-area-modal .cuadro h5{margin:0 0 8px;font-size:12px;font-weight:700;color:var(--ink)}
+#per-area-modal .cuadro table{width:100%;border-collapse:collapse;font-size:11.5px;background:var(--white)}
+#per-area-modal .cuadro th,#per-area-modal .cuadro td{border:1px solid var(--rule-l,#ececec);padding:5px 7px;text-align:left}
+#per-area-modal .cuadro th{background:var(--bg);font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-l)}
+#per-area-modal .cuadro td.dom{background:#fdf5f4}
+#per-area-modal .cuadro .noche{color:#2f4a86;font-weight:700}
+#per-area-modal .cuadro .horas{margin-top:10px;font-size:11.5px;color:var(--ink-m)}
+#per-area-modal .cuadro .horas b{color:var(--ink)}
+/* El calendario del mes */
+#panel-personal .mes-barra{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+#panel-personal .mes-barra b{font-family:'Playfair Display',serif;font-size:19px;font-weight:700;text-transform:capitalize}
+#panel-personal .mes-sem{border:1px solid var(--rule-l,#ececec);margin-bottom:12px}
+#panel-personal .mes-sem > summary{padding:9px 12px;background:var(--bg);cursor:pointer;font-size:12.5px;font-weight:700;color:var(--ink-m)}
+#panel-personal .mes-sem > summary .hs{float:right;font-weight:400;color:var(--ink-l)}
+#panel-personal .mes-sem[open] > summary{border-bottom:1px solid var(--rule-l,#ececec)}
+#panel-personal .mes-sem .cuerpo{padding:12px}
 </style>
 
 <div class="panel" id="panel-personal">
@@ -6282,6 +6307,15 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <label>Nombre del área</label>
     <input type="text" id="ar-f-nombre" maxlength="60" list="per-areas" placeholder="Lombricultivo, Portería, Molino…">
 
+    <label>Foto de lo que se hace acá (opcional)</label>
+    <div class="per-fotocampo">
+      <div class="per-fotoprev" id="ar-f-prev" style="border-radius:8px">sin foto</div>
+      <div>
+        <input type="file" id="ar-f-foto" accept="image/*" style="font-size:12px">
+        <div class="ayuda">Sirve para reconocer el área de un vistazo.</div>
+      </div>
+    </div>
+
     <label>¿Cómo se trabaja?</label>
     <select id="ar-f-modo">
       <option value="general">Horario general — todos de tal a tal hora</option>
@@ -6321,9 +6355,20 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
       <button type="button" class="per-btn" id="ar-f-ninguno" style="padding:4px 9px">Ninguno</button>
       <span id="ar-f-cuenta"></span></div>
 
+    <div id="ar-f-semanas-caja" style="display:none">
+      <label>¿Desde cuándo rige?</label>
+      <select id="ar-f-semanas">
+        <option value="1">Esta semana</option>
+        <option value="2">Esta semana y la próxima</option>
+        <option value="0">Solo la próxima semana</option>
+      </select>
+    </div>
+
     <div class="per-error" id="ar-f-error"></div>
+    <div id="ar-f-cuadro"></div>
     <div class="per-btns">
       <button type="button" class="cancelar" id="ar-f-cancelar">Cancelar</button>
+      <button type="button" class="cancelar" id="ar-f-ver" style="display:none">Ver el cuadro</button>
       <button type="button" class="guardar" id="ar-f-guardar">Guardar</button>
     </div>
   </div>
@@ -33814,10 +33859,10 @@ var PRESETS_TURNO = {
   '2x12': [{ nombre:'Día', inicio:'06:00', fin:'18:00' }, { nombre:'Noche', inicio:'18:00', fin:'06:00' }],
   '2x8':  [{ nombre:'Mañana', inicio:'06:00', fin:'14:00' }, { nombre:'Tarde', inicio:'14:00', fin:'22:00' }]
 };
+var FOTO_AREA = '';           /* la foto nueva del área, ya reducida */
 var AREA_EDIT = null;         /* el área que se está creando o cambiando */
 var AREA_FORM = null;         /* lo que hay escrito en el formulario */
-var AREA_VIENDO = '';         /* el área cuya semana se está mirando */
-var SEMANA_VIENDO = '';
+var AREA_VIENDO = '';         /* el área cuyos turnos se están mirando */
 
 function miembrosDe(area){
   return P.miembros.filter(function(m){ return m.area === area; });
@@ -33840,6 +33885,20 @@ function fechaCorta(iso){
   var d = new Date(iso + 'T00:00:00');
   return isNaN(d.getTime()) ? iso : d.toLocaleDateString('es-CO', { day:'numeric', month:'short' });
 }
+/* Lo que dura un turno, en horas. Si cruza la medianoche se cuenta hasta
+   el día siguiente: de 22:00 a 06:00 son 8 horas, no menos ocho. */
+function horasTurno(inicio, fin){
+  var a = String(inicio).split(':'), b = String(fin).split(':');
+  var x = Number(a[0]) * 60 + Number(a[1]), y = Number(b[0]) * 60 + Number(b[1]);
+  if(isNaN(x) || isNaN(y)) return 0;
+  var min = y - x;
+  if(min <= 0) min += 24 * 60;
+  return Math.round(min / 6) / 10;
+}
+function numeroHoras(n){
+  return (Math.round(n * 10) / 10).toLocaleString('es-CO', { maximumFractionDigits:1 }) + ' h';
+}
+
 function horarioDe(a){
   if(a.modo !== 'rotativo') return 'de ' + (a.horaInicio || '—') + ' a ' + (a.horaFin || '—');
   return (a.turnos || []).map(function(t){ return t.nombre + ' ' + t.inicio + '–' + t.fin; }).join(' · ');
@@ -33863,7 +33922,9 @@ function pintarAreas(){
   grid.innerHTML = P.areas.slice().sort(function(a,b){ return String(a.nombre).localeCompare(String(b.nombre), 'es'); })
     .map(function(a){
       var gente = miembrosDe(a.nombre);
+      var mini = miniFoto(a.foto, 400);
       return '<div class="ar-ficha' + (a.modo === 'rotativo' ? ' rot' : '') + '">' +
+        (mini ? '<img class="ar-foto" src="' + esc(mini) + '" alt="" loading="lazy" onerror="this.style.display=&quot;none&quot;">' : '') +
         '<div class="ar-nom">' + esc(a.nombre) + '<span class="ar-modo">' +
           (a.modo === 'rotativo' ? 'turnos rotativos' : 'horario general') + '</span></div>' +
         '<div class="ar-d">' + esc(diasDe(a)) + ' · ' + esc(horarioDe(a)) +
@@ -33873,7 +33934,7 @@ function pintarAreas(){
             (gente.length > 12 ? '<span>y ' + (gente.length - 12) + ' más</span>' : '')
           : '<span>sin gente asignada</span>') + '</div>' +
         '<div class="ar-acc">' +
-          (a.modo === 'rotativo' ? '<button type="button" class="fuerte" data-ar-turnos="' + esc(a.nombre) + '">Ver la semana</button>' : '') +
+          (a.modo === 'rotativo' ? '<button type="button" class="fuerte" data-ar-turnos="' + esc(a.nombre) + '">Ver los turnos</button>' : '') +
           '<button type="button" data-ar-editar="' + esc(a.nombre) + '">Editar</button>' +
           '<button type="button" data-ar-borrar="' + esc(a.nombre) + '">Borrar</button>' +
         '</div></div>';
@@ -33886,7 +33947,7 @@ function pintarAreas(){
     b.onclick = function(){ borrarArea(b.dataset.arBorrar); };
   });
   grid.querySelectorAll('[data-ar-turnos]').forEach(function(b){
-    b.onclick = function(){ verSemana(b.dataset.arTurnos, SEMANA_VIENDO || lunesDe('')); };
+    b.onclick = function(){ verMes(b.dataset.arTurnos, MES_VIENDO || isoDe(new Date())); };
   });
 }
 function areaPorNombre(n){
@@ -33912,7 +33973,9 @@ function abrirArea(a){
     dias: a ? String(a.dias || '').split(',').filter(Boolean) : ['L','M','X','J','V'],
     horaInicio: (a && a.horaInicio) || '07:00',
     horaFin: (a && a.horaFin) || '17:00',
-    turnos: (a && a.turnos && a.turnos.length) ? a.turnos.slice() : PRESETS_TURNO['3x8'].slice(),
+    turnos: (a && a.turnos && a.turnos.length)
+      ? a.turnos.map(function(t){ return { nombre:t.nombre, inicio:t.inicio, fin:t.fin, dias:t.dias || '' }; })
+      : PRESETS_TURNO['3x8'].map(function(t){ return { nombre:t.nombre, inicio:t.inicio, fin:t.fin, dias:'' }; }),
     porTurno: (a && a.porTurno) || 1,
     personas: a ? miembrosDe(a.nombre).map(function(m){ return m.persona; }) : []
   };
@@ -33924,6 +33987,11 @@ function abrirArea(a){
   $p('ar-f-porturno').value = AREA_FORM.porTurno;
   $p('ar-f-buscar').value = '';
   $p('ar-f-error').textContent = '';
+  $p('ar-f-cuadro').innerHTML = '';
+  $p('ar-f-foto').value = '';
+  FOTO_AREA = '';
+  var m = a ? miniFoto(a.foto, 400) : '';
+  $p('ar-f-prev').innerHTML = m ? '<img src="' + esc(m) + '" alt="">' : 'sin foto';
   pintarDias(); pintarModo(); pintarTurnos(); pintarGenteArea();
   $p('per-area-modal').classList.add('open');
 }
@@ -33945,21 +34013,46 @@ function pintarModo(){
   var rot = AREA_FORM.modo === 'rotativo';
   $p('ar-f-general').style.display = rot ? 'none' : '';
   $p('ar-f-rotativo').style.display = rot ? '' : 'none';
+  $p('ar-f-ver').style.display = rot ? '' : 'none';
+  $p('ar-f-semanas-caja').style.display = rot ? '' : 'none';
+  if(!rot) $p('ar-f-cuadro').innerHTML = '';
 }
 function pintarTurnos(){
   $p('ar-f-turnos').innerHTML = AREA_FORM.turnos.map(function(t, i){
+    var dias = String(t.dias || '').split(',').filter(Boolean);
     return '<div class="ar-turno" data-i="' + i + '">' +
       '<input type="text" class="tn-nom" value="' + esc(t.nombre) + '" placeholder="Nombre del turno">' +
       '<input type="time" class="tn-ini" value="' + esc(t.inicio) + '">' +
       '<input type="time" class="tn-fin" value="' + esc(t.fin) + '">' +
-      '<button type="button" title="Quitar">×</button></div>';
+      '<button type="button" title="Quitar">×</button></div>' +
+      /* Cada turno puede ir solo algunos días: el refuerzo del fin de
+         semana, el especial de los lunes. Sin marcar nada va todos los
+         días del área. */
+      '<div class="ar-turno-dias" data-i="' + i + '">' +
+        DIAS_LETRA.map(function(d){
+          return '<button type="button" class="' + (dias.indexOf(d) > -1 ? 'on' : '') + '" data-td="' + d + '">' + d + '</button>';
+        }).join('') +
+        '<span>' + (dias.length ? 'solo esos días' : 'todos los días del área') + ' · ' + numeroHoras(horasTurno(t.inicio, t.fin)) + '</span>' +
+      '</div>';
   }).join('');
   $p('ar-f-turnos').querySelectorAll('.ar-turno').forEach(function(d){
     var i = +d.dataset.i;
     d.querySelector('.tn-nom').oninput = function(){ AREA_FORM.turnos[i].nombre = this.value; };
-    d.querySelector('.tn-ini').oninput = function(){ AREA_FORM.turnos[i].inicio = this.value; };
-    d.querySelector('.tn-fin').oninput = function(){ AREA_FORM.turnos[i].fin = this.value; };
+    d.querySelector('.tn-ini').oninput = function(){ AREA_FORM.turnos[i].inicio = this.value; pintarTurnos(); };
+    d.querySelector('.tn-fin').oninput = function(){ AREA_FORM.turnos[i].fin = this.value; pintarTurnos(); };
     d.querySelector('button').onclick = function(){ AREA_FORM.turnos.splice(i, 1); pintarTurnos(); };
+  });
+  $p('ar-f-turnos').querySelectorAll('.ar-turno-dias').forEach(function(d){
+    var i = +d.dataset.i;
+    d.querySelectorAll('[data-td]').forEach(function(b){
+      b.onclick = function(){
+        var ds = String(AREA_FORM.turnos[i].dias || '').split(',').filter(Boolean);
+        var k = ds.indexOf(b.dataset.td);
+        if(k > -1) ds.splice(k, 1); else ds.push(b.dataset.td);
+        AREA_FORM.turnos[i].dias = DIAS_LETRA.filter(function(x){ return ds.indexOf(x) > -1; }).join(',');
+        pintarTurnos();
+      };
+    });
   });
 }
 function pintarGenteArea(){
@@ -33991,13 +34084,93 @@ function contarGenteArea(){
   $p('ar-f-cuenta').textContent = n ? (n === 1 ? ' · 1 persona marcada' : ' · ' + n + ' personas marcadas') : ' · nadie marcado';
 }
 
-function guardarArea(){
-  var err = $p('ar-f-error');
+/* ── EL CUADRO ANTES DE GUARDAR ────────────────────────────────────
+   Se le pide al servidor que arme la semana con lo que hay escrito, SIN
+   guardar nada, y se muestra tal como va a quedar: quién, qué día, qué
+   turno, y cuántas horas le tocan a cada uno en la semana. */
+function verCuadro(){
+  var caja = $p('ar-f-cuadro');
+  leerFormularioArea();
+  if(!AREA_FORM.personas.length){ $p('ar-f-error').textContent = 'Falta marcar quién trabaja en el área.'; return; }
+  if(!AREA_FORM.turnos.length){ $p('ar-f-error').textContent = 'Falta definir los turnos.'; return; }
+  $p('ar-f-error').textContent = '';
+  caja.innerHTML = '<div class="cuadro">Armando el cuadro…</div>';
+  var semana = AREA_FORM.desdeProxima ? sumarDias(lunesDe(''), 7) : lunesDe('');
+  pedir({ accion:'perTurnosPrueba',
+    area: { nombre: AREA_FORM.nombre || 'Área nueva', dias: AREA_FORM.dias.join(','),
+            turnos: AREA_FORM.turnos, porTurno: AREA_FORM.porTurno },
+    personas: AREA_FORM.personas, semana: semana
+  }).then(function(d){
+    caja.innerHTML = cuadroChico(d.turnos || [], semana, d.faltoGente);
+  }).catch(function(e){
+    caja.innerHTML = '<div class="cuadro">No se pudo armar el cuadro: ' + esc(e.message) + '</div>';
+  });
+}
+
+/* El cuadro chico: turnos × días y, debajo, las horas de cada uno. */
+function cuadroChico(turnos, semana, faltoGente){
+  if(!turnos.length) return '<div class="cuadro">Sin turnos que mostrar.</div>';
+  var dias = [], vistos = {};
+  turnos.forEach(function(t){ if(!vistos[t.fecha]){ vistos[t.fecha] = 1; dias.push(t.fecha); } });
+  dias.sort();
+  var nombresTurno = [];
+  turnos.forEach(function(t){ if(nombresTurno.indexOf(t.turno) < 0) nombresTurno.push(t.turno); });
+
+  var h = '<div class="cuadro"><h5>Así queda la semana del ' + fechaCorta(semana) + ' al ' + fechaCorta(sumarDias(semana, 6)) + '</h5>' +
+    (faltoGente ? '<div class="ayuda" style="color:#8a6d1f">Hay más puestos que gente: alguien queda con dos turnos el mismo día.</div>' : '') +
+    '<div style="overflow-x:auto"><table><tr><th>Turno</th>' +
+    dias.map(function(f){
+      var esDom = new Date(f + 'T00:00:00').getDay() === 0;
+      return '<th' + (esDom ? ' class="dom"' : '') + '>' + fechaCorta(f) + '</th>';
+    }).join('') + '</tr>';
+  nombresTurno.forEach(function(nt){
+    var uno = turnos.filter(function(t){ return t.turno === nt; })[0] || {};
+    h += '<tr><td><b>' + esc(nt) + '</b><div class="tn-hora">' + esc(uno.inicio) + '–' + esc(uno.fin) +
+         ' · ' + numeroHoras(uno.horas || horasTurno(uno.inicio, uno.fin)) + '</div></td>';
+    dias.forEach(function(f){
+      var esDom = new Date(f + 'T00:00:00').getDay() === 0;
+      var cel = turnos.filter(function(t){ return t.turno === nt && t.fecha === f; });
+      h += '<td' + (esDom ? ' class="dom"' : '') + '>' + (cel.length
+        ? cel.map(function(t){ return '<div' + (t.nocturno ? ' class="noche"' : '') + '>' + esc(t.nombre) + '</div>'; }).join('')
+        : '—') + '</td>';
+    });
+    h += '</tr>';
+  });
+  h += '</table></div>' + horasHtml(turnos) + '</div>';
+  return h;
+}
+
+/* Las horas de la semana: por persona y el total. */
+function horasHtml(turnos){
+  var por = {}, total = 0;
+  turnos.forEach(function(t){
+    var hs = t.horas || horasTurno(t.inicio, t.fin);
+    por[t.nombre] = (por[t.nombre] || 0) + hs;
+    total += hs;
+  });
+  var claves = Object.keys(por).sort();
+  return '<div class="horas"><b>Horas de la semana</b><table style="margin-top:5px">' +
+    claves.map(function(k){
+      return '<tr><td>' + esc(k) + '</td><td style="text-align:right"><b>' + numeroHoras(por[k]) + '</b></td></tr>';
+    }).join('') +
+    '<tr><td><b>Total del área</b></td><td style="text-align:right"><b>' + numeroHoras(total) + '</b></td></tr>' +
+    '</table></div>';
+}
+
+/* Lee todo lo escrito en el formulario al objeto de trabajo. */
+function leerFormularioArea(){
   AREA_FORM.nombre = $p('ar-f-nombre').value.trim();
   AREA_FORM.modo = $p('ar-f-modo').value;
   AREA_FORM.horaInicio = $p('ar-f-ini').value;
   AREA_FORM.horaFin = $p('ar-f-fin').value;
   AREA_FORM.porTurno = Math.max(1, Number($p('ar-f-porturno').value) || 1);
+  AREA_FORM.semanas = $p('ar-f-semanas') ? $p('ar-f-semanas').value : '1';
+  AREA_FORM.desdeProxima = AREA_FORM.semanas === '0';
+}
+
+function guardarArea(){
+  var err = $p('ar-f-error');
+  leerFormularioArea();
   if(!AREA_FORM.nombre){ err.textContent = 'Falta el nombre del área.'; return; }
   if(!AREA_FORM.dias.length){ err.textContent = 'Falta marcar los días.'; return; }
   if(AREA_FORM.modo === 'rotativo' && !AREA_FORM.turnos.length){ err.textContent = 'Un área por turnos necesita al menos un turno.'; return; }
@@ -34005,103 +34178,190 @@ function guardarArea(){
 
   var b = $p('ar-f-guardar'); b.disabled = true; b.textContent = 'Guardando…';
   err.textContent = '';
-  pedir({ accion:'perAreaGuardar',
+  var cuerpo = { accion:'perAreaGuardar',
     nombre: AREA_FORM.nombre, nombreAnterior: AREA_EDIT ? AREA_EDIT.nombre : '',
     modo: AREA_FORM.modo, dias: AREA_FORM.dias.join(','),
     horaInicio: AREA_FORM.horaInicio, horaFin: AREA_FORM.horaFin,
-    turnos: AREA_FORM.turnos, porTurno: AREA_FORM.porTurno, personas: AREA_FORM.personas
-  }).then(function(d){
+    turnos: AREA_FORM.turnos, porTurno: AREA_FORM.porTurno, personas: AREA_FORM.personas };
+  if(FOTO_AREA) cuerpo.foto = FOTO_AREA;
+  var nombre = AREA_FORM.nombre, modo = AREA_FORM.modo, cuantas = AREA_FORM.semanas;
+  pedir(cuerpo).then(function(d){
     P.areas = d.areas || P.areas; P.miembros = d.miembros || P.miembros;
+    P.turnos = {};                       /* lo guardado quedó viejo */
     guardarLocal(); cerrarArea(); pintarAreas();
-    /* Si es rotativa, la semana se arma sola y aparece enseguida. */
-    if(AREA_FORM.modo === 'rotativo') verSemana(AREA_FORM.nombre, lunesDe(''));
+    if(modo !== 'rotativo') return;
+    /* Las semanas que se pidieron se arman en segundo plano; la primera
+       aparece apenas está. */
+    var lunes = lunesDe('');
+    var semanas = cuantas === '0' ? [sumarDias(lunes, 7)]
+                : cuantas === '2' ? [lunes, sumarDias(lunes, 7)] : [lunes];
+    /* El calendario se muestra ya, y las semanas se van armando una tras
+       otra en segundo plano: cada una aparece apenas está lista. */
+    verMes(nombre, semanas[0]);
+    var enFila = Promise.resolve();
+    semanas.forEach(function(sem){
+      enFila = enFila
+        .then(function(){ return pedir({ accion:'perTurnos', area: nombre, semana: sem }); })
+        .then(function(){ if(AREA_VIENDO === nombre) verMes(nombre, MES_VIENDO, true); })
+        .catch(function(){});
+    });
   }).catch(function(e){
     err.textContent = e.message || 'No se pudo guardar.';
   }).then(function(){ b.disabled = false; b.textContent = 'Guardar'; });
 }
 
-/* ── LA SEMANA ── */
-function verSemana(area, semana, rehacer){
-  AREA_VIENDO = area; SEMANA_VIENDO = semana;
-  var caja = $p('ar-turnos');
-  var clave = area + '|' + semana;
-  var pintarla = function(t){
-    P.turnos[clave] = t;
-    caja.innerHTML = cuadroSemana(area, semana, t);
-    engancharSemana();
-  };
-  if(P.turnos[clave] && !rehacer){ pintarla(P.turnos[clave]); return; }
-  caja.innerHTML = '<div class="tn-caja">Armando la semana…</div>';
-  pedir({ accion:'perTurnos', area: area, semana: semana, rehacer: !!rehacer })
-    .then(function(d){ pintarla(d.turnos || []); })
-    .catch(function(e){ caja.innerHTML = '<div class="tn-caja">No se pudo traer la semana: ' + esc(e.message) + '</div>'; });
+/* ══════════════════════════════════════════════════════════════════
+   EL CALENDARIO DEL ÁREA
+   ------------------------------------------------------------------
+   Los turnos se miran por mes, partido en semanas: cada semana se
+   despliega y muestra su cuadro y sus horas. Se puede ir al mes
+   anterior o al siguiente, y rehacer una semana suelta si en el
+   transcurso hay que cambiar algo.
+
+   El mes entero se trae de una sola vez y queda guardado acá, así que
+   moverse entre meses ya vistos es instantáneo.
+   ══════════════════════════════════════════════════════════════════ */
+var MES_VIENDO = '';          /* cualquier fecha del mes que se está viendo */
+
+function primerDiaMes(iso){
+  var d = new Date(iso + 'T00:00:00');
+  return isoDe(new Date(d.getFullYear(), d.getMonth(), 1));
+}
+function ultimoDiaMes(iso){
+  var d = new Date(iso + 'T00:00:00');
+  return isoDe(new Date(d.getFullYear(), d.getMonth() + 1, 0));
+}
+function nombreMes(iso){
+  var d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString('es-CO', { month:'long', year:'numeric' });
+}
+/* Los lunes que tocan el mes: el de la primera semana (aunque arranque
+   en el mes anterior) hasta el de la última. */
+function lunesDelMes(iso){
+  var ini = lunesDe(primerDiaMes(iso)), fin = lunesDe(ultimoDiaMes(iso)), out = [];
+  var l = ini;
+  while(l <= fin){ out.push(l); l = sumarDias(l, 7); }
+  return out;
 }
 
-function cuadroSemana(area, semana, turnos){
-  var a = areaPorNombre(area) || { turnos: [], dias: '' };
-  var dias = String(a.dias || '').split(',').filter(Boolean);
-  var nombres = (a.turnos || []).map(function(t){ return t.nombre; });
-  if(!nombres.length) nombres = turnos.map(function(t){ return t.turno; }).filter(function(v, i, l){ return l.indexOf(v) === i; });
+function verMes(area, fecha, forzar){
+  AREA_VIENDO = area;
+  MES_VIENDO = fecha || MES_VIENDO || isoDe(new Date());
+  var caja = $p('ar-turnos');
+  var lunes = lunesDelMes(MES_VIENDO);
+  var desde = lunes[0], hasta = sumarDias(lunes[lunes.length - 1], 6);
+  var clave = area + '|' + desde;
 
+  var pintarlo = function(turnos){
+    P.turnos[clave] = turnos;
+    caja.innerHTML = cuadroMes(area, turnos);
+    engancharMes();
+  };
+  /* Lo guardado se pinta ya; el servidor se consulta igual y, si trae
+     algo distinto, se repinta. Así nunca se ve una espera en blanco. */
+  if(P.turnos[clave] && !forzar) pintarlo(P.turnos[clave]);
+  else caja.innerHTML = '<div class="tn-caja">Trayendo los turnos…</div>';
+
+  pedir({ accion:'perTurnosRango', area: area, desde: desde, hasta: hasta })
+    .then(function(d){
+      var t = d.turnos || [];
+      if(!P.turnos[clave] || JSON.stringify(t) !== JSON.stringify(P.turnos[clave])) pintarlo(t);
+    })
+    .catch(function(e){
+      if(!P.turnos[clave]) caja.innerHTML = '<div class="tn-caja">No se pudieron traer los turnos: ' + esc(e.message) + '</div>';
+    });
+}
+
+function cuadroMes(area, turnos){
+  var lunes = lunesDelMes(MES_VIENDO);
+  var hoy = isoDe(new Date()), estaSemana = lunesDe(hoy);
   var h = '<div class="tn-caja">' +
-    '<div class="tn-barra">' +
-      '<button type="button" id="tn-antes">‹ Semana anterior</button>' +
-      '<b>' + esc(area) + '</b>' +
-      '<span>semana del ' + fechaCorta(semana) + ' al ' + fechaCorta(sumarDias(semana, 6)) + '</span>' +
-      '<button type="button" id="tn-despues">Semana siguiente ›</button>' +
-      '<button type="button" id="tn-rehacer" title="Vuelve a repartir esta semana">Rehacer</button>' +
-      '<button type="button" id="tn-cerrar">Cerrar</button>' +
+    '<div class="mes-barra">' +
+      '<button type="button" id="mes-antes">‹ Mes anterior</button>' +
+      '<b>' + esc(nombreMes(MES_VIENDO)) + '</b>' +
+      '<button type="button" id="mes-despues">Mes siguiente ›</button>' +
+      '<span style="flex:1"></span>' +
+      '<span style="font-size:12px;color:var(--ink-l)">' + esc(area) + '</span>' +
+      '<button type="button" id="mes-hoy">Ir a hoy</button>' +
+      '<button type="button" id="mes-cerrar">Cerrar</button>' +
     '</div>';
 
-  if(!turnos.length){
-    return h + '<div class="per-vacio">Sin turnos para esta semana.</div></div>';
-  }
+  lunes.forEach(function(sem){
+    var dela = turnos.filter(function(t){ return t.semana === sem; });
+    var horas = dela.reduce(function(a, t){ return a + (t.horas || horasTurno(t.inicio, t.fin)); }, 0);
+    var abierta = (sem === estaSemana);
+    h += '<details class="mes-sem"' + (abierta ? ' open' : '') + ' data-sem="' + sem + '">' +
+      '<summary>Semana del ' + fechaCorta(sem) + ' al ' + fechaCorta(sumarDias(sem, 6)) +
+        (sem === estaSemana ? ' · <span style="color:#1c5636">esta semana</span>' : '') +
+        '<span class="hs">' + (dela.length ? dela.length + ' turnos · ' + numeroHoras(horas) : 'sin turnos') + '</span>' +
+      '</summary><div class="cuerpo">' +
+      (dela.length ? tablaSemana(dela, sem) +
+          '<div style="margin-top:10px"><button type="button" class="per-btn" data-rehacer="' + sem + '">Rehacer esta semana</button></div>'
+        : '<div class="per-vacio" style="padding:14px">Esta semana todavía no está armada.' +
+          ' <button type="button" class="per-btn" data-armar="' + sem + '">Armar la semana</button></div>') +
+      '</div></details>';
+  });
+  return h + '</div>';
+}
 
-  h += '<div style="overflow-x:auto"><table class="tn-tabla"><thead><tr><th>Turno</th>' +
-    dias.map(function(d){ return '<th' + (d === 'D' ? ' class="dom"' : '') + '>' + DIAS_NOMBRE[d] + '<div class="tn-hora">' + fechaCorta(fechaDeDia(semana, d)) + '</div></th>'; }).join('') +
-    '</tr></thead><tbody>';
+/* El cuadro de una semana: turnos × días, con las horas debajo. */
+function tablaSemana(turnos, semana){
+  var fechas = [], vistas = {};
+  turnos.forEach(function(t){ if(!vistas[t.fecha]){ vistas[t.fecha] = 1; fechas.push(t.fecha); } });
+  fechas.sort();
+  var nombres = [];
+  turnos.forEach(function(t){ if(nombres.indexOf(t.turno) < 0) nombres.push(t.turno); });
+
+  var h = '<div style="overflow-x:auto"><table class="tn-tabla"><thead><tr><th>Turno</th>' +
+    fechas.map(function(f){
+      var d = new Date(f + 'T00:00:00');
+      return '<th' + (d.getDay() === 0 ? ' class="dom"' : '') + '>' +
+        d.toLocaleDateString('es-CO', { weekday:'short' }) + '<div class="tn-hora">' + fechaCorta(f) + '</div></th>';
+    }).join('') + '</tr></thead><tbody>';
   nombres.forEach(function(nt){
-    var t0 = (a.turnos || []).filter(function(x){ return x.nombre === nt; })[0];
-    h += '<tr><td><span class="tn-turno">' + esc(nt) + '</span>' +
-         (t0 ? '<div class="tn-hora">' + esc(t0.inicio) + ' – ' + esc(t0.fin) + '</div>' : '') + '</td>';
-    dias.forEach(function(d){
-      var celda = turnos.filter(function(t){ return t.turno === nt && t.fecha === fechaDeDia(semana, d); });
-      h += '<td' + (d === 'D' ? ' class="dom"' : '') + '>' +
-        (celda.length ? celda.map(function(t){
-          return '<div' + (t.nocturno ? ' class="noche"' : '') + '>' + esc(t.nombre) + '</div>';
-        }).join('') : '<span class="tn-hora">—</span>') + '</td>';
+    var uno = turnos.filter(function(t){ return t.turno === nt; })[0] || {};
+    h += '<tr><td><span class="tn-turno">' + esc(nt) + '</span><div class="tn-hora">' +
+         esc(uno.inicio) + ' – ' + esc(uno.fin) + ' · ' + numeroHoras(uno.horas || horasTurno(uno.inicio, uno.fin)) + '</div></td>';
+    fechas.forEach(function(f){
+      var esDom = new Date(f + 'T00:00:00').getDay() === 0;
+      var cel = turnos.filter(function(t){ return t.turno === nt && t.fecha === f; });
+      h += '<td' + (esDom ? ' class="dom"' : '') + '>' + (cel.length
+        ? cel.map(function(t){ return '<div' + (t.nocturno ? ' class="noche"' : '') + '>' + esc(t.nombre) + '</div>'; }).join('')
+        : '<span class="tn-hora">—</span>') + '</td>';
     });
     h += '</tr>';
   });
-  h += '</tbody></table></div>';
+  h += '</tbody></table></div>' + horasHtml(turnos);
+  return h;
+}
 
-  /* Cuánto le tocó a cada uno, que es lo que se mira para saber si es justo. */
-  var carga = {};
-  turnos.forEach(function(t){
-    var c = carga[t.nombre] || (carga[t.nombre] = { total:0, noches:0, domingos:0 });
-    c.total++; if(t.nocturno) c.noches++; if(t.dominical) c.domingos++;
-  });
-  var claves = Object.keys(carga).sort();
-  h += '<div class="tn-carga">Cómo quedó repartida la semana' +
-    '<table><tr><th>Quién</th><th>Turnos</th><th>Noches</th><th>Domingos</th></tr>' +
-    claves.map(function(k){
-      return '<tr><td>' + esc(k) + '</td><td>' + carga[k].total + '</td><td>' + carga[k].noches + '</td><td>' + carga[k].domingos + '</td></tr>';
-    }).join('') + '</table></div>';
-  return h + '</div>';
-}
-function fechaDeDia(semana, letra){
-  return sumarDias(semana, DIAS_LETRA.indexOf(letra));
-}
-function engancharSemana(){
+function engancharMes(){
   var b = function(id){ return $p(id); };
-  if(b('tn-antes'))   b('tn-antes').onclick   = function(){ verSemana(AREA_VIENDO, sumarDias(SEMANA_VIENDO, -7)); };
-  if(b('tn-despues')) b('tn-despues').onclick = function(){ verSemana(AREA_VIENDO, sumarDias(SEMANA_VIENDO, 7)); };
-  if(b('tn-rehacer')) b('tn-rehacer').onclick = function(){
-    if(confirm('¿Volver a repartir esta semana? Los turnos que ya se hayan visto cambian.')) verSemana(AREA_VIENDO, SEMANA_VIENDO, true);
-  };
-  if(b('tn-cerrar'))  b('tn-cerrar').onclick  = function(){ AREA_VIENDO = ''; $p('ar-turnos').innerHTML = ''; };
+  if(b('mes-antes'))   b('mes-antes').onclick   = function(){ verMes(AREA_VIENDO, sumarDias(primerDiaMes(MES_VIENDO), -1)); };
+  if(b('mes-despues')) b('mes-despues').onclick = function(){ verMes(AREA_VIENDO, sumarDias(ultimoDiaMes(MES_VIENDO), 1)); };
+  if(b('mes-hoy'))     b('mes-hoy').onclick     = function(){ verMes(AREA_VIENDO, isoDe(new Date())); };
+  if(b('mes-cerrar'))  b('mes-cerrar').onclick  = function(){ AREA_VIENDO = ''; $p('ar-turnos').innerHTML = ''; };
+
+  var caja = $p('ar-turnos');
+  caja.querySelectorAll('[data-armar]').forEach(function(bt){
+    bt.onclick = function(){ armarSemana(bt.dataset.armar, false, bt); };
+  });
+  caja.querySelectorAll('[data-rehacer]').forEach(function(bt){
+    bt.onclick = function(){
+      if(confirm('¿Volver a repartir esta semana? Lo que ya se haya avisado cambia.')) armarSemana(bt.dataset.rehacer, true, bt);
+    };
+  });
 }
 
+function armarSemana(semana, rehacer, boton){
+  if(boton){ boton.disabled = true; boton.textContent = 'Armando…'; }
+  pedir({ accion:'perTurnos', area: AREA_VIENDO, semana: semana, rehacer: !!rehacer })
+    .then(function(){ verMes(AREA_VIENDO, MES_VIENDO, true); })
+    .catch(function(e){
+      if(boton){ boton.disabled = false; boton.textContent = rehacer ? 'Rehacer esta semana' : 'Armar la semana'; }
+      alert(e.message || 'No se pudo armar la semana.');
+    });
+}
 function verVista(cual){
   $p('per-vista-gente').style.display = cual === 'gente' ? '' : 'none';
   $p('per-vista-areas').style.display = cual === 'areas' ? '' : 'none';
@@ -34132,6 +34392,15 @@ function engancharAreas(){
     pintarTurnos();
   };
   $p('ar-f-buscar').oninput = pintarGenteArea;
+  $p('ar-f-ver').onclick = verCuadro;
+  $p('ar-f-foto').onchange = function(){
+    var f = this.files && this.files[0];
+    if(!f) return;
+    reducirFoto(f).then(function(dataUrl){
+      FOTO_AREA = dataUrl;
+      $p('ar-f-prev').innerHTML = '<img src="' + dataUrl + '" alt="">';
+    }).catch(function(e){ $p('ar-f-error').textContent = e.message; });
+  };
   $p('ar-f-todos').onclick = function(){
     $p('ar-f-gente').querySelectorAll('input').forEach(function(c){
       if(!c.checked){ c.checked = true; if(AREA_FORM.personas.indexOf(c.value) < 0) AREA_FORM.personas.push(c.value); }
