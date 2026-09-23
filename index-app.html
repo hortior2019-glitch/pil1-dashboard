@@ -6299,6 +6299,12 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   background:var(--white);color:var(--ink-l);cursor:pointer;font-family:'Source Sans 3',sans-serif;padding:0}
 #per-area-modal .ar-turno-dias button.on{background:#e7f1ea;border-color:#1c5636;color:#1c5636;font-weight:700}
 #per-area-modal .ar-turno-dias span{font-size:10.5px;color:var(--ink-l);margin-left:6px;align-self:center}
+/* Quien arranca en cada turno */
+#per-area-modal .ar-inicial{border:1px solid var(--rule);max-height:210px;overflow:auto;padding:2px 10px}
+#per-area-modal .ar-inicial .fila{display:flex;gap:9px;align-items:center;padding:6px 0;border-bottom:1px solid #f4f4f4}
+#per-area-modal .ar-inicial .fila span{flex:1;min-width:0;font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#per-area-modal .ar-inicial .fila select{width:auto;min-width:140px;padding:5px 8px;font-size:12px}
+#per-area-modal .ar-inicial .vacio{font-size:11.5px;color:var(--ink-l);padding:8px 0}
 #panel-personal .ar-foto{width:100%;height:120px;object-fit:cover;display:block;margin:-14px -14px 10px;
   width:calc(100% + 28px);border-bottom:1px solid var(--rule-l,#ececec)}
 /* El cuadro de la semana, chico, para leerlo antes de guardar */
@@ -6379,8 +6385,18 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
       <option value="rotativo">Turnos rotativos — el sistema arma la semana</option>
     </select>
 
-    <label>Días</label>
-    <div class="ar-dias" id="ar-f-dias"></div>
+    <div id="ar-f-24caja" style="display:none">
+      <label>Cobertura</label>
+      <label class="per-chk" style="margin:0"><input type="checkbox" id="ar-f-24">
+        El área trabaja las 24 horas</label>
+      <div class="ayuda">Con esto el área nunca queda sin cubrir: el día que alguien descansa,
+        los que trabajan ese día se reparten las 24 horas en partes iguales.</div>
+    </div>
+
+    <div id="ar-f-diascaja">
+      <label>Días</label>
+      <div class="ar-dias" id="ar-f-dias"></div>
+    </div>
 
     <div id="ar-f-general">
       <label>Horario</label>
@@ -6400,14 +6416,17 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
       </select>
       <div id="ar-f-turnos" style="margin-top:8px"></div>
       <button type="button" class="per-btn" id="ar-f-masturno" style="margin-top:4px">+ Otro turno</button>
-      <label>¿Cuántas personas por turno?</label>
-      <input type="number" id="ar-f-porturno" min="1" max="20" value="1" style="width:90px">
-
       <label>Descanso</label>
       <label class="per-chk" style="margin:0"><input type="checkbox" id="ar-f-descanso" checked>
-        Un día de descanso por turno cada semana</label>
-      <div class="ayuda">Cada turno descansa un día distinto —mañana uno, tarde otro, noche otro— y el día se va
-        corriendo de una semana a la otra. Después se puede mover a mano desde el calendario.</div>
+        Que nadie trabaje los siete días</label>
+      <div class="ayuda">No hace falta decir cuánta gente va en cada turno: sale de cuántos son y cuántos turnos hay.
+        Cuando en un turno hay dos o más personas, el descanso sale de repartirse los días; si hay una sola,
+        se le da un día libre que va corriendo de una semana a la otra (y se puede mover a mano desde el calendario).</div>
+
+      <label>¿Quién arranca en cada turno?</label>
+      <div class="ar-inicial" id="ar-f-inicial"></div>
+      <div class="ayuda">De ahí en adelante rotan solos: mañana pasa a tarde, tarde a noche y noche a mañana,
+        una vez por semana.</div>
       <div class="ayuda">El sistema reparte las noches y los domingos parejo entre la gente del área, contando también las semanas anteriores.</div>
     </div>
 
@@ -33994,8 +34013,7 @@ function pintarAreas(){
         (mini ? '<img class="ar-foto" src="' + esc(mini) + '" alt="" loading="lazy" onerror="this.style.display=&quot;none&quot;">' : '') +
         '<div class="ar-nom">' + esc(a.nombre) + '<span class="ar-modo">' +
           (a.modo === 'rotativo' ? 'turnos rotativos' : 'horario general') + '</span></div>' +
-        '<div class="ar-d">' + esc(diasDe(a)) + ' · ' + esc(horarioDe(a)) +
-          (a.modo === 'rotativo' && a.porTurno > 1 ? ' · ' + a.porTurno + ' por turno' : '') + '</div>' +
+        '<div class="ar-d">' + (a.cobertura24 ? '24 horas · ' : '') + esc(diasDe(a)) + ' · ' + esc(horarioDe(a)) + '</div>' +
         '<div class="ar-gente">' + (gente.length
           ? gente.slice(0, 12).map(function(m){ return '<span>' + esc(m.nombre) + '</span>'; }).join('') +
             (gente.length > 12 ? '<span>y ' + (gente.length - 12) + ' más</span>' : '')
@@ -34043,7 +34061,8 @@ function abrirArea(a){
     turnos: (a && a.turnos && a.turnos.length)
       ? a.turnos.map(function(t){ return { nombre:t.nombre, inicio:t.inicio, fin:t.fin, dias:t.dias || '' }; })
       : PRESETS_TURNO['3x8'].map(function(t){ return { nombre:t.nombre, inicio:t.inicio, fin:t.fin, dias:'' }; }),
-    porTurno: (a && a.porTurno) || 1,
+    cobertura24: a ? !!a.cobertura24 : true,
+    inicial: (a && a.inicial) ? JSON.parse(JSON.stringify(a.inicial)) : {},
     descanso: a ? (a.descanso !== false) : true,
     personas: a ? miembrosDe(a.nombre).map(function(m){ return m.persona; }) : []
   };
@@ -34052,7 +34071,7 @@ function abrirArea(a){
   $p('ar-f-modo').value = AREA_FORM.modo;
   $p('ar-f-ini').value = AREA_FORM.horaInicio;
   $p('ar-f-fin').value = AREA_FORM.horaFin;
-  $p('ar-f-porturno').value = AREA_FORM.porTurno;
+  $p('ar-f-24').checked = AREA_FORM.cobertura24 !== false;
   $p('ar-f-descanso').checked = AREA_FORM.descanso !== false;
   $p('ar-f-buscar').value = '';
   $p('ar-f-error').textContent = '';
@@ -34084,7 +34103,43 @@ function pintarModo(){
   $p('ar-f-rotativo').style.display = rot ? '' : 'none';
   $p('ar-f-ver').style.display = rot ? '' : 'none';
   $p('ar-f-semanas-caja').style.display = rot ? '' : 'none';
+  $p('ar-f-24caja').style.display = rot ? '' : 'none';
+  /* Un área de 24 horas trabaja los siete días: no hay días que elegir. */
+  var es24 = rot && AREA_FORM.cobertura24 !== false;
+  $p('ar-f-diascaja').style.display = es24 ? 'none' : '';
+  if(es24) AREA_FORM.dias = DIAS_LETRA.slice();
   if(!rot) $p('ar-f-cuadro').innerHTML = '';
+  pintarInicial();
+}
+
+/* Quién arranca en cada turno. Sin elegir nada, el sistema los reparte
+   parejo; lo que se elija acá manda. */
+function pintarInicial(){
+  var caja = $p('ar-f-inicial');
+  if(!caja) return;
+  if(AREA_FORM.modo !== 'rotativo'){ caja.innerHTML = ''; return; }
+  var marcados = P.gente.filter(function(p){ return AREA_FORM.personas.indexOf(p.clave) > -1; })
+                        .sort(function(a, b){ return String(a.nombre).localeCompare(String(b.nombre), 'es'); });
+  if(!marcados.length){
+    caja.innerHTML = '<div class="vacio">Primero marque quién trabaja en el área.</div>';
+    return;
+  }
+  caja.innerHTML = marcados.map(function(p){
+    return '<div class="fila"><span>' + esc(p.nombre) + '</span>' +
+      '<select data-ini="' + esc(p.clave) + '">' +
+        '<option value="">El sistema decide</option>' +
+        AREA_FORM.turnos.map(function(t){
+          return '<option value="' + esc(t.nombre) + '"' + (AREA_FORM.inicial[p.clave] === t.nombre ? ' selected' : '') +
+                 '>' + esc(t.nombre) + '</option>';
+        }).join('') +
+      '</select></div>';
+  }).join('');
+  caja.querySelectorAll('[data-ini]').forEach(function(sel){
+    sel.onchange = function(){
+      if(this.value) AREA_FORM.inicial[sel.dataset.ini] = this.value;
+      else delete AREA_FORM.inicial[sel.dataset.ini];
+    };
+  });
 }
 function pintarTurnos(){
   $p('ar-f-turnos').innerHTML = AREA_FORM.turnos.map(function(t, i){
@@ -34109,7 +34164,7 @@ function pintarTurnos(){
     d.querySelector('.tn-nom').oninput = function(){ AREA_FORM.turnos[i].nombre = this.value; };
     d.querySelector('.tn-ini').oninput = function(){ AREA_FORM.turnos[i].inicio = this.value; pintarTurnos(); };
     d.querySelector('.tn-fin').oninput = function(){ AREA_FORM.turnos[i].fin = this.value; pintarTurnos(); };
-    d.querySelector('button').onclick = function(){ AREA_FORM.turnos.splice(i, 1); pintarTurnos(); };
+    d.querySelector('button').onclick = function(){ AREA_FORM.turnos.splice(i, 1); pintarTurnos(); pintarInicial(); };
   });
   $p('ar-f-turnos').querySelectorAll('.ar-turno-dias').forEach(function(d){
     var i = +d.dataset.i;
@@ -34144,9 +34199,11 @@ function pintarGenteArea(){
       if(c.checked && k < 0) AREA_FORM.personas.push(c.value);
       if(!c.checked && k > -1) AREA_FORM.personas.splice(k, 1);
       contarGenteArea();
+      pintarInicial();
     };
   });
   contarGenteArea();
+  pintarInicial();
 }
 function contarGenteArea(){
   var n = AREA_FORM.personas.length;
@@ -34167,7 +34224,8 @@ function verCuadro(){
   var semana = AREA_FORM.desdeProxima ? sumarDias(lunesDe(''), 7) : lunesDe('');
   pedir({ accion:'perTurnosPrueba',
     area: { nombre: AREA_FORM.nombre || 'Área nueva', dias: AREA_FORM.dias.join(','),
-            turnos: AREA_FORM.turnos, porTurno: AREA_FORM.porTurno, descanso: AREA_FORM.descanso },
+            turnos: AREA_FORM.turnos, cobertura24: AREA_FORM.cobertura24,
+            descanso: AREA_FORM.descanso, inicial: AREA_FORM.inicial },
     personas: AREA_FORM.personas, semana: semana
   }).then(function(d){
     caja.innerHTML = cuadroChico(d.turnos || [], semana, d.faltoGente);
@@ -34190,7 +34248,7 @@ function leerFormularioArea(){
   AREA_FORM.modo = $p('ar-f-modo').value;
   AREA_FORM.horaInicio = $p('ar-f-ini').value;
   AREA_FORM.horaFin = $p('ar-f-fin').value;
-  AREA_FORM.porTurno = Math.max(1, Number($p('ar-f-porturno').value) || 1);
+  AREA_FORM.cobertura24 = !!$p('ar-f-24').checked;
   AREA_FORM.descanso = !!$p('ar-f-descanso').checked;
   AREA_FORM.semanas = $p('ar-f-semanas') ? $p('ar-f-semanas').value : '1';
   AREA_FORM.desdeProxima = AREA_FORM.semanas === '0';
@@ -34210,7 +34268,8 @@ function guardarArea(){
     nombre: AREA_FORM.nombre, nombreAnterior: AREA_EDIT ? AREA_EDIT.nombre : '',
     modo: AREA_FORM.modo, dias: AREA_FORM.dias.join(','),
     horaInicio: AREA_FORM.horaInicio, horaFin: AREA_FORM.horaFin,
-    turnos: AREA_FORM.turnos, porTurno: AREA_FORM.porTurno, descanso: AREA_FORM.descanso,
+    turnos: AREA_FORM.turnos, cobertura24: AREA_FORM.cobertura24, descanso: AREA_FORM.descanso,
+    inicial: AREA_FORM.inicial, semanaBase: AREA_FORM.semanas === '0' ? sumarDias(lunesDe(''), 7) : lunesDe(''),
     personas: AREA_FORM.personas };
   if(FOTO_AREA) cuerpo.foto = FOTO_AREA;
   var nombre = AREA_FORM.nombre, modo = AREA_FORM.modo, cuantas = AREA_FORM.semanas;
@@ -34564,15 +34623,17 @@ function engancharAreas(){
   $p('ar-f-guardar').onclick = guardarArea;
   $p('per-area-modal').addEventListener('click', function(ev){ if(ev.target === $p('per-area-modal')) cerrarArea(); });
   $p('ar-f-modo').onchange = function(){ AREA_FORM.modo = this.value; pintarModo(); };
+  $p('ar-f-24').onchange = function(){ AREA_FORM.cobertura24 = this.checked; pintarModo(); pintarDias(); };
   $p('ar-f-preset').onchange = function(){
     if(this.value === 'libre') return;
-    AREA_FORM.turnos = PRESETS_TURNO[this.value].map(function(t){ return { nombre:t.nombre, inicio:t.inicio, fin:t.fin }; });
-    pintarTurnos();
+    AREA_FORM.turnos = PRESETS_TURNO[this.value].map(function(t){ return { nombre:t.nombre, inicio:t.inicio, fin:t.fin, dias:'' }; });
+    AREA_FORM.inicial = {};
+    pintarTurnos(); pintarInicial();
   };
   $p('ar-f-masturno').onclick = function(){
-    AREA_FORM.turnos.push({ nombre:'Turno ' + (AREA_FORM.turnos.length + 1), inicio:'06:00', fin:'14:00' });
+    AREA_FORM.turnos.push({ nombre:'Turno ' + (AREA_FORM.turnos.length + 1), inicio:'06:00', fin:'14:00', dias:'' });
     $p('ar-f-preset').value = 'libre';
-    pintarTurnos();
+    pintarTurnos(); pintarInicial();
   };
   $p('ar-f-buscar').oninput = pintarGenteArea;
   $p('ar-f-ver').onclick = verCuadro;
