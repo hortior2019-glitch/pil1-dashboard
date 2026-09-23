@@ -6177,17 +6177,9 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 
   <div class="per-barra">
     <input type="search" id="per-buscar" placeholder="Buscar por nombre, cargo o área">
-    <select id="per-area"><option value="">Todas las áreas</option></select>
+    <select id="per-cargo"><option value="">Todos los cargos</option></select>
     <label class="per-chk"><input type="checkbox" id="per-inactivos"> Ver inactivos</label>
     <button type="button" class="per-btn fuerte" id="per-nuevo">+ Nuevo</button>
-    <button type="button" class="per-btn" id="per-refrescar">Actualizar</button>
-  </div>
-
-  <div class="kpi-grid" style="margin:0 0 18px">
-    <div class="kpi-box"><div class="kpi-lbl">Personas</div><div class="kpi-val" id="per-k-total">—</div><div class="kpi-desc">en la hoja</div></div>
-    <div class="kpi-box"><div class="kpi-lbl">Activas</div><div class="kpi-val" id="per-k-activos">—</div><div class="kpi-desc">trabajando hoy</div></div>
-    <div class="kpi-box"><div class="kpi-lbl">Con área</div><div class="kpi-val" id="per-k-area">—</div><div class="kpi-desc">ubicadas en el plano</div></div>
-    <div class="kpi-box"><div class="kpi-lbl">Con foto</div><div class="kpi-val" id="per-k-foto">—</div><div class="kpi-desc">para reconocerlas</div></div>
   </div>
 
   <div class="per-aviso" id="per-aviso"></div>
@@ -6206,7 +6198,9 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <input type="text" id="per-f-cedula" maxlength="20" inputmode="numeric" placeholder="Sirve si hay dos personas con el mismo nombre">
 
     <label>Cargo (opcional)</label>
-    <input type="text" id="per-f-cargo" maxlength="60" placeholder="Operario, supervisor, conductor…">
+    <input type="text" id="per-f-cargo" maxlength="60" list="per-cargos" placeholder="Operario, supervisor, conductor…">
+    <datalist id="per-cargos"></datalist>
+    <div class="per-ayuda">Lo que se escriba queda disponible para el siguiente.</div>
 
     <label>Área donde se desempeña (opcional)</label>
     <input type="text" id="per-f-area" maxlength="60" list="per-areas" placeholder="Un área del plano">
@@ -18279,6 +18273,9 @@ function applyState(d){
   if(d.items) DB.items = d.items;
   if(d.receptores) DB.receptores = d.receptores;
   if(d.inventario) DB.inventario = d.inventario;
+  /* Dónde está repartido cada artículo (un mismo equipo puede estar en dos
+     lugares). Viene como lista: invId, lugar y cuántos hay ahí. */
+  if(d.ubicaciones) DB.ubicaciones = d.ubicaciones;
   if(d.movimientos) DB.movimientos = d.movimientos;
 }
 async function loadAll(){
@@ -18323,7 +18320,7 @@ const DB = {
     {nombre:'Laura Díaz',cargo:'Auxiliar de bodega'},
     {nombre:'Miguel Soto',cargo:'Jefe de planta'},
   ],
-  items:[], inventario:[], movimientos:[], auditoria:[], seq:0
+  items:[], inventario:[], ubicaciones:[], ubicacionesPedidas:false, movimientos:[], auditoria:[], seq:0
 };
 
 function uid(p){ DB.seq++; return p+String(1000+DB.seq).slice(1); }
@@ -18395,6 +18392,35 @@ const API = {
   items:()=>DB.items.slice(),
   receptores:()=>DB.receptores.slice(),
   inventario:()=>DB.inventario.slice(),
+  ubicaciones:()=>DB.ubicaciones.slice(),
+  /* El reparto por lugares se pide APARTE, cuando la lista de la bodega ya
+     está en pantalla: es una hoja más y la lista no tiene por qué esperarla.
+     Se pide una sola vez por sesión (y de nuevo cuando alguien lo cambia). */
+  traerUbicaciones: async ()=>{
+    if(MODO!=='remoto' || DB.ubicacionesPedidas) return DB.ubicaciones;
+    DB.ubicacionesPedidas = true;
+    try{
+      const r = await remote('ubicaciones', {});
+      if(r && r.ubicaciones){ DB.ubicaciones = r.ubicaciones; render(); }
+    }catch(e){ DB.ubicacionesPedidas = false; }
+    return DB.ubicaciones;
+  },
+  guardarUbicaciones: async (invId, lista)=>{
+    if(MODO==='remoto'){
+      await saveChain;
+      const r = await remote('guardarUbicaciones',{ invId, lista, responsable:(session&&session.nombre)||'' });
+      if(!r || r.ok===false) throw new Error((r&&r.error) || 'No se pudo guardar el reparto');
+      applyState(r);
+    }
+    DB.ubicaciones = DB.ubicaciones.filter(u => String(u.invId) !== String(invId));
+    const inv = DB.inventario.find(x => String(x.id) === String(invId));
+    lista.forEach(l => DB.ubicaciones.push({ invId, item: inv ? inv.item : '', ubicacion: l.ubicacion, cantidad: l.cantidad }));
+    if(inv && lista.length){
+      const mayor = lista.slice().sort((a,b)=>b.cantidad-a.cantidad)[0];
+      inv.ubicacion = lista.length === 1 ? lista[0].ubicacion : mayor.ubicacion;
+    }
+    return true;
+  },
   movimientos:()=>DB.movimientos.slice(),
 
   newItem: async (d)=>{
@@ -18641,7 +18667,12 @@ function render(){
     else if(activeTab==='gerente') v.innerHTML=viewQueue('gerente');
     else if(activeTab==='conta') v.innerHTML=viewQueue('conta');
     else if(activeTab==='almacen') v.innerHTML=viewQueue('almacen');
-    else if(activeTab==='inventario') v.innerHTML=viewInventario();
+    else if(activeTab==='inventario'){
+      v.innerHTML=viewInventario();
+      /* Ya se ve la lista: recién ahora se pregunta dónde está repartido
+         cada artículo, para no demorar lo que de verdad importa. */
+      setTimeout(function(){ try{ API.traerUbicaciones(); }catch(e){} }, 0);
+    }
     bindView();
     cscFotosPerezosas();
     v.style.transition='opacity .18s'; v.style.opacity='1';
@@ -18863,7 +18894,7 @@ function viewInventario(){
           <div style="min-width:0">
             <button type="button" class="act inv-traza" data-a="invkpi" data-id="${i.id}"
               title="Ver cómo se movió este artículo en el mes">${esc(i.item)}</button>
-            <div class="help">${esc(i.ubicacion)}</div></div>
+            ${ubicacionesHtml(i)}</div>
         </div>
       </td>
       <td>${catTag(i.categoria)}</td>
@@ -18876,6 +18907,7 @@ function viewInventario(){
         ${i.stock>0
           ?`<button class="btn btn-ghost btn-sm act" data-a="invout" data-id="${i.id}">Registrar salida</button>`
           :`<button class="btn btn-ghost btn-sm" disabled style="opacity:.4;cursor:not-allowed" title="Sin stock disponible">Sin stock</button>`}
+        <button class="btn btn-ghost btn-sm act" data-a="invubi" data-id="${i.id}" title="Decir en qué lugares está y cuántos hay en cada uno">Ubicaciones</button>
         <button class="btn btn-ghost btn-sm act" data-a="investado" data-id="${i.id}" title="Cambiar el estado del equipo">Estado</button>
         <button class="btn btn-ghost btn-sm act" data-a="invedit" data-id="${i.id}" title="Corregir los datos de este artículo">Editar</button>
         <button class="btn btn-ghost btn-sm act" data-a="invdel" data-id="${i.id}" title="Sacar este artículo del inventario" style="color:#b23b3b">Eliminar</button></td>`:''}
@@ -18891,6 +18923,22 @@ function viewInventario(){
       #${CSC_MOUNT} .inv-traza{background:none;border:0;padding:0;font:700 14px 'Source Sans 3',sans-serif;
         color:var(--csc-ink,#1f2a24);cursor:pointer;text-align:left;line-height:1.25}
       #${CSC_MOUNT} .inv-traza:hover{color:#1c5636;text-decoration:underline}
+      /* Donde esta guardado el articulo: antes iba en gris chiquito
+         debajo del nombre y se perdia. */
+      .csc-root .inv-ubi{display:inline-block;margin-top:4px;padding:2px 8px;border-radius:10px;
+        background:#eef4fb;color:#1d4e89;font-size:11px;font-weight:700}
+      .csc-root .inv-ubi.sin{background:#fdf3e3;color:#8a6d1f}
+      .csc-root .inv-ubis{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
+      .csc-root .inv-ubis .inv-ubi{margin-top:0}
+      .csc-root .u-fila{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+      .csc-root .u-fila .u-lugar{flex:1;min-width:0;padding:9px 10px;font-size:13px;border:1px solid var(--csc-line);
+        background:var(--csc-bg,#f4f6f4);font-family:'Source Sans 3',sans-serif}
+      .csc-root .u-fila .u-cant{width:92px;padding:9px 10px;font-size:13px;border:1px solid var(--csc-line);
+        background:var(--csc-bg,#f4f6f4);font-family:'Source Sans 3',sans-serif;text-align:right}
+      .csc-root .u-fila .u-quitar{width:32px;height:32px;border:1px solid var(--csc-line);background:var(--csc-paper,#fff);
+        color:#b23b3b;cursor:pointer;font-size:16px;line-height:1}
+      .csc-root .mv-ubi{margin-top:10px;font-size:12.5px;color:var(--csc-ink-m,#54605a)}
+      .csc-root .mv-ubi .donde{font-weight:700;color:#1d4e89}
       /* La ficha de movimiento de un articulo */
       .csc-root .mv-graf{margin-top:16px}
       .csc-root .mv-graf h4{margin:0 0 2px;font-size:13px;font-weight:700;color:var(--csc-ink,#1f2a24)}
@@ -19007,7 +19055,12 @@ function cscSuma(movs, anio, mes, signo){
 /* La gráfica: misma letra, mismas guías y los mismos puntos con borde
    blanco que la comparativa de Ingreso de Material. La línea punteada es
    el mes pasado. */
-function cscGrafica(canvasId, serieA, serieB, labels, colorA, colorB){
+/* 'modo' dice dónde va un punto:
+     'cambios'   — solo cuando el valor cambió (más el primero y el último).
+                   Un artículo que estuvo todo el mes igual queda con dos
+                   puntos y una línea recta, que es exactamente lo que pasó.
+     'positivos' — solo los días con movimiento (para salidas por día). */
+function cscGrafica(canvasId, serieA, serieB, labels, colorA, colorB, modo){
   var canvas = document.getElementById(canvasId);
   if(!canvas) return;
   var W = (canvas.parentElement && canvas.parentElement.offsetWidth) || 480, H = 180;
@@ -19029,6 +19082,10 @@ function cscGrafica(canvasId, serieA, serieB, labels, colorA, colorB){
     ctx.fillText(Math.round(maxY * i / guias).toLocaleString('es-CO'), pad.left - 5, y + 3);
   }
 
+  var vaPunto = function(vals, v, i){
+    if(modo === 'positivos') return v > 0;
+    return i === 0 || i === vals.length - 1 || v !== vals[i - 1];
+  };
   var linea = function(vals, color, punteada, radio){
     if(!vals.length) return;
     ctx.save();
@@ -19042,6 +19099,7 @@ function cscGrafica(canvasId, serieA, serieB, labels, colorA, colorB){
     ctx.stroke();
     ctx.setLineDash([]);
     vals.forEach(function(v, i){
+      if(!vaPunto(vals, v, i)) return;
       var x = pad.left + i * step, y = pad.top + cH * (1 - v / maxY);
       ctx.beginPath(); ctx.arc(x, y, radio, 0, Math.PI * 2);
       ctx.fillStyle = color; ctx.fill();
@@ -19098,6 +19156,17 @@ function openInvKpi(inv){
                    .sort(function(a,b){ return b.d - a.d; });
   var u = esc(inv.unidad || '');
   var verde = '#1c5636', ocre = '#b8891f';
+  /* Si la ubicación es el nombre de un área del plano, se dice: así se
+     sabe que ese artículo aparece en el Mapa de Planta. */
+  var enPlano = false;
+  try {
+    enPlano = (typeof window.mapaZonas === 'function') &&
+      window.mapaZonas().some(function(z){ return z.nombre === inv.ubicacion; });
+  } catch(e) {}
+  var repartos = ubicacionesDe(inv);
+  var sinUbicar = repartos.length
+    ? Math.max(0, (Number(inv.stock) || 0) - repartos.reduce(function(a,r){ return a + r.cantidad; }, 0))
+    : 0;
 
   modal('<div class="modal-head"><button class="modal-close" data-close>×</button>' +
       '<h3>' + esc(inv.item) + '</h3>' +
@@ -19109,6 +19178,12 @@ function openInvKpi(inv){
         '<div class="kpi"><div class="l">Salió en el mes</div><div class="v gold">' + salidas.toLocaleString('es-CO') + '</div></div>' +
         '<div class="kpi"><div class="l">Saldo del mes</div><div class="v">' + (neto > 0 ? '+' : '') + neto.toLocaleString('es-CO') + '</div></div>' +
       '</div>' +
+      '<div class="mv-ubi">📍 Dónde está: ' +
+        (repartos.length
+          ? repartos.map(function(r){ return '<span class="donde">' + esc(r.ubicacion) + ' (' + r.cantidad.toLocaleString('es-CO') + ')</span>'; }).join(' · ')
+          : '<span class="donde">' + esc(inv.ubicacion || 'sin ubicar') + '</span>') +
+        (sinUbicar > 0 ? ' · sin ubicar: ' + sinUbicar.toLocaleString('es-CO') : '') +
+        (enPlano && !repartos.length ? ' · es un área del plano, así que también se ve en el Mapa de Planta' : '') + '</div>' +
       '<div class="note" style="margin-top:10px;font-size:12px">' +
         'En ' + MESES_MV[mes] + ' el artículo ' + cscFlecha(neto) + ' ' + Math.abs(neto).toLocaleString('es-CO') + ' ' + u + '. ' +
         'El mes pasado el saldo fue de ' + (netoP > 0 ? '+' : '') + netoP.toLocaleString('es-CO') + ' ' + u + '.<br>' +
@@ -19117,6 +19192,7 @@ function openInvKpi(inv){
       '</div>' +
 
       '<div class="mv-graf"><h4>Existencias día a día</h4>' +
+        '<div class="help" style="margin:0 0 4px">Cada punto es un cambio; entre punto y punto no se movió.</div>' +
         '<div class="mv-leg"><span><i style="background:' + verde + '"></i>' + MESES_MV[mes] + '</span>' +
         '<span><i style="background:' + ocre + '"></i>' + MESES_MV[mesP] + '</span></div>' +
         '<canvas id="mv-canvas-stock"></canvas></div>' +
@@ -19142,9 +19218,121 @@ function openInvKpi(inv){
 
   /* Se dibujan después de que el modal ya tiene ancho. */
   setTimeout(function(){
-    cscGrafica('mv-canvas-stock', serieA, serieB, labels, verde, ocre);
-    cscGrafica('mv-canvas-salidas', salA, salB, labels, verde, ocre);
+    cscGrafica('mv-canvas-stock', serieA, serieB, labels, verde, ocre, 'cambios');
+    cscGrafica('mv-canvas-salidas', salA, salB, labels, verde, ocre, 'positivos');
   }, 30);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   EN QUÉ LUGARES ESTÁ Y CUÁNTOS HAY EN CADA UNO
+   ------------------------------------------------------------------
+   El stock dice cuántos hay; esto dice dónde. Un mismo equipo puede
+   estar repartido: dos guadañas en el taller y una en el lombricultivo.
+   Sin esto, "3 guadañas" no le sirve a quien tiene que ir a buscar una.
+
+   Si un artículo no tiene reparto se muestra su ubicación de siempre,
+   así que nada de lo anterior deja de verse.
+   ══════════════════════════════════════════════════════════════════ */
+function ubicacionesDe(inv){
+  return API.ubicaciones().filter(function(u){ return String(u.invId) === String(inv.id) && u.cantidad > 0; })
+                          .sort(function(a,b){ return b.cantidad - a.cantidad; });
+}
+function ubicacionesHtml(inv){
+  var us = ubicacionesDe(inv);
+  if(!us.length){
+    var sola = inv.ubicacion && inv.ubicacion !== 'Por asignar';
+    return '<div class="inv-ubi' + (sola ? '' : ' sin') + '" title="Dónde está guardado">📍 ' +
+           esc(sola ? inv.ubicacion : 'Sin ubicar') + '</div>';
+  }
+  var total = us.reduce(function(a,u){ return a + u.cantidad; }, 0);
+  var falta = (Number(inv.stock) || 0) - total;
+  return '<div class="inv-ubis">' + us.map(function(u){
+      return '<span class="inv-ubi" title="' + esc(u.ubicacion) + '">📍 ' + esc(u.ubicacion) +
+             ' <b>' + u.cantidad.toLocaleString('es-CO') + '</b></span>';
+    }).join('') +
+    (falta > 0 ? '<span class="inv-ubi sin" title="Todavía no se dijo dónde están">sin ubicar <b>' +
+                 falta.toLocaleString('es-CO') + '</b></span>' : '') + '</div>';
+}
+
+/* Los lugares que se pueden elegir: las áreas del plano más los lugares
+   que ya se estén usando (una bodega que no está en el mapa, por ejemplo). */
+function lugaresSugeridos(){
+  var l = [];
+  try { (window.mapaZonas ? window.mapaZonas() : []).forEach(function(z){ if(z.nombre) l.push(z.nombre); }); } catch(e){}
+  API.ubicaciones().forEach(function(u){ if(u.ubicacion && l.indexOf(u.ubicacion) < 0) l.push(u.ubicacion); });
+  API.inventario().forEach(function(i){
+    if(i.ubicacion && i.ubicacion !== 'Por asignar' && i.ubicacion !== 'Varios lugares' && l.indexOf(i.ubicacion) < 0) l.push(i.ubicacion);
+  });
+  return l.sort();
+}
+
+function openInvUbicaciones(inv){
+  if(!inv) return;
+  var filas = ubicacionesDe(inv).map(function(u){ return { ubicacion: u.ubicacion, cantidad: u.cantidad }; });
+  if(!filas.length){
+    filas = [{ ubicacion: (inv.ubicacion && inv.ubicacion !== 'Por asignar' && inv.ubicacion !== 'Varios lugares') ? inv.ubicacion : '',
+               cantidad: Number(inv.stock) || 0 }];
+  }
+  var lugares = lugaresSugeridos();
+
+  modal('<div class="modal-head"><button class="modal-close" data-close>×</button>' +
+      '<h3>Dónde está</h3><p>' + esc(inv.item) + ' · ' + (Number(inv.stock) || 0).toLocaleString('es-CO') + ' ' + esc(inv.unidad || '') + ' en total</p></div>' +
+    '<div class="modal-body">' +
+      '<div class="help">Un mismo artículo puede estar en varios lugares. Escriba cuántos hay en cada uno; ' +
+        'lo que no se reparta queda como “sin ubicar”.</div>' +
+      '<datalist id="u-lugares">' + lugares.map(function(l){ return '<option value="' + esc(l) + '">'; }).join('') + '</datalist>' +
+      '<div id="u-filas" style="margin-top:12px"></div>' +
+      '<button type="button" class="btn btn-ghost btn-sm" id="u-mas" style="margin-top:8px">+ Otro lugar</button>' +
+      '<div class="note" id="u-total" style="margin-top:12px;font-size:12px"></div>' +
+    '</div>' +
+    '<div class="modal-foot"><button class="btn btn-ghost" data-close>Cancelar</button>' +
+      '<button class="btn btn-primary" id="u-do">Guardar</button></div>');
+
+  var pintarFilas = function(){
+    document.getElementById('u-filas').innerHTML = filas.map(function(f, k){
+      return '<div class="u-fila" data-k="' + k + '">' +
+        '<input type="text" class="u-lugar" list="u-lugares" placeholder="Lugar (área del plano o bodega)" value="' + esc(f.ubicacion) + '">' +
+        '<input type="number" class="u-cant" min="0" step="1" placeholder="0" value="' + (f.cantidad || '') + '">' +
+        '<button type="button" class="u-quitar" title="Quitar este lugar">×</button></div>';
+    }).join('');
+    var cont = document.getElementById('u-filas');
+    cont.querySelectorAll('.u-fila').forEach(function(d){
+      var k = +d.dataset.k;
+      d.querySelector('.u-lugar').oninput = function(){ filas[k].ubicacion = this.value; };
+      d.querySelector('.u-cant').oninput  = function(){ filas[k].cantidad = Number(this.value) || 0; totalizar(); };
+      d.querySelector('.u-quitar').onclick = function(){ filas.splice(k, 1); pintarFilas(); };
+    });
+    totalizar();
+  };
+  var totalizar = function(){
+    var total = filas.reduce(function(a,f){ return a + (Number(f.cantidad) || 0); }, 0);
+    var stock = Number(inv.stock) || 0;
+    var falta = stock - total;
+    var t = document.getElementById('u-total');
+    t.innerHTML = 'Repartido: <b>' + total.toLocaleString('es-CO') + '</b> de ' + stock.toLocaleString('es-CO') + ' ' + esc(inv.unidad || '') +
+      (falta > 0 ? ' · quedan <b>' + falta.toLocaleString('es-CO') + '</b> sin ubicar'
+                 : (falta < 0 ? ' · <b style="color:#b23b3b">se pasó por ' + Math.abs(falta).toLocaleString('es-CO') + '</b>' : ' · todo ubicado'));
+  };
+  pintarFilas();
+  document.getElementById('u-mas').onclick = function(){ filas.push({ ubicacion:'', cantidad:0 }); pintarFilas(); };
+
+  document.getElementById('u-do').onclick = async function(){
+    var limpias = filas.filter(function(f){ return String(f.ubicacion).trim() && Number(f.cantidad) > 0; })
+                       .map(function(f){ return { ubicacion: String(f.ubicacion).trim(), cantidad: Number(f.cantidad) }; });
+    var total = limpias.reduce(function(a,f){ return a + f.cantidad; }, 0);
+    if(total > (Number(inv.stock) || 0)){
+      toast('El reparto suma más de lo que hay en bodega', 'red'); return;
+    }
+    var b = this; b.disabled = true; b.textContent = 'Guardando…';
+    try{
+      await API.guardarUbicaciones(inv.id, limpias);
+      closeModal(); toast('Ubicaciones guardadas'); refresh();
+      try { if(window.mapaPersonalActualizar) window.mapaPersonalActualizar(); } catch(e){}
+    }catch(e){
+      b.disabled = false; b.textContent = 'Guardar';
+      toast(e.message || 'No se pudo guardar', 'red');
+    }
+  };
 }
 
 function findItem(id){ return API.items().find(x=>x.id===id); }
@@ -19171,6 +19359,7 @@ async function handleAction(a,id){
     case 'investado': openInvEstado(findInv(id)); break;
     case 'invdel':  openInvDel(findInv(id)); break;
     case 'invkpi':  openInvKpi(findInv(id)); break;
+    case 'invubi':  openInvUbicaciones(findInv(id)); break;
   }
 }
 function refresh(){ render(); }
@@ -20026,6 +20215,9 @@ window.cscReintentar = async function(){
    archivos, que es como terminan desincronizadas. */
 window.__cscUrl = BACKEND_URL;
 window.cscInventario = function(){ try { return DB.inventario.slice(); } catch(e){ return []; } };
+/* En qué lugares está repartido cada artículo y cuántos hay en cada uno.
+   Lo usa el Mapa de Planta para mostrar la cantidad que hay en cada área. */
+window.cscUbicaciones = function(){ try { return DB.ubicaciones.slice(); } catch(e){ return []; } };
 window.cscRefrescarInventario = function(estado){
   try { if (estado && estado.inventario) { DB.inventario = estado.inventario; render(); } } catch(e){}
 };
@@ -28009,7 +28201,32 @@ window.mapaZonas = function(){
 
 function itemsEn(nombreZona){
   try{
-    return inventario().filter(function(i){ return (i.ubicacion||'') === nombreZona; });
+    var inv = inventario();
+    var repartos = [];
+    try{ repartos = (typeof window.cscUbicaciones === 'function') ? window.cscUbicaciones() : []; }catch(e){}
+    if(!repartos.length) return inv.filter(function(i){ return (i.ubicacion||'') === nombreZona; });
+
+    /* Con reparto, un mismo artículo puede estar en dos áreas: acá se
+       muestra SOLO lo que hay en esta, no el total de la bodega. */
+    var tieneReparto = {};
+    repartos.forEach(function(u){ if(u.cantidad > 0) tieneReparto[String(u.invId)] = true; });
+
+    var salida = repartos.filter(function(u){ return (u.ubicacion||'') === nombreZona && u.cantidad > 0; })
+      .map(function(u){
+        var i = null;
+        for(var k = 0; k < inv.length; k++) if(String(inv[k].id) === String(u.invId)) { i = inv[k]; break; }
+        var base = i ? JSON.parse(JSON.stringify(i)) : { id:u.invId, item:u.item, unidad:'', foto:'' };
+        base.stock = u.cantidad;
+        base.aca = true;                 /* la cantidad es la de esta área */
+        return base;
+      });
+
+    /* Los artículos sin reparto siguen contándose por su ubicación de
+       siempre: nada de lo que ya estaba deja de verse. */
+    inv.forEach(function(i){
+      if(!tieneReparto[String(i.id)] && (i.ubicacion||'') === nombreZona) salida.push(i);
+    });
+    return salida;
   }catch(e){ return []; }
 }
 
@@ -28828,7 +29045,8 @@ function verZona(){
       ? its.map(function(i){
           return '<div class="inv-fila">' + cajaFoto(i.foto, 'inv-foto', i.item) +
                  '<div class="inv-d"><b>' + esc(i.item) + '</b>' +
-                 '<span>' + esc(String(i.stock)) + ' ' + esc(i.unidad || '') + '</span></div></div>';
+                 '<span>' + esc(String(i.stock)) + ' ' + esc(i.unidad || '') +
+                 (i.aca ? ' acá' : '') + '</span></div></div>';
         }).join('')
       : '<div class="mapa-linea" style="color:var(--ink-l)">Ninguno asignado todavía.</div>';
   h += '</div>';
@@ -33058,7 +33276,7 @@ var PERSONAL_API = 'https://script.google.com/macros/s/AKfycbwfBXyi8vonQNA6DOEii
 var CLAVE_LOCAL = 'horti_personal_v1';
 var FOTO_LADO = 640, FOTO_CALIDAD = 0.8;
 
-var P = { gente: [], asignaciones: [], cargado: false, cargando: false, fallo: '', cuando: 0 };
+var P = { gente: [], asignaciones: [], cargado: false, cargando: false, fallo: '', vacio: false, cuando: 0 };
 var EDITANDO = null;      /* la persona que se está editando (null = nueva) */
 var FOTO_NUEVA = '';      /* la foto elegida en el formulario, ya reducida */
 
@@ -33102,7 +33320,19 @@ function cargar(forzar){
   if(P.cargado && !forzar) return Promise.resolve(P.gente);
   P.cargando = true; P.fallo = '';
   return pedir({ accion:'perDatos' }).then(function(d){
-    P.gente = d.personas || [];
+    var traidos = d.personas || [];
+    /* UNA RESPUESTA VACIA NO BORRA LA LISTA. Si el servicio contesta sin
+       gente teniendo nosotros gente guardada, es un tropiezo suyo (la hoja
+       todavia no se leyo, el proyecto quedo con otro codigo). Antes eso
+       dejaba la pestaña en blanco Y pisaba lo guardado en el equipo, asi
+       que ya no habia de donde recuperarlo. */
+    if(!traidos.length && P.gente.length){
+      P.vacio = true;
+      P.cargado = true;
+      return P.gente;
+    }
+    P.vacio = false;
+    P.gente = traidos;
     P.asignaciones = d.asignaciones || [];
     P.cargado = true; P.cuando = Date.now();
     guardarLocal();
@@ -33156,10 +33386,22 @@ window.personalAsignar = function(actId, claves){
   });
 };
 window.personalCargar = cargar;
+/* ── CUÁNDO SE PONE AL DÍA ─────────────────────────────────────────
+   Sin botón: al entrar a la pestaña, y de nuevo si pasaron más de dos
+   minutos desde la última vez (al volver a la pestaña o a la ventana).
+   Forzarlo a mano no es práctico y casi siempre trae lo mismo. */
+var PER_FRESCO_MS = 120000;
 window.personalActivar = function(){
   pintar();
-  cargar(false);
+  if(!P.cargado || Date.now() - P.cuando > PER_FRESCO_MS){ P.cargado = false; cargar(true); }
 };
+document.addEventListener('visibilitychange', function(){
+  if(document.hidden) return;
+  var panel = $p('panel-personal');
+  if(panel && panel.classList.contains('active') && Date.now() - P.cuando > PER_FRESCO_MS){
+    P.cargado = false; cargar(true);
+  }
+});
 
 /* ── LA FOTO: se achica en el celular antes de mandarla ───────────── */
 function reducirFoto(file){
@@ -33210,29 +33452,48 @@ function areasDelPlano(){
   return nombres.sort();
 }
 
+/* Los cargos que ya se usaron. No hay lista fija: lo que se escriba queda
+   disponible para el que venga después. */
+function cargosUsados(){
+  var c = [];
+  P.gente.forEach(function(p){ if(p.cargo && c.indexOf(p.cargo) < 0) c.push(p.cargo); });
+  return c.sort();
+}
+
 function pintar(){
   var grid = $p('per-grid');
   if(!grid) return;
   var q = ($p('per-buscar') || {}).value || '';
-  var area = ($p('per-area') || {}).value || '';
+  var cargo = ($p('per-cargo') || {}).value || '';
   var verInactivos = !!(($p('per-inactivos') || {}).checked);
   q = q.trim().toLowerCase();
 
-  /* El menú de áreas y la lista sugerida del formulario */
-  var areas = areasDelPlano();
-  var sel = $p('per-area');
-  if(sel && sel.dataset.n !== String(areas.length)){
-    sel.innerHTML = '<option value="">Todas las áreas</option>' +
-      areas.map(function(a){ return '<option value="' + esc(a) + '">' + esc(a) + '</option>'; }).join('');
-    sel.value = area;
-    sel.dataset.n = String(areas.length);
+  /* El menú es de CARGOS: las áreas del plano dicen dónde trabaja alguien,
+     no qué hace, y buscar gente se hace por el cargo. Los cargos salen de
+     los que ya están escritos, así que la lista crece sola. */
+  var cargos = cargosUsados();
+  var sel = $p('per-cargo');
+  if(sel && sel.dataset.n !== String(cargos.length)){
+    sel.innerHTML = '<option value="">Todos los cargos</option>' +
+      cargos.map(function(c){ return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join('');
+    sel.value = cargo;
+    sel.dataset.n = String(cargos.length);
   }
+  /* Las dos listas sugeridas del formulario: cargos y áreas del plano. */
   var dl = $p('per-areas');
-  if(dl) dl.innerHTML = areas.map(function(a){ return '<option value="' + esc(a) + '">'; }).join('');
+  if(dl){
+    var areas = areasDelPlano();
+    if(dl.dataset.n !== String(areas.length)){
+      dl.innerHTML = areas.map(function(a){ return '<option value="' + esc(a) + '">'; }).join('');
+      dl.dataset.n = String(areas.length);
+    }
+  }
+  var dc = $p('per-cargos');
+  if(dc) dc.innerHTML = cargos.map(function(c){ return '<option value="' + esc(c) + '">'; }).join('');
 
   var lista = P.gente.filter(function(p){
     if(!verInactivos && p.activo === false) return false;
-    if(area && String(p.area || '') !== area) return false;
+    if(cargo && String(p.cargo || '') !== cargo) return false;
     if(q){
       var t = (p.nombre + ' ' + (p.cargo || '') + ' ' + (p.area || '') + ' ' + (p.cedula || '')).toLowerCase();
       if(t.indexOf(q) < 0) return false;
@@ -33240,25 +33501,16 @@ function pintar(){
     return true;
   }).sort(function(a, b){ return String(a.nombre).localeCompare(String(b.nombre), 'es'); });
 
-  $p('per-k-total').textContent   = P.gente.length || '—';
-  $p('per-k-activos').textContent = P.gente.filter(function(p){ return p.activo !== false; }).length || '—';
-  $p('per-k-area').textContent    = P.gente.filter(function(p){ return !!p.area; }).length || '—';
-  $p('per-k-foto').textContent    = P.gente.filter(function(p){ return !!p.foto; }).length || '—';
-
+  /* El único aviso que vale la pena es el que dice que algo NO se pudo
+     traer. "Al día · tal hora" no le sirve a nadie: si está al día, se ve. */
   var aviso = $p('per-aviso');
   if(aviso){
-    aviso.textContent = P.cargando ? 'Trayendo la lista…'
-      : P.fallo ? ('No se pudo traer la lista del servidor (' + P.fallo + '). Se muestra lo último guardado en este equipo.')
-      : (P.cuando ? 'Al día · ' + new Date(P.cuando).toLocaleString('es-CO', { dateStyle:'short', timeStyle:'short' }) : '');
+    aviso.textContent = P.fallo
+      ? 'No se pudo traer la lista del servidor (' + P.fallo + '). Se muestra lo último guardado en este equipo.'
+      : (P.vacio ? 'El servicio contestó sin nadie: se muestra lo último guardado en este equipo.' : '');
   }
 
-  if(!lista.length){
-    grid.innerHTML = '<div class="per-vacio">' +
-      (P.gente.length ? 'Nadie coincide con la búsqueda.'
-                      : 'Todavía no hay nadie. Se agrega con “+ Nuevo”, o escribiendo el nombre en la hoja de Personal.') +
-      '</div>';
-    return;
-  }
+  if(!lista.length){ grid.innerHTML = ''; return; }
 
   grid.innerHTML = lista.map(function(p){
     var nAct = P.asignaciones.filter(function(a){ return a.persona === p.clave; }).length;
@@ -33344,12 +33596,11 @@ function guardarFormulario(){
 
 function engancharPantalla(){
   if(!$p('per-grid')) return;
-  ['per-buscar','per-area','per-inactivos'].forEach(function(id){
+  ['per-buscar','per-cargo','per-inactivos'].forEach(function(id){
     var e = $p(id);
     if(e) e.oninput = e.onchange = pintar;
   });
   $p('per-nuevo').onclick = function(){ abrirFormulario(null); };
-  $p('per-refrescar').onclick = function(){ P.cargado = false; cargar(true); pintar(); };
   $p('per-f-cancelar').onclick = cerrarFormulario;
   $p('per-f-guardar').onclick = guardarFormulario;
   $p('per-modal').addEventListener('click', function(ev){ if(ev.target === $p('per-modal')) cerrarFormulario(); });
