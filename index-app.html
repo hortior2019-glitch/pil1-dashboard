@@ -6358,6 +6358,22 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 }
 #per-turno-modal .tn-extra .op button.quitar:hover{background:#b23b3b;border-color:#b23b3b;color:#fff}
 #per-turno-modal .tn-extra .pie{font-size:11.5px;color:var(--ink-l);margin-top:12px;line-height:1.45}
+/* Lo que ya está anotado de ese día */
+#per-turno-modal .tn-extra .ex-estado{
+  padding:9px 12px;margin-bottom:12px;border-left:3px solid var(--gold,#b8891f);background:#fdf8ee;
+}
+#per-turno-modal .tn-extra .ex-estado.ok{border-left-color:#1c5636;background:#eef4f0}
+#per-turno-modal .tn-extra .ex-estado b{display:block;font-size:13.5px;color:var(--ink)}
+#per-turno-modal .tn-extra .ex-estado span{font-size:11.5px;color:var(--ink-l)}
+#per-turno-modal .tn-extra .ex-lb{
+  display:block;margin:0 0 6px;font-size:10px;font-weight:700;letter-spacing:.9px;
+  text-transform:uppercase;color:var(--ink-l);
+}
+#per-turno-modal .tn-extra .acc button#ex-quitar{color:#b23b3b;border-color:#e6cfcf}
+#per-turno-modal .tn-extra .acc button#ex-quitar:hover{background:#b23b3b;border-color:#b23b3b;color:#fff}
+/* Planeada: la marca va calada; aprobada: llena */
+#panel-personal .tn-dia .c .ex.on.plan{background:repeating-linear-gradient(45deg,var(--gold,#b8891f),var(--gold,#b8891f) 4px,rgba(255,255,255,.55) 4px,rgba(255,255,255,.55) 8px)}
+#panel-personal .tn-personas .cel .esq.plan{opacity:.55}
 /* Los campos del editor, con más aire */
 #per-turno-modal .tn-editor select,#per-turno-modal .tn-editor input[type=time]{
   padding:9px 10px;font-size:13.5px;background:var(--bg);
@@ -34816,19 +34832,27 @@ function adelantarTurnos(){
   if(ADELANTANDO) return;
   var hoy = isoDe(new Date());
   var mes = MES_VIENDO || hoy;
-  var faltan = P.areas.filter(function(a){ return a.modo === 'rotativo'; })
+  /* No se adelanta el área que se está mirando (esa se pide igual) ni se
+     traen más de tres de una: el servicio es uno solo y lo que importa
+     es lo que la persona tiene en pantalla. */
+  var faltan = P.areas.filter(function(a){ return a.modo === 'rotativo' && a.nombre !== AREA_VIENDO; })
     .map(function(a){ return { area: a.nombre, desde: semanasDelCuadro(mes)[0] }; })
-    .filter(function(x){ return !P.turnos[x.area + '|' + x.desde]; });
+    .filter(function(x){ return !P.turnos[x.area + '|' + x.desde]; })
+    .slice(0, 3);
   if(!faltan.length) return;
   ADELANTANDO = true;
   var siguiente = function(){
     var x = faltan.shift();
     if(!x){ ADELANTANDO = false; return; }
+    /* Si en ese momento se está trayendo o armando algo, se espera: no
+       vale la pena pelear por el servicio. */
+    if(ESTADO_TURNOS){ setTimeout(function(){ faltan.unshift(x); siguiente(); }, 1500); return; }
     var lunes = semanasDelCuadro(mes);
     pedir({ accion:'perTurnosRango', area: x.area, desde: x.desde,
             hasta: sumarDias(lunes[lunes.length - 1], 6) })
       .then(function(d){
         P.turnos[x.area + '|' + x.desde] = d.turnos || [];
+        if(d.extras) EXTRAS[x.area] = d.extras;
         guardarLocal();
         /* Si justo se está mirando esa área, se repinta con lo traído. */
         if(AREA_VIENDO === x.area) verMes(x.area, mes);
@@ -35192,7 +35216,10 @@ function guardarArea(){
   var nombre = AREA_FORM.nombre, modo = AREA_FORM.modo, cuantas = AREA_FORM.semanas;
   pedir(cuerpo).then(function(d){
     P.areas = d.areas || P.areas; P.miembros = d.miembros || P.miembros;
-    P.turnos = {};                       /* lo guardado quedó viejo */
+    P.turnos = {}; FRESCO = {};          /* lo guardado quedó viejo */
+    /* Se marca ya como "en camino" para que el adelanto de fondo no la
+       pida al mismo tiempo que se está armando. */
+    if(modo === 'rotativo'){ AREA_VIENDO = nombre; PLANEADAS[nombre] = true; }
     guardarLocal(); cerrarArea(); pintarAreas();
     if(modo !== 'rotativo') return;
     /* Las semanas que se pidieron se arman en segundo plano; la primera
@@ -35200,13 +35227,26 @@ function guardarArea(){
     /* Cuatro semanas planteadas de una vez: la que rige y las tres que
        siguen. Alcanza para organizar el mes sin tener que volver. */
     var lunes = cuantas === '0' ? sumarDias(lunesDe(''), 7) : lunesDe('');
-    /* Las cuatro semanas se plantean en UNA sola llamada: el servicio las
-       arma todas y contesta cuando están. Antes eran cuatro idas y
-       vueltas y, si algo se cortaba, quedaban semanas sin armar. */
-    verMes(nombre, lunes);
+    /* Las cuatro semanas se plantean en UNA sola llamada, y esa misma
+       respuesta ya trae los turnos: con eso se pinta el cuadro. Así el
+       área nueva cuesta una sola ida y vuelta, no tres. */
+    AREA_VIENDO = nombre; MES_VIENDO = lunes; CAL_MES = '';
+    PLANEADAS[nombre] = true;              /* ya se está planteando */
+    soloTurnos(true);
+    ESTADO_TURNOS = 'armando';
+    $p('ar-turnos').innerHTML = cuadroMes(nombre, []);
+    engancharMes();
     pedir({ accion:'perTurnosPlan', area: nombre, desde: lunes, cuantas: 4 }, 120)
-      .then(function(){ if(AREA_VIENDO === nombre) verMes(nombre, MES_VIENDO, true); })
-      .catch(function(e){ alert('El área quedó guardada, pero no se pudieron armar las semanas: ' + (e.message || '')); });
+      .then(function(d){
+        ESTADO_TURNOS = '';
+        guardarTurnos(nombre, d.turnos || [], d.extras || []);
+        if(AREA_VIENDO === nombre) verMes(nombre, MES_VIENDO);
+      })
+      .catch(function(e){
+        ESTADO_TURNOS = 'error:no se pudieron armar las semanas · ' + (e.message || '');
+        PLANEADAS[nombre] = false;
+        if(AREA_VIENDO === nombre) verMes(nombre, MES_VIENDO);
+      });
   }).catch(function(e){
     err.textContent = e.message || 'No se pudo guardar.';
   }).then(function(){ b.disabled = false; b.textContent = 'Guardar'; });
@@ -35276,6 +35316,14 @@ function verMes(area, fecha, forzar){
   /* Lo guardado se pinta ya. Si no hay nada guardado, igual se arma la
      pantalla —con el calendario y las semanas— y arriba dice que se
      están trayendo: nunca se queda un cartel solo esperando. */
+  /* Si el cuadro acaba de llegar del servicio, se pinta y no se pregunta
+     de nuevo: es la misma respuesta. */
+  if(P.turnos[clave] && Date.now() - (FRESCO[clave] || 0) < FRESCO_MS){
+    ESTADO_TURNOS = '';
+    pintarlo(P.turnos[clave]);
+    planearSiFalta(area);
+    return;
+  }
   ESTADO_TURNOS = 'trayendo';
   planearSiFalta(area);
   pintarlo(P.turnos[clave] && !forzar ? P.turnos[clave] : (P.turnos[clave] || []));
@@ -35283,6 +35331,8 @@ function verMes(area, fecha, forzar){
   pedir({ accion:'perTurnosRango', area: area, desde: desde, hasta: hasta }, 40)
     .then(function(d){
       var t = d.turnos || [];
+      if(d.extras) EXTRAS[area] = d.extras;
+      FRESCO[clave] = Date.now();
       ESTADO_TURNOS = '';
       if(!P.turnos[clave] || JSON.stringify(t) !== JSON.stringify(P.turnos[clave])) pintarlo(t);
       else { caja.innerHTML = cuadroMes(area, t); repintarDesglose(); engancharMes(); }
@@ -35361,6 +35411,49 @@ function soloTurnos(si){
    siguen les falta el cuadro, se plantean solas de una vez. No hay que
    andar dándole a "Armar la semana" cada vez. */
 var PLANEADAS = {};
+/* Las horas extra anotadas de cada área, para saber si están planeadas
+   o aprobadas y quién las movió. */
+var EXTRAS = {};
+/* El nombre de quien está usando el tablero: es lo que queda anotado en
+   cada movimiento de horas extra. */
+function quienSoy(){
+  try {
+    var u = window._usuarioActual;
+    return (u && (u.nombre || u.usuario)) || 'sin identificar';
+  } catch(e){ return 'sin identificar'; }
+}
+/* La hora extra anotada de ese día, lado y persona. */
+function extraDe(fecha, persona, lado){
+  return (EXTRAS[AREA_VIENDO] || []).filter(function(x){
+    return x.fecha === fecha && x.persona === persona && x.lado === lado;
+  })[0] || null;
+}
+/* Guarda en el equipo los turnos de un área tal como los pinta el
+   cuadro, para no volver a pedirlos. */
+function guardarTurnos(area, turnos, extras){
+  var clave = area + '|' + semanasDelCuadro(MES_VIENDO)[0];
+  P.turnos[clave] = turnos || [];
+  if(extras) EXTRAS[area] = extras;
+  FRESCO[clave] = Date.now();
+  guardarLocal();
+}
+/* Cuándo se trajo cada cuadro. Si acaba de llegar del servicio no tiene
+   sentido volver a preguntarlo. */
+var FRESCO = {};
+var FRESCO_MS = 15000;
+/* Mete la semana que devolvió el servicio dentro del cuadro guardado,
+   sin pedir todo el rango otra vez. */
+function fusionarSemana(area, semana, turnos, extras){
+  var clave = area + '|' + semanasDelCuadro(MES_VIENDO)[0];
+  var guardado = P.turnos[clave];
+  if(!guardado) return false;
+  P.turnos[clave] = guardado.filter(function(t){ return t.semana !== semana; })
+    .concat(turnos || []);
+  if(extras) EXTRAS[area] = extras;
+  FRESCO[clave] = Date.now();
+  guardarLocal();
+  return true;
+}
 function planearSiFalta(area){
   var a = areaPorNombre(area);
   if(!a || a.modo !== 'rotativo') return;
@@ -35555,10 +35648,17 @@ function tablaSemana(turnos, semana){
         var base = baseDelTurno(t0);
         var exA = base ? minutosAntes(base.inicio, t0.inicio) : 0;
         var exD = base ? minutosDespues(base.fin, t0.fin) : 0;
-        if(exA) esquinas += '<span class="esq izq" style="border-top-color:' + aclarar(pinta) + '" title="Entra ' +
-          textoHoras(exA / 60) + ' antes"></span>';
-        if(exD) esquinas += '<span class="esq der" style="border-top-color:' + aclarar(pinta) + '" title="Sale ' +
-          textoHoras(exD / 60) + ' más tarde"></span>';
+        var marcaExtra = function(lado, min){
+          var anot = extraDe(f, clave, lado);
+          var apro = anot && anot.estado === 'APROBADA';
+          var quienes = anot ? ((anot.planeo ? 'planeó ' + anot.planeo : '') + (anot.aprobo ? ' · aprobó ' + anot.aprobo : '')) : '';
+          return '<span class="esq ' + (lado === 'antes' ? 'izq' : 'der') + (apro ? '' : ' plan') +
+            '" style="border-top-color:' + aclarar(pinta) + '" title="' +
+            (lado === 'antes' ? 'Entra ' : 'Sale ') + textoHoras(min / 60) + (lado === 'antes' ? ' antes' : ' más tarde') +
+            ' · ' + (apro ? 'aprobada' : 'planeada') + (quienes ? ' · ' + esc(quienes) : '') + '"></span>';
+        };
+        if(exA) esquinas += marcaExtra('antes', exA);
+        if(exD) esquinas += marcaExtra('despues', exD);
       }
       h += '<td class="cel ' + (pinta ? 'pinta' : (esNov ? 'novedad' : 'libre')) + (esDom ? ' dom' : '') + (tocado ? ' tocado' : '') + '"' +
         (pinta ? ' style="background:' + pinta + '"' : '') + datos +
@@ -35639,9 +35739,14 @@ function desglosePersona(clave, nombre, semana, turnos){
    horario que tiene puesto el turno en el área, así que lo que sobra es
    hora extra y se ve sin tener que hacer cuentas. */
 function tiraExtra(donde, minutos, t){
-  return '<div class="ex' + (minutos ? ' on' : '') + '" data-ex="' + donde + '"' +
+  var anot = minutos ? extraDe(t.fecha, t.persona, donde) : null;
+  var estado = anot ? anot.estado : (minutos ? 'PLANEADA' : '');
+  var quienes = anot ? ((anot.planeo ? 'planeó ' + anot.planeo : '') + (anot.aprobo ? ' · aprobó ' + anot.aprobo : '')) : '';
+  return '<div class="ex' + (minutos ? ' on' : '') + (estado === 'PLANEADA' ? ' plan' : '') + '" data-ex="' + donde + '"' +
     ' data-turno="' + esc(t.turno) + '" title="' +
-    (donde === 'antes' ? 'Entrar más temprano' : 'Quedarse más tarde') + '">' +
+    (minutos ? 'Hora extra ' + (estado === 'APROBADA' ? 'aprobada' : 'planeada') + ' · ' + textoHoras(minutos / 60) +
+        (quienes ? ' · ' + esc(quienes) : '')
+      : (donde === 'antes' ? 'Entrar más temprano' : 'Quedarse más tarde')) + '">' +
     (minutos ? '+' + textoHoras(minutos / 60) : '+') + '</div>';
 }
 function baseDelTurno(t){
@@ -35682,34 +35787,66 @@ function menuExtra(celda, donde){
   if(!base){ editarCelda(celda); return; }
   var ya = donde === 'antes' ? minutosAntes(base.inicio, t.inicio) : minutosDespues(base.fin, t.fin);
 
+  /* Lo que ya está anotado de ese día: cuánto, en qué estado y quién lo
+     movió. Es lo que permite aprobarla o quitarla si fue un error. */
+  var anot = extraDe(fecha, persona, donde);
+  var elegido = anot ? anot.minutos : ya;
+
   var div = abrirMenuTurno('<div class="tn-extra">' +
     '<div class="tt">' + esc(quien) + ' · ' + (donde === 'antes' ? 'entra más temprano' : 'se queda más tarde') + '</div>' +
+    (anot ? '<div class="ex-estado ' + (anot.estado === 'APROBADA' ? 'ok' : 'plan') + '">' +
+        '<b>' + textoHoras(anot.minutos / 60) + ' · ' + (anot.estado === 'APROBADA' ? 'aprobada' : 'planeada') + '</b>' +
+        '<span>' + (anot.planeo ? 'planeó ' + esc(anot.planeo) : '') +
+          (anot.aprobo ? ' · aprobó ' + esc(anot.aprobo) : '') + '</span>' +
+      '</div>' : '') +
+    '<label class="ex-lb">¿Cuántas horas?</label>' +
     '<div class="op">' +
       /* De media en media hora, hasta cuatro. */
       [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4].map(function(n){
-        return '<button type="button" data-h="' + n + '"' + (ya === n * 60 ? ' class="on"' : '') + '>' + textoHoras(n) + '</button>';
+        return '<button type="button" data-h="' + n + '"' + (elegido === n * 60 ? ' class="on"' : '') + '>' + textoHoras(n) + '</button>';
       }).join('') +
-      (ya ? '<button type="button" data-h="0" class="quitar">Sin horas extra</button>' : '') +
     '</div>' +
     '<div class="pie">El turno va de ' + esc(base.inicio) + ' a ' + esc(base.fin) + '. ' +
-      'Lo que se ponga acá se suma a las horas de la semana.</div>' +
-    '<div class="acc"><button type="button" id="ex-cancelar">Cancelar</button></div>' +
+      'Se anota a nombre de <b>' + esc(quienSoy()) + '</b>.</div>' +
+    '<div class="acc">' +
+      (anot || ya ? '<button type="button" id="ex-quitar">Quitar</button>' : '') +
+      '<button type="button" id="ex-planear">Dejar planeada</button>' +
+      '<button type="button" class="fuerte" id="ex-aprobar">Aprobar</button>' +
+    '</div>' +
+    '<div class="acc" style="margin-top:8px"><button type="button" id="ex-cancelar">Cancelar</button></div>' +
   '</div>');
   if(!div) return;
+
+  var cuanto = elegido;
   $p('ex-cancelar').onclick = cerrarMenuTurno;
   div.querySelectorAll('[data-h]').forEach(function(b){
     b.onclick = function(){
-      var n = Number(b.dataset.h) || 0;
-      var ini = donde === 'antes' ? horaDe(minutosDe(base.inicio) - n * 60) : t.inicio;
-      var fin = donde === 'despues' ? horaDe(minutosDe(base.fin) + n * 60) : t.fin;
-      if(donde === 'antes' && !n) ini = base.inicio;
-      if(donde === 'despues' && !n) fin = base.fin;
-      mandarCambio({ accion:'perTurnoEditar', area: AREA_VIENDO, semana: lunesDe(fecha), fecha: fecha,
-                     persona: persona, turno: turno, nombreTurno: turno,
-                     inicio: ini, fin: fin,
-                     nota: n ? 'hora extra' : 'sin horas extra' }, b);
+      cuanto = Number(b.dataset.h) * 60;
+      div.querySelectorAll('[data-h]').forEach(function(x){ x.classList.remove('on'); });
+      b.classList.add('on');
     };
   });
+  var mandar = function(estado, boton){
+    if(!cuanto){ alert('Primero elija cuántas horas.'); return; }
+    mandarCambio({ accion:'perExtraGuardar', area: AREA_VIENDO, fecha: fecha, persona: persona,
+                   turno: turno, lado: donde, minutos: cuanto, estado: estado,
+                   quien: quienSoy() }, boton);
+  };
+  $p('ex-planear').onclick = function(){ mandar('PLANEADA', this); };
+  $p('ex-aprobar').onclick = function(){ mandar('APROBADA', this); };
+  if($p('ex-quitar')) $p('ex-quitar').onclick = function(){
+    if(!confirm('¿Quitar esta hora extra? El turno vuelve a su horario.')) return;
+    if(anot){
+      mandarCambio({ accion:'perExtraBorrar', id: anot.id, quien: quienSoy() }, this);
+    } else {
+      /* Anotada antes de que existiera el registro: se devuelve el horario. */
+      mandarCambio({ accion:'perTurnoEditar', area: AREA_VIENDO, semana: lunesDe(fecha), fecha: fecha,
+                     persona: persona, turno: turno, nombreTurno: turno,
+                     inicio: donde === 'antes' ? base.inicio : t.inicio,
+                     fin: donde === 'despues' ? base.fin : t.fin,
+                     nota: '' }, this);
+    }
+  };
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -35842,8 +35979,18 @@ function cerrarMenuTurno(){
 
 function mandarCambio(cuerpo, boton){
   boton.disabled = true; boton.textContent = 'Guardando…';
+  var area = cuerpo.area || AREA_VIENDO;
   pedir(cuerpo)
-    .then(function(){ cerrarMenuTurno(); verMes(AREA_VIENDO, MES_VIENDO, true); })
+    .then(function(d){
+      cerrarMenuTurno();
+      /* El servicio ya devolvió la semana cambiada: se mete en el cuadro
+         guardado y se repinta, sin pedir todo otra vez. */
+      if(d && d.turnos && d.semana && fusionarSemana(area, d.semana, d.turnos, d.extras)){
+        verMes(area, MES_VIENDO);
+      } else {
+        verMes(area, MES_VIENDO, true);
+      }
+    })
     .catch(function(e){ boton.disabled = false; boton.textContent = 'Guardar'; alert(e.message || 'No se pudo guardar.'); });
 }
 
