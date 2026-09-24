@@ -6731,6 +6731,9 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   border-bottom:1px dotted var(--rule);font-weight:600;
 }
 #panel-personal .tn-personas .quien .ver-quien:hover{color:#1c5636;border-bottom-color:#1c5636}
+/* En la previsualización el nombre no se puede abrir: se ve como texto. */
+#per-area-modal .quien .ver-quien{border-bottom:none;cursor:default}
+#per-area-modal .quien .ver-quien:hover{color:var(--ink)}
 #panel-personal .tn-desglose{margin-top:14px}
 #panel-personal .tn-dia-caja{border:1px solid var(--rule);border-top:3px solid #1c5636;background:var(--white)}
 #panel-personal .tn-dia-tt{display:flex;gap:11px;align-items:center;padding:12px 14px;
@@ -35256,7 +35259,10 @@ function pintarModo(){
     }
     pintarTurnos(); pintarPropios();
   }
-  $p('ar-f-ver').style.display = rot ? '' : 'none';
+  /* La previsualización vale para los tres modos: en los rotativos la
+     arma el servidor (hay que repartir), y en el general y el
+     personalizado se arma acá, que es inmediato. */
+  $p('ar-f-ver').style.display = '';
   $p('ar-f-semanas-caja').style.display = rot ? '' : 'none';
   $p('ar-f-24caja').style.display = rot ? '' : 'none';
   /* Un área de 24 horas trabaja los siete días: no hay días que elegir. */
@@ -35491,11 +35497,25 @@ function contarGenteArea(){
 function verCuadro(){
   var caja = $p('ar-f-cuadro');
   leerFormularioArea();
-  if(!AREA_FORM.personas.length){ $p('ar-f-error').textContent = 'Falta marcar quién trabaja en el área.'; return; }
-  if(!AREA_FORM.turnos.length){ $p('ar-f-error').textContent = 'Falta definir los turnos.'; return; }
+  if(!AREA_FORM.personas.length){ $p('ar-f-error').textContent = 'Falta seleccionar el personal del área.'; return; }
   $p('ar-f-error').textContent = '';
-  caja.innerHTML = '<div class="cuadro">Armando el cuadro…</div>';
   var semana = AREA_FORM.desdeProxima ? sumarDias(lunesDe(''), 7) : lunesDe('');
+
+  /* En el horario general y en el personalizado no hay nada que
+     repartir: cada quien tiene su horario y la semana se arma acá
+     mismo, sin esperar al servicio. */
+  if(AREA_FORM.modo !== 'rotativo'){
+    var propios = cuadroDeHorarios(semana);
+    caja.innerHTML = propios.length
+      ? cuadroChico(propios, semana, false)
+      : '<div class="cuadro">' + (AREA_FORM.modo === 'personalizado'
+          ? 'Falta asignarle el horario a alguien.'
+          : 'Falta el horario o los días del área.') + '</div>';
+    return;
+  }
+
+  if(!AREA_FORM.turnos.length){ $p('ar-f-error').textContent = 'Falta definir los turnos.'; return; }
+  caja.innerHTML = '<div class="cuadro">Armando el cuadro…</div>';
   pedir({ accion:'perTurnosPrueba',
     area: { nombre: AREA_FORM.nombre || 'Área nueva', dias: AREA_FORM.dias.join(','),
             turnos: AREA_FORM.turnos, cobertura24: AREA_FORM.cobertura24,
@@ -35506,6 +35526,39 @@ function verCuadro(){
   }).catch(function(e){
     caja.innerHTML = '<div class="cuadro">No se pudo armar el cuadro: ' + esc(e.message) + '</div>';
   });
+}
+
+/* ── EL CUADRO DEL HORARIO GENERAL Y DEL PERSONALIZADO ─────────────
+   En el general todos cumplen el mismo horario los días del área; en el
+   personalizado, cada quien el que se le asignó. En los dos casos la
+   semana es la misma siempre, así que se arma acá y se ve al instante.
+   Es exactamente lo que después queda guardado. */
+function cuadroDeHorarios(semana){
+  var salida = [];
+  var marcados = P.gente.filter(function(p){ return AREA_FORM.personas.indexOf(p.clave) > -1; })
+                        .sort(function(a, b){ return String(a.nombre).localeCompare(String(b.nombre), 'es'); });
+  var general = AREA_FORM.modo !== 'personalizado';
+  var diasArea = (AREA_FORM.dias || []).slice();
+
+  marcados.forEach(function(p){
+    var hz = general
+      ? { nombre:'Horario', inicio: AREA_FORM.horaInicio, fin: AREA_FORM.horaFin,
+          dias: diasArea.join(','), almuerzo: 0 }
+      : (AREA_FORM.horarios || {})[p.clave];
+    if(!hz || !hz.inicio || !hz.fin) return;
+    var dias = String(hz.dias || '').split(',').filter(Boolean);
+    DIAS_LETRA.forEach(function(letra, i){
+      if(dias.indexOf(letra) < 0) return;
+      var f = sumarDias(semana, i);
+      salida.push({ area: AREA_FORM.nombre || 'Área nueva', semana: semana, fecha: f,
+                    dia: DIAS_NOMBRE[letra], turno: hz.nombre || 'Horario',
+                    inicio: hz.inicio, fin: hz.fin,
+                    persona: p.clave, nombre: p.nombre,
+                    almuerzo: Number(hz.almuerzo) || 0,
+                    horas: horasTurno(hz.inicio, hz.fin, hz.almuerzo) });
+    });
+  });
+  return salida;
 }
 
 /* El cuadro de antes de guardar: el mismo que el de la semana. */
