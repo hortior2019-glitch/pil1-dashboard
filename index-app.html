@@ -6288,6 +6288,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-personal .tn-personas .tn-hora,#per-area-modal .tn-personas .tn-hora{font-size:10.5px;font-weight:400;margin-top:2px}
 /* Lo que se tocó a mano lleva su marca sobre el color */
 #panel-personal .tn-personas .cel.tocado{box-shadow:inset 0 0 0 2px var(--gold)}
+/* Lo que todavía es una muestra, mientras el servicio reparte */
+#panel-personal .tn-personas .cel.previa{opacity:.62}
 #panel-personal .tn-personas .cel.tocado .hs::after{content:' ✎';font-size:9px;opacity:.9}
 /* El cuadrito para cambiar las horas de un dia */
 #panel-personal .tn-editor-caja{margin-top:10px}
@@ -6306,6 +6308,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   text-transform:uppercase;border:1px solid var(--rule);background:var(--white);color:var(--ink-m);
   cursor:pointer;font-family:'Source Sans 3',sans-serif}
 #per-nov-modal .pn-nov button:hover{border-color:#b23b3b;color:#b23b3b}
+#per-nov-modal .pn-nov button.volver{color:#1c5636;border-color:#cfe3d7}
+#per-nov-modal .pn-nov button.volver:hover{background:#1c5636;border-color:#1c5636;color:#fff}
 #per-nov-modal .pn-vacio{font-size:12.5px;color:var(--ink-l);padding:12px 0;border-bottom:1px solid var(--rule-l,#ececec)}
 /* En el cuadro, un día con novedad va gris y dice qué pasó */
 #panel-personal .tn-personas .cel.novedad,#panel-personal .tn-dia .c.novedad{
@@ -6921,6 +6925,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
           <option value="Licencia">Licencia</option>
           <option value="Calamidad">Calamidad doméstica</option>
           <option value="Suspensión">Suspensión</option>
+          <option value="Dado de baja">Dado de baja — salió de la empresa</option>
           <option value="Otro">Otro</option>
         </select>
       </div>
@@ -34117,10 +34122,20 @@ function leerLocal(){
 }
 leerLocal();
 
-/* Ninguna llamada se queda esperando para siempre: si el servicio no
-   contesta en ese tiempo, se corta y se avisa. Armar semanas puede
-   tardar más que una consulta, por eso cada llamada dice cuánto espera. */
-function pedir(cuerpo, segundos){
+/* ── HABLAR CON EL SERVICIO SIN QUEDARSE COLGADO ───────────────────
+   Google, cada tanto, contesta una página de error en vez de los datos,
+   o se demora más de lo que uno puede esperar. Eso no es un error del
+   tablero: es Google. Igual que en Cadena, se reintenta —hasta tres
+   veces, esperando un poco más cada vez— antes de darse por vencido.
+
+   Consultar se puede repetir sin miedo. Guardar no: si la respuesta no
+   llegó, puede que igual haya quedado guardado, así que se avisa en vez
+   de repetirlo a ciegas. */
+var PER_LECTURAS = ['perDatos', 'perTurnos', 'perTurnosRango', 'perTurnosPrueba', 'perTurnosPlan'];
+function perEsLectura(cuerpo){
+  return PER_LECTURAS.indexOf((cuerpo && cuerpo.accion) || '') > -1;
+}
+function pedirUnaVezPer(cuerpo, segundos){
   var corte = null, cortado = false;
   var opciones = { method:'POST', redirect:'follow',
       headers:{ 'Content-Type':'text/plain;charset=utf-8' }, body: JSON.stringify(cuerpo) };
@@ -34131,20 +34146,46 @@ function pedir(cuerpo, segundos){
   } catch(e){ /* navegador viejo: se espera sin corte */ }
   return fetch(PERSONAL_API, opciones)
     .catch(function(){
-      if(cortado) throw new Error('el servicio de Personal se demoró demasiado · vuelva a intentarlo');
-      /* Casi siempre es que el Apps Script de Personal todavía no está
-         publicado, o que se publicó sin acceso "Cualquier persona". */
-      throw new Error('no contestó el servicio de Personal · revise que el Apps Script esté publicado con acceso "Cualquier persona"');
+      var e = new Error(cortado
+        ? 'Google no respondió a tiempo'
+        : 'no contestó el servicio de Personal · revise que el Apps Script esté publicado con acceso "Cualquier persona"');
+      e.noEsJson = true;              /* se reintenta igual */
+      throw e;
     })
-    .then(function(r){ if(corte) clearTimeout(corte); return r; })
-    .then(function(r){ return r.text(); })
+    .then(function(r){ if(corte) clearTimeout(corte); return r.text(); })
     .then(function(t){
       var d;
       try { d = JSON.parse(t); }
-      catch(e){ throw new Error('el servicio de Personal no devolvió datos · ' + String(t).slice(0, 80)); }
+      catch(e){
+        /* Una página de Google (empieza con <!DOCTYPE o <html) es un
+           tropiezo suyo, no una respuesta: se vuelve a preguntar. */
+        var err = new Error(/^\s*</.test(t)
+          ? 'Google contestó con una página en vez de datos'
+          : 'el servicio de Personal no devolvió datos · ' + String(t).slice(0, 60));
+        err.noEsJson = true;
+        throw err;
+      }
       if(!d || d.success === false) throw new Error((d && d.error) || 'no se pudo completar');
       return d;
     });
+}
+function pedir(cuerpo, segundos){
+  var intentos = perEsLectura(cuerpo) ? 3 : 1;
+  var intentar = function(i){
+    return pedirUnaVezPer(cuerpo, segundos).catch(function(e){
+      if(e.noEsJson && i < intentos - 1){
+        return new Promise(function(r){ setTimeout(r, 800 * (i + 1)); }).then(function(){ return intentar(i + 1); });
+      }
+      if(e.noEsJson && !perEsLectura(cuerpo)){
+        e.message = 'Google no devolvió la respuesta. Puede que sí haya quedado guardado: ' +
+                    'revise antes de repetirlo.';
+      } else if(e.noEsJson){
+        e.message = e.message + ' · se intentó ' + intentos + ' veces';
+      }
+      throw e;
+    });
+  };
+  return intentar(0);
 }
 
 function cargar(forzar){
@@ -34459,14 +34500,43 @@ function pintarNovedades(){
         '<div class="pn-d">' + (uno ? 'el ' + fechaCorta(n.desde)
           : 'del ' + fechaCorta(n.desde) + ' al ' + fechaCorta(n.hasta)) +
           (n.nota ? ' · ' + esc(n.nota) : '') + '</div></div>' +
-      '<span class="pn-et' + (corre ? ' ahora' : '') + '">' + (corre ? 'en curso' : (n.hasta < hoy ? 'pasada' : 'próxima')) + '</span>' +
+      '<span class="pn-et' + (corre ? ' ahora' : '') + '">' +
+        (esBaja(n.tipo) && !n.hasta ? 'fuera de la empresa'
+          : (corre ? 'en curso' : (n.hasta < hoy ? 'pasada' : 'próxima'))) + '</span>' +
+      (esBaja(n.tipo) && !n.hasta
+        ? '<button type="button" class="volver" data-pn-volver="' + esc(n.persona) + '">Reincorporar</button>'
+        : '') +
       '<button type="button" data-pn-quitar="' + esc(n.id) + '">Quitar</button>' +
     '</div>';
   }).join('');
   caja.querySelectorAll('[data-pn-quitar]').forEach(function(b){
     b.onclick = function(){ quitarNovedad(b.dataset.pnQuitar, b); };
   });
+  caja.querySelectorAll('[data-pn-volver]').forEach(function(b){
+    b.onclick = function(){ reincorporar(b.dataset.pnVolver, b); };
+  });
 }
+/* Dar de baja es que la persona salió de la empresa: queda inactiva y
+   sin turnos de ahí en adelante. */
+function esBaja(tipo){
+  var t = String(tipo || '').toLowerCase();
+  return t.indexOf('baja') > -1 || t.indexOf('retiro') > -1 || t.indexOf('renuncia') > -1;
+}
+function reincorporar(clave, boton){
+  if(!confirm('¿Reincorporar a esta persona? Vuelve a quedar activa y entra otra vez en el reparto\nde los turnos que se armen desde ahora.')) return;
+  boton.disabled = true; boton.textContent = '…';
+  pedir({ accion:'perReincorporar', clave: clave, quien: quienSoy() })
+    .then(function(d){
+      if(d.personas) P.gente = d.personas;
+      P.novedades = d.novedades || P.novedades;
+      guardarLocal(); pintarNovedades(); pintar();
+    })
+    .catch(function(e){
+      alert(e.message || 'No se pudo reincorporar.');
+      boton.disabled = false; boton.textContent = 'Reincorporar';
+    });
+}
+
 function guardarNovedad(){
   var err = $p('pn-error');
   if(!NOV_DE) return;
@@ -34479,7 +34549,8 @@ function guardarNovedad(){
           desde: desde, hasta: hasta, nota: $p('pn-nota').value.trim() }, 120)
     .then(function(d){
       P.novedades = d.novedades || P.novedades;
-      P.turnos = {};                     /* el cuadro cambió */
+      if(d.personas) P.gente = d.personas;   /* una baja la deja inactiva */
+      P.turnos = {}; FRESCO = {};        /* el cuadro cambió */
       guardarLocal();
       $p('pn-nota').value = '';
       pintarNovedades();
@@ -35234,15 +35305,23 @@ function guardarArea(){
     PLANEADAS[nombre] = true;              /* ya se está planteando */
     soloTurnos(true);
     ESTADO_TURNOS = 'armando';
-    $p('ar-turnos').innerHTML = cuadroMes(nombre, []);
+    /* El cuadro se ve YA, armado acá mismo con lo que se acaba de
+       llenar. Es una previsualización: cuando el servicio conteste se
+       reemplaza por el definitivo, que es el que queda guardado. */
+    PREVIA = true;
+    $p('ar-turnos').innerHTML = cuadroMes(nombre, cuadroPrevio(cuerpo, lunes));
     engancharMes();
     pedir({ accion:'perTurnosPlan', area: nombre, desde: lunes, cuantas: 4 }, 120)
       .then(function(d){
-        ESTADO_TURNOS = '';
+        ESTADO_TURNOS = (d.pendientes && d.pendientes.length)
+          ? 'aviso:se armaron ' + (d.armadas || []).length + ' semanas; las que faltan quedan listas en un minuto'
+          : '';
+        PREVIA = false;
         guardarTurnos(nombre, d.turnos || [], d.extras || []);
         if(AREA_VIENDO === nombre) verMes(nombre, MES_VIENDO);
       })
       .catch(function(e){
+        PREVIA = false;
         ESTADO_TURNOS = 'error:no se pudieron armar las semanas · ' + (e.message || '');
         PLANEADAS[nombre] = false;
         if(AREA_VIENDO === nombre) verMes(nombre, MES_VIENDO);
@@ -35354,7 +35433,9 @@ var ESTADO_TURNOS = '';
 function avisoTurnos(){
   if(!ESTADO_TURNOS) return '';
   if(ESTADO_TURNOS === 'trayendo') return '<div class="mes-aviso">Trayendo los turnos…</div>';
-  if(ESTADO_TURNOS === 'armando')  return '<div class="mes-aviso">Armando las próximas semanas…</div>';
+  if(ESTADO_TURNOS === 'armando')  return '<div class="mes-aviso">' +
+    (PREVIA ? 'Así se vería. El sistema está repartiendo los turnos definitivos…' : 'Armando las próximas semanas…') + '</div>';
+  if(ESTADO_TURNOS.indexOf('aviso:') === 0) return '<div class="mes-aviso">' + esc(ESTADO_TURNOS.slice(6)) + '</div>';
   return '<div class="mes-aviso mal">' + esc(ESTADO_TURNOS.replace(/^error:/, '')) +
     ' <button type="button" id="mes-reintentar">Reintentar</button></div>';
 }
@@ -35411,6 +35492,52 @@ function soloTurnos(si){
    siguen les falta el cuadro, se plantean solas de una vez. No hay que
    andar dándole a "Armar la semana" cada vez. */
 var PLANEADAS = {};
+/* Mientras el servicio arma el cuadro de verdad, se muestra uno hecho
+   acá con lo que se acaba de llenar. */
+var PREVIA = false;
+/* ── EL CUADRO DE MUESTRA ──────────────────────────────────────────
+   La primera semana no tiene misterio: cada quien arranca en el turno
+   que se le eligió y trabaja los días marcados de ese turno. Con eso
+   alcanza para que la pantalla no quede vacía mientras el servicio
+   reparte de verdad (que es lo que además equilibra noches y domingos). */
+function cuadroPrevio(cuerpo, lunes){
+  var turnos = cuerpo.turnos || [];
+  var inicial = cuerpo.inicial || {};
+  var gente = (cuerpo.personas || []).map(function(c){
+    var p = (window.personalPorClave && window.personalPorClave(c)) || null;
+    return { clave: c, nombre: p ? p.nombre : c };
+  });
+  if(!turnos.length || !gente.length) return [];
+
+  /* A cada turno, su gente: la que se eligió, y el resto repartido
+     parejo para que ninguno quede vacío. */
+  var grupos = {}, sueltos = [];
+  turnos.forEach(function(t){ grupos[t.nombre] = []; });
+  gente.forEach(function(p){
+    var t = inicial[p.clave];
+    if(t && grupos[t]) grupos[t].push(p); else sueltos.push(p);
+  });
+  sueltos.forEach(function(p, i){ grupos[turnos[i % turnos.length].nombre].push(p); });
+
+  var salida = [];
+  turnos.forEach(function(t){
+    var dias = String(t.dias || 'L,M,X,J,V,S,D').split(',').filter(Boolean);
+    var suyos = grupos[t.nombre] || [];
+    if(!suyos.length) return;
+    var n = 0;
+    DIAS_LETRA.forEach(function(letra, i){
+      if(dias.indexOf(letra) < 0) return;               /* ese día el turno no va */
+      var quien = suyos[n % suyos.length]; n++;
+      var f = sumarDias(lunes, i);
+      salida.push({ area: cuerpo.nombre, semana: lunes, fecha: f, dia: DIAS_NOMBRE[letra],
+                    turno: t.nombre, inicio: t.inicio, fin: t.fin,
+                    persona: quien.clave, nombre: quien.nombre,
+                    almuerzo: Number(t.almuerzo) || 0,
+                    horas: horasTurno(t.inicio, t.fin, t.almuerzo), previa: true });
+    });
+  });
+  return salida;
+}
 /* Las horas extra anotadas de cada área, para saber si están planeadas
    o aprobadas y quién las movió. */
 var EXTRAS = {};
@@ -35660,7 +35787,8 @@ function tablaSemana(turnos, semana){
         if(exA) esquinas += marcaExtra('antes', exA);
         if(exD) esquinas += marcaExtra('despues', exD);
       }
-      h += '<td class="cel ' + (pinta ? 'pinta' : (esNov ? 'novedad' : 'libre')) + (esDom ? ' dom' : '') + (tocado ? ' tocado' : '') + '"' +
+      h += '<td class="cel ' + (pinta ? 'pinta' : (esNov ? 'novedad' : 'libre')) + (esDom ? ' dom' : '') +
+        (tocado ? ' tocado' : '') + (t0 && t0.previa ? ' previa' : '') + '"' +
         (pinta ? ' style="background:' + pinta + '"' : '') + datos +
         (t0 ? ' title="' + esc(t0.turno) + (t0.ajuste ? ' · ' + esc(t0.ajuste) : '') + '"' : '') + '>' + esquinas +
         (hoy.length
