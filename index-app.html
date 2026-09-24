@@ -6528,6 +6528,9 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #per-area-modal .tn-esp .esp-mas{padding:4px 9px;font-size:10.5px;white-space:nowrap}
 /* ── EL HORARIO DE CADA QUIEN (áreas personalizadas) ───────────────
    Una ficha por persona: su horario, su almuerzo y sus días. */
+#per-area-modal .ar-variantes{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px}
+#per-area-modal .ar-variantes select{width:auto;min-width:230px;flex:0 1 auto}
+#per-area-modal .ar-variantes .per-btn{padding:8px 13px;white-space:nowrap}
 #per-area-modal .ar-propios{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:9px;margin-top:6px}
 #per-area-modal .ar-propio{border:1px solid var(--rule);border-left:3px solid #1c5636;background:var(--white);padding:9px 11px}
 #per-area-modal .ar-propio .qn{display:flex;align-items:center;gap:8px;margin-bottom:7px}
@@ -6862,27 +6865,6 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
       <div class="ar-dias" id="ar-f-dias"></div>
     </div>
 
-    <!-- Horario personalizado: el de cada persona, uno por uno -->
-    <div id="ar-f-propio" style="display:none">
-      <label>Horarios disponibles</label>
-      <select id="ar-f-preset2" style="max-width:420px">
-        <option value="3x8">Mañana, tarde y noche — tres de 8 horas</option>
-        <option value="2x12">Día y noche — dos de 12 horas</option>
-        <option value="2x8">Mañana y tarde — dos de 8 horas</option>
-        <option value="libre">Los escribo yo</option>
-      </select>
-      <div id="ar-f-turnos2" style="margin-top:10px"></div>
-      <button type="button" class="per-btn" id="ar-f-masturno2" style="margin-top:4px">+ Otro horario</button>
-      <div class="ayuda" style="margin-top:8px">Son los horarios que después se le asignan a cada quien.
-        Se pueden usar los de siempre o escribir los que haga falta.</div>
-
-      <label>El horario de cada quien</label>
-      <div class="ar-propios" id="ar-f-propios"></div>
-      <div class="ayuda">Se marca la gente en la lista de al lado y acá se le pone a cada uno su horario:
-        los días que viene, de qué hora a qué hora y si tiene almuerzo. No hay rotación:
-        cada semana es igual, y se puede cambiar cuando haga falta.</div>
-    </div>
-
     <div id="ar-f-general">
       <label>Horario</label>
       <div style="display:flex;gap:8px;align-items:center">
@@ -6901,6 +6883,36 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
       <span id="ar-f-cuenta"></span></div>
 
     </div></div>
+
+    <!-- Horario personalizado: los horarios disponibles y el de cada
+         quien. Va a todo el ancho, igual que los turnos rotativos: en
+         media columna las fichas quedaban cortadas. -->
+    <div id="ar-f-propio" class="ar-ancho" style="display:none">
+      <label>Horarios disponibles</label>
+      <div class="ar-variantes">
+        <select id="ar-f-preset2">
+          <option value="3x8">Mañana, tarde y noche — tres de 8 horas</option>
+          <option value="2x12">Día y noche — dos de 12 horas</option>
+          <option value="2x8">Mañana y tarde — dos de 8 horas</option>
+          <option value="libre">Los escribo yo</option>
+        </select>
+        <select id="ar-f-variante" title="Variantes guardadas"></select>
+        <button type="button" class="per-btn" id="ar-f-usarvar">Usar</button>
+        <button type="button" class="per-btn" id="ar-f-guardarvar">Guardar esta variante</button>
+      </div>
+      <div class="ayuda">Una variante es un juego de horarios con nombre —"turnos de planta",
+        "administrativo"— que no está atado a nadie: se guarda una vez y después se usa en
+        cualquier área, y ahí sí se dice quién va en cada uno.</div>
+
+      <div id="ar-f-turnos2" style="margin-top:10px"></div>
+      <button type="button" class="per-btn" id="ar-f-masturno2" style="margin-top:4px">+ Otro horario</button>
+
+      <label>El horario de cada quien</label>
+      <div class="ar-propios" id="ar-f-propios"></div>
+      <div class="ayuda">Se marca la gente en la lista de arriba y acá se le pone a cada uno su horario:
+        cuál de los de arriba le toca, los días que viene y su almuerzo. No hay rotación:
+        cada semana es igual, y se puede cambiar cuando haga falta.</div>
+    </div>
 
     <!-- Los turnos van a todo el ancho: así se aprecia el turno completo
          —horas, días, almuerzo y los días con otro horario— de un vistazo. -->
@@ -34181,7 +34193,7 @@ var PERSONAL_API = 'https://script.google.com/macros/s/AKfycbwfBXyi8vonQNA6DOEii
 var CLAVE_LOCAL = 'horti_personal_v1';
 var FOTO_LADO = 640, FOTO_CALIDAD = 0.8;
 
-var P = { gente: [], asignaciones: [], areas: [], miembros: [], turnos: {}, documentos: [], novedades: [],
+var P = { gente: [], asignaciones: [], areas: [], miembros: [], turnos: {}, documentos: [], novedades: [], plantillas: [],
           cargado: false, cargando: false, fallo: '', vacio: false, cuando: 0 };
 var EDITANDO = null;      /* la persona que se está editando (null = nueva) */
 var FOTO_NUEVA = '';      /* la foto elegida en el formulario, ya reducida */
@@ -34200,7 +34212,8 @@ function guardarLocal(){
   claves.forEach(function(k){ turnos[k] = P.turnos[k]; });
   try { localStorage.setItem(CLAVE_LOCAL, JSON.stringify({ cuando: Date.now(), gente: P.gente,
     asignaciones: P.asignaciones, areas: P.areas, miembros: P.miembros,
-    documentos: P.documentos, novedades: P.novedades, turnos: turnos })); } catch(e){}
+    documentos: P.documentos, novedades: P.novedades, plantillas: P.plantillas,
+    turnos: turnos })); } catch(e){}
 }
 function leerLocal(){
   try {
@@ -34210,6 +34223,7 @@ function leerLocal(){
       P.areas = x.areas || []; P.miembros = x.miembros || [];
       P.documentos = x.documentos || [];
       P.novedades = x.novedades || [];
+      P.plantillas = x.plantillas || [];
       P.turnos = x.turnos || {};
       P.cuando = x.cuando || 0;
     }
@@ -34306,6 +34320,7 @@ function cargar(forzar){
     P.miembros = d.miembros || [];
     P.documentos = d.documentos || [];
     P.novedades = d.novedades || [];
+    P.plantillas = d.plantillas || [];
     P.cargado = true; P.cuando = Date.now();
     guardarLocal();
     return P.gente;
@@ -35095,6 +35110,57 @@ function pintarDias(){
 /* ── EL HORARIO DE CADA QUIEN ──────────────────────────────────────
    Una fila por persona marcada: sus días, su entrada, su salida y su
    almuerzo. Lo que no se llene toma el horario de oficina. */
+/* ── LAS VARIANTES DE HORARIO ──────────────────────────────────────
+   Un juego de horarios con nombre, guardado aparte de la gente: se arma
+   una vez —"turnos de planta", "administrativo", "fin de semana"— y
+   después se usa donde haga falta. Al usarla, cada quien elige cuál de
+   esos horarios le toca. */
+function pintarVariantes(){
+  var sel = $p('ar-f-variante');
+  if(!sel) return;
+  var lista = P.plantillas || [];
+  sel.innerHTML = '<option value="">Variantes guardadas…</option>' +
+    lista.map(function(v){
+      return '<option value="' + esc(v.id) + '">' + esc(v.nombre) + ' · ' +
+        (v.turnos || []).length + (((v.turnos || []).length === 1) ? ' horario' : ' horarios') + '</option>';
+    }).join('');
+  if(!lista.length) sel.innerHTML = '<option value="">— no hay variantes guardadas —</option>';
+}
+function usarVariante(){
+  var sel = $p('ar-f-variante');
+  var v = (P.plantillas || []).filter(function(x){ return x.id === sel.value; })[0];
+  if(!v){ alert('Primero elija una variante de la lista.'); return; }
+  AREA_FORM.turnos = (v.turnos || []).map(function(t){
+    return { nombre:t.nombre, inicio:t.inicio, fin:t.fin, dias:t.dias || TODOS_LOS_DIAS,
+             fijo:!!t.fijo, almuerzo:Number(t.almuerzo) || 0, especiales:(t.especiales || []).slice() };
+  });
+  /* Los horarios de la gente se vuelven a proponer con los de la
+     variante: es justamente lo que hay que decidir ahora. */
+  Object.keys(AREA_FORM.horarios || {}).forEach(function(c){
+    var t = AREA_FORM.turnos[0];
+    if(!t) return;
+    AREA_FORM.horarios[c] = { nombre:t.nombre, inicio:t.inicio, fin:t.fin,
+                              dias:t.dias || TODOS_LOS_DIAS, almuerzo:Number(t.almuerzo) || 0 };
+  });
+  pintarTurnos(); pintarPropios();
+}
+function guardarVariante(boton){
+  if(!AREA_FORM.turnos || !AREA_FORM.turnos.length){ alert('Primero arme los horarios.'); return; }
+  var nombre = prompt('¿Cómo se llama esta variante?\nPor ejemplo: turnos de planta, administrativo, fin de semana.',
+                      AREA_FORM.nombre || '');
+  if(!nombre || !nombre.trim()) return;
+  boton.disabled = true; boton.textContent = 'Guardando…';
+  pedir({ accion:'perPlantillaGuardar', nombre: nombre.trim(),
+          turnos: AREA_FORM.turnos, quien: quienSoy() })
+    .then(function(d){
+      P.plantillas = d.plantillas || P.plantillas;
+      guardarLocal(); pintarVariantes();
+      var sel = $p('ar-f-variante'); if(sel && d.id) sel.value = d.id;
+    })
+    .catch(function(e){ alert(e.message || 'No se pudo guardar la variante.'); })
+    .then(function(){ boton.disabled = false; boton.textContent = 'Guardar esta variante'; });
+}
+
 function pintarPropios(){
   var caja = $p('ar-f-propios');
   if(!caja) return;
@@ -35106,8 +35172,13 @@ function pintarPropios(){
     return;
   }
   caja.innerHTML = marcados.map(function(p){
-    var hz = AREA_FORM.horarios[p.clave] || (AREA_FORM.horarios[p.clave] =
-      { dias:'L,M,X,J,V', inicio:'08:00', fin:'17:00', almuerzo:0, nombre:'Horario' });
+    /* A quien se acaba de marcar se le propone el PRIMER horario de la
+       lista de arriba: es lo más probable y se cambia con un clic. */
+    var primero = (AREA_FORM.turnos || [])[0];
+    var hz = AREA_FORM.horarios[p.clave] || (AREA_FORM.horarios[p.clave] = primero
+      ? { dias: primero.dias || TODOS_LOS_DIAS, inicio: primero.inicio, fin: primero.fin,
+          almuerzo: Number(primero.almuerzo) || 0, nombre: primero.nombre }
+      : { dias:'L,M,X,J,V', inicio:'08:00', fin:'17:00', almuerzo:0, nombre:'Horario' });
     var dias = String(hz.dias || '').split(',').filter(Boolean);
     /* Si su horario coincide con uno de los de la lista, se muestra
        elegido; si no, es "a medida". */
@@ -35191,6 +35262,7 @@ function pintarModo(){
   var propio = AREA_FORM.modo === 'personalizado';
   if($p('ar-f-propio')) $p('ar-f-propio').style.display = propio ? '' : 'none';
   if(propio){
+    pintarVariantes();
     if(!AREA_FORM.turnos || !AREA_FORM.turnos.length){
       AREA_FORM.turnos = PRESETS_TURNO['3x8'].map(function(t){ return { nombre:t.nombre, inicio:t.inicio, fin:t.fin, dias:TODOS_LOS_DIAS, fijo:false, almuerzo:0, especiales:[] }; });
     }
@@ -36452,6 +36524,8 @@ function engancharAreas(){
     AREA_FORM.inicial = {};
     pintarTurnos(); pintarInicial();
   };
+  if($p('ar-f-usarvar')) $p('ar-f-usarvar').onclick = function(){ usarVariante(); };
+  if($p('ar-f-guardarvar')) $p('ar-f-guardarvar').onclick = function(){ guardarVariante(this); };
   if($p('ar-f-preset2')) $p('ar-f-preset2').onchange = function(){
     if(this.value === 'libre') return;
     AREA_FORM.turnos = PRESETS_TURNO[this.value].map(function(t){ return { nombre:t.nombre, inicio:t.inicio, fin:t.fin, dias:TODOS_LOS_DIAS, fijo:false, almuerzo:0, especiales:[] }; });
