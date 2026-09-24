@@ -2714,6 +2714,21 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
     flex-direction:column;
     overflow:hidden;
   }
+  /* ── LA CAJA DE MEDIR ──────────────────────────────────────────────
+     Un instante, sin que se vea, el certificado se pone EXACTAMENTE como
+     sale impreso —ancho de carta, los mismos rellenos, en columna— para
+     contar cuántas hojas ocupa. Medir sobre la vista previa no servía:
+     si la ventana es angosta el texto se reparte distinto y la cuenta
+     daba una hoja de más. */
+  #panel-certificado .certificate.midiendo-papel{
+    width:215.9mm !important; max-width:none !important;
+    /* No se deja encoger: el contenedor de la vista previa es flex y si
+       no, lo achica y la cuenta vuelve a salir mal. */
+    flex:0 0 auto !important; min-height:279.4mm !important;
+    padding:14mm 18mm 12mm 18mm !important;
+    display:flex; flex-direction:column;
+  }
+  #panel-certificado .certificate.midiendo-papel .cert-footer{margin-top:auto; padding-top:24px}
   /* Línea de corte entre hojas (solo en pantalla). */
   #panel-certificado .hoja-corte{
     position:absolute;left:0;right:0;height:0;border-top:2px dashed #c9d6cc;z-index:2;pointer-events:none;
@@ -3004,8 +3019,13 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
        una hoja nueva y quede una hoja casi en blanco antes.
        Con el flujo normal el pie va al final del contenido y ahí se
        queda: nunca partido y nunca en una hoja aparte. */
-    #panel-certificado .certificate{box-shadow:none;width:auto;min-height:auto !important;margin:0;
-      padding:14mm 18mm 12mm 18mm;display:block;overflow:visible;}
+    /* El alto va en hojas completas —tantas como diga --hojas, que se
+       cuenta con la medida del papel— y el pie, con 'margin-top:auto',
+       baja hasta el final de la ÚLTIMA hoja. Es min-height, no height:
+       si algo crece, la hoja crece. */
+    #panel-certificado .certificate{box-shadow:none;width:auto;margin:0;
+      min-height:calc(var(--hojas, 1) * 279.4mm) !important;
+      padding:14mm 18mm 12mm 18mm;display:flex;flex-direction:column;overflow:visible;}
     #panel-certificado .hoja-corte{display:none !important;}
     /* UNA MARCA POR HOJA. Con position:absolute la marca quedaba centrada en
        el certificado ENTERO: con tres hojas caia en la segunda, y se iba
@@ -3014,13 +3034,13 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
        (el margen de @page es cero, asi que la hoja es la carta completa). */
     #panel-certificado .watermark{ width:120mm; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); }
     #panel-certificado .watermark.copia{ display:none !important; }
-    /* El pie va entero: ni el bloque de contacto y ubicación ni la onda
-       verde se parten entre dos hojas. Y no arrastra una hoja más atrás:
-       'break-after:avoid' evitaba que quedara solo, pero con el pie al
-       final del documento no hace falta y estorbaba. */
-    #panel-certificado .cert-footer{margin-top:24px;
+    /* El pie baja hasta el fondo de la última hoja y va entero: ni el
+       bloque de contacto y ubicación ni la onda verde se parten. */
+    #panel-certificado .cert-footer{margin-top:auto; padding-top:24px;
       margin-left:-18mm; margin-right:-18mm;
       break-inside:avoid; page-break-inside:avoid;}
+    #panel-certificado .cert-footer .info-row,
+    #panel-certificado .cert-footer .wave{break-inside:avoid; page-break-inside:avoid;}
     #panel-certificado .cert-footer .info-row,
     #panel-certificado .cert-footer .wave{break-inside:avoid; page-break-inside:avoid;}
     #panel-certificado table.cert-table{ break-inside:auto; }
@@ -32684,32 +32704,40 @@ window.mapaActivar = function(){
     if (!cert) return;
     const original = cert.querySelector('.watermark:not(.copia)');
     if (!original || !cert.offsetWidth) return;
+    /* ── CUÁNTAS HOJAS SON ─────────────────────────────────────────
+       La cuenta se hace SIEMPRE con el ancho de la hoja carta, no con el
+       de la vista previa: si la ventana es angosta el certificado se
+       encoge, el texto se reparte en más renglones y la cuenta da una
+       hoja de más — que en el papel se ve como una hoja casi vacía con
+       el pie solo. Se mide un instante a 215,9 mm y se devuelve enseguida
+       (el navegador no alcanza a mostrarlo ni a avisar un cambio de
+       tamaño, así que no se forma un ciclo con el ResizeObserver). */
+    const MMP = 96 / 25.4;                              // milímetros de verdad
+    const hojaPapel = 279.4 * MMP;
+    const altoPuesto = cert.style.minHeight;
+    /* Se pone un instante como sale impreso y se mide ahí mismo. */
+    cert.classList.add('midiendo-papel');
+    const pie = cert.querySelector('.cert-footer');
+    let finArriba = 0;
+    [].forEach.call(cert.children, el => {
+      if (el === pie || el.classList.contains('watermark') || el.classList.contains('hoja-corte')) return;
+      finArriba = Math.max(finArriba, el.offsetTop + el.offsetHeight);
+    });
+    /* Lo que ocupa en el papel: lo de arriba, el pie y el relleno de
+       abajo, que ya está puesto en la caja de medir. */
+    const contenidoPapel = pie
+      ? finArriba + pie.offsetHeight + (12 * MMP)
+      : cert.scrollHeight;
+    const hojas = Math.max(1, Math.ceil((contenidoPapel - 2) / hojaPapel));
+    cert.classList.remove('midiendo-papel');
+
+    /* Y ahora la vista previa, en la escala en que se esté viendo. */
     const mm = cert.offsetWidth / 215.9;               // la hoja carta mide 215,9 mm de ancho
     const hoja = 279.4 * mm;                            // y 279,4 mm de alto
-    /* Alto del CONTENIDO: se suelta un momento el alto de hojas completas
-       para medirlo. Se vuelve a poner en el mismo instante, así el
-       navegador no alcanza a mostrar el cambio ni a avisar un cambio de
-       tamaño (no se forma un ciclo con el ResizeObserver). */
-    const altoPuesto = cert.style.minHeight;
-    cert.style.minHeight = hoja + 'px';
-    const pie = cert.querySelector('.cert-footer');
-    let contenido = cert.scrollHeight;
-    if (pie) {
-      // Con una sola hoja el pie empuja hasta abajo: se mide hasta donde termina lo de arriba del pie.
-      let finArriba = 0;
-      [].forEach.call(cert.children, el => {
-        if (el === pie || el.classList.contains('watermark') || el.classList.contains('hoja-corte')) return;
-        finArriba = Math.max(finArriba, el.offsetTop + el.offsetHeight);
-      });
-      const altoPie = pie.offsetHeight;
-      contenido = Math.max(finArriba + altoPie + 20, 0);
-    }
-    const hojas = Math.max(1, Math.ceil((contenido - 2) / hoja));
     const nuevoAlto = (hojas * hoja) + 'px';
     cert.style.minHeight = altoPuesto === nuevoAlto ? altoPuesto : nuevoAlto;
-    /* Cuántas hojas son: lo usa la hoja de impresión para dejar el pie al
-       final de la última, en milímetros de verdad (en el papel la escala
-       no es la de la pantalla). */
+    /* El número de hojas lo usa la hoja de impresión para dejar el pie al
+       final de la última, en milímetros de verdad. */
     cert.style.setProperty('--hojas', hojas);
 
     cert.querySelectorAll('.watermark.copia, .hoja-corte').forEach(c => c.remove());
