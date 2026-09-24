@@ -6228,10 +6228,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-personal .tn-personas .cel .nt,#per-area-modal .tn-personas .cel .nt{
   display:block;font-size:9.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;opacity:.75;
 }
-/* Los colores del sistema, a fondo lleno */
-#panel-personal .tn-personas .cel.ma,#per-area-modal .tn-personas .cel.ma{background:#2d8a4e;color:#fff}
-#panel-personal .tn-personas .cel.ta,#per-area-modal .tn-personas .cel.ta{background:#b5891c;color:#fff}
-#panel-personal .tn-personas .cel.no,#per-area-modal .tn-personas .cel.no{background:#2f4a86;color:#fff}
+/* El color lo pone cada celda: uno por horario. */
+#panel-personal .tn-personas .cel.pinta,#per-area-modal .tn-personas .cel.pinta{color:#fff}
 #panel-personal .tn-personas .cel.libre,#per-area-modal .tn-personas .cel.libre{background:var(--s2);color:var(--ink-l)}
 #panel-personal .tn-personas .cel.libre .nt,#per-area-modal .tn-personas .cel.libre .nt{opacity:1;font-weight:400;letter-spacing:.3px}
 #panel-personal .tn-personas .cel.dom,#per-area-modal .tn-personas .cel.dom{box-shadow:inset 0 -3px 0 rgba(139,26,26,.55)}
@@ -6252,6 +6250,9 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-personal .tn-editor .horas2{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
 #panel-personal .tn-editor .horas2 label{margin:0 0 3px}
 #panel-personal .tn-editor .horas2 span{font-size:12px;font-weight:700;color:#1c5636;padding-bottom:8px}
+#panel-personal .tn-editor .ed-todos{display:flex;align-items:center;gap:7px;margin-top:10px;
+  font-size:12px;font-weight:400;letter-spacing:0;text-transform:none;color:var(--ink-m);cursor:pointer}
+#panel-personal .tn-editor .ed-todos input{width:16px;height:16px}
 #panel-personal .tn-editor .acc{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
 #panel-personal .tn-editor .acc button{
   padding:8px 13px;font-size:11px;font-weight:700;border:1px solid var(--rule);background:var(--white);
@@ -6305,6 +6306,21 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   background:var(--white);color:var(--ink-l);cursor:pointer;font-family:'Source Sans 3',sans-serif;padding:0}
 #per-area-modal .ar-turno-dias button.on{background:#e7f1ea;border-color:#1c5636;color:#1c5636;font-weight:700}
 #per-area-modal .ar-turno-dias span{font-size:10.5px;color:var(--ink-l);margin-left:6px;align-self:center}
+/* Un turno que no entra en la rotación */
+#per-area-modal .ar-turno-dias .fijo{
+  display:flex;align-items:center;gap:4px;margin-left:8px;font-size:10.5px;font-weight:700;
+  color:var(--ink-l);cursor:pointer;white-space:nowrap;
+}
+#per-area-modal .ar-turno-dias .fijo.on{color:var(--gold)}
+#per-area-modal .ar-turno-dias .fijo input{width:14px;height:14px}
+/* El almuerzo que se le descuenta al turno */
+#per-area-modal .ar-turno-dias .alm{
+  display:flex;align-items:center;gap:4px;margin-left:8px;font-size:10.5px;font-weight:700;
+  color:var(--ink-l);cursor:pointer;white-space:nowrap;
+}
+#per-area-modal .ar-turno-dias .alm.on{color:#1c5636}
+#per-area-modal .ar-turno-dias .alm select{height:22px;font-size:10.5px;padding:0 4px;min-width:92px;
+  border:1px solid var(--rule);border-radius:4px;background:#fff;color:inherit}
 /* Quien arranca en cada turno */
 #per-area-modal .ar-inicial{border:1px solid var(--rule);max-height:210px;overflow:auto;padding:2px 10px}
 #per-area-modal .ar-inicial .fila{display:flex;gap:9px;align-items:center;padding:6px 0;border-bottom:1px solid #f4f4f4}
@@ -6448,10 +6464,11 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <div id="ar-f-semanas-caja" style="display:none">
       <label>¿Desde cuándo rige?</label>
       <select id="ar-f-semanas">
-        <option value="1">Esta semana</option>
-        <option value="2">Esta semana y la próxima</option>
-        <option value="0">Solo la próxima semana</option>
+        <option value="1">Desde esta semana</option>
+        <option value="0">Desde la próxima semana</option>
       </select>
+      <div class="ayuda">Al guardar, el sistema plantea <b>las próximas cuatro semanas</b> repartiendo los turnos.
+        Cada una se puede rehacer o retocar después desde el calendario.</div>
     </div>
 
     <div class="per-error" id="ar-f-error"></div>
@@ -33978,15 +33995,25 @@ function fechaCorta(iso){
   var d = new Date(iso + 'T00:00:00');
   return isNaN(d.getTime()) ? iso : d.toLocaleDateString('es-CO', { day:'numeric', month:'short' });
 }
-/* Lo que dura un turno, en horas. Si cruza la medianoche se cuenta hasta
-   el día siguiente: de 22:00 a 06:00 son 8 horas, no menos ocho. */
-function horasTurno(inicio, fin){
+/* Lo que dura un turno, en horas, ya descontado el almuerzo. Si cruza la
+   medianoche se cuenta hasta el día siguiente: de 22:00 a 06:00 son 8
+   horas, no menos ocho. El almuerzo va en minutos (60 = una hora). */
+function horasTurno(inicio, fin, almuerzo){
   var a = String(inicio).split(':'), b = String(fin).split(':');
   var x = Number(a[0]) * 60 + Number(a[1]), y = Number(b[0]) * 60 + Number(b[1]);
   if(isNaN(x) || isNaN(y)) return 0;
   var min = y - x;
   if(min <= 0) min += 24 * 60;
+  min -= Math.max(0, Number(almuerzo) || 0);
+  if(min < 0) min = 0;
   return Math.round(min / 6) / 10;
+}
+/* Cómo se lee un almuerzo en minutos: 60 → "1 h". */
+var ALMUERZOS = [[0, 'sin almuerzo'], [30, '30 min'], [45, '45 min'], [60, '1 h'], [90, '1 h 30']];
+function textoAlmuerzo(m){
+  m = Math.max(0, Number(m) || 0);
+  var x = ALMUERZOS.filter(function(o){ return o[0] === m; })[0];
+  return x ? x[1] : (m + ' min');
 }
 function numeroHoras(n){
   return (Math.round(n * 10) / 10).toLocaleString('es-CO', { maximumFractionDigits:1 }) + ' h';
@@ -34066,8 +34093,8 @@ function abrirArea(a){
     horaInicio: (a && a.horaInicio) || '07:00',
     horaFin: (a && a.horaFin) || '17:00',
     turnos: (a && a.turnos && a.turnos.length)
-      ? a.turnos.map(function(t){ return { nombre:t.nombre, inicio:t.inicio, fin:t.fin, dias:t.dias || TODOS_LOS_DIAS }; })
-      : PRESETS_TURNO['3x8'].map(function(t){ return { nombre:t.nombre, inicio:t.inicio, fin:t.fin, dias:TODOS_LOS_DIAS }; }),
+      ? a.turnos.map(function(t){ return { nombre:t.nombre, inicio:t.inicio, fin:t.fin, dias:t.dias || TODOS_LOS_DIAS, fijo:!!t.fijo, almuerzo:Number(t.almuerzo) || 0 }; })
+      : PRESETS_TURNO['3x8'].map(function(t){ return { nombre:t.nombre, inicio:t.inicio, fin:t.fin, dias:TODOS_LOS_DIAS, fijo:false, almuerzo:0 }; }),
     cobertura24: a ? !!a.cobertura24 : true,
     inicial: (a && a.inicial) ? JSON.parse(JSON.stringify(a.inicial)) : {},
     personas: a ? miembrosDe(a.nombre).map(function(m){ return m.persona; }) : []
@@ -34170,11 +34197,23 @@ function pintarTurnos(){
         DIAS_LETRA.map(function(d){
           return '<button type="button" class="' + (dias.indexOf(d) > -1 ? 'on' : '') + '" data-td="' + d + '">' + d + '</button>';
         }).join('') +
+        '<label class="fijo' + (t.fijo ? ' on' : '') + '" title="Su gente no entra en la rotación: se queda en este turno">' +
+          '<input type="checkbox" data-fijo="' + i + '"' + (t.fijo ? ' checked' : '') + '> fijo</label>' +
+        /* El almuerzo se le descuenta a las horas del turno: un turno de
+           06:00 a 14:00 con una hora de almuerzo son 7 horas. */
+        '<label class="alm' + (Number(t.almuerzo) ? ' on' : '') + '" title="Se le descuenta a las horas del turno">' +
+          'almuerzo <select data-alm="' + i + '">' +
+            ALMUERZOS.map(function(o){
+              return '<option value="' + o[0] + '"' + ((Number(t.almuerzo) || 0) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+            }).join('') +
+          '</select></label>' +
         '<span>' + (!dias.length ? 'sin días: este turno no va' :
             dias.length === 7 ? 'todos los días' :
             'descansa ' + DIAS_LETRA.filter(function(d){ return dias.indexOf(d) < 0; })
               .map(function(d){ return DIAS_NOMBRE[d]; }).join(', ')) +
-          ' · ' + numeroHoras(horasTurno(t.inicio, t.fin)) + ' por día</span>' +
+          ' · ' + numeroHoras(horasTurno(t.inicio, t.fin, t.almuerzo)) + ' por día' +
+          (Number(t.almuerzo) ? ' (menos ' + textoAlmuerzo(t.almuerzo) + ' de almuerzo)' : '') +
+          (t.fijo ? ' · no rota' : '') + '</span>' +
       '</div>';
   }).join('');
   $p('ar-f-turnos').querySelectorAll('.ar-turno').forEach(function(d){
@@ -34183,6 +34222,12 @@ function pintarTurnos(){
     d.querySelector('.tn-ini').oninput = function(){ AREA_FORM.turnos[i].inicio = this.value; pintarTurnos(); };
     d.querySelector('.tn-fin').oninput = function(){ AREA_FORM.turnos[i].fin = this.value; pintarTurnos(); };
     d.querySelector('button').onclick = function(){ AREA_FORM.turnos.splice(i, 1); pintarTurnos(); pintarInicial(); };
+  });
+  $p('ar-f-turnos').querySelectorAll('[data-fijo]').forEach(function(c){
+    c.onchange = function(){ AREA_FORM.turnos[+c.dataset.fijo].fijo = c.checked; pintarTurnos(); };
+  });
+  $p('ar-f-turnos').querySelectorAll('[data-alm]').forEach(function(c){
+    c.onchange = function(){ AREA_FORM.turnos[+c.dataset.alm].almuerzo = Number(c.value) || 0; pintarTurnos(); };
   });
   $p('ar-f-turnos').querySelectorAll('.ar-turno-dias').forEach(function(d){
     var i = +d.dataset.i;
@@ -34300,9 +34345,10 @@ function guardarArea(){
     if(modo !== 'rotativo') return;
     /* Las semanas que se pidieron se arman en segundo plano; la primera
        aparece apenas está. */
-    var lunes = lunesDe('');
-    var semanas = cuantas === '0' ? [sumarDias(lunes, 7)]
-                : cuantas === '2' ? [lunes, sumarDias(lunes, 7)] : [lunes];
+    /* Cuatro semanas planteadas de una vez: la que rige y las tres que
+       siguen. Alcanza para organizar el mes sin tener que volver. */
+    var lunes = cuantas === '0' ? sumarDias(lunesDe(''), 7) : lunesDe('');
+    var semanas = [lunes, sumarDias(lunes, 7), sumarDias(lunes, 14), sumarDias(lunes, 21)];
     /* El calendario se muestra ya, y las semanas se van armando una tras
        otra en segundo plano: cada una aparece apenas está lista. */
     verMes(nombre, semanas[0]);
@@ -34396,7 +34442,7 @@ function cuadroMes(area, turnos){
 
   lunes.forEach(function(sem){
     var dela = turnos.filter(function(t){ return t.semana === sem; });
-    var horas = dela.reduce(function(a, t){ return a + (t.horas || horasTurno(t.inicio, t.fin)); }, 0);
+    var horas = dela.reduce(function(a, t){ return a + (t.horas || horasTurno(t.inicio, t.fin, t.almuerzo)); }, 0);
     var abierta = (sem === estaSemana);
     h += '<details class="mes-sem"' + (abierta ? ' open' : '') + ' data-sem="' + sem + '">' +
       '<summary>Semana del ' + fechaCorta(sem) + ' al ' + fechaCorta(sumarDias(sem, 6)) +
@@ -34417,14 +34463,34 @@ function cuadroMes(area, turnos){
    Cada horario tiene su color —mañana, tarde, noche—, que es lo que
    permite ver de un vistazo cómo quedó repartido el día completo.
    La última columna son las horas de la semana de esa persona. */
-/* El color sale de la hora en que ENTRA: verde la mañana, dorado la
-   tarde, azul la noche. Son los colores del tablero. */
-function colorTurno(inicio, fin){
-  var h = Number(String(inicio).slice(0, 2));
-  if(isNaN(h)) return 'ma';
-  if(perEsNoche(inicio, fin)) return 'no';
-  return h < 12 ? 'ma' : 'ta';
+/* ── UN COLOR POR HORARIO ──────────────────────────────────────────
+   Dos turnos solo comparten color si tienen EXACTAMENTE las mismas
+   horas. Los colores se reparten en orden de entrada —del que arranca
+   más temprano al que arranca más tarde—, así que el de la mañana sigue
+   saliendo verde, el de la tarde dorado y el de la noche azul, pero un
+   cuarto turno ya tiene el suyo propio. */
+var COLORES_TURNO = ['#2d8a4e', '#b5891c', '#2f4a86', '#8b1a1a', '#5b3b8b',
+                     '#7a3d00', '#1a5c35', '#243b6b', '#8b6914', '#3f6d8a'];
+function minutosDe(hora){
+  var p = String(hora).split(':');
+  var m = Number(p[0]) * 60 + Number(p[1]);
+  return isNaN(m) ? 0 : m;
 }
+/* Arma el mapa horario -> color para un cuadro. */
+function coloresDe(turnos){
+  var vistos = {}, lista = [];
+  turnos.forEach(function(t){
+    var k = t.inicio + '-' + t.fin;
+    if(vistos[k]) return;
+    vistos[k] = 1;
+    lista.push({ k: k, m: minutosDe(t.inicio) });
+  });
+  lista.sort(function(a, b){ return a.m - b.m; });
+  var mapa = {};
+  lista.forEach(function(x, i){ mapa[x.k] = COLORES_TURNO[i % COLORES_TURNO.length]; });
+  return mapa;
+}
+/* Sigue sirviendo para saber si un turno es nocturno. */
 function perEsNoche(inicio, fin){
   var i = Number(String(inicio).slice(0, 2)), f = Number(String(fin).slice(0, 2));
   if(isNaN(i) || isNaN(f)) return false;
@@ -34444,6 +34510,7 @@ function tablaSemana(turnos, semana){
   turnos.forEach(function(t){ if(!vistoP[t.nombre]){ vistoP[t.nombre] = 1; personas.push(t.nombre); } });
   personas.sort(function(a, b){ return String(a).localeCompare(String(b), 'es'); });
 
+  var colores = coloresDe(turnos);
   var h = '<div style="overflow-x:auto"><table class="tbl tn-personas"><thead><tr><th>Quién</th>' +
     fechas.map(function(f){
       var d = new Date(f + 'T00:00:00');
@@ -34454,7 +34521,7 @@ function tablaSemana(turnos, semana){
   personas.forEach(function(p){
     var suyos = turnos.filter(function(t){ return t.nombre === p; });
     var clave = (suyos[0] || {}).persona || '';
-    var horas = suyos.reduce(function(a, t){ return a + (t.horas || horasTurno(t.inicio, t.fin)); }, 0);
+    var horas = suyos.reduce(function(a, t){ return a + (t.horas || horasTurno(t.inicio, t.fin, t.almuerzo)); }, 0);
     h += '<tr><td class="quien">' + esc(p) + '</td>';
     fechas.forEach(function(f){
       var esDom = new Date(f + 'T00:00:00').getDay() === 0;
@@ -34464,10 +34531,11 @@ function tablaSemana(turnos, semana){
          hay descanso. */
       /* La celda entera lleva el color del horario, como en una planilla:
          se ve de lejos cómo queda cubierto el día. */
-      var color = hoy.length ? colorTurno(hoy[0].inicio, hoy[0].fin) : 'libre';
+      var pinta = hoy.length ? (colores[hoy[0].inicio + '-' + hoy[0].fin] || COLORES_TURNO[0]) : '';
       var tocado = hoy.some(function(t){ return t.ajuste; });
       var datos = ' data-cel="1" data-persona="' + esc(clave) + '" data-fecha="' + f + '" data-quien="' + esc(p) + '"';
-      h += '<td class="cel ' + color + (esDom ? ' dom' : '') + (tocado ? ' tocado' : '') + '"' + datos +
+      h += '<td class="cel ' + (pinta ? 'pinta' : 'libre') + (esDom ? ' dom' : '') + (tocado ? ' tocado' : '') + '"' +
+        (pinta ? ' style="background:' + pinta + '"' : '') + datos +
         (hoy.length ? ' title="' + esc(hoy[0].turno) + (hoy[0].ajuste ? ' · ' + esc(hoy[0].ajuste) : '') + '"' : '') + '>' +
         (hoy.length
           ? hoy.map(function(t){
@@ -34478,7 +34546,7 @@ function tablaSemana(turnos, semana){
     });
     h += '<td class="tot">' + numeroHoras(horas) + '</td></tr>';
   });
-  var total = turnos.reduce(function(a, t){ return a + (t.horas || horasTurno(t.inicio, t.fin)); }, 0);
+  var total = turnos.reduce(function(a, t){ return a + (t.horas || horasTurno(t.inicio, t.fin, t.almuerzo)); }, 0);
   h += '<tr class="suma"><td>Total del área</td><td colspan="' + fechas.length + '"></td><td class="tot">' + numeroHoras(total) + '</td></tr>';
   return h + '</tbody></table></div>';
 }
@@ -34497,7 +34565,8 @@ function tablaSemana(turnos, semana){
    ══════════════════════════════════════════════════════════════════ */
 function editarCelda(celda){
   var persona = celda.dataset.persona, fecha = celda.dataset.fecha, quien = celda.dataset.quien;
-  var franja = celda.querySelector('.franja');
+  /* La franja con las horas del día: la celda la pinta con la clase 'hs'. */
+  var franja = celda.querySelector('.hs') || celda.querySelector('.franja');
   var turno = franja ? franja.dataset.turno : '';
   var horas = franja ? franja.textContent.split('–') : ['', ''];
   var a = areaPorNombre(AREA_VIENDO) || { turnos: [] };
@@ -34517,6 +34586,7 @@ function editarCelda(celda){
     '<div class="horas2"><label>Entra</label><input type="time" id="ed-ini" value="' + esc((horas[0] || '').trim()) + '">' +
     '<label>Sale</label><input type="time" id="ed-fin" value="' + esc((horas[1] || '').trim()) + '">' +
     '<span id="ed-cuantas"></span></div>' +
+    (franja ? '<label class="ed-todos"><input type="checkbox" id="ed-todos"> Cambiar el horario de <b>todo el turno</b> ese día</label>' : '') +
     '<div class="acc">' +
       (franja ? '<button type="button" id="ed-quitar">Quitar el turno</button>' : '') +
       '<button type="button" id="ed-cancelar">Cancelar</button>' +
@@ -34532,8 +34602,14 @@ function editarCelda(celda){
   celda.closest('.cuerpo').appendChild(div);
 
   var contar = function(){
-    var hs = horasTurno($p('ed-ini').value, $p('ed-fin').value);
-    $p('ed-cuantas').textContent = ($p('ed-ini').value && $p('ed-fin').value) ? '= ' + numeroHoras(hs) : '';
+    /* Se muestra lo que queda después del almuerzo del turno, que es lo
+       que de verdad se le suma a la persona. */
+    var sel = $p('ed-turno');
+    var suyo = a.turnos.filter(function(t){ return t.nombre === sel.value; })[0];
+    var alm = suyo ? (Number(suyo.almuerzo) || 0) : 0;
+    var hs = horasTurno($p('ed-ini').value, $p('ed-fin').value, alm);
+    $p('ed-cuantas').textContent = ($p('ed-ini').value && $p('ed-fin').value)
+      ? '= ' + numeroHoras(hs) + (alm ? ' (menos ' + textoAlmuerzo(alm) + ')' : '') : '';
   };
   $p('ed-turno').onchange = function(){
     var o = this.options[this.selectedIndex];
@@ -34550,10 +34626,11 @@ function editarCelda(celda){
   $p('ed-guardar').onclick = function(){
     var sel = $p('ed-turno');
     var nombreTurno = sel.value === '__otro' ? 'Horas especiales' : sel.value;
+    var todos = $p('ed-todos') && $p('ed-todos').checked;
     mandarCambio({ accion:'perTurnoEditar', area: AREA_VIENDO, semana: lunesDe(fecha), fecha: fecha,
                    persona: persona, turno: turno || nombreTurno, nombreTurno: nombreTurno,
-                   inicio: $p('ed-ini').value, fin: $p('ed-fin').value,
-                   nota: sel.value === '__otro' ? 'horas especiales' : 'ajustado a mano' }, this);
+                   inicio: $p('ed-ini').value, fin: $p('ed-fin').value, todoElTurno: !!todos,
+                   nota: todos ? 'el turno cambió ese día' : (sel.value === '__otro' ? 'horas especiales' : 'ajustado a mano') }, this);
   };
 }
 
@@ -34616,12 +34693,12 @@ function engancharAreas(){
   $p('ar-f-24').onchange = function(){ AREA_FORM.cobertura24 = this.checked; pintarModo(); pintarDias(); };
   $p('ar-f-preset').onchange = function(){
     if(this.value === 'libre') return;
-    AREA_FORM.turnos = PRESETS_TURNO[this.value].map(function(t){ return { nombre:t.nombre, inicio:t.inicio, fin:t.fin, dias:TODOS_LOS_DIAS }; });
+    AREA_FORM.turnos = PRESETS_TURNO[this.value].map(function(t){ return { nombre:t.nombre, inicio:t.inicio, fin:t.fin, dias:TODOS_LOS_DIAS, fijo:false, almuerzo:0 }; });
     AREA_FORM.inicial = {};
     pintarTurnos(); pintarInicial();
   };
   $p('ar-f-masturno').onclick = function(){
-    AREA_FORM.turnos.push({ nombre:'Turno ' + (AREA_FORM.turnos.length + 1), inicio:'06:00', fin:'14:00', dias:TODOS_LOS_DIAS });
+    AREA_FORM.turnos.push({ nombre:'Turno ' + (AREA_FORM.turnos.length + 1), inicio:'06:00', fin:'14:00', dias:TODOS_LOS_DIAS, fijo:false, almuerzo:0 });
     $p('ar-f-preset').value = 'libre';
     pintarTurnos(); pintarInicial();
   };
