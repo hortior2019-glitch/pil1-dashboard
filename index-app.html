@@ -2994,8 +2994,16 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
        deben comportarse. El de arriba y el de abajo aplican una sola vez:
        si un certificado se va a mas de una hoja, la segunda arranca mas
        pegada al borde. Es el precio de sacar la URL del PDF. */
-    #panel-certificado .certificate{box-shadow:none;width:auto;min-height:auto !important;margin:0;
-      padding:14mm 18mm 12mm 18mm;display:block;overflow:visible;}
+    /* EL ALTO SE MANTIENE EN HOJAS COMPLETAS. Con 'min-height:auto' el
+       documento terminaba donde terminaba el contenido y el pie quedaba
+       a media hoja —o peor, partido entre dos—. Con el alto puesto en
+       tantas hojas como ocupe (la cuenta ya la hace repartirMarcaDeAgua,
+       que deja el número en --hojas) y el pie con 'margin-top:auto', el
+       pie baja hasta el final de la ÚLTIMA hoja, que es donde va.
+       Es min-height, no height: si el contenido crece, la hoja crece. */
+    #panel-certificado .certificate{box-shadow:none;width:auto;margin:0;
+      min-height:calc(var(--hojas, 1) * 279.4mm) !important;
+      padding:14mm 18mm 12mm 18mm;display:flex;flex-direction:column;overflow:visible;}
     #panel-certificado .hoja-corte{display:none !important;}
     /* UNA MARCA POR HOJA. Con position:absolute la marca quedaba centrada en
        el certificado ENTERO: con tres hojas caia en la segunda, y se iba
@@ -3004,7 +3012,13 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
        (el margen de @page es cero, asi que la hoja es la carta completa). */
     #panel-certificado .watermark{ width:120mm; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); }
     #panel-certificado .watermark.copia{ display:none !important; }
-    #panel-certificado .cert-footer{margin-top:24px; margin-left:-18mm; margin-right:-18mm;}
+    /* El pie va entero: ni el bloque de contacto y ubicación ni la onda
+       verde se parten entre dos hojas. */
+    #panel-certificado .cert-footer{margin-top:auto; padding-top:24px;
+      margin-left:-18mm; margin-right:-18mm;
+      break-inside:avoid; page-break-inside:avoid; break-after:avoid;}
+    #panel-certificado .cert-footer .info-row,
+    #panel-certificado .cert-footer .wave{break-inside:avoid; page-break-inside:avoid;}
     #panel-certificado table.cert-table{ break-inside:auto; }
     #panel-certificado table.cert-table thead{ display:table-header-group; }
     #panel-certificado table.cert-table tr{ break-inside:avoid; page-break-inside:avoid; }
@@ -32689,6 +32703,10 @@ window.mapaActivar = function(){
     const hojas = Math.max(1, Math.ceil((contenido - 2) / hoja));
     const nuevoAlto = (hojas * hoja) + 'px';
     cert.style.minHeight = altoPuesto === nuevoAlto ? altoPuesto : nuevoAlto;
+    /* Cuántas hojas son: lo usa la hoja de impresión para dejar el pie al
+       final de la última, en milímetros de verdad (en el papel la escala
+       no es la de la pantalla). */
+    cert.style.setProperty('--hojas', hojas);
 
     cert.querySelectorAll('.watermark.copia, .hoja-corte').forEach(c => c.remove());
     original.style.top = (hoja / 2) + 'px';
