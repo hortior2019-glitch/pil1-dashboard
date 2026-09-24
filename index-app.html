@@ -6487,8 +6487,46 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   margin:4px 0 14px;padding-bottom:10px;border-bottom:2px solid var(--rule-l);letter-spacing:-.2px;
 }
 /* El calendario del mes */
-#panel-personal .mes-barra{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
-#panel-personal .mes-barra b{font-family:'Playfair Display',serif;font-size:19px;font-weight:700;text-transform:capitalize}
+#panel-personal .mes-barra{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;margin-bottom:16px}
+/* ── EL CALENDARIO PARA ELEGIR LA SEMANA ───────────────────────────
+   Un mes corriente: se pasa el mouse por una semana, la fila entera se
+   resalta, y al tocarla el cuadro se para ahí. */
+#panel-personal .cal{border:1px solid var(--rule);background:var(--white);padding:8px 10px 10px}
+#panel-personal .cal-h{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+#panel-personal .cal-h b{flex:1;text-align:center;font-family:'Playfair Display',serif;font-size:15px;
+  font-weight:700;color:var(--ink);text-transform:capitalize}
+#panel-personal .cal-h button{width:26px;height:26px;border:1px solid var(--rule);background:var(--bg);
+  color:var(--ink-m);cursor:pointer;font-size:14px;line-height:1;font-family:'Source Sans 3',sans-serif}
+#panel-personal .cal-h button:hover{border-color:#1c5636;color:#1c5636}
+#panel-personal .cal-t{border-collapse:collapse}
+#panel-personal .cal-t th{width:28px;padding:2px 0;font-size:9.5px;font-weight:700;letter-spacing:.5px;
+  color:var(--ink-l);text-align:center}
+#panel-personal .cal-t td{width:28px;height:26px;padding:0;text-align:center;font-size:12px;
+  color:var(--ink);font-variant-numeric:lining-nums tabular-nums}
+#panel-personal .cal-t td.fuera{color:#c9c9c9}
+#panel-personal .cal-t td.hoy{font-weight:700;color:#1c5636;box-shadow:inset 0 -2px 0 #1c5636}
+#panel-personal .cal-s{cursor:pointer;border-left:3px solid transparent}
+#panel-personal .cal-s:hover td{background:#eef4f0}
+#panel-personal .cal-s.tiene{border-left-color:#2d8a4e}
+#panel-personal .cal-s.ahora td{background:#f7f3e6}
+#panel-personal .cal-s.sel td{background:#1c5636;color:#fff}
+#panel-personal .cal-s.sel td.fuera{color:rgba(255,255,255,.55)}
+#panel-personal .cal-s.sel td.hoy{box-shadow:inset 0 -2px 0 rgba(255,255,255,.8);color:#fff}
+/* Lo de al lado: de qué área es, qué semanas se están viendo y los botones */
+#panel-personal .mes-lado{display:flex;flex-direction:column;gap:4px}
+#panel-personal .mes-area{font-family:'Playfair Display',serif;font-size:19px;font-weight:700;color:var(--ink)}
+#panel-personal .mes-rango{font-size:12px;color:var(--ink-l)}
+#panel-personal .mes-btns{display:flex;gap:7px;margin-top:6px}
+/* El aviso de lo que está pasando: discreto, en la barra, sin tapar */
+#panel-personal .mes-aviso{
+  font-size:11.5px;color:#1c5636;background:#eef4f0;border-left:3px solid #1c5636;
+  padding:5px 9px;margin-top:4px;max-width:320px;
+}
+#panel-personal .mes-aviso.mal{color:#b23b3b;background:#fdf3f3;border-left-color:#b23b3b}
+#panel-personal .mes-aviso button{
+  margin-left:6px;padding:3px 9px;font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;
+  border:1px solid currentColor;background:none;color:inherit;cursor:pointer;font-family:'Source Sans 3',sans-serif;
+}
 #panel-personal .mes-sem{border:1px solid var(--rule-l,#ececec);margin-bottom:12px}
 /* El encabezado de cada semana: el día, grande y del color de esa
    semana; el mes al lado, sin negrilla. Lo demás, lo mínimo. */
@@ -33985,14 +34023,26 @@ function leerLocal(){
 }
 leerLocal();
 
-function pedir(cuerpo){
-  return fetch(PERSONAL_API, { method:'POST', redirect:'follow',
-      headers:{ 'Content-Type':'text/plain;charset=utf-8' }, body: JSON.stringify(cuerpo) })
+/* Ninguna llamada se queda esperando para siempre: si el servicio no
+   contesta en ese tiempo, se corta y se avisa. Armar semanas puede
+   tardar más que una consulta, por eso cada llamada dice cuánto espera. */
+function pedir(cuerpo, segundos){
+  var corte = null, cortado = false;
+  var opciones = { method:'POST', redirect:'follow',
+      headers:{ 'Content-Type':'text/plain;charset=utf-8' }, body: JSON.stringify(cuerpo) };
+  try {
+    var ctrl = new AbortController();
+    opciones.signal = ctrl.signal;
+    corte = setTimeout(function(){ cortado = true; ctrl.abort(); }, (segundos || 40) * 1000);
+  } catch(e){ /* navegador viejo: se espera sin corte */ }
+  return fetch(PERSONAL_API, opciones)
     .catch(function(){
+      if(cortado) throw new Error('el servicio de Personal se demoró demasiado · vuelva a intentarlo');
       /* Casi siempre es que el Apps Script de Personal todavía no está
          publicado, o que se publicó sin acceso "Cualquier persona". */
       throw new Error('no contestó el servicio de Personal · revise que el Apps Script esté publicado con acceso "Cualquier persona"');
     })
+    .then(function(r){ if(corte) clearTimeout(corte); return r; })
     .then(function(r){ return r.text(); })
     .then(function(t){
       var d;
@@ -34537,10 +34587,7 @@ function pintarAreas(){
         (mini ? '<img class="ar-foto" src="' + esc(mini) + '" alt="" loading="lazy" onerror="this.style.display=&quot;none&quot;">' : '') +
         '<div class="ar-nom">' + esc(a.nombre) + '<span class="ar-modo">' +
           (a.modo === 'rotativo' ? 'turnos rotativos' : 'horario general') + '</span></div>' +
-        '<div class="ar-gente">' + (gente.length
-          ? gente.slice(0, 12).map(function(m){ return '<span>' + esc(m.nombre) + '</span>'; }).join('') +
-            (gente.length > 12 ? '<span>y ' + (gente.length - 12) + ' más</span>' : '')
-          : '<span>sin gente asignada</span>') + '</div>' +
+        (gente.length ? '' : '<div class="ar-gente"><span>sin gente asignada</span></div>') +
         '<div class="ar-acc">' +
           (a.modo === 'rotativo' ? '<button type="button" class="fuerte" data-ar-turnos="' + esc(a.nombre) + '">Ver los turnos</button>' : '') +
           '<button type="button" data-ar-editar="' + esc(a.nombre) + '">Editar</button>' +
@@ -34954,17 +35001,13 @@ function guardarArea(){
     /* Cuatro semanas planteadas de una vez: la que rige y las tres que
        siguen. Alcanza para organizar el mes sin tener que volver. */
     var lunes = cuantas === '0' ? sumarDias(lunesDe(''), 7) : lunesDe('');
-    var semanas = [lunes, sumarDias(lunes, 7), sumarDias(lunes, 14), sumarDias(lunes, 21)];
-    /* El calendario se muestra ya, y las semanas se van armando una tras
-       otra en segundo plano: cada una aparece apenas está lista. */
-    verMes(nombre, semanas[0]);
-    var enFila = Promise.resolve();
-    semanas.forEach(function(sem){
-      enFila = enFila
-        .then(function(){ return pedir({ accion:'perTurnos', area: nombre, semana: sem }); })
-        .then(function(){ if(AREA_VIENDO === nombre) verMes(nombre, MES_VIENDO, true); })
-        .catch(function(){});
-    });
+    /* Las cuatro semanas se plantean en UNA sola llamada: el servicio las
+       arma todas y contesta cuando están. Antes eran cuatro idas y
+       vueltas y, si algo se cortaba, quedaban semanas sin armar. */
+    verMes(nombre, lunes);
+    pedir({ accion:'perTurnosPlan', area: nombre, desde: lunes, cuantas: 4 }, 120)
+      .then(function(){ if(AREA_VIENDO === nombre) verMes(nombre, MES_VIENDO, true); })
+      .catch(function(e){ alert('El área quedó guardada, pero no se pudieron armar las semanas: ' + (e.message || '')); });
   }).catch(function(e){
     err.textContent = e.message || 'No se pudo guardar.';
   }).then(function(){ b.disabled = false; b.textContent = 'Guardar'; });
@@ -35031,19 +35074,79 @@ function verMes(area, fecha, forzar){
     repintarDesglose();
     engancharMes();
   };
-  /* Lo guardado se pinta ya; el servidor se consulta igual y, si trae
-     algo distinto, se repinta. Así nunca se ve una espera en blanco. */
-  if(P.turnos[clave] && !forzar) pintarlo(P.turnos[clave]);
-  else caja.innerHTML = '<div class="tn-caja">Trayendo los turnos…</div>';
+  /* Lo guardado se pinta ya. Si no hay nada guardado, igual se arma la
+     pantalla —con el calendario y las semanas— y arriba dice que se
+     están trayendo: nunca se queda un cartel solo esperando. */
+  ESTADO_TURNOS = 'trayendo';
+  planearSiFalta(area);
+  pintarlo(P.turnos[clave] && !forzar ? P.turnos[clave] : (P.turnos[clave] || []));
 
-  pedir({ accion:'perTurnosRango', area: area, desde: desde, hasta: hasta })
+  pedir({ accion:'perTurnosRango', area: area, desde: desde, hasta: hasta }, 40)
     .then(function(d){
       var t = d.turnos || [];
+      ESTADO_TURNOS = '';
       if(!P.turnos[clave] || JSON.stringify(t) !== JSON.stringify(P.turnos[clave])) pintarlo(t);
+      else { caja.innerHTML = cuadroMes(area, t); repintarDesglose(); engancharMes(); }
     })
     .catch(function(e){
-      if(!P.turnos[clave]) caja.innerHTML = '<div class="tn-caja">No se pudieron traer los turnos: ' + esc(e.message) + '</div>';
+      ESTADO_TURNOS = 'error:' + (e.message || 'no se pudo');
+      pintarlo(P.turnos[clave] || []);
     });
+}
+
+/* ── EL CALENDARIO ─────────────────────────────────────────────────
+   Un mes normal y corriente. Se pasa el mouse por una semana, la fila
+   entera se resalta, y al tocarla el cuadro se para en esa semana. Las
+   semanas que ya están armadas llevan su punto verde. */
+var CAL_MES = '';
+/* Qué está pasando con los turnos: '' (nada), 'trayendo', 'armando' o
+   'error:…'. Se muestra en la barra, sin tapar la pantalla. */
+var ESTADO_TURNOS = '';
+function avisoTurnos(){
+  if(!ESTADO_TURNOS) return '';
+  if(ESTADO_TURNOS === 'trayendo') return '<div class="mes-aviso">Trayendo los turnos…</div>';
+  if(ESTADO_TURNOS === 'armando')  return '<div class="mes-aviso">Armando las próximas semanas…</div>';
+  return '<div class="mes-aviso mal">' + esc(ESTADO_TURNOS.replace(/^error:/, '')) +
+    ' <button type="button" id="mes-reintentar">Reintentar</button></div>';
+}
+function calendarioHtml(turnos){
+  var mes = CAL_MES || MES_VIENDO || isoDe(new Date());
+  var hoy = isoDe(new Date()), estaSemana = lunesDe(hoy), viendo = lunesDe(MES_VIENDO || hoy);
+  var conTurnos = {};
+  (turnos || []).forEach(function(t){ conTurnos[t.semana] = 1; });
+
+  var primero = primerDiaMes(mes);
+  var d0 = new Date(primero + 'T00:00:00');
+  var filas = [], sem = lunesDe(primero);
+  var ultimo = ultimoDiaMes(mes);
+  while(sem <= ultimo){ filas.push(sem); sem = sumarDias(sem, 7); }
+
+  var h = '<div class="cal">' +
+    '<div class="cal-h">' +
+      '<button type="button" id="cal-antes" title="Mes anterior">‹</button>' +
+      '<b>' + esc(d0.toLocaleDateString('es-CO', { month:'long', year:'numeric' })) + '</b>' +
+      '<button type="button" id="cal-despues" title="Mes siguiente">›</button>' +
+    '</div>' +
+    '<table class="cal-t"><thead><tr>' +
+      ['L','M','X','J','V','S','D'].map(function(x){ return '<th>' + x + '</th>'; }).join('') +
+    '</tr></thead><tbody>';
+
+  filas.forEach(function(l){
+    var clases = ['cal-s'];
+    if(conTurnos[l]) clases.push('tiene');
+    if(l === estaSemana) clases.push('ahora');
+    if(l === viendo) clases.push('sel');
+    h += '<tr class="' + clases.join(' ') + '" data-cal-sem="' + l + '" title="Semana del ' +
+      esc(fechaCorta(l)) + (conTurnos[l] ? ' · armada' : ' · sin armar') + '">';
+    for(var i = 0; i < 7; i++){
+      var f = sumarDias(l, i);
+      var dd = new Date(f + 'T00:00:00');
+      var fuera = (f < primero || f > ultimo);
+      h += '<td class="' + (fuera ? 'fuera' : '') + (f === hoy ? ' hoy' : '') + '">' + dd.getDate() + '</td>';
+    }
+    h += '</tr>';
+  });
+  return h + '</tbody></table></div>';
 }
 
 /* Deja en pantalla solo el cuadro de turnos, o devuelve la lista de
@@ -35054,18 +35157,68 @@ function soloTurnos(si){
   if(barra) barra.style.display = si ? 'none' : '';
 }
 
+/* ── QUE NUNCA FALTE LA PRÓXIMA SEMANA ─────────────────────────────
+   Al abrir un área rotativa, si a la semana que corre o a las tres que
+   siguen les falta el cuadro, se plantean solas de una vez. No hay que
+   andar dándole a "Armar la semana" cada vez. */
+var PLANEADAS = {};
+function planearSiFalta(area){
+  var a = areaPorNombre(area);
+  if(!a || a.modo !== 'rotativo') return;
+  if(PLANEADAS[area]) return;
+  PLANEADAS[area] = true;
+  var lunes = lunesDe('');
+  var clave = area + '|' + semanasDelCuadro(MES_VIENDO)[0];
+  var hay = P.turnos[clave] || [];
+  var faltan = [0, 1, 2, 3].some(function(i){
+    var sem = sumarDias(lunes, 7 * i);
+    return !hay.some(function(t){ return t.semana === sem; });
+  });
+  if(!faltan) return;
+  /* Armar cuatro semanas puede tardar: se avisa en la barra y se espera
+     con paciencia (hasta dos minutos), pero nunca para siempre. */
+  ESTADO_TURNOS = 'armando';
+  pedir({ accion:'perTurnosPlan', area: area, desde: lunes, cuantas: 4 }, 120)
+    .then(function(d){
+      ESTADO_TURNOS = '';
+      /* Solo se repinta si de verdad se armó algo nuevo. */
+      if(AREA_VIENDO === area && d && d.armadas && d.armadas.length) verMes(area, MES_VIENDO, true);
+      else if(AREA_VIENDO === area){
+        var av = document.querySelector('#ar-turnos .mes-aviso');
+        if(av) av.parentNode.removeChild(av);
+      }
+    })
+    .catch(function(e){
+      /* Queda marcada como intentada: no se vuelve sola: se avisa y el
+         botón de reintentar lo decide la persona. */
+      ESTADO_TURNOS = 'error:no se pudieron armar las próximas semanas · ' + (e.message || '');
+      var caja = $p('ar-turnos');
+      if(AREA_VIENDO === area && caja && caja.querySelector('.mes-lado')){
+        var lado = caja.querySelector('.mes-lado');
+        var viejo = lado.querySelector('.mes-aviso');
+        if(viejo) viejo.parentNode.removeChild(viejo);
+        lado.insertAdjacentHTML('beforeend', avisoTurnos());
+        var bt = $p('mes-reintentar');
+        if(bt) bt.onclick = function(){ PLANEADAS[area] = false; ESTADO_TURNOS = ''; verMes(area, MES_VIENDO, true); };
+      }
+    });
+}
+
 function cuadroMes(area, turnos){
   var lunes = semanasDelCuadro(MES_VIENDO);
   var hoy = isoDe(new Date()), estaSemana = lunesDe(hoy);
   var h = '<div class="tn-caja">' +
     '<div class="mes-barra">' +
-      '<button type="button" id="mes-antes">‹ 3 semanas antes</button>' +
-      '<b>' + esc(fechaCorta(lunes[0])) + ' al ' + esc(fechaCorta(sumarDias(lunes[lunes.length - 1], 6))) + '</b>' +
-      '<button type="button" id="mes-despues">3 semanas después ›</button>' +
-      '<span style="flex:1"></span>' +
-      '<span style="font-size:12px;color:var(--ink-l)">' + esc(area) + '</span>' +
-      '<button type="button" id="mes-hoy">Ir a hoy</button>' +
-      '<button type="button" id="mes-cerrar">Cerrar</button>' +
+      calendarioHtml(turnos) +
+      '<div class="mes-lado">' +
+        '<div class="mes-area">' + esc(area) + '</div>' +
+        '<div class="mes-rango">' + esc(fechaCorta(lunes[0])) + ' al ' + esc(fechaCorta(sumarDias(lunes[lunes.length - 1], 6))) + '</div>' +
+        avisoTurnos() +
+        '<div class="mes-btns">' +
+          '<button type="button" id="mes-hoy">Ir a hoy</button>' +
+          '<button type="button" id="mes-cerrar">Cerrar</button>' +
+        '</div>' +
+      '</div>' +
     '</div>';
 
   var proxima = sumarDias(estaSemana, 7);
@@ -35477,14 +35630,34 @@ function mandarCambio(cuerpo, boton){
 
 function engancharMes(){
   var b = function(id){ return $p(id); };
-  if(b('mes-antes'))   b('mes-antes').onclick   = function(){ verMes(AREA_VIENDO, sumarDias(lunesDe(MES_VIENDO), -21)); };
-  if(b('mes-despues')) b('mes-despues').onclick = function(){ verMes(AREA_VIENDO, sumarDias(lunesDe(MES_VIENDO), 21)); };
-  if(b('mes-hoy'))     b('mes-hoy').onclick     = function(){ verMes(AREA_VIENDO, isoDe(new Date())); };
+  var caja = $p('ar-turnos');
+  if(!caja) return;
+  /* El calendario: cambiar de mes y elegir la semana. */
+  if(b('cal-antes'))   b('cal-antes').onclick   = function(){
+    CAL_MES = sumarDias(primerDiaMes(CAL_MES || MES_VIENDO), -1); verMes(AREA_VIENDO, MES_VIENDO);
+  };
+  if(b('cal-despues')) b('cal-despues').onclick = function(){
+    CAL_MES = sumarDias(ultimoDiaMes(CAL_MES || MES_VIENDO), 1); verMes(AREA_VIENDO, MES_VIENDO);
+  };
+  caja.querySelectorAll('[data-cal-sem]').forEach(function(fila){
+    fila.onclick = function(){
+      var sem = fila.dataset.calSem;
+      verMes(AREA_VIENDO, sem);
+      /* La semana elegida queda abierta y a la vista. */
+      setTimeout(function(){
+        var det = $p('ar-turnos').querySelector('details[data-sem="' + sem + '"]');
+        if(det){ det.open = true; det.scrollIntoView({ block:'start', behavior:'smooth' }); }
+      }, 60);
+    };
+  });
+  if(b('mes-reintentar')) b('mes-reintentar').onclick = function(){
+    PLANEADAS[AREA_VIENDO] = false; ESTADO_TURNOS = ''; verMes(AREA_VIENDO, MES_VIENDO, true);
+  };
+  if(b('mes-hoy'))     b('mes-hoy').onclick     = function(){ CAL_MES = ''; verMes(AREA_VIENDO, isoDe(new Date())); };
   if(b('mes-cerrar'))  b('mes-cerrar').onclick  = function(){
     AREA_VIENDO = ''; DESGLOSE = null; $p('ar-turnos').innerHTML = ''; soloTurnos(false);
   };
 
-  var caja = $p('ar-turnos');
   caja.querySelectorAll('[data-armar]').forEach(function(bt){
     bt.onclick = function(){ armarSemana(bt.dataset.armar, false, bt); };
   });
