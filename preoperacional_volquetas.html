@@ -637,15 +637,14 @@
     border: none; border-radius: 6px; background: var(--green-dark); color: #fff; cursor: pointer;
   }
   .btn-cam:hover { background: var(--green-mid); }
-  /* Adjuntar un archivo que ya está en el equipo o en la galería: la foto
-     del recibo muchas veces se toma antes, o llega en PDF. */
-  .btn-adj {
-    flex-shrink: 0; padding: 10px 16px; font-family: 'Barlow', sans-serif;
-    font-weight: 700; font-size: 12px; letter-spacing: .06em; text-transform: uppercase;
-    border: 1.5px solid var(--green-dark); border-radius: 6px;
-    background: #fff; color: var(--green-dark); cursor: pointer;
-  }
-  .btn-adj:hover { background: var(--green-light); }
+  /* ⚠ ACÁ NO SE ADJUNTAN ARCHIVOS, Y NO ES UN DESCUIDO.
+     La foto del tablero y la del recibo se toman en el momento: es la
+     prueba de que el tanqueo se hizo. Por eso no hay botón de adjuntar
+     ni campo de archivo a la vista; el único campo que queda está
+     escondido y sirve de respaldo cuando el navegador no deja abrir la
+     cámara adentro de la página — y hasta ese abre la cámara del
+     teléfono, no la galería. */
+  .file-input.oculto { display: none; }
   .file-input {
     flex: 1; min-width: 180px;
     border: 1.5px dashed var(--green-border);
@@ -932,9 +931,8 @@
         <label>Foto del tablero (kilometraje) <span>*</span></label>
         <div class="foto-controls">
           <button type="button" class="btn-cam" onclick="abrirCamara('comb-tablero-preview','combTablero')">Tomar foto</button>
-          <button type="button" class="btn-adj" onclick="document.getElementById('comb-tablero').click()">Adjuntar archivo</button>
-          <input type="file" id="comb-tablero" accept="image/*,application/pdf"
-                 onchange="onFotoCombustible(this,'comb-tablero-preview','combTablero')" class="file-input">
+          <input type="file" id="comb-tablero" accept="image/*" capture="environment"
+                 onchange="onFotoCombustible(this,'comb-tablero-preview','combTablero')" class="file-input oculto">
         </div>
         <div id="comb-tablero-preview" class="foto-preview"></div>
       </div>
@@ -990,9 +988,8 @@
         <label>Foto del recibo <span>*</span></label>
         <div class="foto-controls">
           <button type="button" class="btn-cam" onclick="abrirCamara('comb-recibo-preview','combRecibo')">Tomar foto</button>
-          <button type="button" class="btn-adj" onclick="document.getElementById('comb-recibo').click()">Adjuntar archivo</button>
-          <input type="file" id="comb-recibo" accept="image/*,application/pdf"
-                 onchange="onFotoCombustible(this,'comb-recibo-preview','combRecibo')" class="file-input">
+          <input type="file" id="comb-recibo" accept="image/*" capture="environment"
+                 onchange="onFotoCombustible(this,'comb-recibo-preview','combRecibo')" class="file-input oculto">
         </div>
         <div id="comb-recibo-preview" class="foto-preview"></div>
       </div>
@@ -1405,45 +1402,24 @@ function comprimirImagen(dataURL, maxLado, calidad) {
   });
 }
 
-/* Sirve para la foto tomada en el momento y para un archivo que ya se
-   tenga: una imagen de la galería o el recibo en PDF. Las imágenes se
-   achican antes de subirlas; un PDF se manda tal cual, con su tipo. */
+/* Solo entra por acá la foto de la cámara del teléfono, que es el
+   respaldo cuando el navegador no deja abrir la cámara dentro de la
+   página. No hay forma de adjuntar un archivo guardado: la foto del
+   tanqueo se toma en el momento. */
 function onFotoCombustible(input, previewId, key) {
   const file = input.files[0];
   if (!file) { delete fotos[key]; const p = document.getElementById(previewId); if (p) p.innerHTML = ''; return; }
-  const esImagen = /^image\//.test(file.type || '');
+  if (!/^image\//.test(file.type || '')) {
+    input.value = '';
+    toastMsg('Solo se acepta una foto tomada con la cámara.', true);
+    return;
+  }
   const reader = new FileReader();
   reader.onload = async e => {
-    if (!esImagen) { procesarArchivo(e.target.result, file.type || 'application/pdf', file.name, previewId, key); return; }
     const chica = await comprimirImagen(e.target.result, 1600, 0.82);
     procesarFoto(chica, 'image/jpeg', file.name, previewId, key);
   };
   reader.readAsDataURL(file);
-}
-
-/* Un archivo que no es imagen (un PDF): no se puede mostrar como foto,
-   así que la vista previa es el nombre del archivo. Se sube igual. */
-function procesarArchivo(dataURL, mime, name, previewId, key) {
-  fotos[key] = { b64: dataURL.split(',')[1], mime: mime, name: name || ('archivo_' + Date.now()) };
-  const prev = document.getElementById(previewId);
-  if (prev) {
-    prev.innerHTML =
-      '<div class="geo-wrap">' +
-        '<div class="geo-coords" style="padding:12px 14px;border:1.5px solid var(--border);border-radius:8px">' +
-          '📄 ' + (name || 'archivo adjunto') +
-        '</div>' +
-        '<div class="geo-coords" id="' + previewId + '-geo">Ubicando…</div>' +
-      '</div>';
-  }
-  obtenerUbicacion().then(loc => {
-    const geo = document.getElementById(previewId + '-geo');
-    if (loc && fotos[key]) {
-      fotos[key].lat = loc.lat; fotos[key].lng = loc.lng;
-      if (geo) geo.textContent = loc.lat.toFixed(5) + ', ' + loc.lng.toFixed(5);
-    } else if (geo) {
-      geo.textContent = 'Sin ubicación';
-    }
-  });
 }
 
 // ── CÁMARA EN VIVO ───────────────────────────────────────────
@@ -1460,7 +1436,14 @@ async function abrirCamara(previewId, key) {
     await video.play();
     modal.style.display = 'flex';
   } catch (e) {
-    toastMsg('No se pudo abrir la cámara. Use "Seleccionar archivo".', true);
+    /* El navegador no dejó abrir la cámara dentro de la página: se abre
+       la del teléfono. Sigue siendo una foto del momento — la galería no
+       es una opción acá. */
+    toastMsg('No se pudo abrir la cámara acá. Se abrirá la cámara del teléfono.', true);
+    const campo = document.getElementById(
+      key === 'combTablero' ? 'comb-tablero' : key === 'combRecibo' ? 'comb-recibo' : ''
+    );
+    if (campo) campo.click();
   }
 }
 function capturarFoto() {
