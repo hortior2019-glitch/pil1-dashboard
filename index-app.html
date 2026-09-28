@@ -4133,6 +4133,17 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   - Se guarda en el Sheet de usuarios vía Apps Script
   ═══════════════════════════════════════════════════════════
 -->
+<style>
+/* Permisos: al desplazar, la cabecera de pestanas y la columna de nombres
+   se quedan quietas (como inmovilizar filas y columnas en una hoja). */
+#panel-permisos .perm-scroll{overflow:auto;max-height:calc(100vh - 330px);min-height:320px;-webkit-overflow-scrolling:touch}
+#permisos-tabla{border-collapse:separate;border-spacing:0}
+#permisos-tabla thead th{position:sticky;top:0;z-index:2;background:var(--s2);box-shadow:inset 0 -2px 0 var(--ink)}
+#permisos-tabla th.perm-esq{left:0;z-index:4;text-align:left;box-shadow:inset -1px 0 0 var(--rule),inset 0 -2px 0 var(--ink)}
+#permisos-tabla td.perm-nom{position:sticky;left:0;z-index:1;background:var(--white);font-weight:700;color:var(--ink);white-space:nowrap;box-shadow:inset -1px 0 0 var(--rule)}
+#permisos-tabla tbody tr:hover td.perm-nom{background:var(--s2)}
+@media(max-width:700px){#panel-permisos .perm-scroll{max-height:calc(100vh - 260px)}}
+</style>
 <div class="panel" id="panel-permisos">
   <div class="sec-hdr">
     <div class="sec-title">Permisos de Acceso</div>
@@ -4144,7 +4155,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <div id="permisos-status" style="font-size:12px;font-weight:700;color:var(--green);margin-top:8px;min-height:16px"></div>
   </div>
   <div class="card" style="padding:0;overflow:hidden">
-    <div style="overflow-x:auto">
+    <div class="perm-scroll">
       <table class="tbl" id="permisos-tabla" style="font-size:13px">
         <thead><tr id="permisos-thead"></tr></thead>
         <tbody id="permisos-tbody"><tr><td class="empty">Cargando usuarios...</td></tr></tbody>
@@ -7305,20 +7316,37 @@ function aplicarPermisosNav() {
     if (t.hasAttribute('data-users-only')) return; // se resuelve aparte, con prioridad
     const panel = t.getAttribute('data-panel');
     if (panel === 'permisos') { t.style.display = 'none'; return; }
-    // Si no hay config definida para el usuario → mostrar todo
-    if (!permitidas) { t.style.display = ''; return; }
+    // Si no hay config definida para el usuario → no ve nada hasta que un
+    // administrador le marque las pestañas en la pestaña Permisos.
+    if (!permitidas) { t.style.display = 'none'; return; }
     t.style.display = permitidas.includes(panel) ? '' : 'none';
   });
   _aplicarRestriccionUsuariosTab();
   aplicarPermisoVoz();
   aplicarPermisoPrecios();
   // Si la pestaña activa quedó oculta, activar la primera pestaña visible
+  const visibles = [...document.querySelectorAll('.nav-tab[data-panel]')]
+    .filter(t => t.style.display !== 'none' && t.getAttribute('data-panel') !== 'permisos');
   const activa = document.querySelector('.nav-tab.active');
-  if (activa && activa.style.display === 'none') {
-    const primeraVisible = [...document.querySelectorAll('.nav-tab[data-panel]')]
-      .find(t => t.style.display !== 'none' && t.getAttribute('data-panel') !== 'permisos');
-    if (primeraVisible) primeraVisible.click();
-  }
+  if (activa && activa.style.display === 'none' && visibles.length) visibles[0].click();
+  avisoSinPermisos(visibles.length === 0);
+}
+
+/* Un usuario sin ninguna pestaña asignada veria el tablero vacio y sin
+   explicacion. Esto le dice a quien pedirle los accesos. */
+function avisoSinPermisos(mostrar) {
+  let d = document.getElementById('aviso-sin-permisos');
+  if (!mostrar) { if (d) d.remove(); return; }
+  if (d) return;
+  d = document.createElement('div');
+  d.id = 'aviso-sin-permisos';
+  d.style.cssText = 'position:fixed;inset:0;z-index:900;display:flex;align-items:center;justify-content:center;' +
+    'background:var(--bg);padding:24px;text-align:center;font-family:\"Source Sans 3\",sans-serif';
+  d.innerHTML = '<div style="max-width:420px">' +
+    '<div style="font-size:18px;font-weight:700;color:var(--ink);margin-bottom:10px">Sin pestañas asignadas</div>' +
+    '<div style="font-size:13px;color:var(--ink-m);line-height:1.7">Tu usuario todavía no tiene pestañas habilitadas. ' +
+    'Solicita al administrador que te asigne los accesos en la pestaña Permisos.</div></div>';
+  document.body.appendChild(d);
 }
 
 /* ── PERMISO DEL ASISTENTE DE VOZ ──
@@ -7339,7 +7367,7 @@ function vozUsuarioPermitido() {
   if (VOZ_USUARIOS_SIEMPRE.includes(id)) return true;   // acceso garantizado
   if (u.admin) return true;                             // admins: siempre
   const permitidas = _permisosConfig[u.usuario];
-  if (!permitidas) return true;                         // sin config: ve todo por defecto
+  if (!permitidas) return false;                        // sin config: no hay asistente
   return permitidas.includes('voz');
 }
 
@@ -7428,19 +7456,19 @@ function renderPermisosTabla() {
   }
 
   // Cabecera: Usuario + una columna por pestaña
-  thead.innerHTML = '<th style="position:sticky;left:0;background:var(--s2);z-index:1">Usuario</th>' +
+  thead.innerHTML = '<th class="perm-esq">Usuario</th>' +
     PESTANAS_CONTROLABLES.map(p => `<th style="font-size:10px;text-align:center;white-space:nowrap;padding:8px 6px">${p.label}</th>`).join('') +
     '<th style="text-align:center">Todas</th>';
 
   // Filas: cada usuario con un checkbox por pestaña
   tbody.innerHTML = usuarios.map(u => {
-    const permitidas = _permisosConfig[u.usuario] || PESTANAS_CONTROLABLES.filter(p => p.porDefecto !== false).map(p=>p.id); // por defecto todas (menos precios)
+    const permitidas = _permisosConfig[u.usuario] || []; // por defecto: nada marcado
     const celdas = PESTANAS_CONTROLABLES.map(p => {
       const checked = permitidas.includes(p.id) ? 'checked' : '';
       return `<td style="text-align:center"><input type="checkbox" class="perm-chk" data-usuario="${u.usuario}" data-panel="${p.id}" ${checked} style="width:16px;height:16px;accent-color:var(--navy);cursor:pointer"></td>`;
     }).join('');
     return `<tr>
-      <td style="font-weight:700;color:var(--ink);position:sticky;left:0;background:var(--white);white-space:nowrap">${u.nombre || u.usuario}<div style="font-size:10px;color:var(--ink-l);font-weight:400">${u.usuario}</div></td>
+      <td class="perm-nom">${u.nombre || u.usuario}<div style="font-size:10px;color:var(--ink-l);font-weight:400">${u.usuario}</div></td>
       ${celdas}
       <td style="text-align:center"><button onclick="togglePermisoTodas('${u.usuario}')" style="padding:4px 10px;font-size:10px;font-weight:700;background:var(--rule-l);border:1px solid var(--rule);border-radius:4px;cursor:pointer;color:var(--ink-m)">Marcar/Quitar</button></td>
     </tr>`;
@@ -13234,12 +13262,19 @@ function renderHumusDetalle() {
   if (body) {
     body.innerHTML = filas.length ? filas.slice(0, 300).map(o => {
       const r = o.r;
-      const foto = (r[6] || '').toString().trim();
-      const celdaFoto = foto && /^https?:\/\//i.test(foto)
-        ? `<td style="text-align:center"><img src="${urlFotoDrive(foto)}" data-alt="${urlFotoDriveAlt(foto)}" loading="lazy"
-             onclick="abrirFotoBaucher('${foto.replace(/'/g,'')}','${((r[1]||'')+' · '+(r[2]||'')).replace(/'/g,'')}')"
-             onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src=this.dataset.alt;}else{this.outerHTML='<a href=&quot;${foto}&quot; target=_blank rel=noopener style=&quot;font-size:11px;color:var(--navy)&quot;>Ver</a>';}"
-             style="width:42px;height:42px;object-fit:cover;border-radius:4px;border:1px solid var(--rule);cursor:zoom-in"></td>`
+      /* Las salidas traen dos fotos: la de la remisión (r[7]) y la del
+         despacho (r[6]). Se muestran las que existan. */
+      const _miniFotoHum = (u, rotulo) => `<img src="${urlFotoDrive(u)}" data-alt="${urlFotoDriveAlt(u)}" loading="lazy"
+             title="${rotulo}"
+             onclick="abrirFotoBaucher('${u.replace(/'/g,'')}','${rotulo.replace(/'/g,'')}')"
+             onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src=this.dataset.alt;}else{this.outerHTML='<a href=&quot;${u}&quot; target=_blank rel=noopener style=&quot;font-size:11px;color:var(--navy)&quot;>Ver</a>';}"
+             style="width:42px;height:42px;object-fit:cover;border-radius:4px;border:1px solid var(--rule);cursor:zoom-in"\>`;
+      const rotuloFoto = ((r[1]||'')+' · '+(r[2]||''));
+      const fotos = [];
+      if (/^https?:\/\//i.test((r[7] || '').toString().trim())) fotos.push(_miniFotoHum((r[7]||'').toString().trim(), 'Remisión · ' + rotuloFoto));
+      if (/^https?:\/\//i.test((r[6] || '').toString().trim())) fotos.push(_miniFotoHum((r[6]||'').toString().trim(), rotuloFoto));
+      const celdaFoto = fotos.length
+        ? '<td style="text-align:center"><div style="display:flex;gap:4px;justify-content:center">' + fotos.join('') + '</div></td>'
         : '<td style="text-align:center;color:var(--ink-l)">—</td>';
       const chip = o.prod
         ? '<span style="font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--navy);color:#fff;padding:3px 9px;border-radius:10px">Producción</span>'

@@ -656,7 +656,7 @@
       <div class="seccion-header">Historial de Salidas</div>
       <div class="seccion-body tabla-wrapper">
         <table>
-          <thead><tr><th>Fecha/Hora</th><th>Línea</th><th>Presentación</th><th>Cantidad</th><th>Destino</th><th>Responsable</th><th>Foto</th></tr></thead>
+          <thead><tr><th>Fecha/Hora</th><th>Línea</th><th>Presentación</th><th>Cantidad</th><th>Destino</th><th>Responsable</th><th>Remisión</th><th>Foto</th></tr></thead>
           <tbody id="tablaSal"><tr><td colspan="7" style="text-align:center;color:#999;padding:1.5rem">Sin datos</td></tr></tbody>
         </table>
       </div>
@@ -1049,10 +1049,11 @@
     if (data.salidas) {
       const filtradas = filtrarPorMes(data.salidas, 0);
       if (filtradas.length) {
+        /* r[7] es la foto de la remisión, obligatoria desde ahora. */
         document.getElementById('tablaSal').innerHTML = filtradas.map(r => `
-          <tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]||''}</td><td>${r[5]||''}</td>${celdaFoto(r[6])}</tr>`).join('');
+          <tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]||''}</td><td>${r[5]||''}</td>${celdaFoto(r[7])}${celdaFoto(r[6])}</tr>`).join('');
       } else {
-        document.getElementById('tablaSal').innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;padding:1.5rem">Sin registros en este periodo</td></tr>';
+        document.getElementById('tablaSal').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;padding:1.5rem">Sin registros en este periodo</td></tr>';
       }
     }
   }
@@ -1134,7 +1135,11 @@
       });
       const data = await res.json();
       if (data.ok) {
-        showToast('Registrado correctamente', 'success');
+        const avisoFoto = data.fotoRemisionError || data.fotoError ||
+          ((payload.fotoRemision && !data.fotoRemision) ? 'La foto de la remisión no quedó guardada.' : '') ||
+          ((payload.foto && !data.foto) ? 'La foto no quedó guardada.' : '');
+        if (avisoFoto) showToast('Registrado, pero: ' + avisoFoto, 'error');
+        else showToast('Registrado correctamente', 'success');
         limpiarForm(prefix);
         cargarDatos();
       } else {
