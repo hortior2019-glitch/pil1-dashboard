@@ -5065,12 +5065,13 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
       </div>
       <script>
         (function(){
+          /* La semana 5 se muestra cuando el mes en curso llega al día 29,
+             sin importar lo que tenga el mes anterior: son días
+             trabajados y tienen que verse. */
           var now = new Date();
           var diasEnMes = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
-          if (diasEnMes > 28) {
-            var b5 = document.getElementById('cmp-wk-btn-5');
-            if (b5) b5.style.display = '';
-          }
+          var b5 = document.getElementById('cmp-wk-btn-5');
+          if (b5) b5.style.display = diasEnMes > 28 ? '' : 'none';
         })();
       </script>
     </div>
@@ -13302,7 +13303,18 @@ function setCmpSemana(n) {
   const selB = document.getElementById('cmp-sel-sem-b'); if (selB) selB.value = n;
   const ctrlMes = document.getElementById('cmp-ctrl-mes'); if (ctrlMes) ctrlMes.style.display = 'none';
   const cap = document.getElementById('cmp-wk-caption');
-  if (cap) cap.textContent = 'Semana ' + n + ' vs. Semana ' + n + ' del mes anterior';
+  if (cap) {
+    /* La semana 5 casi nunca tiene par —febrero no llega, y abril, junio,
+       septiembre y noviembre solo hasta el 30—: se dice, en vez de dejar
+       creer que la comparación dio cero. */
+    var hoyCap = new Date();
+    var mAntCap = hoyCap.getMonth() === 0 ? 11 : hoyCap.getMonth() - 1;
+    var aAntCap = hoyCap.getMonth() === 0 ? hoyCap.getFullYear() - 1 : hoyCap.getFullYear();
+    var diasAntCap = new Date(aAntCap, mAntCap + 1, 0).getDate();
+    cap.textContent = ((n - 1) * 7 + 1) > diasAntCap
+      ? 'Semana ' + n + ' · el mes anterior no tiene esos días'
+      : 'Semana ' + n + ' vs. Semana ' + n + ' del mes anterior';
+  }
   if (window.dataIngreso) renderCmpChart(window.dataIngreso);
 }
 
@@ -13319,11 +13331,24 @@ function setCmpMode(m) {
 }
 
 function getSemanaRange(semana, mes, anio) {
-  const offset = (semana-1)*7;
-  const inicio = new Date(anio, mes, 1+offset);
-  const fin    = new Date(anio, mes, 1+offset+7);
-  const finMes = new Date(anio, mes+1, 1);
-  return { inicio, fin: fin < finMes ? fin : finMes };
+  /* Las semanas del mes van por días del calendario: la 1 son los días
+     1–7, la 2 los 8–14, la 3 los 15–21, la 4 los 22–28 y la 5 lo que
+     sobre —29, 30 y 31—. La semana 5 es su propia semana, no un residuo
+     que se le suma a la 4; si el mes con el que se compara no llega a
+     esos días, no hay contra qué compararla y así se dice.
+     Ojo con el desborde: new Date(2026, 1, 29) en un febrero de 28 días
+     no da "29 de febrero", da "1 de marzo" — sin este corte la semana 5
+     de febrero terminaba mostrando datos de marzo. */
+  const diasMes = new Date(anio, mes+1, 0).getDate();
+  const primero = 1 + (semana-1)*7;
+  if (primero > diasMes) {
+    const finMes = new Date(anio, mes+1, 1);
+    return { inicio: finMes, fin: finMes, vacio: true };
+  }
+  const ultimo = Math.min(primero + 6, diasMes);
+  return { inicio: new Date(anio, mes, primero),
+           fin: new Date(anio, mes, ultimo + 1),
+           vacio: false };
 }
 
 function filterByRange(data, inicio, fin) {
@@ -13503,13 +13528,21 @@ function renderCmpChart(data) {
     const mAnt = mAct===0?11:mAct-1, yAnt = mAct===0?yAct-1:yAct;
     rangeA = getSemanaRange(semA, mAct, yAct);
     rangeB = getSemanaRange(semB, mAnt, yAnt);
-    lblA = 'Sem '+semA+' · '+fmtDiaSem(rangeA.inicio);
-    lblB = 'Sem '+semB+' · '+fmtDiaSem(rangeB.inicio);
+    lblA = rangeA.vacio ? 'Sem '+semA+' · '+MESES_L[mAct]+' no tiene esos días'
+                        : 'Sem '+semA+' · '+fmtDiaSem(rangeA.inicio);
+    lblB = rangeB.vacio ? 'Sem '+semB+' · '+MESES_L[mAnt]+' no tiene esos días'
+                        : 'Sem '+semB+' · '+fmtDiaSem(rangeB.inicio);
     granularidad = 'dia';
+    /* Los días de la semana A son los que manda el eje: si el mes
+       anterior no llega hasta ahí, la barra queda sin su "vs". */
     for (let i=0;i<7;i++) {
       const d=new Date(rangeA.inicio); d.setDate(rangeA.inicio.getDate()+i);
+      if (d>=rangeA.fin) break;
       const dB=new Date(rangeB.inicio); dB.setDate(rangeB.inicio.getDate()+i);
-      if (d<rangeA.fin) { labels.push(d.getDate()+'/'+MESES_C[d.getMonth()]); labelsBarras.push(fmtBarraDia(d)+' vs '+fmtBarraDia(dB)); }
+      labels.push(d.getDate()+'/'+MESES_C[d.getMonth()]);
+      labelsBarras.push(rangeB.vacio || dB>=rangeB.fin
+        ? fmtBarraDia(d)+' · sin comparación'
+        : fmtBarraDia(d)+' vs '+fmtBarraDia(dB));
     }
   } else if (cmpMode === 'mes') {
     const mA = parseInt(document.getElementById('cmp-sel-mes-a')?.value??now.getMonth());
