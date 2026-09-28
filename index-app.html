@@ -6448,6 +6448,17 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #per-turno-modal .tn-editor .ed-todos{
   margin-top:14px;padding:10px 12px;background:var(--bg);border:1px solid var(--rule);font-size:12.5px;
 }
+/* El bloque suelto de horas extra, separado del turno también acá */
+#per-turno-modal .tn-editor .ed-bloque{
+  margin-top:18px;padding-top:16px;border-top:1px dashed var(--rule);
+}
+#per-turno-modal .tn-editor .ed-bloque .tt2{
+  font-family:'Playfair Display',serif;font-size:15px;font-weight:700;color:var(--ink);
+}
+#per-turno-modal .tn-editor .ed-bloque .ayuda2{font-size:11.5px;color:var(--ink-l);margin-top:3px}
+#per-turno-modal .tn-editor .ed-bloque .acc{margin-top:14px}
+#per-turno-modal .tn-editor .ed-bloque .acc button#ed-bl-quitar{color:#b23b3b;border-color:#e6cfcf}
+#per-turno-modal .tn-editor .ed-bloque .acc button#ed-bl-quitar:hover{background:#b23b3b;border-color:#b23b3b;color:#fff}
 #panel-personal .tn-editor{border:1px solid #cfe3d7;background:#f4faf6;padding:12px;max-width:520px}
 #panel-personal .tn-editor .tt{font-weight:700;font-size:13px;color:var(--ink);margin-bottom:8px;text-transform:capitalize}
 #panel-personal .tn-editor label{display:block;font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--ink-l);margin:8px 0 3px}
@@ -6756,6 +6767,15 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-personal .tn-dia .f span{font-size:11.5px;color:var(--ink-l)}
 #panel-personal .tn-dia .c{flex:1;display:flex;flex-direction:column;justify-content:center;text-align:center;
   cursor:pointer;margin:4px 0}
+/* Un día puede tener más de un bloque: el turno y las horas extra
+   aparte, separadas por el descanso. */
+#panel-personal .tn-dia .cajas{flex:1;display:flex;gap:8px;align-items:stretch}
+#panel-personal .tn-dia .cajas .c{margin:4px 0}
+/* El bloque de horas extra se distingue del turno aunque el color del
+   turno también sea dorado: va con filo punteado. */
+#panel-personal .tn-dia .c.extra{box-shadow:inset 0 0 0 2px rgba(255,255,255,.75);flex:0 1 40%}
+#panel-personal .tn-dia .c.extra .nt{opacity:1}
+#panel-personal .tn-personas .cel .nt.extra{opacity:1;font-weight:700}
 #panel-personal .tn-dia .c.pinta{color:#fff}
 #panel-personal .tn-dia .c.libre{background:var(--s2);color:var(--ink-l)}
 #panel-personal .tn-dia .c.tocado{box-shadow:inset 0 0 0 2px var(--gold)}
@@ -13208,7 +13228,7 @@ function renderHumusDetalle() {
   if (tituloTraza) tituloTraza.textContent = filas.length + ' registro' + (filas.length !== 1 ? 's' : '') + ' del periodo';
   if (head) {
     head.innerHTML = `<th>Fecha / Hora</th><th style="text-align:center">Tipo</th><th>Línea</th><th>Presentación</th>
-      <th style="text-align:right">Cantidad</th><th>Lote / Destino</th>
+      <th style="text-align:right">Cantidad</th><th>N.º remisión / Destino</th>
       <th>Responsable</th><th style="text-align:center">Foto</th>`;
   }
   if (body) {
@@ -35898,6 +35918,14 @@ function quienSoy(){
     return (u && (u.nombre || u.usuario)) || 'sin identificar';
   } catch(e){ return 'sin identificar'; }
 }
+/* Lo que tiene esa persona ese día en el área que se está viendo: el
+   turno y, si lo hay, el bloque suelto de horas extra. */
+function turnosDelDia(persona, fecha){
+  var clave = AREA_VIENDO + '|' + semanasDelCuadro(MES_VIENDO)[0];
+  return (P.turnos[clave] || []).filter(function(t){
+    return t.persona === persona && t.fecha === fecha;
+  });
+}
 /* La hora extra anotada de ese día, lado y persona. */
 function extraDe(fecha, persona, lado){
   return (EXTRAS[AREA_VIENDO] || []).filter(function(x){
@@ -36184,28 +36212,39 @@ function desglosePersona(clave, nombre, semana, turnos){
   fechas.forEach(function(f){
     var d = new Date(f + 'T00:00:00');
     var esDom = d.getDay() === 0;
-    var hoy = suyos.filter(function(t){ return t.fecha === f; });
-    var t0 = hoy[0];
+    var hoy = suyos.filter(function(t){ return t.fecha === f; })
+                   .sort(function(x, y){ return String(x.inicio).localeCompare(String(y.inicio)); });
+    /* El turno del día va primero; el bloque suelto de horas extra —una
+       hora ahora, descanso, y después el turno— va como su propia caja,
+       en el orden en que se trabajan. */
+    var t0 = hoy.filter(function(t){ return t.turno !== 'Hora extra'; })[0] || hoy[0];
     var esNov = t0 && !t0.inicio;
     var pinta = (t0 && !esNov) ? (colores[t0.inicio + '-' + t0.fin] || COLORES_TURNO[0]) : '';
     var base = (t0 && !esNov) ? baseDelTurno(t0) : null;
     var exA = base ? minutosAntes(base.inicio, t0.inicio) : 0;
     var exD = base ? minutosDespues(base.fin, t0.fin) : 0;
+    var horasDia = hoy.reduce(function(s, t){ return s + (t.horas || horasTurno(t.inicio, t.fin, t.almuerzo)); }, 0);
+    var caja = function(t){
+      var esExtra = t.turno === 'Hora extra';
+      var col = colores[t.inicio + '-' + t.fin] || COLORES_TURNO[0];
+      return '<div class="c cel pinta' + (esExtra ? ' extra' : '') + '"' +
+        ' style="background:' + (esExtra ? 'var(--gold,#b8891f)' : col) + '"' +
+        ' data-cel="1" data-persona="' + esc(clave) + '" data-fecha="' + f + '" data-quien="' + esc(nombre) + '">' +
+        (esExtra ? '' : tiraExtra('antes', exA, t)) +
+        '<div class="tu"><span class="hs" data-turno="' + esc(t.turno) + '">' + esc(t.inicio) + '–' + esc(t.fin) + '</span>' +
+          '<span class="nt">' + esc(t.turno) + '</span></div>' +
+        (esExtra ? '' : tiraExtra('despues', exD, t)) +
+      '</div>';
+    };
     h += '<div class="tn-dia' + (esDom ? ' dom' : '') + '">' +
       '<div class="f"><b>' + d.toLocaleDateString('es-CO', { weekday:'long' }) + '</b>' +
         '<span>' + fechaCorta(f) + '</span></div>' +
-      '<div class="c cel ' + (pinta ? 'pinta' : (esNov ? 'novedad' : 'libre')) +
-        (!esNov && hoy.some(function(t){ return t.ajuste; }) ? ' tocado' : '') + '"' +
-        (pinta ? ' style="background:' + pinta + '"' : '') +
-        ' data-cel="1" data-persona="' + esc(clave) + '" data-fecha="' + f + '" data-quien="' + esc(nombre) + '">' +
-        (t0 && !esNov
-          ? tiraExtra('antes', exA, t0) +
-            '<div class="tu"><span class="hs" data-turno="' + esc(t0.turno) + '">' + esc(t0.inicio) + '–' + esc(t0.fin) + '</span>' +
-              '<span class="nt">' + esc(t0.turno) + '</span></div>' +
-            tiraExtra('despues', exD, t0)
-          : '<div class="tu"><span class="nt">' + esc(esNov ? t0.turno : 'descanso') + '</span></div>') +
-      '</div>' +
-      '<div class="h">' + (t0 ? numeroHoras(t0.horas || horasTurno(t0.inicio, t0.fin, t0.almuerzo)) : '—') + '</div>' +
+      (t0 && !esNov
+        ? '<div class="cajas">' + hoy.filter(function(t){ return t.inicio; }).map(caja).join('') + '</div>'
+        : '<div class="c cel ' + (esNov ? 'novedad' : 'libre') +
+          '" data-cel="1" data-persona="' + esc(clave) + '" data-fecha="' + f + '" data-quien="' + esc(nombre) + '">' +
+          '<div class="tu"><span class="nt">' + esc(esNov ? t0.turno : 'descanso') + '</span></div></div>') +
+      '<div class="h">' + (horasDia ? numeroHoras(horasDia) : '—') + '</div>' +
     '</div>';
   });
 
@@ -36350,6 +36389,8 @@ function editarCelda(celda){
   var a = areaPorNombre(AREA_VIENDO) || { turnos: [] };
   var d = new Date(fecha + 'T00:00:00');
   var cuando = d.toLocaleDateString('es-CO', { weekday:'long', day:'numeric', month:'long' });
+  /* ¿Ese día ya tiene un bloque suelto de horas extra? */
+  var bloqueDelDia = turnosDelDia(persona, fecha).filter(function(t){ return t.turno === 'Hora extra'; })[0] || null;
 
   var cuerpo = '<div class="tn-editor">' +
     '<div class="tt">' + esc(quien) + ' · ' + esc(cuando) + '</div>' +
@@ -36369,6 +36410,25 @@ function editarCelda(celda){
       (franja ? '<button type="button" id="ed-quitar">Quitar el turno</button>' : '') +
       '<button type="button" id="ed-cancelar">Cancelar</button>' +
       '<button type="button" class="fuerte" id="ed-guardar">Guardar</button>' +
+    '</div>' +
+    /* ── UN BLOQUE APARTE ─────────────────────────────────────────
+       Una hora extra que no va pegada al turno: una hora ahora, un
+       descanso, y después el turno. Es un bloque con su propio horario,
+       que se ve en el cuadro debajo del turno de ese día. */
+    '<div class="ed-bloque">' +
+      '<div class="tt2">Hora extra aparte</div>' +
+      '<div class="ayuda2">Un bloque suelto ese día, con su propio horario: no se pega al turno.' +
+        (bloqueDelDia ? ' Hoy tiene uno de ' + esc(bloqueDelDia.inicio) + ' a ' + esc(bloqueDelDia.fin) + '.' : '') + '</div>' +
+      '<div class="horas2"><label>Entra</label>' +
+        '<input type="time" id="ed-bl-ini" value="' + esc(bloqueDelDia ? bloqueDelDia.inicio : '') + '">' +
+        '<label>Sale</label>' +
+        '<input type="time" id="ed-bl-fin" value="' + esc(bloqueDelDia ? bloqueDelDia.fin : '') + '">' +
+        '<span id="ed-bl-cuantas"></span></div>' +
+      '<div class="acc">' +
+        (bloqueDelDia ? '<button type="button" id="ed-bl-quitar">Quitar el bloque</button>' : '') +
+        '<button type="button" id="ed-bl-planear">Dejar planeado</button>' +
+        '<button type="button" class="fuerte" id="ed-bl-aprobar">Aprobar</button>' +
+      '</div>' +
     '</div></div>';
 
   if(!abrirMenuTurno(cuerpo)) return;
@@ -36403,6 +36463,34 @@ function editarCelda(celda){
                    persona: persona, turno: turno || nombreTurno, nombreTurno: nombreTurno,
                    inicio: $p('ed-ini').value, fin: $p('ed-fin').value, todoElTurno: !!todos,
                    nota: todos ? 'el turno cambió ese día' : (sel.value === '__otro' ? 'horas especiales' : 'ajustado a mano') }, this);
+  };
+
+  /* ── El bloque suelto de horas extra ── */
+  var contarBloque = function(){
+    var i = $p('ed-bl-ini').value, f = $p('ed-bl-fin').value;
+    $p('ed-bl-cuantas').textContent = (i && f) ? '= ' + numeroHoras(horasTurno(i, f)) : '';
+  };
+  $p('ed-bl-ini').oninput = contarBloque;
+  $p('ed-bl-fin').oninput = contarBloque;
+  contarBloque();
+  var mandarBloque = function(estado, boton){
+    var i = $p('ed-bl-ini').value, f = $p('ed-bl-fin').value;
+    if(!i || !f){ alert('Ponga la hora de entrada y la de salida del bloque.'); return; }
+    mandarCambio({ accion:'perExtraGuardar', area: AREA_VIENDO, fecha: fecha, persona: persona,
+                   turno: turno, lado: 'aparte', inicio: i, fin: f,
+                   estado: estado, quien: quienSoy() }, boton);
+  };
+  $p('ed-bl-planear').onclick = function(){ mandarBloque('PLANEADA', this); };
+  $p('ed-bl-aprobar').onclick = function(){ mandarBloque('APROBADA', this); };
+  if($p('ed-bl-quitar')) $p('ed-bl-quitar').onclick = function(){
+    if(!confirm('¿Quitar el bloque de horas extra de ese día? El turno no se toca.')) return;
+    var anot = extraDe(fecha, persona, 'aparte');
+    if(anot){ mandarCambio({ accion:'perExtraBorrar', id: anot.id, quien: quienSoy() }, this); }
+    else {
+      /* Quedó de antes de que se anotaran: se quita mandándolo en cero. */
+      mandarCambio({ accion:'perExtraGuardar', area: AREA_VIENDO, fecha: fecha, persona: persona,
+                     turno: turno, lado: 'aparte', inicio: '', fin: '', quien: quienSoy() }, this);
+    }
   };
 }
 

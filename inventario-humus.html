@@ -523,8 +523,8 @@
             <input type="number" id="prodBultos" placeholder="Cantidad producida" min="0" step="0.01">
           </div>
           <div class="form-group">
-            <label>Lote</label>
-            <input type="text" id="prodLote" placeholder="Ej: L-2026-06-001">
+            <label>Número de remisión</label>
+            <input type="text" id="prodLote" inputmode="numeric" placeholder="Ej: 2640">
           </div>
         </div>
         <div class="form-row">
@@ -598,6 +598,17 @@
         </div>
         <div class="form-row full">
           <div class="form-group">
+            <label>Foto de la remisión <span class="req">*</span></label>
+            <div class="foto-box">
+              <label class="foto-btn" for="salRemisionFoto">📷 Tomar / elegir foto</label>
+              <input type="file" id="salRemisionFoto" accept="image/*" capture="environment" onchange="capturarFoto('salRemision', this)">
+              <div class="foto-prev" id="salRemisionFotoPrev"></div>
+              <div class="foto-hint">Obligatoria: sin la remisión no se registra la salida.</div>
+            </div>
+          </div>
+        </div>
+        <div class="form-row full">
+          <div class="form-group">
             <label>Evidencia fotográfica del despacho</label>
             <div class="foto-box">
               <label class="foto-btn" for="salFoto">📷 Tomar / elegir foto</label>
@@ -636,7 +647,7 @@
       <div class="seccion-header">Historial de Producción</div>
       <div class="seccion-body tabla-wrapper">
         <table>
-          <thead><tr><th>Fecha/Hora</th><th>Línea</th><th>Presentación</th><th>Cantidad</th><th>Lote</th><th>Responsable</th><th>Foto</th></tr></thead>
+          <thead><tr><th>Fecha/Hora</th><th>Línea</th><th>Presentación</th><th>Cantidad</th><th>N.º remisión</th><th>Responsable</th><th>Foto</th></tr></thead>
           <tbody id="tablaProd"><tr><td colspan="7" style="text-align:center;color:#999;padding:1.5rem">Sin datos</td></tr></tbody>
         </table>
       </div>
@@ -741,7 +752,8 @@
   // Se comprimen en el navegador antes de enviarlas, para que el Apps Script
   // no reciba imágenes de varios MB y el registro no se demore ni falle.
   // ═══════════════════════════════════════════════════
-  const _fotos = { prod: '', sal: '' };
+  /* 'salRemision' es la foto de la remisión, obligatoria en las salidas. */
+  const _fotos = { prod: '', sal: '', salRemision: '' };
 
   function capturarFoto(prefix, input) {
     const file = input.files && input.files[0];
@@ -1057,6 +1069,10 @@
     const payload = {
       accion: 'produccion',
       linea, presentacion, cantidad: Number(cantidad), resp,
+      /* El campo se llama "número de remisión". Se manda con los dos
+         nombres para que el Apps Script lo siga escribiendo donde
+         siempre mientras se actualiza allá el título de la columna. */
+      remision: document.getElementById('prodLote').value,
       lote: document.getElementById('prodLote').value,
       obs: document.getElementById('prodObs').value,
       foto: _fotos.prod || ''
@@ -1071,10 +1087,17 @@
     const resp = document.getElementById('salResponsable').value;
     const destino = document.getElementById('salDestino').value;
     if (!linea || !presentacion || !cantidad || !resp || !destino) return showToast('Completa los campos obligatorios', 'error');
+    /* La foto de la remisión es obligatoria: es el respaldo del
+       despacho. Sin ella no se registra la salida. */
+    if (!_fotos.salRemision) {
+      document.getElementById('salRemisionFoto').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return showToast('Falta la foto de la remisión', 'error');
+    }
     const payload = {
       accion: 'salida',
       linea, presentacion, cantidad: Number(cantidad), resp, destino,
       obs: document.getElementById('salObs').value,
+      fotoRemision: _fotos.salRemision,
       foto: _fotos.sal || ''
     };
     await enviar(payload, 'btnSal', 'sal');
@@ -1147,6 +1170,7 @@
       document.getElementById('salResponsable').value = '';
       document.getElementById('salObs').value = '';
       quitarFoto('sal');
+      quitarFoto('salRemision');
     }
   }
   function showToast(msg, type) {
