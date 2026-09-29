@@ -13687,11 +13687,13 @@ function renderCliCmpChart(data) {
 
   const bkA = buildBuckets(dataA, rangeA.inicio, rangeA.fin, 'dia');
   const bkB = buildBuckets(dataB, rangeB.inicio, rangeB.fin, 'dia');
-  const keys = Object.keys(bkA).sort();
+  /* Los días de los dos meses: comparando uno de 31 con uno de 30, el
+     día 31 también se dibuja. */
+  const keys = Array.from(new Set(Object.keys(bkA).concat(Object.keys(bkB)))).sort();
 
-  const viajesA = keys.map(k=>bkA[k].viajes);
+  const viajesA = keys.map(k=>bkA[k]?.viajes||0);
   const viajesB = keys.map(k=>bkB[k]?.viajes||0);
-  const kgA     = keys.map(k=>Math.round(bkA[k].kg));
+  const kgA     = keys.map(k=>Math.round(bkA[k]?.kg||0));
   const kgB     = keys.map(k=>Math.round(bkB[k]?.kg||0));
 
   const showEvery = labels.length>14?Math.ceil(labels.length/12):1;
@@ -13728,16 +13730,25 @@ function renderCmpChart(data) {
     lblB = rangeB.vacio ? 'Sem '+semB+' · '+MESES_L[mAnt]+' no tiene esos días'
                         : 'Sem '+semB+' · '+fmtDiaSem(rangeB.inicio);
     granularidad = 'dia';
-    /* Los días de la semana A son los que manda el eje: si el mes
-       anterior no llega hasta ahí, la barra queda sin su "vs". */
-    for (let i=0;i<7;i++) {
+    /* El eje llega hasta donde llegue el MÁS LARGO de los dos periodos.
+       Comparando la semana 5 de septiembre (29 y 30) con la de agosto
+       (29, 30 y 31), el 31 de agosto tiene que verse: es un día que
+       existió y tuvo movimiento, aunque septiembre no lo tenga. Antes el
+       eje se cortaba por la semana A y ese día desaparecía. */
+    const diasA = rangeA.vacio ? 0 : Math.round((rangeA.fin - rangeA.inicio)/86400000);
+    const diasB = rangeB.vacio ? 0 : Math.round((rangeB.fin - rangeB.inicio)/86400000);
+    for (let i=0;i<Math.max(diasA, diasB);i++) {
       const d=new Date(rangeA.inicio); d.setDate(rangeA.inicio.getDate()+i);
-      if (d>=rangeA.fin) break;
       const dB=new Date(rangeB.inicio); dB.setDate(rangeB.inicio.getDate()+i);
-      labels.push(d.getDate()+'/'+MESES_C[d.getMonth()]);
-      labelsBarras.push(rangeB.vacio || dB>=rangeB.fin
-        ? fmtBarraDia(d)+' · sin comparación'
-        : fmtBarraDia(d)+' vs '+fmtBarraDia(dB));
+      const hayA = i < diasA, hayB = i < diasB;
+      /* Si ese día solo existe en el mes con el que se compara, el eje
+         lleva SU fecha: es el único dato que hay para esa posición. */
+      labels.push(hayA ? d.getDate()+'/'+MESES_C[d.getMonth()]
+                       : dB.getDate()+'/'+MESES_C[dB.getMonth()]);
+      labelsBarras.push(
+        hayA && hayB ? fmtBarraDia(d)+' vs '+fmtBarraDia(dB)
+      : hayA         ? fmtBarraDia(d)+' · sin comparación'
+      :                fmtBarraDia(dB)+' · solo en '+MESES_L[dB.getMonth()]);
     }
   } else if (cmpMode === 'mes') {
     const mA = parseInt(document.getElementById('cmp-sel-mes-a')?.value??now.getMonth());
@@ -13809,11 +13820,13 @@ function renderCmpChart(data) {
 
   const bkA = buildBuckets(dataA, rangeA.inicio, rangeA.fin, granularidad);
   const bkB = buildBuckets(dataB, rangeB.inicio, rangeB.fin, granularidad);
-  const keys = Object.keys(bkA).sort();
+  /* Los días de los dos lados, no solo los del primero: si el periodo con
+     el que se compara tiene un día más, ese día también se dibuja. */
+  const keys = Array.from(new Set(Object.keys(bkA).concat(Object.keys(bkB)))).sort();
 
-  const viajesA = keys.map(k=>bkA[k].viajes);
+  const viajesA = keys.map(k=>bkA[k]?.viajes||0);
   const viajesB = keys.map(k=>bkB[k]?.viajes||0);
-  const kgA     = keys.map(k=>Math.round(bkA[k].kg));
+  const kgA     = keys.map(k=>Math.round(bkA[k]?.kg||0));
   const kgB     = keys.map(k=>Math.round(bkB[k]?.kg||0));
 
   const totVA  = dataA.length, totVB = dataB.length;
