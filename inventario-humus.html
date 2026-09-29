@@ -595,6 +595,10 @@
               <option value="">— Seleccione —</option>
             </select>
           </div>
+          <div class="form-group">
+            <label>Número de remisión <span class="req">*</span></label>
+            <input type="text" id="salRemision" placeholder="Ej: 2640" inputmode="numeric">
+          </div>
         </div>
         <div class="form-row full">
           <div class="form-group">
@@ -656,7 +660,7 @@
       <div class="seccion-header">Historial de Salidas</div>
       <div class="seccion-body tabla-wrapper">
         <table>
-          <thead><tr><th>Fecha/Hora</th><th>Línea</th><th>Presentación</th><th>Cantidad</th><th>Destino</th><th>Responsable</th><th>Remisión</th><th>Foto</th></tr></thead>
+          <thead><tr><th>Fecha/Hora</th><th>Línea</th><th>Presentación</th><th>Cantidad</th><th>N.º remisión</th><th>Destino</th><th>Responsable</th><th>Remisión</th><th>Foto</th></tr></thead>
           <tbody id="tablaSal"><tr><td colspan="7" style="text-align:center;color:#999;padding:1.5rem">Sin datos</td></tr></tbody>
         </table>
       </div>
@@ -1049,11 +1053,11 @@
     if (data.salidas) {
       const filtradas = filtrarPorMes(data.salidas, 0);
       if (filtradas.length) {
-        /* r[7] es la foto de la remisión, obligatoria desde ahora. */
+        /* r[7] es la foto de la remisión y r[8] su número. */
         document.getElementById('tablaSal').innerHTML = filtradas.map(r => `
-          <tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]||''}</td><td>${r[5]||''}</td>${celdaFoto(r[7])}${celdaFoto(r[6])}</tr>`).join('');
+          <tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[8]||'—'}</td><td>${r[4]||''}</td><td>${r[5]||''}</td>${celdaFoto(r[7])}${celdaFoto(r[6])}</tr>`).join('');
       } else {
-        document.getElementById('tablaSal').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;padding:1.5rem">Sin registros en este periodo</td></tr>';
+        document.getElementById('tablaSal').innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;padding:1.5rem">Sin registros en este periodo</td></tr>';
       }
     }
   }
@@ -1087,7 +1091,13 @@
     const cantidad = document.getElementById('salBultos').value;
     const resp = document.getElementById('salResponsable').value;
     const destino = document.getElementById('salDestino').value;
+    const remision = document.getElementById('salRemision').value.trim();
     if (!linea || !presentacion || !cantidad || !resp || !destino) return showToast('Completa los campos obligatorios', 'error');
+    /* El número de la remisión acompaña a la foto: es el mismo documento. */
+    if (!remision) {
+      document.getElementById('salRemision').focus();
+      return showToast('Falta el número de la remisión', 'error');
+    }
     /* La foto de la remisión es obligatoria: es el respaldo del
        despacho. Sin ella no se registra la salida. */
     if (!_fotos.salRemision) {
@@ -1096,7 +1106,7 @@
     }
     const payload = {
       accion: 'salida',
-      linea, presentacion, cantidad: Number(cantidad), resp, destino,
+      linea, presentacion, cantidad: Number(cantidad), resp, destino, remision,
       obs: document.getElementById('salObs').value,
       fotoRemision: _fotos.salRemision,
       foto: _fotos.sal || ''
@@ -1172,6 +1182,7 @@
       document.getElementById('salPresentacion').innerHTML = '<option value="">— Seleccione una línea primero —</option>';
       document.getElementById('salBultos').value = '';
       document.getElementById('salDestino').value = '';
+      document.getElementById('salRemision').value = '';
       document.getElementById('salResponsable').value = '';
       document.getElementById('salObs').value = '';
       quitarFoto('sal');
