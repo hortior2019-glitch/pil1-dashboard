@@ -6627,6 +6627,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #per-area-modal .ar-variantes{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px}
 #per-area-modal .ar-variantes select{width:auto;min-width:230px;flex:0 1 auto}
 #per-area-modal .ar-variantes .per-btn{padding:8px 13px;white-space:nowrap}
+/* Con qué horario queda cada persona en la asignación de turnos */
+#per-area-modal #ar-f-inicial .fila .resumen{font-size:11px;color:var(--ink-l);white-space:nowrap;margin-left:6px}
 #per-area-modal .ar-propios{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:9px;margin-top:6px}
 #per-area-modal .ar-propio{border:1px solid var(--rule);border-left:3px solid #1c5636;background:var(--white);padding:9px 11px}
 #per-area-modal .ar-propio .qn{display:flex;align-items:center;gap:8px;margin-bottom:7px}
@@ -7006,6 +7008,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <div id="ar-f-diascaja">
       <label>Días</label>
       <div class="ar-dias" id="ar-f-dias"></div>
+      <div class="ayuda">Toque un día para trabajarlo; tóquelo otra vez y ese día tendrá otro horario.</div>
+      <div class="tn-esp" id="ar-f-diasesp" style="margin-top:6px"></div>
     </div>
 
     <div id="ar-f-general">
@@ -35297,6 +35301,7 @@ function abrirArea(a){
     inicial: (a && a.inicial) ? JSON.parse(JSON.stringify(a.inicial)) : {},
     /* El almuerzo del horario general: cuánto dura, si se reparte en
        turnos y quién almuerza en cada uno. */
+    especialesGeneral: (a && a.especiales) ? a.especiales.slice() : [],
     almuerzo: (a && a.almuerzoGeneral) ? (Number(a.almuerzoGeneral.min) || 0) : 0,
     almPorTurnos: !!(a && a.almuerzoGeneral && a.almuerzoGeneral.porTurnos),
     almTurnos: (a && a.almuerzoGeneral && a.almuerzoGeneral.turnos)
@@ -35323,17 +35328,117 @@ function abrirArea(a){
 }
 function cerrarArea(){ $p('per-area-modal').classList.remove('open'); AREA_EDIT = null; }
 
+/* Los días del área. En el horario general esta es la única tira que
+   hay, así que además de decir qué días se trabaja sirve para marcar un
+   día con otro horario: no trabaja → horario normal → otro horario.
+   En los otros modos cada turno lleva su propia tira y esta se esconde:
+   tener dos mandando sobre lo mismo confundía. */
+function espGeneralDelDia(letra){
+  var lista = AREA_FORM.especialesGeneral || [];
+  for(var k = 0; k < lista.length; k++){
+    if(!lista[k].fecha && lista[k].dia === letra) return k;
+  }
+  return -1;
+}
 function pintarDias(){
+  var general = AREA_FORM.modo === 'general';
+  AREA_FORM.especialesGeneral = AREA_FORM.especialesGeneral || [];
   $p('ar-f-dias').innerHTML = DIAS_LETRA.map(function(d){
-    return '<button type="button" class="' + (AREA_FORM.dias.indexOf(d) > -1 ? 'on' : '') + '" data-dia="' + d + '">' + d + '</button>';
+    var clase = (general && espGeneralDelDia(d) > -1) ? 'esp' : (AREA_FORM.dias.indexOf(d) > -1 ? 'on' : '');
+    var titulo = clase === 'esp' ? DIAS_NOMBRE[d] + ': otro horario ese día'
+               : clase === 'on' ? DIAS_NOMBRE[d] + ': horario del área'
+               : DIAS_NOMBRE[d] + ': no se trabaja';
+    return '<button type="button" class="' + clase + '" data-dia="' + d + '" title="' + titulo + '">' + d + '</button>';
   }).join('');
   $p('ar-f-dias').querySelectorAll('[data-dia]').forEach(function(b){
     b.onclick = function(){
       var d = b.dataset.dia, k = AREA_FORM.dias.indexOf(d);
-      if(k > -1) AREA_FORM.dias.splice(k, 1); else AREA_FORM.dias.push(d);
+      if(!general){
+        if(k > -1) AREA_FORM.dias.splice(k, 1); else AREA_FORM.dias.push(d);
+        pintarDias(); return;
+      }
+      var esp = espGeneralDelDia(d);
+      if(esp > -1){
+        AREA_FORM.especialesGeneral.splice(esp, 1);
+        if(k > -1) AREA_FORM.dias.splice(k, 1);
+      } else if(k > -1){
+        AREA_FORM.especialesGeneral.push({ dia:d, fecha:'', inicio:AREA_FORM.horaInicio, fin:AREA_FORM.horaFin });
+      } else {
+        AREA_FORM.dias.push(d);
+      }
+      pintarDias(); pintarAlmuerzoGeneral();
+    };
+  });
+  pintarDiasEspeciales(general);
+}
+/* Las tarjetas doradas de los días con otro horario del área. */
+function pintarDiasEspeciales(general){
+  var caja = $p('ar-f-diasesp');
+  if(!caja) return;
+  if(!general){ caja.innerHTML = ''; caja.style.display = 'none'; return; }
+  caja.style.display = '';
+  var lista = AREA_FORM.especialesGeneral || [];
+  caja.innerHTML = lista.map(function(e, k){
+    return '<div class="esp-tarjeta" data-e="' + k + '">' +
+      (e.fecha
+        ? '<span class="dia">Solo el</span><input type="date" data-gfecha="' + k + '" value="' + esc(e.fecha) + '">'
+        : '<span class="dia">' + esc(DIAS_NOMBRE[e.dia] || e.dia) + '</span>') +
+      '<input type="time" data-gini="' + k + '" value="' + esc(e.inicio) + '">' +
+      '<span>a</span>' +
+      '<input type="time" data-gfin="' + k + '" value="' + esc(e.fin) + '">' +
+      '<span class="hs">' + numeroHoras(horasTurno(e.inicio, e.fin, AREA_FORM.almuerzo)) + '</span>' +
+      '<button type="button" class="esp-x" data-gx="' + k + '" title="' +
+        (e.fecha ? 'Quitar esta fecha' : 'Volver al horario del área') + '">×</button>' +
+    '</div>';
+  }).join('') +
+    '<button type="button" class="per-btn esp-mas" id="ar-f-gmas" ' +
+      'title="Para una fecha suelta: el 12 de octubre, un inventario…">+ Una fecha puntual</button>';
+
+  caja.querySelectorAll('[data-gini]').forEach(function(i){
+    i.onchange = function(){ lista[+i.dataset.gini].inicio = i.value; pintarDias(); };
+  });
+  caja.querySelectorAll('[data-gfin]').forEach(function(i){
+    i.onchange = function(){ lista[+i.dataset.gfin].fin = i.value; pintarDias(); };
+  });
+  caja.querySelectorAll('[data-gfecha]').forEach(function(i){
+    i.onchange = function(){ lista[+i.dataset.gfecha].fecha = i.value; pintarDias(); };
+  });
+  caja.querySelectorAll('[data-gx]').forEach(function(b){
+    b.onclick = function(){
+      var e = lista[+b.dataset.gx];
+      lista.splice(+b.dataset.gx, 1);
+      /* Quitar la tarjeta de un día de la semana es lo mismo que apagarlo
+         arriba: ese día deja de trabajarse. */
+      if(e && !e.fecha){
+        var k = AREA_FORM.dias.indexOf(e.dia);
+        if(k > -1) AREA_FORM.dias.splice(k, 1);
+      }
       pintarDias();
     };
   });
+  var mas = caja.querySelector('#ar-f-gmas');
+  if(mas) mas.onclick = function(){
+    lista.push({ dia:'', fecha:isoDe(new Date()), inicio:AREA_FORM.horaInicio, fin:AREA_FORM.horaFin });
+    pintarDias();
+  };
+}
+/* Con turnos, los días del área son los de sus turnos juntos: así la
+   tira de arriba no puede tapar lo que se marcó abajo. */
+function sincronizarDiasDelArea(){
+  if(AREA_FORM.modo === 'general') return;
+  var juntos = {};
+  (AREA_FORM.turnos || []).forEach(function(t){
+    String(t.dias || '').split(',').filter(Boolean).forEach(function(d){ juntos[d] = true; });
+    (t.especiales || []).forEach(function(e){ if(e && e.dia) juntos[e.dia] = true; });
+  });
+  if(AREA_FORM.modo === 'personalizado'){
+    Object.keys(AREA_FORM.horarios || {}).forEach(function(c){
+      String((AREA_FORM.horarios[c] || {}).dias || '').split(',').filter(Boolean)
+        .forEach(function(d){ juntos[d] = true; });
+    });
+  }
+  var lista = DIAS_LETRA.filter(function(d){ return juntos[d]; });
+  AREA_FORM.dias = lista.length ? lista : DIAS_LETRA.slice();
 }
 /* ── EL HORARIO DE CADA QUIEN ──────────────────────────────────────
    Una fila por persona marcada: sus días, su entrada, su salida y su
@@ -35615,10 +35720,15 @@ function pintarModo(){
   $p('ar-f-ver').style.display = '';
   $p('ar-f-semanas-caja').style.display = rot ? '' : 'none';
   $p('ar-f-24caja').style.display = rot ? '' : 'none';
-  /* Un área de 24 horas trabaja los siete días: no hay días que elegir. */
+  /* Los días del área solo se eligen en el horario general: en los otros
+     modos los pone cada turno, y dos tiras mandando sobre lo mismo
+     confundían (la de arriba anulaba en silencio lo marcado abajo). */
+  /* Un area de 24 horas trabaja los siete dias. */
   var es24 = rot && AREA_FORM.cobertura24 !== false;
-  $p('ar-f-diascaja').style.display = es24 ? 'none' : '';
+  $p('ar-f-diascaja').style.display = (AREA_FORM.modo === 'general') ? '' : 'none';
+  if(AREA_FORM.modo !== 'general') sincronizarDiasDelArea();
   if(es24) AREA_FORM.dias = DIAS_LETRA.slice();
+  pintarDias();
   if(!rot) $p('ar-f-cuadro').innerHTML = '';
   /* El almuerzo por turnos es propio del horario general. */
   pintarAlmuerzoGeneral();
@@ -35646,20 +35756,46 @@ function pintarInicial(){
     caja.innerHTML = '<div class="vacio">Seleccione primero el personal del área.</div>';
     return;
   }
+  /* A quien no tenga turno elegido se le propone uno de los que están
+     armados arriba, repartiéndolos en partes iguales. Antes quedaban
+     todos en "el sistema decide" y no se veía por ningún lado con qué
+     turno arrancaba cada quien. */
+  var nombres = (AREA_FORM.turnos || []).map(function(t){ return t.nombre; }).filter(Boolean);
+  if(nombres.length){
+    var cuenta = {};
+    nombres.forEach(function(n){ cuenta[n] = 0; });
+    /* Lo elegido a mano que ya no exista arriba se suelta. */
+    Object.keys(AREA_FORM.inicial).forEach(function(c){
+      if(nombres.indexOf(AREA_FORM.inicial[c]) < 0) delete AREA_FORM.inicial[c];
+      else cuenta[AREA_FORM.inicial[c]]++;
+    });
+    marcados.forEach(function(p){
+      if(AREA_FORM.inicial[p.clave]) return;
+      var menor = nombres[0];
+      nombres.forEach(function(n){ if(cuenta[n] < cuenta[menor]) menor = n; });
+      AREA_FORM.inicial[p.clave] = menor; cuenta[menor]++;
+    });
+  }
   caja.innerHTML = marcados.map(function(p){
+    var suyo = (AREA_FORM.turnos || []).filter(function(t){ return t.nombre === AREA_FORM.inicial[p.clave]; })[0];
     return '<div class="fila">' + caritaPersona(p) + '<span>' + esc(p.nombre) + '</span>' +
       '<select data-ini="' + esc(p.clave) + '">' +
-        '<option value="">El sistema decide</option>' +
         AREA_FORM.turnos.map(function(t){
           return '<option value="' + esc(t.nombre) + '"' + (AREA_FORM.inicial[p.clave] === t.nombre ? ' selected' : '') +
                  '>' + esc(t.nombre) + '</option>';
         }).join('') +
-      '</select></div>';
+        '<option value="">El sistema decide</option>' +
+      '</select>' +
+      '<span class="resumen">' + (suyo
+        ? esc(suyo.inicio) + '–' + esc(suyo.fin) + ' · ' + numeroHoras(horasTurno(suyo.inicio, suyo.fin, suyo.almuerzo))
+        : 'lo reparte el sistema') + '</span>' +
+    '</div>';
   }).join('');
   caja.querySelectorAll('[data-ini]').forEach(function(sel){
     sel.onchange = function(){
       if(this.value) AREA_FORM.inicial[sel.dataset.ini] = this.value;
       else delete AREA_FORM.inicial[sel.dataset.ini];
+      pintarInicial();
     };
   });
 }
@@ -35826,6 +35962,7 @@ function pintarTurnos(){
           ds.push(letra);
         }
         t.dias = DIAS_LETRA.filter(function(x){ return ds.indexOf(x) > -1; }).join(',');
+        sincronizarDiasDelArea();
         pintarTurnos();
         if(AREA_FORM.modo === 'personalizado') pintarPropios();
       };
@@ -35928,12 +36065,24 @@ function cuadroDeHorarios(semana){
     DIAS_LETRA.forEach(function(letra, i){
       if(dias.indexOf(letra) < 0) return;
       var f = sumarDias(semana, i);
+      /* El día con otro horario manda sobre el del área; una fecha
+         puntual manda sobre el día de la semana. */
+      var esp = null;
+      if(general){
+        (AREA_FORM.especialesGeneral || []).forEach(function(e){
+          if(e.fecha === f) esp = e;
+          else if(!e.fecha && e.dia === letra && !esp) esp = e;
+        });
+      }
+      var ini = esp ? esp.inicio : hz.inicio;
+      var fin = esp ? esp.fin : hz.fin;
       salida.push({ area: AREA_FORM.nombre || 'Área nueva', semana: semana, fecha: f,
                     dia: DIAS_NOMBRE[letra], turno: hz.nombre || 'Horario',
-                    inicio: hz.inicio, fin: hz.fin,
+                    inicio: ini, fin: fin,
                     persona: p.clave, nombre: p.nombre,
                     almuerzo: Number(hz.almuerzo) || 0,
-                    horas: horasTurno(hz.inicio, hz.fin, hz.almuerzo) });
+                    ajuste: esp ? 'otro horario ese día' : '',
+                    horas: horasTurno(ini, fin, hz.almuerzo) });
     });
   });
   return salida;
@@ -35958,6 +36107,7 @@ function leerFormularioArea(){
   AREA_FORM.cobertura24 = !!$p('ar-f-24').checked;
   AREA_FORM.almuerzo = Number($p('ar-f-galm').value) || 0;
   AREA_FORM.almPorTurnos = AREA_FORM.almuerzo > 0 && !!$p('ar-f-galmturnos').checked;
+  sincronizarDiasDelArea();
   AREA_FORM.semanas = $p('ar-f-semanas') ? $p('ar-f-semanas').value : '1';
   AREA_FORM.desdeProxima = AREA_FORM.semanas === '0';
 }
@@ -35978,6 +36128,7 @@ function guardarArea(){
     horaInicio: AREA_FORM.horaInicio, horaFin: AREA_FORM.horaFin,
     turnos: AREA_FORM.turnos, horarios: AREA_FORM.horarios, cobertura24: AREA_FORM.cobertura24,
     inicial: AREA_FORM.inicial, semanaBase: AREA_FORM.semanas === '0' ? sumarDias(lunesDe(''), 7) : lunesDe(''),
+    especiales: AREA_FORM.modo === 'general' ? (AREA_FORM.especialesGeneral || []) : [],
     almuerzoGeneral: { min: Number(AREA_FORM.almuerzo) || 0,
                        porTurnos: !!AREA_FORM.almPorTurnos,
                        turnos: AREA_FORM.almPorTurnos ? AREA_FORM.almTurnos : [],
