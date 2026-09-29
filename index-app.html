@@ -35556,7 +35556,7 @@ function escribirExcelQuincena(d){
     var p = porPersona[k] || (porPersona[k] = {
       'Cédula': r['Cédula'], 'Nombre': r['Nombre'], 'Cargo': r['Cargo'],
       'Áreas': [], 'Días trabajados': 0, 'Horas': 0,
-      'Días nocturnos': 0, 'Domingos': 0, 'Horas extra': 0, 'Días en novedad': 0
+      'Días nocturnos': 0, 'Domingos': 0, 'De ellas, extra': 0, 'Días en novedad': 0
     });
     if(p['Áreas'].indexOf(r['Área']) < 0) p['Áreas'].push(r['Área']);
     if(r['Novedad']) { p['Días en novedad']++; }
@@ -35566,7 +35566,7 @@ function escribirExcelQuincena(d){
       if(r['Nocturno']) p['Días nocturnos']++;
       if(r['Dominical']) p['Domingos']++;
     }
-    p['Horas extra'] += Number(r['Horas extra']) || 0;
+    p['De ellas, extra'] += Number(r['Horas extra']) || 0;
   });
   var resumen = Object.keys(porPersona).sort(function(a, b){
     return String(porPersona[a]['Nombre']).localeCompare(String(porPersona[b]['Nombre']), 'es');
@@ -35574,14 +35574,27 @@ function escribirExcelQuincena(d){
     var p = porPersona[k];
     p['Áreas'] = p['Áreas'].join(' · ');
     p['Horas'] = Math.round(p['Horas'] * 100) / 100;
-    p['Horas extra'] = Math.round(p['Horas extra'] * 100) / 100;
+    p['De ellas, extra'] = Math.round(p['De ellas, extra'] * 100) / 100;
     return p;
   });
 
-  /* ── LA HOJA ORGANIZADA: un bloque por área, una columna por día ── */
-  var dias = [];
-  for(var f = d.desde; f <= d.hasta; f = sumarDias(f, 1)) dias.push(f);
+  /* ── LA HOJA ORGANIZADA ───────────────────────────────────────────
+     Un bloque por área; dentro, un bloque por semana con sus días; y al
+     cierre de cada uno, su suma. Las horas de cada día ya incluyen la
+     hora extra aprobada —el turno quedó alargado—, así que no hay una
+     columna aparte: sumarla otra vez sería contarla dos veces. */
   var DIAS3 = ['dom','lun','mar','mié','jue','vie','sáb'];
+  var COLS = 2 + 7 + 2;                  /* persona, cargo, 7 días, días y horas */
+
+  /* Las semanas que toca la quincena, cada una con sus días dentro del
+     periodo: la primera y la última pueden venir cortadas. */
+  var semanas = [];
+  for(var f = d.desde; f <= d.hasta; f = sumarDias(f, 1)){
+    var lun = lunesDe(f);
+    var sm = semanas.filter(function(x){ return x.lunes === lun; })[0];
+    if(!sm){ sm = { lunes: lun, dias: [] }; semanas.push(sm); }
+    sm.dias.push(f);
+  }
 
   /* Lo de cada persona, día por día, dentro de cada área. */
   var areas = {};
@@ -35592,105 +35605,127 @@ function escribirExcelQuincena(d){
     A.turnos[t.inicio + '-' + t.fin] = { inicio: t.inicio, fin: t.fin, nombre: t.turno };
   });
 
-  var filas = [];      /* array de arrays, la hoja tal cual */
-  var pintar = [];     /* { r, c, estilo } para colorear después */
-  var anchoDia = dias.length;
-  var COLS = 2 + anchoDia + 4;
+  var filas = [];      /* la hoja, fila por fila */
+  var pintar = [];     /* { r, c, e } para colorear después */
+  var poner = function(fila){ while(fila.length < COLS) fila.push(''); filas.push(fila); return filas.length - 1; };
+  var vacia = function(){ poner([]); };
 
-  var poner = function(fila){ filas.push(fila); return filas.length - 1; };
-  var vacia = function(){ poner(new Array(COLS).fill('')); };
-
-  var tit = poner(['QUINCENA DEL ' + fechaCorta(d.desde) + ' AL ' + fechaCorta(d.hasta)].concat(new Array(COLS - 1).fill('')));
-  pintar.push({ r: tit, c: 0, e: { font: { bold:true, sz:14, name:'Calibri' } } });
+  var rTit = poner(['QUINCENA DEL ' + fechaCorta(d.desde) + ' AL ' + fechaCorta(d.hasta)]);
+  pintar.push({ r: rTit, c: 0, e: { font: { bold:true, sz:14, name:'Calibri' } } });
   vacia();
 
-  var totalQ = { dias:0, horas:0, extras:0 };
+  var totalQ = { dias:0, horas:0 };
   Object.keys(areas).sort().forEach(function(nombreArea, iArea){
     var A = areas[nombreArea];
     var colorArea = COLORES_TURNO[iArea % COLORES_TURNO.length];
     /* Cada turno del área con el color que tiene en el cuadro. */
-    var claves = Object.keys(A.turnos);
+    var claves = Object.keys(A.turnos).sort(function(x, y){
+      return minutosDe(A.turnos[x].inicio) - minutosDe(A.turnos[y].inicio);
+    });
     var colorTurno = {};
-    claves.sort(function(x, y){ return minutosDe(A.turnos[x].inicio) - minutosDe(A.turnos[y].inicio); })
-          .forEach(function(kk, i){ colorTurno[kk] = COLORES_TURNO[i % COLORES_TURNO.length]; });
+    claves.forEach(function(kk, i){ colorTurno[kk] = COLORES_TURNO[i % COLORES_TURNO.length]; });
 
-    var rA = poner([nombreArea.toUpperCase()].concat(new Array(COLS - 1).fill('')));
+    var rA = poner([nombreArea.toUpperCase()]);
     for(var c = 0; c < COLS; c++) pintar.push({ r: rA, c: c, e: relleno(colorArea, 'FFFFFF', true) });
 
-    var cab = ['Persona', 'Cargo'].concat(dias.map(function(f){
-      var dd = new Date(f + 'T00:00:00');
-      return DIAS3[dd.getDay()] + ' ' + dd.getDate();
-    })).concat(['Días', 'Horas', 'Extras', 'Total']);
-    var rC = poner(cab);
-    cab.forEach(function(x, c){
-      var esDom = c >= 2 && c < 2 + anchoDia && new Date(dias[c - 2] + 'T00:00:00').getDay() === 0;
-      pintar.push({ r: rC, c: c, e: relleno(esDom ? '8B1A1A' : '444444', 'FFFFFF', true) });
-    });
-
-    var subt = { dias:0, horas:0, extras:0 };
-    Object.keys(A.gente).sort(function(x, y){
+    var subArea = { dias:0, horas:0 };
+    var gente = Object.keys(A.gente).sort(function(x, y){
       return String(A.gente[x].nombre).localeCompare(String(A.gente[y].nombre), 'es');
-    }).forEach(function(claveP){
-      var p = A.gente[claveP];
-      var fila = [p.nombre, p.cargo];
-      var nDias = 0, nHoras = 0, nExtra = 0;
-      dias.forEach(function(f, i){
-        var t = p.dias[f];
-        var k = claveP + '|' + f;
-        var ex = porDia[k] ? Math.round(porDia[k].minutos / 60 * 100) / 100 : 0;
-        nExtra += ex;
-        if(novDia[k]){
-          fila.push(novDia[k]);
-          pintar.push({ r: filas.length, c: 2 + i, e: relleno('D9D9D9', '555555', false) });
-        } else if(t && t.horas){
-          fila.push(t.horas + (ex ? ' +' + ex : ''));
-          nDias++; nHoras += t.horas;
-          pintar.push({ r: filas.length, c: 2 + i,
-                        e: relleno(colorTurno[t.inicio + '-' + t.fin] || colorArea, 'FFFFFF', true) });
-        } else {
-          fila.push('');
-          pintar.push({ r: filas.length, c: 2 + i, e: { fill:{ patternType:'solid', fgColor:{ rgb:'F5F5F3' } }, border: bordeFino() } });
-        }
-      });
-      fila.push(nDias, Math.round(nHoras * 100) / 100, Math.round(nExtra * 100) / 100,
-                Math.round((nHoras + nExtra) * 100) / 100);
-      var r = poner(fila);
-      pintar.push({ r: r, c: 0, e: { font:{ bold:true, sz:10, name:'Calibri' }, border: bordeFino() } });
-      for(var cc = 2 + anchoDia; cc < COLS; cc++){
-        pintar.push({ r: r, c: cc, e: relleno('EFEDE6', '1A1A1A', cc === COLS - 1) });
-      }
-      subt.dias += nDias; subt.horas += nHoras; subt.extras += nExtra;
     });
 
-    var rS = poner(['Subtotal ' + nombreArea, ''].concat(new Array(anchoDia).fill(''))
-      .concat([subt.dias, Math.round(subt.horas * 100) / 100, Math.round(subt.extras * 100) / 100,
-               Math.round((subt.horas + subt.extras) * 100) / 100]));
-    for(var c2 = 0; c2 < COLS; c2++) pintar.push({ r: rS, c: c2, e: relleno(colorArea, 'FFFFFF', true) });
+    semanas.forEach(function(sm){
+      /* Si en esa semana el área no trabajó, no se pinta el bloque. */
+      var hayAlgo = gente.some(function(cl){
+        return sm.dias.some(function(f){ return !!A.gente[cl].dias[f]; });
+      });
+      if(!hayAlgo) return;
+
+      var rS = poner(['Semana del ' + fechaCorta(sm.dias[0]) + ' al ' + fechaCorta(sm.dias[sm.dias.length - 1])]);
+      for(var c1 = 0; c1 < COLS; c1++) pintar.push({ r: rS, c: c1, e: relleno('EFEDE6', '1A1A1A', true) });
+
+      var cab = ['Persona', 'Cargo'].concat(sm.dias.map(function(f){
+        var dd = new Date(f + 'T00:00:00');
+        return DIAS3[dd.getDay()] + ' ' + dd.getDate();
+      }));
+      while(cab.length < 2 + 7) cab.push('');
+      cab = cab.concat(['Días', 'Horas']);
+      var rC = poner(cab);
+      cab.forEach(function(x, c2){
+        var esDia = c2 >= 2 && c2 < 2 + sm.dias.length;
+        var esDom = esDia && new Date(sm.dias[c2 - 2] + 'T00:00:00').getDay() === 0;
+        pintar.push({ r: rC, c: c2, e: relleno(esDom ? '8B1A1A' : '444444', 'FFFFFF', true) });
+      });
+
+      var subSem = { dias:0, horas:0 };
+      gente.forEach(function(claveP){
+        var p = A.gente[claveP];
+        var fila = [p.nombre, p.cargo];
+        var nDias = 0, nHoras = 0;
+        var pintaCeldas = [];
+        sm.dias.forEach(function(f, i){
+          var t = p.dias[f];
+          var nov = novDia[claveP + '|' + f];
+          if(nov){
+            fila.push(nov);
+            pintaCeldas.push({ c: 2 + i, e: relleno('D9D9D9', '555555', false) });
+          } else if(t && t.horas){
+            fila.push(t.horas);
+            nDias++; nHoras += t.horas;
+            pintaCeldas.push({ c: 2 + i, e: relleno(colorTurno[t.inicio + '-' + t.fin] || colorArea, 'FFFFFF', true) });
+          } else {
+            fila.push('');
+            pintaCeldas.push({ c: 2 + i, e: { fill:{ patternType:'solid', fgColor:{ rgb:'F5F5F3' } }, border: bordeFino() } });
+          }
+        });
+        while(fila.length < 2 + 7) fila.push('');
+        fila.push(nDias, Math.round(nHoras * 100) / 100);
+        var r = poner(fila);
+        pintaCeldas.forEach(function(x){ pintar.push({ r: r, c: x.c, e: x.e }); });
+        pintar.push({ r: r, c: 0, e: { font:{ bold:true, sz:10, name:'Calibri' }, border: bordeFino() } });
+        pintar.push({ r: r, c: COLS - 2, e: relleno('EFEDE6', '1A1A1A', false) });
+        pintar.push({ r: r, c: COLS - 1, e: relleno('EFEDE6', '1A1A1A', true) });
+        subSem.dias += nDias; subSem.horas += nHoras;
+      });
+
+      var fSem = ['Total de la semana', ''];
+      while(fSem.length < 2 + 7) fSem.push('');
+      fSem.push(subSem.dias, Math.round(subSem.horas * 100) / 100);
+      var rTS = poner(fSem);
+      for(var c3 = 0; c3 < COLS; c3++) pintar.push({ r: rTS, c: c3, e: relleno('777777', 'FFFFFF', true) });
+
+      subArea.dias += subSem.dias; subArea.horas += subSem.horas;
+      vacia();
+    });
+
+    var fArea = ['Total de ' + nombreArea, ''];
+    while(fArea.length < 2 + 7) fArea.push('');
+    fArea.push(subArea.dias, Math.round(subArea.horas * 100) / 100);
+    var rSA = poner(fArea);
+    for(var c4 = 0; c4 < COLS; c4++) pintar.push({ r: rSA, c: c4, e: relleno(colorArea, 'FFFFFF', true) });
 
     /* Qué significa cada color, para que la hoja se lea sola. */
     var leyenda = ['Turnos:'].concat(claves.map(function(kk){
       return A.turnos[kk].nombre + ' ' + A.turnos[kk].inicio + '–' + A.turnos[kk].fin;
     }));
-    while(leyenda.length < COLS) leyenda.push('');
     var rL = poner(leyenda);
     claves.forEach(function(kk, i){
-      pintar.push({ r: rL, c: 1 + i, e: relleno(colorTurno[kk], 'FFFFFF', false) });
+      if(1 + i < COLS) pintar.push({ r: rL, c: 1 + i, e: relleno(colorTurno[kk], 'FFFFFF', false) });
     });
     pintar.push({ r: rL, c: 0, e: { font:{ italic:true, sz:9, color:{ rgb:'777777' } } } });
 
-    totalQ.dias += subt.dias; totalQ.horas += subt.horas; totalQ.extras += subt.extras;
+    totalQ.dias += subArea.dias; totalQ.horas += subArea.horas;
     vacia();
   });
 
-  var rT = poner(['TOTAL DE LA QUINCENA', ''].concat(new Array(anchoDia).fill(''))
-    .concat([totalQ.dias, Math.round(totalQ.horas * 100) / 100, Math.round(totalQ.extras * 100) / 100,
-             Math.round((totalQ.horas + totalQ.extras) * 100) / 100]));
-  for(var c3 = 0; c3 < COLS; c3++) pintar.push({ r: rT, c: c3, e: relleno('1A1A1A', 'FFFFFF', true) });
+  var fTot = ['TOTAL DE LA QUINCENA', ''];
+  while(fTot.length < 2 + 7) fTot.push('');
+  fTot.push(totalQ.dias, Math.round(totalQ.horas * 100) / 100);
+  var rT = poner(fTot);
+  for(var c5 = 0; c5 < COLS; c5++) pintar.push({ r: rT, c: c5, e: relleno('1A1A1A', 'FFFFFF', true) });
 
   var wb = XLSX.utils.book_new();
   var wsQ = XLSX.utils.aoa_to_sheet(filas);
-  wsQ['!cols'] = [{wch:26},{wch:16}].concat(dias.map(function(){ return { wch:7 }; }))
-                   .concat([{wch:7},{wch:9},{wch:8},{wch:9}]);
+  wsQ['!cols'] = [{wch:26},{wch:16},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:7},{wch:9}];
   pintar.forEach(function(x){
     estiloCelda(wsQ, XLSX.utils.encode_cell({ r: x.r, c: x.c }), x.e);
   });
