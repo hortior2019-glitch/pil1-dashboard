@@ -6934,6 +6934,16 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-personal .tn-extra .op button.on{background:var(--gold,#b8891f);border-color:var(--gold,#b8891f);color:#fff}
 #panel-personal .tn-extra .op button.quitar{color:#b23b3b}
 #panel-personal .tn-extra .pie{font-size:11px;color:var(--ink-l);margin-top:9px}
+/* El motivo de la hora extra: obligatorio, con motivos de siempre a un clic */
+#panel-personal .ex-motivo{
+  width:100%;box-sizing:border-box;padding:8px 10px;font-size:13px;margin-top:4px;
+  border:1px solid var(--rule);border-radius:7px;background:var(--white);color:var(--ink);
+  font-family:'Source Sans 3',sans-serif;
+}
+#panel-personal .ex-motivo:focus{outline:none;border-color:var(--gold,#b8891f);box-shadow:0 0 0 3px rgba(184,137,31,.15)}
+#panel-personal .ex-motivo.falta{border-color:#c0392b;box-shadow:0 0 0 3px rgba(192,57,43,.14)}
+#panel-personal .op-motivos{margin-top:6px}
+#panel-personal .op-motivos button{font-size:10.5px;font-weight:600;padding:5px 9px}
 </style>
 
 <div class="panel" id="panel-personal">
@@ -35210,7 +35220,7 @@ function pintarAreas(){
             : a.modo === 'personalizado' ? 'horario personalizado' : 'horario general') + '</span></div>' +
         (gente.length ? '' : '<div class="ar-gente"><span>sin personal asignado</span></div>') +
         '<div class="ar-acc">' +
-          (a.modo !== 'general' ? '<button type="button" class="fuerte" data-ar-turnos="' + esc(a.nombre) + '">Ver los turnos</button>' : '') +
+          '<button type="button" class="fuerte" data-ar-turnos="' + esc(a.nombre) + '">Ver los turnos</button>' +
           '<button type="button" data-ar-editar="' + esc(a.nombre) + '">Editar</button>' +
           '<button type="button" data-ar-borrar="' + esc(a.nombre) + '">Borrar</button>' +
         '</div></div>';
@@ -35241,7 +35251,7 @@ function adelantarTurnos(){
   /* No se adelanta el área que se está mirando (esa se pide igual) ni se
      traen más de tres de una: el servicio es uno solo y lo que importa
      es lo que la persona tiene en pantalla. */
-  var faltan = P.areas.filter(function(a){ return a.modo !== 'general' && a.nombre !== AREA_VIENDO; })
+  var faltan = P.areas.filter(function(a){ return a.nombre !== AREA_VIENDO; })
     .map(function(a){ return { area: a.nombre, desde: semanasDelCuadro(mes)[0] }; })
     .filter(function(x){ return !P.turnos[x.area + '|' + x.desde]; })
     .slice(0, 3);
@@ -35533,6 +35543,34 @@ function guardarVariante(boton){
 
 /* Cuando se toca un horario arriba, a los que lo tienen asignado se les
    actualiza solo: el de abajo es el mismo horario, no una copia. */
+/* Al renombrar un horario hay que renombrarlo también donde ya está
+   asignado. Si no, la persona queda apuntando a un nombre que ya no
+   existe y el menú vuelve a proponer el primero de la lista. */
+function renombrarHorario(antes, ahora){
+  if(!antes || antes === ahora) return;
+  Object.keys(AREA_FORM.horarios || {}).forEach(function(c){
+    var hz = AREA_FORM.horarios[c];
+    if(hz && hz.nombre === antes) hz.nombre = ahora;
+  });
+  Object.keys(AREA_FORM.inicial || {}).forEach(function(c){
+    if(AREA_FORM.inicial[c] === antes) AREA_FORM.inicial[c] = ahora;
+  });
+}
+/* Y al quitarlo, quien lo tenía pasa al primero que quede. */
+function soltarHorario(nombre){
+  var primero = (AREA_FORM.turnos || [])[0];
+  Object.keys(AREA_FORM.horarios || {}).forEach(function(c){
+    var hz = AREA_FORM.horarios[c];
+    if(!hz || hz.nombre !== nombre) return;
+    if(primero) AREA_FORM.horarios[c] = { nombre: primero.nombre, inicio: primero.inicio, fin: primero.fin,
+                                          dias: primero.dias || TODOS_LOS_DIAS,
+                                          almuerzo: Number(primero.almuerzo) || 0 };
+    else delete AREA_FORM.horarios[c];
+  });
+  Object.keys(AREA_FORM.inicial || {}).forEach(function(c){
+    if(AREA_FORM.inicial[c] === nombre) delete AREA_FORM.inicial[c];
+  });
+}
 function refrescarAsignados(){
   var lista = AREA_FORM.turnos || [];
   Object.keys(AREA_FORM.horarios || {}).forEach(function(c){
@@ -35545,6 +35583,13 @@ function refrescarAsignados(){
   });
 }
 
+/* La asignación de abajo se vuelve a pintar cada vez que cambia algo de
+   los horarios de arriba: en el personalizado es la lista de personas,
+   en los rotativos el turno con el que arranca cada quien. */
+function avisarAsignacion(){
+  if(AREA_FORM.modo === 'personalizado') pintarPropios();
+  else pintarInicial();
+}
 function pintarPropios(){
   refrescarAsignados();
   var caja = $p('ar-f-propios');
@@ -35566,6 +35611,13 @@ function pintarPropios(){
       ? { dias: primero.dias || TODOS_LOS_DIAS, inicio: primero.inicio, fin: primero.fin,
           almuerzo: Number(primero.almuerzo) || 0, nombre: primero.nombre }
       : { dias:'L,M,X,J,V', inicio:'08:00', fin:'17:00', almuerzo:0, nombre:'Horario' });
+    /* Si el horario que tenía ya no está entre los de arriba, se le pone
+       el primero: así nunca queda con uno que no existe. */
+    if(primero && !(AREA_FORM.turnos || []).some(function(t){ return t.nombre === hz.nombre; })){
+      hz = AREA_FORM.horarios[p.clave] = { dias: primero.dias || TODOS_LOS_DIAS, inicio: primero.inicio,
+                                           fin: primero.fin, almuerzo: Number(primero.almuerzo) || 0,
+                                           nombre: primero.nombre };
+    }
     /* Cuál de los de arriba es el suyo: por nombre, y si no por horas. */
     var lista = AREA_FORM.turnos || [];
     var cual = '';
@@ -35894,10 +35946,23 @@ function pintarTurnos(){
   }).join('');
   caja.querySelectorAll('.ar-turno').forEach(function(d){
     var i = +d.dataset.i;
-    d.querySelector('.tn-nom').oninput = function(){ AREA_FORM.turnos[i].nombre = this.value; };
-    d.querySelector('.tn-ini').oninput = function(){ AREA_FORM.turnos[i].inicio = this.value; pintarTurnos(); };
-    d.querySelector('.tn-fin').oninput = function(){ AREA_FORM.turnos[i].fin = this.value; pintarTurnos(); };
-    d.querySelector('.tn-quitar').onclick = function(){ AREA_FORM.turnos.splice(i, 1); pintarTurnos(); pintarInicial(); };
+    var nom = d.querySelector('.tn-nom');
+    nom.oninput = function(){
+      renombrarHorario(AREA_FORM.turnos[i].nombre, this.value);
+      AREA_FORM.turnos[i].nombre = this.value;
+    };
+    /* Al salir del campo se repinta: así el nombre nuevo se ve de una vez
+       en la asignación, sin perder el cursor mientras se escribe. */
+    nom.onchange = function(){ pintarTurnos(); avisarAsignacion(); };
+    d.querySelector('.tn-ini').oninput = function(){ AREA_FORM.turnos[i].inicio = this.value; pintarTurnos(); avisarAsignacion(); };
+    d.querySelector('.tn-fin').oninput = function(){ AREA_FORM.turnos[i].fin = this.value; pintarTurnos(); avisarAsignacion(); };
+    d.querySelector('.tn-quitar').onclick = function(){
+      var fuera = AREA_FORM.turnos[i].nombre;
+      AREA_FORM.turnos.splice(i, 1);
+      soltarHorario(fuera);
+      sincronizarDiasDelArea();
+      pintarTurnos(); avisarAsignacion();
+    };
   });
   /* Los días con otro horario */
   caja.querySelectorAll('.tn-esp').forEach(function(caja){
@@ -35935,10 +36000,10 @@ function pintarTurnos(){
     });
   });
   caja.querySelectorAll('[data-fijo]').forEach(function(c){
-    c.onchange = function(){ AREA_FORM.turnos[+c.dataset.fijo].fijo = c.checked; pintarTurnos(); };
+    c.onchange = function(){ AREA_FORM.turnos[+c.dataset.fijo].fijo = c.checked; pintarTurnos(); avisarAsignacion(); };
   });
   caja.querySelectorAll('[data-alm]').forEach(function(c){
-    c.onchange = function(){ AREA_FORM.turnos[+c.dataset.alm].almuerzo = Number(c.value) || 0; pintarTurnos(); };
+    c.onchange = function(){ AREA_FORM.turnos[+c.dataset.alm].almuerzo = Number(c.value) || 0; pintarTurnos(); avisarAsignacion(); };
   });
   caja.querySelectorAll('.ar-turno-dias').forEach(function(d){
     var i = +d.dataset.i;
@@ -36141,9 +36206,8 @@ function guardarArea(){
     P.turnos = {}; FRESCO = {};          /* lo guardado quedó viejo */
     /* Se marca ya como "en camino" para que el adelanto de fondo no la
        pida al mismo tiempo que se está armando. */
-    if(modo !== 'general'){ AREA_VIENDO = nombre; PLANEADAS[nombre] = true; }
+    AREA_VIENDO = nombre; PLANEADAS[nombre] = true;
     guardarLocal(); cerrarArea(); pintarAreas();
-    if(modo === 'general') return;   /* un horario general no arma cuadro */
     /* Las semanas que se pidieron se arman en segundo plano; la primera
        aparece apenas está. */
     /* Cuatro semanas planteadas de una vez: la que rige y las tres que
@@ -36442,7 +36506,7 @@ function fusionarSemana(area, semana, turnos, extras){
 }
 function planearSiFalta(area){
   var a = areaPorNombre(area);
-  if(!a || a.modo === 'general') return;
+  if(!a) return;
   if(PLANEADAS[area]) return;
   PLANEADAS[area] = true;
   var lunes = lunesDe('');
@@ -36777,6 +36841,9 @@ function horaDe(min){
   return (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm;
 }
 /* El menú chico que sale al tocar una de las tiras. */
+/* Los motivos que más se repiten, para no escribirlos cada vez. */
+var MOTIVOS_EXTRA = ['Pico de producción', 'Cubrir una ausencia', 'Cierre de mes',
+                     'Mantenimiento', 'Despacho urgente'];
 function menuExtra(celda, donde){
   var persona = celda.dataset.persona, fecha = celda.dataset.fecha, quien = celda.dataset.quien;
   var franja = celda.querySelector('.hs');
@@ -36799,12 +36866,24 @@ function menuExtra(celda, donde){
         '<b>' + textoHoras(anot.minutos / 60) + ' · ' + (anot.estado === 'APROBADA' ? 'aprobada' : 'planeada') + '</b>' +
         '<span>' + (anot.planeo ? 'planeó ' + esc(anot.planeo) : '') +
           (anot.aprobo ? ' · aprobó ' + esc(anot.aprobo) : '') + '</span>' +
+        (anot.motivo ? '<span>motivo: ' + esc(anot.motivo) + '</span>' : '') +
       '</div>' : '') +
     '<label class="ex-lb">¿Cuántas horas?</label>' +
     '<div class="op">' +
       /* De media en media hora, hasta cuatro. */
       [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4].map(function(n){
         return '<button type="button" data-h="' + n + '"' + (elegido === n * 60 ? ' class="on"' : '') + '>' + textoHoras(n) + '</button>';
+      }).join('') +
+    '</div>' +
+    /* Sin motivo no se guarda: es lo que después permite revisarla y
+       sustentar el pago. */
+    '<label class="ex-lb">¿Por qué? (obligatorio)</label>' +
+    '<input type="text" class="ex-motivo" id="ex-motivo" maxlength="200" ' +
+      'placeholder="Ej: pico de producción, cubrir una ausencia…" value="' +
+      esc((anot && anot.motivo) || '') + '">' +
+    '<div class="op op-motivos">' +
+      MOTIVOS_EXTRA.map(function(m){
+        return '<button type="button" data-mot="' + esc(m) + '">' + esc(m) + '</button>';
       }).join('') +
     '</div>' +
     '<div class="pie">El turno está definido de ' + esc(base.inicio) + ' a ' + esc(base.fin) + '. ' +
@@ -36820,6 +36899,12 @@ function menuExtra(celda, donde){
 
   var cuanto = elegido;
   $p('ex-cancelar').onclick = cerrarMenuTurno;
+  div.querySelectorAll('[data-mot]').forEach(function(b){
+    b.onclick = function(){
+      var c = $p('ex-motivo');
+      c.value = b.dataset.mot; c.classList.remove('falta'); c.focus();
+    };
+  });
   div.querySelectorAll('[data-h]').forEach(function(b){
     b.onclick = function(){
       cuanto = Number(b.dataset.h) * 60;
@@ -36829,9 +36914,16 @@ function menuExtra(celda, donde){
   });
   var mandar = function(estado, boton){
     if(!cuanto){ alert('Primero elija cuántas horas.'); return; }
+    var motivo = ($p('ex-motivo').value || '').trim();
+    if(!motivo){
+      $p('ex-motivo').classList.add('falta');
+      $p('ex-motivo').focus();
+      alert('Falta el motivo de la hora extra.');
+      return;
+    }
     mandarCambio({ accion:'perExtraGuardar', area: AREA_VIENDO, fecha: fecha, persona: persona,
                    turno: turno, lado: donde, minutos: cuanto, estado: estado,
-                   quien: quienSoy() }, boton);
+                   motivo: motivo, quien: quienSoy() }, boton);
   };
   $p('ex-planear').onclick = function(){ mandar('PLANEADA', this); };
   $p('ex-aprobar').onclick = function(){ mandar('APROBADA', this); };
@@ -36906,6 +36998,14 @@ function editarCelda(celda){
         '<label>Sale</label>' +
         '<input type="time" id="ed-bl-fin" value="' + esc(bloqueDelDia ? bloqueDelDia.fin : '') + '">' +
         '<span id="ed-bl-cuantas"></span></div>' +
+      '<input type="text" class="ex-motivo" id="ed-bl-motivo" maxlength="200" ' +
+        'placeholder="Motivo de la hora extra (obligatorio)" value="' +
+        esc((extraDe(fecha, persona, 'aparte') || {}).motivo || '') + '">' +
+      '<div class="op op-motivos">' +
+        MOTIVOS_EXTRA.map(function(m){
+          return '<button type="button" data-mot2="' + esc(m) + '">' + esc(m) + '</button>';
+        }).join('') +
+      '</div>' +
       '<div class="acc">' +
         (bloqueDelDia ? '<button type="button" id="ed-bl-quitar">Quitar el bloque</button>' : '') +
         '<button type="button" id="ed-bl-planear">Dejar planeado</button>' +
@@ -36955,11 +37055,24 @@ function editarCelda(celda){
   $p('ed-bl-ini').oninput = contarBloque;
   $p('ed-bl-fin').oninput = contarBloque;
   contarBloque();
+  document.querySelectorAll('[data-mot2]').forEach(function(b){
+    b.onclick = function(){
+      var c = $p('ed-bl-motivo');
+      c.value = b.dataset.mot2; c.classList.remove('falta'); c.focus();
+    };
+  });
   var mandarBloque = function(estado, boton){
     var i = $p('ed-bl-ini').value, f = $p('ed-bl-fin').value;
     if(!i || !f){ alert('Ponga la hora de entrada y la de salida del bloque.'); return; }
+    var motivo = ($p('ed-bl-motivo').value || '').trim();
+    if(!motivo){
+      $p('ed-bl-motivo').classList.add('falta');
+      $p('ed-bl-motivo').focus();
+      alert('Falta el motivo de la hora extra.');
+      return;
+    }
     mandarCambio({ accion:'perExtraGuardar', area: AREA_VIENDO, fecha: fecha, persona: persona,
-                   turno: turno, lado: 'aparte', inicio: i, fin: f,
+                   turno: turno, lado: 'aparte', inicio: i, fin: f, motivo: motivo,
                    estado: estado, quien: quienSoy() }, boton);
   };
   $p('ed-bl-planear').onclick = function(){ mandarBloque('PLANEADA', this); };
