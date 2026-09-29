@@ -6936,6 +6936,12 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-personal .tn-extra .pie{font-size:11px;color:var(--ink-l);margin-top:9px}
 /* El motivo de la hora extra: obligatorio, con motivos de siempre a un clic */
 /* El traslado de gente entre áreas */
+#per-mover-modal .aj-ops{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:7px;margin:4px 0 10px}
+#per-mover-modal .aj-op{text-align:left;padding:10px 11px;border:1px solid var(--rule);border-radius:8px;
+  background:var(--white);cursor:pointer;font-family:'Source Sans 3',sans-serif}
+#per-mover-modal .aj-op b{display:block;font-size:12.5px;color:var(--ink)}
+#per-mover-modal .aj-op span{display:block;font-size:10.5px;color:var(--ink-l);margin-top:2px;line-height:1.35}
+#per-mover-modal .aj-op.on{border-color:#1c5636;background:#f2f8f4;box-shadow:0 0 0 2px rgba(28,86,54,.12)}
 #per-mover-modal .mv-modo{display:flex;gap:0;margin:2px 0 4px;border:1px solid var(--rule);border-radius:8px;overflow:hidden}
 #per-mover-modal .mv-modo button{flex:1;padding:9px 10px;font-size:12px;font-weight:700;border:none;
   background:var(--bg);color:var(--ink-m);cursor:pointer;font-family:'Source Sans 3',sans-serif}
@@ -35245,6 +35251,147 @@ function hacerMover(boton){
 }
 
 /* ══════════════════════════════════════════════════════════════════
+   AJUSTAR LA SEMANA DE TODA EL ÁREA
+   ------------------------------------------------------------------
+   Hasta ahora solo se podía tocar el turno de una persona un día. Lo que
+   de verdad pasa en planta es que cambia el área entera: se rotan los
+   turnos, un día se sale más temprano, la jornada se corre media hora, o
+   dos personas se cambian el turno entre ellas.
+
+   Cada ajuste dice si vale solo para esa semana o de ahí en adelante. Lo
+   anterior a la semana que se está viendo no se toca nunca.
+   ══════════════════════════════════════════════════════════════════ */
+var AJUSTE = null;
+
+function abrirAjusteSemana(semana){
+  var a = areaPorNombre(AREA_VIENDO);
+  if(!a){ alert('No se encontró el área.'); return; }
+  var rot = a.modo === 'rotativo' && (a.turnos || []).length > 1;
+  var gente = P.gente.filter(function(p){
+    return miembrosDe(a.nombre).some(function(m){ return m.persona === p.clave; });
+  }).sort(function(x, y){ return String(x.nombre).localeCompare(String(y.nombre), 'es'); });
+
+  AJUSTE = { semana: semana, que: rot ? 'rotar' : 'dia' };
+
+  var opcion = function(id, tit, sub){
+    return '<button type="button" class="aj-op' + (AJUSTE.que === id ? ' on' : '') + '" data-aj="' + id + '">' +
+      '<b>' + tit + '</b><span>' + sub + '</span></button>';
+  };
+
+  $p('mv-caja').innerHTML =
+    '<div class="per-tit">Ajustar la semana · ' + esc(a.nombre) + '</div>' +
+    '<div class="per-sub">Semana del ' + esc(fechaCorta(semana)) + ' al ' + esc(fechaCorta(sumarDias(semana, 6))) +
+      '. Lo anterior no se toca.</div>' +
+
+    '<div class="aj-ops">' +
+      (rot ? opcion('rotar', 'Rotar los turnos', 'Cada quien pasa al turno siguiente') : '') +
+      opcion('dia', 'Un día distinto', 'Otro horario ese día para toda el área') +
+      opcion('correr', 'Correr la jornada', 'Entrar y salir más temprano o más tarde') +
+      (gente.length > 1 ? opcion('intercambiar', 'Cambiar dos de turno', 'Dos personas se intercambian el turno') : '') +
+    '</div>' +
+
+    '<div id="aj-campos"></div>' +
+
+    '<div class="mv-aviso" id="aj-aviso" style="margin-top:12px"></div>' +
+    '<div class="per-error" id="aj-error"></div>' +
+    '<div class="per-btns">' +
+      '<button type="button" class="cancelar" id="aj-cancelar">Cancelar</button>' +
+      '<button type="button" class="guardar" id="aj-hacer">Aplicar</button>' +
+    '</div>';
+  $p('per-mover-modal').classList.add('open');
+
+  var pintarCampos = function(){
+    var h = '';
+    if(AJUSTE.que === 'rotar'){
+      h = '<label>¿Para qué lado?</label>' +
+        '<select id="aj-rotar">' +
+          '<option value="1">Al siguiente turno (mañana → tarde → noche)</option>' +
+          '<option value="-1">Al anterior (noche → tarde → mañana)</option>' +
+        '</select>' +
+        '<div class="ayuda">La rotación rige de esta semana en adelante: una que se deshaga sola no sirve.</div>';
+    } else if(AJUSTE.que === 'dia'){
+      h = '<label>¿Qué día?</label><select id="aj-dia">' +
+          DIAS_LETRA.map(function(d, i){
+            return '<option value="' + i + '">' + DIAS_NOMBRE[d] + ' ' + esc(fechaCorta(sumarDias(semana, i))) + '</option>';
+          }).join('') + '</select>' +
+        '<div style="display:flex;gap:8px;align-items:center;margin-top:8px">' +
+          '<input type="time" id="aj-ini" value="06:00"> <span>a</span> <input type="time" id="aj-fin" value="12:00">' +
+        '</div>';
+    } else if(AJUSTE.que === 'correr'){
+      h = '<label>¿Cuánto se corre?</label><select id="aj-min">' +
+          [-120,-90,-60,-30,-15,15,30,60,90,120].map(function(m){
+            return '<option value="' + m + '"' + (m === 30 ? ' selected' : '') + '>' +
+              (m < 0 ? Math.abs(m) + ' minutos antes' : m + ' minutos después') + '</option>';
+          }).join('') + '</select>' +
+        '<div class="ayuda">Se mueven la entrada y la salida de todos los turnos.</div>';
+    } else {
+      h = '<label>¿Quiénes se cambian?</label>' +
+        '<div style="display:flex;gap:8px">' +
+          '<select id="aj-uno" style="flex:1">' + gente.map(function(p){
+            return '<option value="' + esc(p.clave) + '">' + esc(p.nombre) + '</option>'; }).join('') + '</select>' +
+          '<select id="aj-otro" style="flex:1">' + gente.map(function(p, i){
+            return '<option value="' + esc(p.clave) + '"' + (i === 1 ? ' selected' : '') + '>' + esc(p.nombre) + '</option>'; }).join('') + '</select>' +
+        '</div>';
+    }
+    /* La rotación siempre rige en adelante: no tiene sentido deshacerla. */
+    if(AJUSTE.que !== 'rotar'){
+      h += '<label class="per-chk" style="margin-top:12px"><input type="checkbox" id="aj-adelante"> ' +
+        'Dejarlo así de esta semana en adelante</label>' +
+        '<div class="ayuda">Sin marcarlo, solo cambia esta semana.</div>';
+    }
+    $p('aj-campos').innerHTML = h;
+  };
+
+  $p('mv-caja').querySelectorAll('[data-aj]').forEach(function(b){
+    b.onclick = function(){
+      AJUSTE.que = b.dataset.aj;
+      $p('mv-caja').querySelectorAll('[data-aj]').forEach(function(x){
+        x.classList.toggle('on', x.dataset.aj === AJUSTE.que);
+      });
+      pintarCampos();
+      $p('aj-aviso').textContent = '';
+    };
+  });
+  pintarCampos();
+  $p('aj-cancelar').onclick = function(){ cerrarMover(); };
+  $p('aj-hacer').onclick = function(){ aplicarAjusteSemana(this); };
+}
+
+function aplicarAjusteSemana(boton){
+  var err = $p('aj-error');
+  var cuerpo = { accion:'perSemanaAjustar', area: AREA_VIENDO, semana: AJUSTE.semana,
+                 que: AJUSTE.que, quien: quienSoy(),
+                 enAdelante: !!($p('aj-adelante') && $p('aj-adelante').checked) };
+
+  if(AJUSTE.que === 'rotar') cuerpo.rotar = Number($p('aj-rotar').value) || 1;
+  else if(AJUSTE.que === 'dia'){
+    cuerpo.diaIdx = Number($p('aj-dia').value) || 0;
+    cuerpo.inicio = $p('aj-ini').value; cuerpo.fin = $p('aj-fin').value;
+    if(!cuerpo.inicio || !cuerpo.fin){ err.textContent = 'Ponga la hora de entrada y la de salida.'; return; }
+  }
+  else if(AJUSTE.que === 'correr') cuerpo.minutos = Number($p('aj-min').value) || 0;
+  else {
+    cuerpo.uno = $p('aj-uno').value; cuerpo.otro = $p('aj-otro').value;
+    if(cuerpo.uno === cuerpo.otro){ err.textContent = 'Elija dos personas distintas.'; return; }
+  }
+
+  err.textContent = '';
+  boton.disabled = true; boton.textContent = 'Aplicando…';
+  pedir(cuerpo, 120)
+    .then(function(d){
+      P.areas = d.areas || P.areas;
+      P.turnos = {}; FRESCO = {};
+      guardarLocal();
+      cerrarMover();
+      verMes(AREA_VIENDO, MES_VIENDO || isoDe(new Date()), true);
+    })
+    .catch(function(e){
+      err.textContent = e.message || 'No se pudo aplicar.';
+      boton.disabled = false; boton.textContent = 'Aplicar';
+    });
+}
+
+/* ══════════════════════════════════════════════════════════════════
    LA QUINCENA EN EXCEL
    ------------------------------------------------------------------
    Lo que de verdad pasó entre dos fechas, de TODAS las áreas: quién
@@ -35311,11 +35458,50 @@ function bajarQuincena(boton){
         err.textContent = 'No hay turnos guardados en ese periodo.';
         return;
       }
-      escribirExcelQuincena(d);
-      cerrarMover();
+      return cargarExcelConColor().then(function(conColor){
+        escribirExcelQuincena(d);
+        cerrarMover();
+        if(!conColor) alert('El Excel se descargó sin colores: no se pudo cargar el complemento. Los datos están completos.');
+      });
     })
     .catch(function(e){ err.textContent = e.message || 'No se pudo armar la quincena.'; })
     .then(function(){ boton.disabled = false; boton.textContent = 'Descargar'; });
+}
+
+/* ── LOS COLORES EN EL EXCEL ───────────────────────────────────────
+   La librería que ya trae el tablero (SheetJS gratuita) escribe datos
+   pero NO colores. Para que el archivo salga como el cuadro se carga,
+   solo al exportar, una variante que sí los escribe. Si no se puede
+   cargar —sin internet, por ejemplo— se exporta igual, sin colores, y se
+   avisa: es preferible un Excel sin color que ningún Excel. */
+var XLSX_COLOR = null;
+function cargarExcelConColor(){
+  if(XLSX_COLOR) return Promise.resolve(XLSX_COLOR);
+  return new Promise(function(listo){
+    var sc = document.createElement('script');
+    sc.src = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';
+    sc.onload = function(){ XLSX_COLOR = window.XLSX; listo(XLSX_COLOR); };
+    sc.onerror = function(){ listo(null); };
+    document.head.appendChild(sc);
+    setTimeout(function(){ if(!XLSX_COLOR) listo(null); }, 8000);
+  });
+}
+/* Los mismos colores del cuadro, sin el numeral que Excel no entiende. */
+function hexExcel(c){ return String(c || '').replace('#', '').toUpperCase(); }
+
+function estiloCelda(ws, dir, e){
+  if(!ws[dir]) ws[dir] = { t:'s', v:'' };
+  ws[dir].s = e;
+}
+function relleno(color, letra, negrilla){
+  return { fill: { patternType:'solid', fgColor: { rgb: hexExcel(color) } },
+           font: { color: { rgb: hexExcel(letra || 'FFFFFF') }, bold: !!negrilla, sz: 10, name:'Calibri' },
+           alignment: { horizontal:'center', vertical:'center' },
+           border: bordeFino() };
+}
+function bordeFino(){
+  var l = { style:'thin', color:{ rgb:'D9D9D9' } };
+  return { top:l, bottom:l, left:l, right:l };
 }
 
 function escribirExcelQuincena(d){
@@ -35392,7 +35578,124 @@ function escribirExcelQuincena(d){
     return p;
   });
 
+  /* ── LA HOJA ORGANIZADA: un bloque por área, una columna por día ── */
+  var dias = [];
+  for(var f = d.desde; f <= d.hasta; f = sumarDias(f, 1)) dias.push(f);
+  var DIAS3 = ['dom','lun','mar','mié','jue','vie','sáb'];
+
+  /* Lo de cada persona, día por día, dentro de cada área. */
+  var areas = {};
+  (d.turnos || []).forEach(function(t){
+    var A = areas[t.area] || (areas[t.area] = { nombre: t.area, gente: {}, turnos: {} });
+    var p = A.gente[t.persona] || (A.gente[t.persona] = { nombre: t.nombre, cargo: t.cargo || '', dias: {} });
+    p.dias[t.fecha] = t;
+    A.turnos[t.inicio + '-' + t.fin] = { inicio: t.inicio, fin: t.fin, nombre: t.turno };
+  });
+
+  var filas = [];      /* array de arrays, la hoja tal cual */
+  var pintar = [];     /* { r, c, estilo } para colorear después */
+  var anchoDia = dias.length;
+  var COLS = 2 + anchoDia + 4;
+
+  var poner = function(fila){ filas.push(fila); return filas.length - 1; };
+  var vacia = function(){ poner(new Array(COLS).fill('')); };
+
+  var tit = poner(['QUINCENA DEL ' + fechaCorta(d.desde) + ' AL ' + fechaCorta(d.hasta)].concat(new Array(COLS - 1).fill('')));
+  pintar.push({ r: tit, c: 0, e: { font: { bold:true, sz:14, name:'Calibri' } } });
+  vacia();
+
+  var totalQ = { dias:0, horas:0, extras:0 };
+  Object.keys(areas).sort().forEach(function(nombreArea, iArea){
+    var A = areas[nombreArea];
+    var colorArea = COLORES_TURNO[iArea % COLORES_TURNO.length];
+    /* Cada turno del área con el color que tiene en el cuadro. */
+    var claves = Object.keys(A.turnos);
+    var colorTurno = {};
+    claves.sort(function(x, y){ return minutosDe(A.turnos[x].inicio) - minutosDe(A.turnos[y].inicio); })
+          .forEach(function(kk, i){ colorTurno[kk] = COLORES_TURNO[i % COLORES_TURNO.length]; });
+
+    var rA = poner([nombreArea.toUpperCase()].concat(new Array(COLS - 1).fill('')));
+    for(var c = 0; c < COLS; c++) pintar.push({ r: rA, c: c, e: relleno(colorArea, 'FFFFFF', true) });
+
+    var cab = ['Persona', 'Cargo'].concat(dias.map(function(f){
+      var dd = new Date(f + 'T00:00:00');
+      return DIAS3[dd.getDay()] + ' ' + dd.getDate();
+    })).concat(['Días', 'Horas', 'Extras', 'Total']);
+    var rC = poner(cab);
+    cab.forEach(function(x, c){
+      var esDom = c >= 2 && c < 2 + anchoDia && new Date(dias[c - 2] + 'T00:00:00').getDay() === 0;
+      pintar.push({ r: rC, c: c, e: relleno(esDom ? '8B1A1A' : '444444', 'FFFFFF', true) });
+    });
+
+    var subt = { dias:0, horas:0, extras:0 };
+    Object.keys(A.gente).sort(function(x, y){
+      return String(A.gente[x].nombre).localeCompare(String(A.gente[y].nombre), 'es');
+    }).forEach(function(claveP){
+      var p = A.gente[claveP];
+      var fila = [p.nombre, p.cargo];
+      var nDias = 0, nHoras = 0, nExtra = 0;
+      dias.forEach(function(f, i){
+        var t = p.dias[f];
+        var k = claveP + '|' + f;
+        var ex = porDia[k] ? Math.round(porDia[k].minutos / 60 * 100) / 100 : 0;
+        nExtra += ex;
+        if(novDia[k]){
+          fila.push(novDia[k]);
+          pintar.push({ r: filas.length, c: 2 + i, e: relleno('D9D9D9', '555555', false) });
+        } else if(t && t.horas){
+          fila.push(t.horas + (ex ? ' +' + ex : ''));
+          nDias++; nHoras += t.horas;
+          pintar.push({ r: filas.length, c: 2 + i,
+                        e: relleno(colorTurno[t.inicio + '-' + t.fin] || colorArea, 'FFFFFF', true) });
+        } else {
+          fila.push('');
+          pintar.push({ r: filas.length, c: 2 + i, e: { fill:{ patternType:'solid', fgColor:{ rgb:'F5F5F3' } }, border: bordeFino() } });
+        }
+      });
+      fila.push(nDias, Math.round(nHoras * 100) / 100, Math.round(nExtra * 100) / 100,
+                Math.round((nHoras + nExtra) * 100) / 100);
+      var r = poner(fila);
+      pintar.push({ r: r, c: 0, e: { font:{ bold:true, sz:10, name:'Calibri' }, border: bordeFino() } });
+      for(var cc = 2 + anchoDia; cc < COLS; cc++){
+        pintar.push({ r: r, c: cc, e: relleno('EFEDE6', '1A1A1A', cc === COLS - 1) });
+      }
+      subt.dias += nDias; subt.horas += nHoras; subt.extras += nExtra;
+    });
+
+    var rS = poner(['Subtotal ' + nombreArea, ''].concat(new Array(anchoDia).fill(''))
+      .concat([subt.dias, Math.round(subt.horas * 100) / 100, Math.round(subt.extras * 100) / 100,
+               Math.round((subt.horas + subt.extras) * 100) / 100]));
+    for(var c2 = 0; c2 < COLS; c2++) pintar.push({ r: rS, c: c2, e: relleno(colorArea, 'FFFFFF', true) });
+
+    /* Qué significa cada color, para que la hoja se lea sola. */
+    var leyenda = ['Turnos:'].concat(claves.map(function(kk){
+      return A.turnos[kk].nombre + ' ' + A.turnos[kk].inicio + '–' + A.turnos[kk].fin;
+    }));
+    while(leyenda.length < COLS) leyenda.push('');
+    var rL = poner(leyenda);
+    claves.forEach(function(kk, i){
+      pintar.push({ r: rL, c: 1 + i, e: relleno(colorTurno[kk], 'FFFFFF', false) });
+    });
+    pintar.push({ r: rL, c: 0, e: { font:{ italic:true, sz:9, color:{ rgb:'777777' } } } });
+
+    totalQ.dias += subt.dias; totalQ.horas += subt.horas; totalQ.extras += subt.extras;
+    vacia();
+  });
+
+  var rT = poner(['TOTAL DE LA QUINCENA', ''].concat(new Array(anchoDia).fill(''))
+    .concat([totalQ.dias, Math.round(totalQ.horas * 100) / 100, Math.round(totalQ.extras * 100) / 100,
+             Math.round((totalQ.horas + totalQ.extras) * 100) / 100]));
+  for(var c3 = 0; c3 < COLS; c3++) pintar.push({ r: rT, c: c3, e: relleno('1A1A1A', 'FFFFFF', true) });
+
   var wb = XLSX.utils.book_new();
+  var wsQ = XLSX.utils.aoa_to_sheet(filas);
+  wsQ['!cols'] = [{wch:26},{wch:16}].concat(dias.map(function(){ return { wch:7 }; }))
+                   .concat([{wch:7},{wch:9},{wch:8},{wch:9}]);
+  pintar.forEach(function(x){
+    estiloCelda(wsQ, XLSX.utils.encode_cell({ r: x.r, c: x.c }), x.e);
+  });
+  XLSX.utils.book_append_sheet(wb, wsQ, 'Quincena');
+
   var wsR = XLSX.utils.json_to_sheet(resumen);
   wsR['!cols'] = [{wch:12},{wch:26},{wch:16},{wch:22},{wch:15},{wch:9},{wch:14},{wch:10},{wch:12},{wch:15}];
   XLSX.utils.book_append_sheet(wb, wsR, 'Resumen');
@@ -37241,7 +37544,9 @@ function cuadroMes(area, turnos){
         '<span class="hs">' + (dela.length ? dela.length + ' turnos · ' + numeroHoras(horas) : 'sin generar') + '</span>' +
       '</summary><div class="cuerpo">' +
       (dela.length ? tablaSemana(dela, sem) +
-          '<div style="margin-top:10px"><button type="button" class="per-btn" data-rehacer="' + sem + '">Rehacer esta semana</button></div>'
+          '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">' +
+            '<button type="button" class="per-btn fuerte" data-ajustar="' + sem + '">Ajustar la semana</button>' +
+            '<button type="button" class="per-btn" data-rehacer="' + sem + '">Rehacer esta semana</button></div>'
         : '<div class="per-vacio" style="padding:14px">Esta semana aún no está generada.' +
           ' <button type="button" class="per-btn" data-armar="' + sem + '">Generar la semana</button>' +
           (turnos.some(function(t){ return t.semana < sem; })
@@ -37873,6 +38178,9 @@ function engancharMes(){
          persona es un div. Las dos llevan data-cel. */
       menuExtra(tira.closest('[data-cel]'), tira.dataset.ex);
     };
+  });
+  caja.querySelectorAll('[data-ajustar]').forEach(function(b){
+    b.onclick = function(){ abrirAjusteSemana(b.dataset.ajustar); };
   });
   caja.querySelectorAll('[data-rehacer]').forEach(function(bt){
     bt.onclick = function(){
