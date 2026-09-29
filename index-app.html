@@ -980,7 +980,7 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
   --csc-cream:#f3f1ea; --csc-paper:#ffffff; --csc-ink:#16352a; --csc-ink-soft:#4a5d54;
   --csc-gold:#b8821f; --csc-gold-soft:#c98a2b; --csc-maroon:#7a1f2b; --csc-maroon-soft:#9e2c39;
   --csc-line:#e3e0d5; --csc-line-soft:#efece3;
-  --csc-mp:#2f7d4f; --csc-me:#b8821f; --csc-rc:#1d8f86; --csc-af:#7a1f2b;
+  --csc-mp:#2f7d4f; --csc-me:#b8821f; --csc-rc:#1d8f86; --csc-af:#7a1f2b; --csc-mo:#1f4e7a;
   --csc-shadow:0 1px 2px rgba(20,40,30,.05),0 8px 24px rgba(20,40,30,.06);
   --csc-serif:"Playfair Display",Georgia,"Times New Roman",serif;
   --csc-sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
@@ -19386,11 +19386,19 @@ function persist(action, payload){
 }
 
 const CAT = {
-  MP:{label:'Materia prima', color:'var(--mp)'},
-  ME:{label:'Material de empaque', color:'var(--me)'},
-  RC:{label:'Consumibles', color:'var(--rc)'},
-  AF:{label:'Activos fijos', color:'var(--af)'}
+  MP:{label:'Materia prima', color:'var(--csc-mp,#2f7d4f)'},
+  ME:{label:'Material de empaque', color:'var(--csc-me,#b8821f)'},
+  RC:{label:'Consumibles', color:'var(--csc-rc,#1d8f86)'},
+  AF:{label:'Activos fijos', color:'var(--csc-af,#7a1f2b)'},
+  /* Maquinaria operativa: lo que trabaja, no lo que se consume. Lleva
+     estado (si hoy se puede contar con ella) y hoja de mantenimientos. */
+  MO:{label:'Maquinaria operativa', color:'var(--csc-mo,#1f4e7a)'}
 };
+/* De estas categorías se lleva mantenimiento. */
+const CAT_CON_MANTENIMIENTO = ['MO'];
+const TIPOS_MANT = { preventivo:'Preventivo (programado)',
+                     correctivo:'Correctivo (se dañó)',
+                     revision:'Revisión / inspección' };
 const ROLES = {
   lider:'Líder de inventarios', gerente:'Gerente', conta:'Contabilidad',
   almacen:'Almacén / Receptor', admin:'Administrador'
@@ -19611,6 +19619,24 @@ const API = {
     applyState(r);
     const local = DB.inventario.find(function(x){ return String(x.id) === String(datos.invId); });
     if (local) { local.estado = datos.estado; local.estadoNota = datos.nota || ''; }
+    return r;
+  },
+  /* Reportar un mantenimiento de una máquina. Como el estado, va al
+     servidor: no tiene sentido dar por hecha una intervención que no
+     quedó guardada en la hoja de vida del equipo. */
+  mantenimientoInv: async (datos)=>{
+    if(MODO!=='remoto') throw new Error('Se necesita conexion con el servidor para reportar un mantenimiento.');
+    await saveChain;
+    const r = await remote('mantenimientoInv', Object.assign({ responsable:(session&&session.nombre)||'' }, datos));
+    if(!r || r.ok===false) throw new Error((r&&r.error) || 'No se pudo reportar el mantenimiento');
+    applyState(r);
+    const local = DB.inventario.find(function(x){ return String(x.id) === String(datos.invId); });
+    if (local) {
+      local.mantUltimo = r.mantUltimo || datos.fecha || '';
+      local.mantProximo = r.mantProximo || '';
+      local.mantNota = (datos.tipo || '') + ': ' + (datos.detalle || '');
+      if (datos.estado) { local.estado = datos.estado; local.estadoNota = datos.detalle || ''; }
+    }
     return r;
   },
   invMove: async (inv,tipo,cant,motivo)=>{
@@ -19993,13 +20019,16 @@ function viewInventario(){
         <div class="stock-bar"><i class="${low?'low':''}" style="width:${pct}%"></i></div></td>
       <td>${i.minimo.toLocaleString('es-CO')}</td>
       <td>${low?'<span class="tag tag-state bad">Reponer</span>':'<span class="tag tag-state ok">OK</span>'}</td>
-      <td>${estadoInvTag(i.estado, i.estadoNota)}</td>
+      <td>${estadoInvTag(i.estado, i.estadoNota)}${mantTag(i)}</td>
       ${['almacen','admin'].includes(session.rol)?`<td style="text-align:right;white-space:nowrap">
         ${i.stock>0
           ?`<button class="btn btn-ghost btn-sm act" data-a="invout" data-id="${i.id}">Registrar salida</button>`
           :`<button class="btn btn-ghost btn-sm" disabled style="opacity:.4;cursor:not-allowed" title="Sin stock disponible">Sin stock</button>`}
         <button class="btn btn-ghost btn-sm act" data-a="invubi" data-id="${i.id}" title="Decir en qué lugares está y cuántos hay en cada uno">Ubicaciones</button>
         <button class="btn btn-ghost btn-sm act" data-a="investado" data-id="${i.id}" title="Cambiar el estado del equipo">Estado</button>
+        ${CAT_CON_MANTENIMIENTO.includes(i.categoria)
+          ? `<button class="btn btn-ghost btn-sm act" data-a="invmant" data-id="${i.id}" title="Reportar un mantenimiento y ver la hoja de vida del equipo">Mantenimiento</button>`
+          : ''}
         <button class="btn btn-ghost btn-sm act" data-a="invedit" data-id="${i.id}" title="Corregir los datos de este artículo">Editar</button>
         <button class="btn btn-ghost btn-sm act" data-a="invdel" data-id="${i.id}" title="Sacar este artículo del inventario" style="color:#b23b3b">Eliminar</button></td>`:''}
     </tr>`;
@@ -20077,6 +20106,25 @@ const EST_INV = {
   mantenimiento:  { txt:'En mantenimiento',  cls:'mid', punto:'#b8891f' },
   fuera_servicio: { txt:'Fuera de servicio', cls:'bad', punto:'#b23b3b' }
 };
+/* Cómo va el mantenimiento de un equipo: vencido, próximo o al día. Solo
+   se muestra en las categorías que lo llevan. */
+function mantTag(i){
+  if(!CAT_CON_MANTENIMIENTO.includes(i.categoria)) return '';
+  const corta = (f) => { const p = String(f||'').slice(0,10).split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0].slice(2) : ''; };
+  const hoy = new Date().toISOString().slice(0,10);
+  if(!i.mantUltimo && !i.mantProximo){
+    return '<span class="tag tag-state" style="margin-left:6px;background:#f1efe8;color:#6b6b6b" title="Todavía no se le ha reportado ningún mantenimiento">sin mantenimiento</span>';
+  }
+  if(i.mantProximo && i.mantProximo <= hoy){
+    return '<span class="tag tag-state bad" style="margin-left:6px" title="El mantenimiento estaba previsto para el ' + esc(corta(i.mantProximo)) + '">mantenimiento vencido</span>';
+  }
+  if(i.mantProximo){
+    const dias = Math.round((new Date(i.mantProximo) - new Date(hoy)) / 86400000);
+    if(dias <= 15) return '<span class="tag tag-state mid" style="margin-left:6px" title="Próximo mantenimiento">próximo ' + esc(corta(i.mantProximo)) + '</span>';
+    return '<span class="tag tag-state ok" style="margin-left:6px" title="Próximo mantenimiento">al día · ' + esc(corta(i.mantProximo)) + '</span>';
+  }
+  return '<span class="tag tag-state" style="margin-left:6px;background:#eef4fb;color:#1d4e89" title="' + esc(i.mantNota||'') + '">último ' + esc(corta(i.mantUltimo)) + '</span>';
+}
 function estadoInvTag(e, nota){
   const s = EST_INV[e] || EST_INV.operativo;
   const t = nota ? (s.txt + " · " + nota) : s.txt;
@@ -20448,6 +20496,7 @@ async function handleAction(a,id){
     case 'invin':  openInvIn(); break;
     case 'invedit': openInvEdit(findInv(id)); break;
     case 'investado': openInvEstado(findInv(id)); break;
+    case 'invmant':   openInvMant(findInv(id)); break;
     case 'invdel':  openInvDel(findInv(id)); break;
     case 'invkpi':  openInvKpi(findInv(id)); break;
     case 'invubi':  openInvUbicaciones(findInv(id)); break;
@@ -21099,6 +21148,113 @@ function openInvEstado(inv){
       render();
     }catch(e){
       btn.disabled=false; btn.textContent='Guardar estado';
+      toast(e.message||'No se pudo guardar','bad');
+    }
+  };
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   MANTENIMIENTO DE LA MAQUINARIA
+   ------------------------------------------------------------------
+   El estado dice cómo está la máquina hoy. Esto dice qué se le ha hecho:
+   la hoja de vida. Cada reporte queda con quién lo hizo, qué se hizo y
+   cuándo toca el próximo, que es lo que después permite programar y
+   sustentar un repuesto o una garantía.
+   ══════════════════════════════════════════════════════════════════ */
+function openInvMant(inv){
+  if(!inv){ toast('No se encontró el artículo','bad'); return; }
+  const hoy = new Date().toISOString().slice(0,10);
+  const tipos = Object.keys(TIPOS_MANT).map(k =>
+    `<option value="${k}">${TIPOS_MANT[k]}</option>`).join('');
+  const estados = Object.keys(EST_INV).map(k =>
+    `<option value="${k}" ${k === (inv.estado||'operativo') ? 'selected' : ''}>${EST_INV[k].txt}</option>`).join('');
+
+  modal(`<div class="modal-head"><button class="modal-close" data-close>×</button>
+      <h3>Mantenimiento</h3>
+      <p>${esc(inv.item)}${inv.mantUltimo ? ' · último: ' + esc(String(inv.mantUltimo).slice(0,10)) : ' · sin mantenimientos registrados'}</p></div>
+    <div class="modal-body">
+      <div class="row2">
+        <div class="field"><label>Tipo</label><select id="m-tipo">${tipos}</select></div>
+        <div class="field"><label>Fecha</label><input type="date" id="m-fecha" value="${hoy}"></div>
+      </div>
+      <div class="field"><label>¿Qué se le hizo?</label>
+        <textarea id="m-detalle" rows="2" placeholder="Cambio de aceite y filtros, se soldó el chasis, se cambió la correa…"></textarea>
+        <div class="help">Obligatorio: es lo que convierte una fecha en una hoja de vida.</div></div>
+      <div class="row2">
+        <div class="field"><label>Próximo mantenimiento (opcional)</label>
+          <input type="date" id="m-proximo"></div>
+        <div class="field"><label>Costo (opcional)</label>
+          <input type="number" id="m-costo" min="0" step="1000" placeholder="0"></div>
+      </div>
+      <div class="field"><label>¿Cómo queda el equipo?</label><select id="m-estado">${estados}</select>
+        <div class="help">Si el correctivo la dejó andando, márquela como operativa.</div></div>
+      <div class="field"><label>Foto (opcional)</label>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <button type="button" class="btn btn-primary" id="m-cam">Tomar foto</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="m-arch">o elegir archivo</button>
+        </div>
+        <input id="m-foto" type="file" accept="image/*" class="hide" style="margin-top:8px">
+        <div id="m-prev" style="margin-top:8px"></div></div>
+      <div id="m-hist"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>Cancelar</button>
+      <button class="btn btn-primary" id="m-do">Guardar mantenimiento</button></div>`);
+
+  /* La hoja de vida: cada intervención con su fecha y quién la hizo. */
+  const hist = API.movimientos().filter(m => m.inventarioId === inv.id && m.tipo === 'mantenimiento').slice(0, 8);
+  $('#m-hist').innerHTML = hist.length
+    ? '<label style="display:block;font-size:12px;font-weight:600;color:var(--gray);margin:14px 0 6px">Hoja de vida del equipo</label>' +
+      hist.map(m => `<div class="note" style="margin-bottom:6px;font-size:12px">${esc((m.fecha||'').slice(0,10))} · ${esc(m.observacion||'')}${m.responsable ? ' · ' + esc(m.responsable) : ''}</div>`).join('')
+    : '<div class="help" style="margin-top:14px">Este equipo todavía no tiene mantenimientos registrados.</div>';
+
+  let fotoMant = '';
+  const prev = (url)=>{
+    fotoMant = url || '';
+    $('#m-prev').innerHTML = url
+      ? '<div style="display:flex;align-items:center;gap:10px">' +
+        '<img src="'+url+'" style="width:84px;height:84px;object-fit:cover;border-radius:6px;border:1px solid var(--csc-line)">' +
+        '<button type="button" class="btn btn-ghost btn-sm" id="m-quitar">Quitar</button></div>'
+      : '';
+    const q = $('#m-quitar'); if(q) q.onclick = ()=>{ prev(''); const fi=$('#m-foto'); if(fi) fi.value=''; };
+  };
+  $('#m-cam').onclick = ()=>_cscCamAbrir(prev);
+  $('#m-arch').onclick = ()=>{ const fi=$('#m-foto'); fi.classList.remove('hide'); fi.click(); };
+  $('#m-foto').onchange = function(){
+    const f = this.files && this.files[0];
+    if(!f){ prev(''); return; }
+    const rd = new FileReader();
+    rd.onload = ()=>{
+      const img = new Image();
+      img.onload = ()=>{
+        const MAX=900; let w=img.width,h=img.height;
+        if(w>MAX||h>MAX){ if(w>=h){h=Math.round(h*MAX/w);w=MAX;} else {w=Math.round(w*MAX/h);h=MAX;} }
+        const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+        cv.getContext('2d').drawImage(img,0,0,w,h);
+        prev(cv.toDataURL('image/jpeg',0.75));
+      };
+      img.src = rd.result;
+    };
+    rd.readAsDataURL(f);
+  };
+
+  $('#m-do').onclick = async ()=>{
+    const detalle = ($('#m-detalle').value||'').trim();
+    if(!detalle){ toast('Escribe qué se le hizo al equipo','bad'); $('#m-detalle').focus(); return; }
+    const fecha = $('#m-fecha').value || hoy;
+    const proximo = $('#m-proximo').value || '';
+    if(proximo && proximo < fecha){ toast('El próximo mantenimiento no puede ser antes de este','bad'); return; }
+    const btn = $('#m-do'); btn.disabled=true; btn.textContent='Guardando…';
+    try{
+      await API.mantenimientoInv({ invId: inv.id, tipo: $('#m-tipo').value, detalle: detalle,
+                                   fecha: fecha, proximo: proximo,
+                                   costo: Number($('#m-costo').value||0),
+                                   estado: $('#m-estado').value, foto: fotoMant });
+      _cscCamCerrar();
+      closeModal();
+      toast(esc(inv.item) + ' · mantenimiento registrado');
+      render();
+    }catch(e){
+      btn.disabled=false; btn.textContent='Guardar mantenimiento';
       toast(e.message||'No se pudo guardar','bad');
     }
   };
