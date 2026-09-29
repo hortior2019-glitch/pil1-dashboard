@@ -6936,6 +6936,10 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-personal .tn-extra .pie{font-size:11px;color:var(--ink-l);margin-top:9px}
 /* El motivo de la hora extra: obligatorio, con motivos de siempre a un clic */
 /* El traslado de gente entre áreas */
+#per-mover-modal .mv-modo{display:flex;gap:0;margin:2px 0 4px;border:1px solid var(--rule);border-radius:8px;overflow:hidden}
+#per-mover-modal .mv-modo button{flex:1;padding:9px 10px;font-size:12px;font-weight:700;border:none;
+  background:var(--bg);color:var(--ink-m);cursor:pointer;font-family:'Source Sans 3',sans-serif}
+#per-mover-modal .mv-modo button.on{background:#1c5636;color:#fff}
 #per-mover-modal .mv-gente{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px;
   max-height:240px;overflow:auto;padding:2px}
 #per-mover-modal .mv-gente label{display:flex;gap:7px;align-items:center;font-size:12.5px;
@@ -6990,6 +6994,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <div id="per-vista-areas" style="display:none">
     <div class="per-barra">
       <button type="button" class="per-btn fuerte" id="ar-nueva">+ Nueva área</button>
+      <button type="button" class="per-btn" id="ar-quincena">Descargar quincena</button>
     </div>
     <div class="ar-grid" id="ar-grid"></div>
     <div id="ar-turnos"></div>
@@ -7140,6 +7145,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
         Cada una puede rehacerse o ajustarse después desde el calendario.</div>
     </div>
 
+    <div id="ar-f-impacto" style="display:none"></div>
     <div class="per-error" id="ar-f-error"></div>
     <div id="ar-f-cuadro"></div>
     <div class="per-btns">
@@ -35026,28 +35032,30 @@ var MOVER = null;
 function abrirMover(opciones){
   var o = opciones || {};
   var hoy = isoDe(new Date());
-  MOVER = { origen: o.origen || '', destino: '', elegidas: [], efectivo: hoy, incluirSemana: true };
+  /* Dos sentidos cuando se abre desde un área: traer gente a esta área o
+     sacarla de ella. Antes solo se podía lo segundo. */
+  MOVER = { origen: o.origen || '', destino: o.origen || '', elegidas: [], efectivo: hoy,
+            incluirSemana: true, sentido: o.origen ? 'traer' : 'sacar' };
   if(o.persona) MOVER.elegidas = [o.persona];
 
-  var candidatas = P.gente.filter(function(p){
-    if(p.activo === false) return false;
-    if(o.persona) return p.clave === o.persona;
-    if(o.origen) return miembrosDe(o.origen).some(function(m){ return m.persona === p.clave; });
-    return true;
-  }).sort(function(a, b){ return String(a.nombre).localeCompare(String(b.nombre), 'es'); });
-
-  if(!candidatas.length){ alert('No hay personal para mover.'); return; }
+  var unaPersona = o.persona ? P.gente.filter(function(p){ return p.clave === o.persona; })[0] : null;
+  if(o.persona && !unaPersona){ alert('No se encontró esa persona.'); return; }
 
   $p('mv-caja').innerHTML =
-      '<div class="per-tit">' + (o.persona ? 'Trasladar a ' + esc(candidatas[0].nombre) : 'Mover personal') + '</div>' +
-      '<div class="per-sub">' + (o.origen ? 'Sale de ' + esc(o.origen) + '. ' : '') +
-        'Lo ya trabajado no se toca: solo se replantea lo que viene.</div>' +
+      '<div class="per-tit">' + (o.persona ? 'Trasladar a ' + esc(unaPersona.nombre)
+                                            : (o.origen ? 'Personal de ' + esc(o.origen) : 'Mover personal')) + '</div>' +
+      '<div class="per-sub">Lo ya trabajado no se toca: solo se replantea lo que viene.</div>' +
+
+      (o.origen ? '<div class="mv-modo">' +
+          '<button type="button" data-sent="traer" class="on">Traer a esta área</button>' +
+          '<button type="button" data-sent="sacar">Sacar de esta área</button>' +
+        '</div>' : '') +
 
       (o.persona ? '' :
         '<label>¿A quién?</label><div class="mv-gente" id="mv-gente"></div>') +
 
-      '<label>¿A qué área?</label>' +
-      '<select id="mv-destino"></select>' +
+      '<div id="mv-destino-caja"><label>¿A qué área?</label>' +
+      '<select id="mv-destino"></select></div>' +
       '<div id="mv-turno-caja" style="display:none">' +
         '<label>¿Con qué turno arranca?</label><select id="mv-turno"></select>' +
       '</div>' +
@@ -35061,6 +35069,7 @@ function abrirMover(opciones){
       '<label>Motivo (opcional)</label>' +
       '<input type="text" id="mv-nota" maxlength="200" placeholder="Ej: refuerzo en patio, rotación acordada">' +
 
+      '<div id="mv-recorrido"></div>' +
       '<div class="mv-aviso" id="mv-aviso" style="margin-top:12px">Revisando qué habría que rearmar…</div>' +
       '<div class="per-error" id="mv-error"></div>' +
       '<div class="per-btns">' +
@@ -35069,13 +35078,26 @@ function abrirMover(opciones){
       '</div>';
   $p('per-mover-modal').classList.add('open');
 
-  /* Las personas */
-  if(!o.persona){
-    $p('mv-gente').innerHTML = candidatas.map(function(p){
+  /* Quién puede moverse, según el sentido: para traer, los que NO están
+     en el área; para sacar, los que sí. */
+  var pintarCandidatas = function(){
+    if(o.persona) return;
+    var lista = P.gente.filter(function(p){
+      if(p.activo === false) return false;
+      var esta = miembrosDe(o.origen || '').some(function(m){ return m.persona === p.clave; });
+      if(!o.origen) return true;
+      return MOVER.sentido === 'traer' ? !esta : esta;
+    }).sort(function(a, b){ return String(a.nombre).localeCompare(String(b.nombre), 'es'); });
+
+    MOVER.elegidas = [];
+    $p('mv-gente').innerHTML = lista.length ? lista.map(function(p){
       var suya = areaDePersona(p);
       return '<label data-c="' + esc(p.clave) + '"><input type="checkbox" value="' + esc(p.clave) + '">' +
         '<span>' + esc(p.nombre) + (suya ? '<br><small>' + esc(suya) + '</small>' : '<br><small>sin área</small>') + '</span></label>';
-    }).join('');
+    }).join('') : '<div class="ayuda">' + (MOVER.sentido === 'traer'
+        ? 'Todo el personal activo ya está en esta área.'
+        : 'Esta área todavía no tiene personal.') + '</div>';
+
     $p('mv-gente').querySelectorAll('input').forEach(function(c){
       c.onchange = function(){
         c.closest('label').classList.toggle('on', c.checked);
@@ -35084,17 +35106,10 @@ function abrirMover(opciones){
         revisarMover();
       };
     });
-  }
+  };
 
-  /* Las áreas de destino */
-  $p('mv-destino').innerHTML = '<option value="">— Elija el área —</option>' +
-    P.areas.filter(function(a){ return a.nombre !== o.origen; })
-           .map(function(a){ return '<option value="' + esc(a.nombre) + '">' + esc(a.nombre) + '</option>'; }).join('') +
-    '<option value="__fuera">Sacar del área (queda sin asignar)</option>';
-
-  $p('mv-destino').onchange = function(){
-    MOVER.destino = this.value === '__fuera' ? '' : this.value;
-    MOVER.fuera = this.value === '__fuera';
+  /* El turno con el que arranca, solo si el destino es de turnos. */
+  var pintarTurnoDestino = function(){
     var a = areaPorNombre(MOVER.destino);
     var caja = $p('mv-turno-caja');
     if(a && a.modo === 'rotativo' && (a.turnos || []).length){
@@ -35103,10 +35118,63 @@ function abrirMover(opciones){
         a.turnos.map(function(t){ return '<option value="' + esc(t.nombre) + '">' + esc(t.nombre) + ' · ' +
           esc(t.inicio) + '–' + esc(t.fin) + '</option>'; }).join('');
     } else { caja.style.display = 'none'; }
+  };
+
+  /* Trayendo gente, el destino es esta área y no hay nada que elegir. */
+  var pintarDestino = function(){
+    var trayendo = o.origen && MOVER.sentido === 'traer';
+    $p('mv-destino-caja').style.display = trayendo ? 'none' : '';
+    if(trayendo){
+      MOVER.destino = o.origen; MOVER.fuera = false;
+    } else {
+      $p('mv-destino').innerHTML = '<option value="">— Elija el área —</option>' +
+        P.areas.filter(function(a){ return a.nombre !== o.origen; })
+               .map(function(a){ return '<option value="' + esc(a.nombre) + '">' + esc(a.nombre) + '</option>'; }).join('') +
+        '<option value="__fuera">Sacar del área (queda sin asignar)</option>';
+      MOVER.destino = ''; MOVER.fuera = false;
+    }
+    pintarTurnoDestino();
+  };
+
+  $p('mv-destino').onchange = function(){
+    MOVER.destino = this.value === '__fuera' ? '' : this.value;
+    MOVER.fuera = this.value === '__fuera';
+    pintarTurnoDestino();
     revisarMover();
   };
+
+  /* El interruptor entre traer y sacar */
+  $p('mv-caja').querySelectorAll('[data-sent]').forEach(function(b){
+    b.onclick = function(){
+      MOVER.sentido = b.dataset.sent;
+      $p('mv-caja').querySelectorAll('[data-sent]').forEach(function(x){
+        x.classList.toggle('on', x.dataset.sent === MOVER.sentido);
+      });
+      $p('mv-guardar').textContent = MOVER.sentido === 'traer' ? 'Agregar' : 'Mover';
+      pintarDestino();
+      pintarCandidatas();
+      revisarMover();
+    };
+  });
+
+  pintarDestino();
+  pintarCandidatas();
+  if(o.origen) $p('mv-guardar').textContent = 'Agregar';
   $p('mv-efectivo').onchange = function(){ MOVER.efectivo = this.value; revisarMover(); };
   $p('mv-semana').onchange = function(){ MOVER.incluirSemana = this.checked; revisarMover(); };
+  /* El recorrido de esa persona: por dónde ha pasado y desde cuándo. */
+  if(o.persona){
+    var pasos = trasladosDe(o.persona);
+    if(pasos.length){
+      $p('mv-recorrido').innerHTML =
+        '<label style="margin-top:14px">Por dónde ha pasado</label>' +
+        '<div class="per-recorrido">' + pasos.map(function(t){
+          return '<div class="paso"><b>' + esc(t.hacia) + '</b>' +
+            '<span>desde ' + esc(fechaCorta(t.efectivo)) + (t.desde ? ' · venía de ' + esc(t.desde) : '') + '</span>' +
+            '<span class="cu">' + esc(t.quien || '') + '</span></div>';
+        }).join('') + '</div>';
+    }
+  }
   $p('mv-cancelar').onclick = function(){ cerrarMover(); };
   $p('mv-guardar').onclick = function(){ hacerMover(this); };
   revisarMover();
@@ -35152,7 +35220,8 @@ function hacerMover(boton){
   if(!MOVER.elegidas.length){ err.textContent = 'Falta decir a quién mover.'; return; }
   if(!MOVER.destino && !MOVER.fuera){ err.textContent = 'Falta decir a qué área.'; return; }
   err.textContent = '';
-  boton.disabled = true; boton.textContent = 'Moviendo…';
+  boton.disabled = true;
+  boton.textContent = MOVER.sentido === 'traer' ? 'Agregando…' : 'Moviendo…';
   pedir({ accion:'perMover', personas: MOVER.elegidas, destino: MOVER.destino,
           efectivo: MOVER.efectivo, incluirSemana: MOVER.incluirSemana,
           inicial: ($p('mv-turno') && $p('mv-turno').value) || '',
@@ -35170,8 +35239,169 @@ function hacerMover(boton){
     })
     .catch(function(e){
       err.textContent = e.message || 'No se pudo mover.';
-      boton.disabled = false; boton.textContent = 'Mover';
+      boton.disabled = false;
+      boton.textContent = (MOVER && MOVER.sentido === 'traer') ? 'Agregar' : 'Mover';
     });
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   LA QUINCENA EN EXCEL
+   ------------------------------------------------------------------
+   Lo que de verdad pasó entre dos fechas, de TODAS las áreas: quién
+   trabajó, dónde, cuántas horas, cuáles de noche o en domingo, qué horas
+   extra se aprobaron y quién estuvo en novedad.
+
+   Sale de los turnos ya guardados, no del horario del área, así que los
+   cambios quedan reflejados: alguien que se trasladó a mitad de quincena
+   aparece en un área hasta esa fecha y en la otra después.
+
+   No calcula nómina ni recargos: entrega los hechos, ordenados, para que
+   la nómina los use donde se hace hoy.
+   ══════════════════════════════════════════════════════════════════ */
+function quincenasDelMes(anio, mes){
+  var fin = new Date(anio, mes + 1, 0).getDate();
+  var dd = function(d){ return anio + '-' + String(mes + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0'); };
+  return [{ etq: 'Del 1 al 15', desde: dd(1), hasta: dd(15) },
+          { etq: 'Del 16 al ' + fin, desde: dd(16), hasta: dd(fin) }];
+}
+
+function abrirQuincena(){
+  var hoy = new Date();
+  var MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  var opciones = [];
+  for(var i = 0; i < 12; i++){
+    var d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+    quincenasDelMes(d.getFullYear(), d.getMonth()).forEach(function(q){
+      opciones.push({ v: q.desde + '|' + q.hasta,
+                      t: q.etq + ' de ' + MESES[d.getMonth()] + ' ' + d.getFullYear() });
+    });
+  }
+  /* La quincena que corre queda elegida de entrada. */
+  var actual = quincenasDelMes(hoy.getFullYear(), hoy.getMonth())[hoy.getDate() <= 15 ? 0 : 1];
+
+  $p('mv-caja').innerHTML =
+    '<div class="per-tit">Descargar la quincena</div>' +
+    '<div class="per-sub">Todas las áreas, con los cambios que haya habido: traslados, horas extra y novedades.</div>' +
+    '<label>Periodo</label><select id="qc-periodo">' +
+      opciones.map(function(o){
+        return '<option value="' + esc(o.v) + '"' +
+          (o.v === actual.desde + '|' + actual.hasta ? ' selected' : '') + '>' + esc(o.t) + '</option>';
+      }).join('') +
+    '</select>' +
+    '<div class="ayuda">El archivo trae dos hojas: el detalle día por día y el resumen por persona.</div>' +
+    '<div class="per-error" id="qc-error"></div>' +
+    '<div class="per-btns">' +
+      '<button type="button" class="cancelar" id="qc-cancelar">Cancelar</button>' +
+      '<button type="button" class="guardar" id="qc-bajar">Descargar</button>' +
+    '</div>';
+  $p('per-mover-modal').classList.add('open');
+  $p('qc-cancelar').onclick = function(){ cerrarMover(); };
+  $p('qc-bajar').onclick = function(){ bajarQuincena(this); };
+}
+
+function bajarQuincena(boton){
+  var err = $p('qc-error');
+  var partes = ($p('qc-periodo').value || '').split('|');
+  if(partes.length !== 2){ err.textContent = 'Elija el periodo.'; return; }
+  err.textContent = '';
+  boton.disabled = true; boton.textContent = 'Armando…';
+  pedir({ accion:'perQuincena', desde: partes[0], hasta: partes[1] }, 120)
+    .then(function(d){
+      if(!d.turnos || !d.turnos.length){
+        err.textContent = 'No hay turnos guardados en ese periodo.';
+        return;
+      }
+      escribirExcelQuincena(d);
+      cerrarMover();
+    })
+    .catch(function(e){ err.textContent = e.message || 'No se pudo armar la quincena.'; })
+    .then(function(){ boton.disabled = false; boton.textContent = 'Descargar'; });
+}
+
+function escribirExcelQuincena(d){
+  /* Las horas extra, por persona y día, para cruzarlas con el turno. */
+  var porDia = {};
+  (d.extras || []).forEach(function(e){
+    var k = e.persona + '|' + e.fecha;
+    porDia[k] = porDia[k] || { minutos: 0, estados: [], motivos: [] };
+    porDia[k].minutos += Number(e.minutos) || 0;
+    if(porDia[k].estados.indexOf(e.estado) < 0) porDia[k].estados.push(e.estado);
+    if(e.motivo && porDia[k].motivos.indexOf(e.motivo) < 0) porDia[k].motivos.push(e.motivo);
+  });
+  /* Las novedades, por persona y día. */
+  var novDia = {};
+  (d.novedades || []).forEach(function(v){
+    var f = v.desde;
+    while(f <= v.hasta){
+      novDia[v.persona + '|' + f] = v.tipo;
+      f = sumarDias(f, 1);
+    }
+  });
+
+  var detalle = (d.turnos || []).map(function(t){
+    var k = t.persona + '|' + t.fecha;
+    var ex = porDia[k];
+    return {
+      'Área': t.area,
+      'Cédula': t.cedula || '',
+      'Nombre': t.nombre,
+      'Cargo': t.cargo || '',
+      'Fecha': t.fecha,
+      'Día': t.dia,
+      'Turno': t.turno,
+      'Entrada': t.inicio,
+      'Salida': t.fin,
+      'Almuerzo (min)': t.almuerzo || 0,
+      'Horas': t.horas,
+      'Nocturno': t.nocturno ? 'SI' : '',
+      'Dominical': t.dominical ? 'SI' : '',
+      'Horas extra': ex ? Math.round(ex.minutos / 60 * 100) / 100 : '',
+      'Estado extra': ex ? ex.estados.join(' / ') : '',
+      'Motivo extra': ex ? ex.motivos.join(' · ') : '',
+      'Novedad': novDia[k] || '',
+      'Ajuste': t.ajuste || ''
+    };
+  });
+
+  /* El resumen por persona: lo que se mira primero. */
+  var porPersona = {};
+  detalle.forEach(function(r){
+    var k = r['Cédula'] + '|' + r['Nombre'];
+    var p = porPersona[k] || (porPersona[k] = {
+      'Cédula': r['Cédula'], 'Nombre': r['Nombre'], 'Cargo': r['Cargo'],
+      'Áreas': [], 'Días trabajados': 0, 'Horas': 0,
+      'Días nocturnos': 0, 'Domingos': 0, 'Horas extra': 0, 'Días en novedad': 0
+    });
+    if(p['Áreas'].indexOf(r['Área']) < 0) p['Áreas'].push(r['Área']);
+    if(r['Novedad']) { p['Días en novedad']++; }
+    else {
+      p['Días trabajados']++;
+      p['Horas'] += Number(r['Horas']) || 0;
+      if(r['Nocturno']) p['Días nocturnos']++;
+      if(r['Dominical']) p['Domingos']++;
+    }
+    p['Horas extra'] += Number(r['Horas extra']) || 0;
+  });
+  var resumen = Object.keys(porPersona).sort(function(a, b){
+    return String(porPersona[a]['Nombre']).localeCompare(String(porPersona[b]['Nombre']), 'es');
+  }).map(function(k){
+    var p = porPersona[k];
+    p['Áreas'] = p['Áreas'].join(' · ');
+    p['Horas'] = Math.round(p['Horas'] * 100) / 100;
+    p['Horas extra'] = Math.round(p['Horas extra'] * 100) / 100;
+    return p;
+  });
+
+  var wb = XLSX.utils.book_new();
+  var wsR = XLSX.utils.json_to_sheet(resumen);
+  wsR['!cols'] = [{wch:12},{wch:26},{wch:16},{wch:22},{wch:15},{wch:9},{wch:14},{wch:10},{wch:12},{wch:15}];
+  XLSX.utils.book_append_sheet(wb, wsR, 'Resumen');
+  var wsD = XLSX.utils.json_to_sheet(detalle);
+  wsD['!cols'] = [{wch:16},{wch:12},{wch:26},{wch:16},{wch:11},{wch:10},{wch:14},{wch:9},{wch:9},
+                  {wch:13},{wch:8},{wch:9},{wch:10},{wch:11},{wch:13},{wch:24},{wch:14},{wch:22}];
+  XLSX.utils.book_append_sheet(wb, wsD, 'Detalle');
+
+  XLSX.writeFile(wb, 'quincena_' + d.desde + '_a_' + d.hasta + '.xlsx');
 }
 
 /* El recorrido de una persona por las áreas, para su ficha. */
@@ -35609,7 +35839,7 @@ function pintarAreas(){
         (gente.length ? '' : '<div class="ar-gente"><span>sin personal asignado</span></div>') +
         '<div class="ar-acc">' +
           '<button type="button" class="fuerte" data-ar-turnos="' + esc(a.nombre) + '">Ver los turnos</button>' +
-          '<button type="button" data-ar-mover="' + esc(a.nombre) + '">Mover personal</button>' +
+          '<button type="button" data-ar-mover="' + esc(a.nombre) + '">Personal</button>' +
           '<button type="button" data-ar-editar="' + esc(a.nombre) + '">Editar</button>' +
           '<button type="button" data-ar-borrar="' + esc(a.nombre) + '">Borrar</button>' +
         '</div></div>';
@@ -35726,6 +35956,7 @@ function abrirArea(a){
   var m = a ? miniFoto(a.foto, 400) : '';
   $p('ar-f-prev').innerHTML = m ? '<img src="' + esc(m) + '" alt="">' : 'sin foto';
   pintarDias(); pintarModo(); pintarTurnos(); pintarGenteArea();
+  mirarImpactoArea();
   $p('per-area-modal').classList.add('open');
 }
 function cerrarArea(){ $p('per-area-modal').classList.remove('open'); AREA_EDIT = null; }
@@ -36466,6 +36697,37 @@ function contarGenteArea(){
    Se le pide al servidor que arme la semana con lo que hay escrito, SIN
    guardar nada, y se muestra tal como va a quedar: quién, qué día, qué
    turno, y cuántas horas le tocan a cada uno en la semana. */
+/* ── LO QUE YA ESTÁ PLANTEADO ──────────────────────────────────────
+   Cambiar el horario de un área no cambiaba las semanas ya armadas: se
+   quedaban con el horario anterior y nadie avisaba. Acá se dice cuántas
+   hay y se ofrece rearmarlas al guardar, con la misma regla de siempre:
+   lo pasado no se toca. */
+var AREA_IMPACTO = null;
+function mirarImpactoArea(){
+  var caja = $p('ar-f-impacto');
+  if(!caja) return;
+  AREA_IMPACTO = null;
+  caja.style.display = 'none'; caja.innerHTML = '';
+  if(!AREA_EDIT || !AREA_EDIT.nombre) return;          /* área nueva: nada que rearmar */
+  pedir({ accion:'perAreaImpacto', area: AREA_EDIT.nombre, desde: isoDe(new Date()) })
+    .then(function(d){
+      if(!d.semanas || !d.semanas.length) return;
+      AREA_IMPACTO = d;
+      var partes = ['Esta área tiene <b>' + d.semanas.length +
+        (d.semanas.length === 1 ? ' semana planteada</b>' : ' semanas planteadas</b>') +
+        ' con el horario actual.'];
+      if(d.extras) partes.push('Sus <b>' + d.extras + '</b> horas extra se vuelven a poner solas.');
+      if(d.ajustes) partes.push('⚠ Hay <b>' + d.ajustes + '</b> turnos ajustados a mano: <b>se pierden</b> al rearmar.');
+      caja.className = 'mv-aviso' + (d.ajustes ? ' malo' : '');
+      caja.style.display = '';
+      caja.innerHTML = partes.join('<br>') +
+        '<label class="per-chk" style="margin-top:9px"><input type="checkbox" id="ar-f-rearmar" checked> ' +
+        'Rearmar esas semanas al guardar</label>' +
+        '<div class="ayuda" style="margin-top:2px">Sin marcarlo, seguirán como están hasta que se rearmen a mano.</div>';
+    })
+    .catch(function(){ /* si no se puede consultar, se guarda igual */ });
+}
+
 function verCuadro(){
   var caja = $p('ar-f-cuadro');
   leerFormularioArea();
@@ -36585,6 +36847,10 @@ function guardarArea(){
     horaInicio: AREA_FORM.horaInicio, horaFin: AREA_FORM.horaFin,
     turnos: AREA_FORM.turnos, horarios: AREA_FORM.horarios, cobertura24: AREA_FORM.cobertura24,
     inicial: AREA_FORM.inicial, semanaBase: AREA_FORM.semanas === '0' ? sumarDias(lunesDe(''), 7) : lunesDe(''),
+    /* Si el área ya tenía semanas armadas y se pidió, se rearman desde
+       la que corre; lo anterior queda intacto. */
+    rearmarDesde: (AREA_IMPACTO && $p('ar-f-rearmar') && $p('ar-f-rearmar').checked)
+      ? AREA_IMPACTO.desdeSemana : '',
     especiales: AREA_FORM.modo === 'general' ? (AREA_FORM.especialesGeneral || []) : [],
     almuerzoGeneral: { min: Number(AREA_FORM.almuerzo) || 0,
                        porTurnos: !!AREA_FORM.almPorTurnos,
@@ -37695,6 +37961,7 @@ function engancharAreas(){
   if($p('ar-f-usarvar')) $p('ar-f-usarvar').onclick = function(){ usarVariante(); };
   if($p('ar-f-guardarvar')) $p('ar-f-guardarvar').onclick = function(){ guardarVariante(this); };
   if($p('ar-f-borrarvar')) $p('ar-f-borrarvar').onclick = function(){ borrarVariante(this); };
+  if($p('ar-quincena')) $p('ar-quincena').onclick = function(){ abrirQuincena(); };
   if($p('ar-f-preset2')) $p('ar-f-preset2').onchange = function(){
     if(this.value === 'libre') return;
     AREA_FORM.turnos = PRESETS_TURNO[this.value].map(function(t){ return { nombre:t.nombre, inicio:t.inicio, fin:t.fin, dias:TODOS_LOS_DIAS, fijo:false, almuerzo:0, especiales:[] }; });
