@@ -12229,6 +12229,8 @@ function _rpNovedades(placa) {
         <span style="font-size:13px;font-weight:700;color:var(--ink)">${_escVeh(m.titulo || '—')}</span>
         ${aceite ? '<span style="font-size:8.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--gold-l);color:var(--gold);padding:2px 7px;border-radius:10px">Aceite</span>' : ''}
         ${m.km ? `<span style="font-size:11px;color:var(--ink-m);font-weight:600">${fmt(parseInt(m.km, 10) || 0)} km</span>` : ''}
+        ${Number(m.valor) ? `<span style="font-size:11px;font-weight:700;color:var(--green)">$ ${fmt(Number(m.valor))}</span>` : ''}
+        ${m.factura ? `<span style="font-size:10.5px;color:var(--ink-l)">factura ${_escVeh(m.factura)}</span>` : ''}
         <span style="margin-left:auto;font-size:11px;color:var(--ink-l);white-space:nowrap">${_fmtFechaVeh(m.fecha)}</span>
       </div>
       ${m.descripcion ? `<div style="font-size:11.5px;color:var(--ink-m);margin-top:3px;line-height:1.4">${_escVeh(m.descripcion)}</div>` : ''}
@@ -13017,6 +13019,18 @@ function abrirFormMantenimiento(placa, esAceite) {
         <input id="vm-km" type="number" min="0" step="1" value="${kmActual || ''}" placeholder="Ej. 128500" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif">
         <div style="font-size:10.5px;color:var(--ink-l);margin-top:4px">Sirve para saber cuántos km lleva recorridos desde el último cambio. Km actual del vehículo: ${kmActual ? fmt(kmActual) : 'sin registrar'}.</div>
       </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div style="flex:1;min-width:150px">
+          <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Valor del mantenimiento</label>
+          <input id="vm-valor" type="number" min="0" step="1000" placeholder="Ej. 450000" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif">
+          <div id="vm-valor-txt" style="font-size:10.5px;color:var(--ink-l);margin-top:4px">En pesos, sin puntos.</div>
+        </div>
+        <div style="flex:1;min-width:150px">
+          <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">N.º de factura</label>
+          <input id="vm-factura" type="text" placeholder="Ej. FV-10482" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif">
+          <div style="font-size:10.5px;color:var(--ink-l);margin-top:4px">La foto de la factura va abajo, con la evidencia.</div>
+        </div>
+      </div>
       <div>
         <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Evidencia fotográfica</label>
         <input id="vm-foto" type="file" accept="image/*" multiple onchange="_previewFotosMant(this)" style="font-size:12px">
@@ -13098,8 +13112,12 @@ async function guardarMantenimiento(placa) {
   if (btn) { btn.disabled = true; btn.textContent = n ? ('Subiendo ' + n + ' foto' + (n !== 1 ? 's' : '') + '...') : 'Guardando...'; }
   const autor = (window._usuarioActual && _usuarioActual.nombre) || '';
 
+  const valTxt = ((document.getElementById('vm-valor')||{}).value || '').trim();
+  const valor = valTxt === '' ? '' : (parseInt(valTxt, 10) || 0);
+  const factura = ((document.getElementById('vm-factura')||{}).value || '').trim();
+
   const cuerpo = JSON.stringify({ accion:'guardarMantenimiento', placa, fecha, titulo, descripcion: desc,
-                                  fotos: _mantFotosTmp, esAceite, km, autor });
+                                  fotos: _mantFotosTmp, esAceite, km, valor, factura, autor });
   const kb = Math.round(cuerpo.length / 1024);
 
   /* Se envia con fetch directo y NO con fetchJSONTolerante.
@@ -13395,7 +13413,7 @@ function renderHumusDetalle() {
   if (tituloTraza) tituloTraza.textContent = filas.length + ' registro' + (filas.length !== 1 ? 's' : '') + ' del periodo';
   if (head) {
     head.innerHTML = `<th>Fecha / Hora</th><th style="text-align:center">Tipo</th><th>Línea</th><th>Presentación</th>
-      <th style="text-align:right">Cantidad</th><th>N.º remisión / Destino</th>
+      <th style="text-align:right">Cantidad</th><th>Lote / Destino</th>
       <th>Responsable</th><th style="text-align:center">Foto</th>`;
   }
   if (body) {
