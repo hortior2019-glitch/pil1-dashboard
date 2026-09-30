@@ -37000,6 +37000,18 @@ function pintarPropios(){
     var dias = String((elegido ? elegido.dias : hz.dias) || '').split(',').filter(Boolean);
     var horas = elegido ? horasTurno(elegido.inicio, elegido.fin, elegido.almuerzo)
                         : horasTurno(hz.inicio, hz.fin, hz.almuerzo);
+    /* La semana no son las horas del día por los días: los días con otro
+       horario duran otra cosa. Se suman uno por uno, que es lo que
+       después muestra el cuadro. */
+    var espSem = (elegido && elegido.especiales) || [];
+    var alm = elegido ? elegido.almuerzo : hz.almuerzo;
+    var horasSemana = 0, diasSemana = 0;
+    DIAS_LETRA.forEach(function(letra){
+      var e = espSem.filter(function(x){ return !x.fecha && x.dia === letra; })[0];
+      if(!e && dias.indexOf(letra) < 0) return;
+      diasSemana++;
+      horasSemana += e ? horasTurno(e.inicio, e.fin, alm) : horas;
+    });
     return '<div class="ar-propio" data-p="' + esc(p.clave) + '">' +
       '<div class="qn">' + caritaPersona(p) + '<span>' + esc(p.nombre) + '</span></div>' +
       '<select class="cual" data-hq="' + esc(p.clave) + '">' +
@@ -37012,7 +37024,9 @@ function pintarPropios(){
       '<div class="resumen">' +
         (dias.length
           ? '<b>' + dias.map(function(d){ return DIAS_NOMBRE[d].slice(0, 3); }).join(' · ') + '</b>' +
-            ' · ' + numeroHoras(horas) + ' por día · ' + numeroHoras(horas * dias.length) + ' a la semana'
+            ' · ' + numeroHoras(horas) + ' por día · ' + numeroHoras(horasSemana) + ' a la semana' +
+            (diasSemana !== dias.length || horasSemana !== horas * dias.length
+              ? ' (con el día distinto)' : '')
           : 'ese horario no tiene días marcados') +
       '</div>' +
     '</div>';
@@ -37527,18 +37541,26 @@ function cuadroDeHorarios(semana){
       : (AREA_FORM.horarios || {})[p.clave];
     if(!hz || !hz.inicio || !hz.fin) return;
     var dias = String(hz.dias || '').split(',').filter(Boolean);
+    /* De dónde salen los días con otro horario: en el general, del área;
+       en el personalizado, del horario que tiene asignado la persona. */
+    var deDondeEsp = general
+      ? (AREA_FORM.especialesGeneral || [])
+      : (function(){
+          var t = (AREA_FORM.turnos || []).filter(function(x){ return x.nombre === hz.nombre; })[0];
+          return (t && t.especiales) || [];
+        })();
     DIAS_LETRA.forEach(function(letra, i){
-      if(dias.indexOf(letra) < 0) return;
       var f = sumarDias(semana, i);
-      /* El día con otro horario manda sobre el del área; una fecha
+      /* El día con otro horario manda sobre el habitual; una fecha
          puntual manda sobre el día de la semana. */
       var esp = null;
-      if(general){
-        (AREA_FORM.especialesGeneral || []).forEach(function(e){
-          if(e.fecha === f) esp = e;
-          else if(!e.fecha && e.dia === letra && !esp) esp = e;
-        });
-      }
+      deDondeEsp.forEach(function(e){
+        if(e.fecha === f) esp = e;
+        else if(!e.fecha && e.dia === letra && !esp) esp = e;
+      });
+      /* Una fecha puntual hace trabajar ese día aunque no sea de los
+         suyos; si no hay nada especial, manda su calendario. */
+      if(!esp && dias.indexOf(letra) < 0) return;
       var ini = esp ? esp.inicio : hz.inicio;
       var fin = esp ? esp.fin : hz.fin;
       salida.push({ area: AREA_FORM.nombre || 'Área nueva', semana: semana, fecha: f,
