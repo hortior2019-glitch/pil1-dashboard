@@ -523,8 +523,8 @@
             <input type="number" id="prodBultos" placeholder="Cantidad producida" min="0" step="0.01">
           </div>
           <div class="form-group">
-            <label>Número de remisión</label>
-            <input type="text" id="prodLote" inputmode="numeric" placeholder="Ej: 2640">
+            <label>Lote</label>
+            <input type="text" id="prodLote" placeholder="Ej: 2640">
           </div>
         </div>
         <div class="form-row">
@@ -651,7 +651,7 @@
       <div class="seccion-header">Historial de Producción</div>
       <div class="seccion-body tabla-wrapper">
         <table>
-          <thead><tr><th>Fecha/Hora</th><th>Línea</th><th>Presentación</th><th>Cantidad</th><th>N.º remisión</th><th>Responsable</th><th>Foto</th></tr></thead>
+          <thead><tr><th>Fecha/Hora</th><th>Línea</th><th>Presentación</th><th>Cantidad</th><th>Lote</th><th>Responsable</th><th>Foto</th></tr></thead>
           <tbody id="tablaProd"><tr><td colspan="7" style="text-align:center;color:#999;padding:1.5rem">Sin datos</td></tr></tbody>
         </table>
       </div>
@@ -748,6 +748,8 @@
   }
   // ═══ INIT ═══
   window.addEventListener('DOMContentLoaded', () => {
+    /* Los selectores quedan servidos de una: registrar no espera al Sheet. */
+    llenarSelectoresFijos();
     if (getApiUrl()) cargarDatos();
   });
 
@@ -844,27 +846,66 @@
       showToast('Error al conectar con el Sheet', 'error');
     }
   }
+  /* ══════════════════════════════════════════════════════════════════
+     LAS LÍNEAS, ESCRITAS ACÁ
+     ------------------------------------------------------------------
+     Antes los selectores de línea, presentación y responsable esperaban
+     la respuesta del Google Sheets. Con mala señal el formulario quedaba
+     vacío varios segundos y no se podía registrar nada.
+
+     Ahora están escritos acá y se llenan al abrir, al instante. Cuando
+     llega la respuesta del servidor solo se AGREGA lo que no esté en
+     esta lista: si alguien crea una línea nueva en el Sheet, aparece
+     igual; si no hay señal, el formulario sirve de todos modos.
+
+     PARA CAMBIARLAS: se editan acá y en la hoja "Lineas" del Sheet. Lo
+     de acá es lo que se ve de inmediato.
+     ══════════════════════════════════════════════════════════════════ */
+  const PRES_LIQUIDO = ['Litro', 'Galon x 4 litros', 'Bidon x 20 litros', 'Caneca 200 litros', 'Bull'];
+  const PRES_LIQUIDO_CORTO = ['Litro', 'Galon x 4 litros', 'Bidon x 20 litros'];
+  const LINEAS_FIJAS = [
+    { linea: 'Humus Solido', presentaciones: ['Bultos x 50 kg', 'Bulto x 25 kg', 'Jardinera x 2K'] },
+    { linea: 'Humus Liquido Puro', presentaciones: PRES_LIQUIDO },
+    { linea: 'Humus Liquido Plus', presentaciones: PRES_LIQUIDO },
+    { linea: 'Humus Liquido Organico Mineral', presentaciones: PRES_LIQUIDO },
+    { linea: 'Humus Liquido Pradera', presentaciones: PRES_LIQUIDO },
+    { linea: 'Enraizador', presentaciones: PRES_LIQUIDO },
+    { linea: 'Humus Liquido CNM', presentaciones: PRES_LIQUIDO },
+    { linea: 'Horti Olor', presentaciones: PRES_LIQUIDO_CORTO },
+    { linea: 'Horti Compostaje', presentaciones: PRES_LIQUIDO_CORTO }
+  ];
+  const RESPONSABLES_FIJOS = ['David Jesus', 'Dilan', 'Wilson'];
+
   // Store last data for filtering
   let _lastData = null;
-  let _catalogoLineas = [];
+  let _catalogoLineas = LINEAS_FIJAS.map(c => ({ linea: c.linea, presentaciones: c.presentaciones.slice() }));
+
+  /* Llena un selector conservando lo que ya estuviera elegido. */
+  function llenarSelector(id, opciones, textoVacio) {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const valorActual = sel.value;
+    sel.innerHTML = '<option value="">' + (textoVacio || '— Seleccione —') + '</option>' +
+      opciones.map(o => '<option value="' + o + '">' + o + '</option>').join('');
+    if (valorActual) sel.value = valorActual;
+  }
+
+  /* Los selectores quedan listos apenas abre la página, sin esperar al
+     servidor. Es lo único que hace falta para poder registrar. */
+  function llenarSelectoresFijos() {
+    ['prodResponsable', 'salResponsable', 'insResponsable'].forEach(id =>
+      llenarSelector(id, RESPONSABLES_FIJOS));
+    ['prodLinea', 'salLinea'].forEach(id =>
+      llenarSelector(id, _catalogoLineas.map(c => c.linea)));
+  }
   function renderResumen(data) {
     _lastData = data;
     const r = data.resumen;
-    // ── Poblar selectores de responsables desde la hoja "Usuarios" del sheet ──
+    /* ── Responsables: los de acá más los que haya en el Sheet ── */
     if (data.responsables && data.responsables.length) {
-      ['prodResponsable','salResponsable','insResponsable'].forEach(id => {
-        const sel = document.getElementById(id);
-        if (!sel) return;
-        const valorActual = sel.value;
-        sel.innerHTML = '<option value="">— Seleccione —</option>';
-        data.responsables.forEach(nombre => {
-          const opt = document.createElement('option');
-          opt.value = nombre;
-          opt.textContent = nombre;
-          sel.appendChild(opt);
-        });
-        if (valorActual) sel.value = valorActual;
-      });
+      const juntos = RESPONSABLES_FIJOS.slice();
+      data.responsables.forEach(nombre => { if (juntos.indexOf(nombre) < 0) juntos.push(nombre); });
+      ['prodResponsable','salResponsable','insResponsable'].forEach(id => llenarSelector(id, juntos));
     }
     // ── Poblar selector de insumos existentes (para el formulario de ingreso) ──
     if (data.nombresInsumos) {
@@ -876,20 +917,26 @@
         if (valorActual) selIns.value = valorActual;
       }
     }
-    // ── Poblar selectores de Línea (Producción/Salidas) desde la hoja "Lineas" ──
-    if (data.catalogoLineas) {
-      _catalogoLineas = data.catalogoLineas;
-      ['prodLinea','salLinea'].forEach(id => {
-        const sel = document.getElementById(id);
-        if (!sel) return;
-        const valorActual = sel.value;
-        sel.innerHTML = '<option value="">— Seleccione —</option>' +
-          _catalogoLineas.map(c => `<option value="${c.linea}">${c.linea}</option>`).join('');
-        if (valorActual) {
-          sel.value = valorActual;
-          const prefix = id === 'prodLinea' ? 'prod' : 'sal';
-          actualizarPresentaciones(prefix, true);
+    /* ── Líneas: las escritas acá mandan; del Sheet solo se suman las
+         que no estén, y las presentaciones que le falten a una línea.
+         Así una línea nueva aparece sin tener que tocar la app, pero el
+         formulario nunca depende de que el servidor conteste. ── */
+    if (data.catalogoLineas && data.catalogoLineas.length) {
+      data.catalogoLineas.forEach(c => {
+        if (!c || !c.linea) return;
+        const mia = _catalogoLineas.find(x => x.linea === c.linea);
+        if (!mia) {
+          _catalogoLineas.push({ linea: c.linea, presentaciones: (c.presentaciones || []).slice() });
+          return;
         }
+        (c.presentaciones || []).forEach(p => {
+          if (mia.presentaciones.indexOf(p) < 0) mia.presentaciones.push(p);
+        });
+      });
+      ['prodLinea','salLinea'].forEach(id => {
+        llenarSelector(id, _catalogoLineas.map(c => c.linea));
+        const sel = document.getElementById(id);
+        if (sel && sel.value) actualizarPresentaciones(id === 'prodLinea' ? 'prod' : 'sal', true);
       });
     }
     // ── Tarjetas grandes: Humus Sólido vs Humus Líquido ──
@@ -1074,10 +1121,7 @@
     const payload = {
       accion: 'produccion',
       linea, presentacion, cantidad: Number(cantidad), resp,
-      /* El campo se llama "número de remisión". Se manda con los dos
-         nombres para que el Apps Script lo siga escribiendo donde
-         siempre mientras se actualiza allá el título de la columna. */
-      remision: document.getElementById('prodLote').value,
+      /* En producción este campo es el lote; la remisión es de las salidas. */
       lote: document.getElementById('prodLote').value,
       obs: document.getElementById('prodObs').value,
       foto: _fotos.prod || ''
