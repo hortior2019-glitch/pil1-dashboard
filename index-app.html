@@ -36688,6 +36688,12 @@ function abrirArea(a){
       ? JSON.parse(JSON.stringify(a.almuerzoGeneral.de)) : {},
     personas: a ? miembrosDe(a.nombre).map(function(m){ return m.persona; }) : []
   };
+  /* Los horarios quedan numerados y la gente amarrada a su número antes
+     de pintar nada: las áreas guardadas antes se amarran por nombre esta
+     única vez. */
+  ponerNumeros(AREA_FORM.turnos);
+  nombresSinRepetir();
+  amarrarPorNombre();
   $p('ar-f-tit').textContent = a ? a.nombre : 'Nueva área';
   $p('ar-f-nombre').value = AREA_FORM.nombre;
   $p('ar-f-modo').value = AREA_FORM.modo;
@@ -36926,12 +36932,16 @@ function renombrarHorario(antes, ahora){
   });
 }
 /* Y al quitarlo, quien lo tenía pasa al primero que quede. */
-function soltarHorario(nombre){
+function soltarHorario(nombre, hid){
   var primero = (AREA_FORM.turnos || [])[0];
   Object.keys(AREA_FORM.horarios || {}).forEach(function(c){
     var hz = AREA_FORM.horarios[c];
-    if(!hz || hz.nombre !== nombre) return;
-    if(primero) AREA_FORM.horarios[c] = { nombre: primero.nombre, inicio: primero.inicio, fin: primero.fin,
+    if(!hz) return;
+    /* Por número interno: si dos horarios se llamaban parecido, solo se
+       mueve la gente del que se quitó. */
+    if(hid ? hz.hid !== hid : hz.nombre !== nombre) return;
+    if(primero) AREA_FORM.horarios[c] = { hid: primero.hid, nombre: primero.nombre,
+                                          inicio: primero.inicio, fin: primero.fin,
                                           dias: primero.dias || TODOS_LOS_DIAS,
                                           almuerzo: Number(primero.almuerzo) || 0 };
     else delete AREA_FORM.horarios[c];
@@ -36940,12 +36950,67 @@ function soltarHorario(nombre){
     if(AREA_FORM.inicial[c] === nombre) delete AREA_FORM.inicial[c];
   });
 }
-function refrescarAsignados(){
+/* ── EL AMARRE ENTRE EL HORARIO Y LA PERSONA ───────────────────────
+   Cada horario del área lleva un número interno propio. Ese número, y
+   no el nombre, es lo que dice cuál horario tiene cada persona.
+
+   Antes se amarraba por el nombre y eso daba ruido: dos horarios que se
+   llamaran igual (pasa al agregar y quitar horarios, porque el sistema
+   los numeraba por la cantidad que había), o un nombre que se cambiaba,
+   dejaban el menú de la persona mostrando un horario y el cuadro de la
+   semana mostrando otro.
+
+   El número se guarda junto con el área, así que al reabrirla todo sigue
+   en su lugar. Las áreas guardadas antes no lo tienen: la primera vez que
+   se abren, cada persona se amarra por nombre (o por las horas) una sola
+   vez, y de ahí en adelante manda el número. */
+var SEQ_HORARIO = 0;
+function ponerNumeros(lista){
+  (lista || []).forEach(function(t){
+    if(!t.hid) t.hid = 'h' + (Date.now().toString(36)) + (++SEQ_HORARIO);
+  });
+  return lista || [];
+}
+function amarrarPorNombre(){
   var lista = AREA_FORM.turnos || [];
   Object.keys(AREA_FORM.horarios || {}).forEach(function(c){
     var hz = AREA_FORM.horarios[c];
-    var t = lista.filter(function(x){ return x.nombre === hz.nombre; })[0];
+    if(!hz) return;
+    if(hz.hid && lista.some(function(t){ return t.hid === hz.hid; })) return;
+    var t = lista.filter(function(x){ return x.nombre === hz.nombre; })[0] ||
+            lista.filter(function(x){ return x.inicio === hz.inicio && x.fin === hz.fin; })[0];
+    if(t) hz.hid = t.hid;
+  });
+}
+/* Dos horarios con el mismo nombre no se pueden distinguir en el cuadro
+   de la semana, así que al repetirse se numeran: "Tarde", "Tarde 2". */
+function nombresSinRepetir(){
+  var vistos = {};
+  (AREA_FORM.turnos || []).forEach(function(t){
+    var base = String(t.nombre || '').trim() || 'Horario';
+    var nom = base, k = 2;
+    while(vistos[nom.toLowerCase()]) nom = base + ' ' + (k++);
+    vistos[nom.toLowerCase()] = true;
+    t.nombre = nom;
+  });
+}
+/* Cuál de los horarios de arriba es el de esta persona. */
+function horarioDe(hz){
+  var lista = AREA_FORM.turnos || [];
+  if(!hz) return null;
+  return lista.filter(function(t){ return t.hid && t.hid === hz.hid; })[0] ||
+         lista.filter(function(t){ return t.nombre === hz.nombre; })[0] || null;
+}
+function refrescarAsignados(){
+  ponerNumeros(AREA_FORM.turnos);
+  amarrarPorNombre();
+  Object.keys(AREA_FORM.horarios || {}).forEach(function(c){
+    var hz = AREA_FORM.horarios[c];
+    var t = horarioDe(hz);
     if(!t) return;
+    /* El de abajo es el mismo horario de arriba, no una copia: nombre,
+       horas, días y almuerzo salen de allá. */
+    hz.hid = t.hid; hz.nombre = t.nombre;
     hz.inicio = t.inicio; hz.fin = t.fin;
     hz.dias = t.dias || TODOS_LOS_DIAS;
     hz.almuerzo = Number(t.almuerzo) || 0;
@@ -36975,28 +37040,23 @@ function pintarPropios(){
      que cambiarlos se cambian arriba —o se agrega otro horario—, no
      persona por persona. */
   caja.innerHTML = marcados.map(function(p){
-    var primero = (AREA_FORM.turnos || [])[0];
-    var hz = AREA_FORM.horarios[p.clave] || (AREA_FORM.horarios[p.clave] = primero
-      ? { dias: primero.dias || TODOS_LOS_DIAS, inicio: primero.inicio, fin: primero.fin,
-          almuerzo: Number(primero.almuerzo) || 0, nombre: primero.nombre }
-      : { dias:'L,M,X,J,V', inicio:'08:00', fin:'17:00', almuerzo:0, nombre:'Horario' });
-    /* Si el horario que tenía ya no está entre los de arriba, se le pone
-       el primero: así nunca queda con uno que no existe. */
-    if(primero && !(AREA_FORM.turnos || []).some(function(t){ return t.nombre === hz.nombre; })){
-      hz = AREA_FORM.horarios[p.clave] = { dias: primero.dias || TODOS_LOS_DIAS, inicio: primero.inicio,
-                                           fin: primero.fin, almuerzo: Number(primero.almuerzo) || 0,
-                                           nombre: primero.nombre };
-    }
-    /* Cuál de los de arriba es el suyo: por nombre, y si no por horas. */
     var lista = AREA_FORM.turnos || [];
-    var cual = '';
-    lista.forEach(function(t){
-      if(t.nombre === hz.nombre) cual = t.nombre;
-    });
-    if(!cual) lista.forEach(function(t){
-      if(t.inicio === hz.inicio && t.fin === hz.fin) cual = t.nombre;
-    });
-    var elegido = lista.filter(function(t){ return t.nombre === cual; })[0];
+    var primero = lista[0];
+    var copiar = function(t){
+      return { hid: t.hid, nombre: t.nombre, inicio: t.inicio, fin: t.fin,
+               dias: t.dias || TODOS_LOS_DIAS, almuerzo: Number(t.almuerzo) || 0 };
+    };
+    var hz = AREA_FORM.horarios[p.clave] || (AREA_FORM.horarios[p.clave] = primero
+      ? copiar(primero)
+      : { dias:'L,M,X,J,V', inicio:'08:00', fin:'17:00', almuerzo:0, nombre:'Horario' });
+    /* Cuál de los de arriba es el suyo: por su número interno. Si el
+       horario que tenía ya no está, se le pone el primero, así nunca
+       queda apuntando a uno que no existe. */
+    var elegido = horarioDe(hz);
+    if(!elegido && primero){
+      elegido = primero;
+      hz = AREA_FORM.horarios[p.clave] = copiar(primero);
+    }
     var dias = String((elegido ? elegido.dias : hz.dias) || '').split(',').filter(Boolean);
     var horas = elegido ? horasTurno(elegido.inicio, elegido.fin, elegido.almuerzo)
                         : horasTurno(hz.inicio, hz.fin, hz.almuerzo);
@@ -37016,10 +37076,11 @@ function pintarPropios(){
       '<div class="qn">' + caritaPersona(p) + '<span>' + esc(p.nombre) + '</span></div>' +
       '<select class="cual" data-hq="' + esc(p.clave) + '">' +
         lista.map(function(t){
-          return '<option value="' + esc(t.nombre) + '"' + (cual === t.nombre ? ' selected' : '') + '>' +
+          return '<option value="' + esc(t.hid) + '"' +
+            ((elegido && elegido.hid === t.hid) ? ' selected' : '') + '>' +
             esc(t.nombre) + ' · ' + esc(t.inicio) + '–' + esc(t.fin) + '</option>';
         }).join('') +
-        (cual ? '' : '<option value="" selected>' + esc(hz.inicio) + '–' + esc(hz.fin) + ' · el que tenía</option>') +
+        (elegido ? '' : '<option value="" selected>' + esc(hz.inicio) + '–' + esc(hz.fin) + ' · el que tenía</option>') +
       '</select>' +
       '<div class="resumen">' +
         (dias.length
@@ -37034,10 +37095,10 @@ function pintarPropios(){
 
   caja.querySelectorAll('[data-hq]').forEach(function(sel){
     sel.onchange = function(){
-      var t = (AREA_FORM.turnos || []).filter(function(x){ return x.nombre === sel.value; })[0];
+      var t = (AREA_FORM.turnos || []).filter(function(x){ return x.hid === sel.value; })[0];
       if(!t) return;
       AREA_FORM.horarios[sel.dataset.hq] = {
-        nombre: t.nombre, inicio: t.inicio, fin: t.fin,
+        hid: t.hid, nombre: t.nombre, inicio: t.inicio, fin: t.fin,
         dias: t.dias || TODOS_LOS_DIAS, almuerzo: Number(t.almuerzo) || 0
       };
       pintarPropios();
@@ -37281,6 +37342,7 @@ function pintarTurnos(){
      horario personalizado: son los horarios disponibles. */
   var caja = AREA_FORM.modo === 'personalizado' ? $p('ar-f-turnos2') : $p('ar-f-turnos');
   if(!caja) return;
+  ponerNumeros(AREA_FORM.turnos);
   caja.innerHTML = AREA_FORM.turnos.map(function(t, i){
     var dias = String(t.dias || '').split(',').filter(Boolean);
     return '<div class="ar-turnoc">' +
@@ -37336,13 +37398,20 @@ function pintarTurnos(){
     };
     /* Al salir del campo se repinta: así el nombre nuevo se ve de una vez
        en la asignación, sin perder el cursor mientras se escribe. */
-    nom.onchange = function(){ pintarTurnos(); avisarAsignacion(); };
+    nom.onchange = function(){
+      /* Si quedó con el nombre de otro, se numera. Lo que ya estaba
+         asignado sigue su número interno, no el nombre. */
+      var antes = AREA_FORM.turnos[i].nombre;
+      nombresSinRepetir();
+      renombrarHorario(antes, AREA_FORM.turnos[i].nombre);
+      pintarTurnos(); avisarAsignacion();
+    };
     d.querySelector('.tn-ini').oninput = function(){ AREA_FORM.turnos[i].inicio = this.value; pintarTurnos(); avisarAsignacion(); };
     d.querySelector('.tn-fin').oninput = function(){ AREA_FORM.turnos[i].fin = this.value; pintarTurnos(); avisarAsignacion(); };
     d.querySelector('.tn-quitar').onclick = function(){
-      var fuera = AREA_FORM.turnos[i].nombre;
+      var fuera = AREA_FORM.turnos[i].nombre, fueraId = AREA_FORM.turnos[i].hid;
       AREA_FORM.turnos.splice(i, 1);
-      soltarHorario(fuera);
+      soltarHorario(fuera, fueraId);
       sincronizarDiasDelArea();
       pintarTurnos(); avisarAsignacion();
     };
@@ -37373,13 +37442,13 @@ function pintarTurnos(){
       };
     });
     caja.querySelectorAll('[data-espfecha]').forEach(function(inp){
-      inp.onchange = function(){ lista[+inp.dataset.espfecha].fecha = inp.value; pintarTurnos(); };
+      inp.onchange = function(){ lista[+inp.dataset.espfecha].fecha = inp.value; pintarTurnos(); avisarAsignacion(); };
     });
     caja.querySelectorAll('[data-espini]').forEach(function(inp){
-      inp.onchange = function(){ lista[+inp.dataset.espini].inicio = inp.value; pintarTurnos(); };
+      inp.onchange = function(){ lista[+inp.dataset.espini].inicio = inp.value; pintarTurnos(); avisarAsignacion(); };
     });
     caja.querySelectorAll('[data-espfin]').forEach(function(inp){
-      inp.onchange = function(){ lista[+inp.dataset.espfin].fin = inp.value; pintarTurnos(); };
+      inp.onchange = function(){ lista[+inp.dataset.espfin].fin = inp.value; pintarTurnos(); avisarAsignacion(); };
     });
   });
   caja.querySelectorAll('[data-fijo]').forEach(function(c){
@@ -37540,15 +37609,18 @@ function cuadroDeHorarios(semana){
           dias: diasArea.join(','), almuerzo: Number(AREA_FORM.almuerzo) || 0 }
       : (AREA_FORM.horarios || {})[p.clave];
     if(!hz || !hz.inicio || !hz.fin) return;
+    /* El horario de arriba manda: días, horas, almuerzo y días distintos
+       salen de él, no de la copia que tiene la persona. Así el cuadro y
+       el menú de la asignación nunca muestran cosas distintas. */
+    var suyo = general ? null : horarioDe(hz);
+    if(suyo){
+      hz = { hid: suyo.hid, nombre: suyo.nombre, inicio: suyo.inicio, fin: suyo.fin,
+             dias: suyo.dias || TODOS_LOS_DIAS, almuerzo: Number(suyo.almuerzo) || 0 };
+    }
     var dias = String(hz.dias || '').split(',').filter(Boolean);
     /* De dónde salen los días con otro horario: en el general, del área;
        en el personalizado, del horario que tiene asignado la persona. */
-    var deDondeEsp = general
-      ? (AREA_FORM.especialesGeneral || [])
-      : (function(){
-          var t = (AREA_FORM.turnos || []).filter(function(x){ return x.nombre === hz.nombre; })[0];
-          return (t && t.especiales) || [];
-        })();
+    var deDondeEsp = general ? (AREA_FORM.especialesGeneral || []) : ((suyo && suyo.especiales) || []);
     DIAS_LETRA.forEach(function(letra, i){
       var f = sumarDias(semana, i);
       /* El día con otro horario manda sobre el habitual; una fecha
@@ -38757,10 +38829,12 @@ function engancharAreas(){
   };
   if($p('ar-f-masturno2')) $p('ar-f-masturno2').onclick = function(){
     AREA_FORM.turnos.push({ nombre:'Horario ' + (AREA_FORM.turnos.length + 1), inicio:'08:00', fin:'17:00', dias:TODOS_LOS_DIAS, fijo:false, almuerzo:0, especiales:[] });
+    ponerNumeros(AREA_FORM.turnos); nombresSinRepetir();
     pintarTurnos(); pintarPropios();
   };
   $p('ar-f-masturno').onclick = function(){
     AREA_FORM.turnos.push({ nombre:'Turno ' + (AREA_FORM.turnos.length + 1), inicio:'06:00', fin:'14:00', dias:TODOS_LOS_DIAS, fijo:false, almuerzo:0, especiales:[] });
+    ponerNumeros(AREA_FORM.turnos); nombresSinRepetir();
     $p('ar-f-preset').value = 'libre';
     pintarTurnos(); pintarInicial();
   };
