@@ -37842,6 +37842,14 @@ var PREVIA = false;
    alcanza para que la pantalla no quede vacía mientras el servicio
    reparte de verdad (que es lo que además equilibra noches y domingos). */
 function cuadroPrevio(cuerpo, lunes){
+  /* En el horario general y en el personalizado cada quien tiene su
+     horario: la previa es exactamente la misma que muestra "Ver el
+     cuadro", con sus días distintos incluidos. Antes esta función
+     repartía a la gente entre los horarios como si fueran turnos
+     rotativos, y encima ignoraba los días con otro horario. */
+  if(cuerpo.modo !== 'rotativo'){
+    return cuadroDeHorarios(lunes).map(function(t){ t.previa = true; return t; });
+  }
   var turnos = cuerpo.turnos || [];
   var inicial = cuerpo.inicial || {};
   var gente = (cuerpo.personas || []).map(function(c){
@@ -37867,14 +37875,21 @@ function cuadroPrevio(cuerpo, lunes){
     if(!suyos.length) return;
     var n = 0;
     DIAS_LETRA.forEach(function(letra, i){
-      if(dias.indexOf(letra) < 0) return;               /* ese día el turno no va */
-      var quien = suyos[n % suyos.length]; n++;
       var f = sumarDias(lunes, i);
+      /* El día con otro horario manda; una fecha puntual manda sobre el
+         día de la semana y hace trabajar aunque ese día no sea suyo. */
+      var esp = (t.especiales || []).filter(function(e){ return e.fecha === f; })[0] ||
+                (t.especiales || []).filter(function(e){ return !e.fecha && e.dia === letra; })[0];
+      if(!esp && dias.indexOf(letra) < 0) return;       /* ese día el turno no va */
+      var quien = suyos[n % suyos.length]; n++;
+      var ini = esp ? esp.inicio : t.inicio;
+      var fin = esp ? esp.fin : t.fin;
       salida.push({ area: cuerpo.nombre, semana: lunes, fecha: f, dia: DIAS_NOMBRE[letra],
-                    turno: t.nombre, inicio: t.inicio, fin: t.fin,
+                    turno: t.nombre, inicio: ini, fin: fin,
                     persona: quien.clave, nombre: quien.nombre,
                     almuerzo: Number(t.almuerzo) || 0,
-                    horas: horasTurno(t.inicio, t.fin, t.almuerzo), previa: true });
+                    ajuste: esp ? 'otro horario ese día' : '',
+                    horas: horasTurno(ini, fin, t.almuerzo), previa: true });
     });
   });
   return salida;
