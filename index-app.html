@@ -5407,10 +5407,26 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
         </div>
         <input id="hum-buscar" oninput="renderHumusDetalle()" placeholder="Buscar referencia, responsable, destino..." style="padding:7px 12px;font-size:12px;border:1px solid var(--rule);border-radius:4px;background:var(--white);color:var(--ink);min-width:230px;font-family:'Source Sans 3',sans-serif">
       </div>
-      <div style="overflow-x:auto;padding:0 24px 20px">
+      <div style="padding:0 24px 8px">
+        <div style="font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--navy);
+                    border-left:3px solid var(--navy);padding-left:9px;margin-bottom:6px">
+          Producción <span id="hum-traza-nprod" style="font-weight:600;color:var(--ink-l);letter-spacing:0"></span></div>
+      </div>
+      <div style="overflow-x:auto;padding:0 24px 16px">
         <table class="tbl" id="hum-traza-tabla">
           <thead><tr id="hum-traza-head"></tr></thead>
-          <tbody id="hum-traza-body"><tr><td colspan="8" class="empty">—</td></tr></tbody>
+          <tbody id="hum-traza-body"><tr><td colspan="7" class="empty">—</td></tr></tbody>
+        </table>
+      </div>
+      <div style="padding:0 24px 8px">
+        <div style="font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold);
+                    border-left:3px solid var(--gold);padding-left:9px;margin-bottom:6px">
+          Despachos <span id="hum-traza-nsal" style="font-weight:600;color:var(--ink-l);letter-spacing:0"></span></div>
+      </div>
+      <div style="overflow-x:auto;padding:0 24px 20px">
+        <table class="tbl" id="hum-traza-tabla-sal">
+          <thead><tr id="hum-traza-head-sal"></tr></thead>
+          <tbody id="hum-traza-body-sal"><tr><td colspan="8" class="empty">—</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -13433,53 +13449,77 @@ function renderHumusDetalle() {
   pintarBarras(contProd, refsProd, true);
   pintarBarras(contSal,  refsSal,  false);
 
-  // ── Trazabilidad unificada: producción y despachos en una sola tabla ──
+  /* ── TRAZABILIDAD: DOS TABLAS ──────────────────────────────────────
+     Producción y despachos no son lo mismo y no comparten columnas: la
+     producción no tiene remisión ni destino, y el despacho no tiene lote.
+     Mezclados en una sola tabla había que leer el color del rótulo para
+     saber qué decía cada celda. */
   const busca = ((document.getElementById('hum-buscar')||{}).value || '').toLowerCase().trim();
-  let filas = regProd.map(r => ({ r, prod: true })).concat(regSal.map(r => ({ r, prod: false })));
-  if (busca) {
-    filas = filas.filter(o => [o.r[1], o.r[2], o.r[4], o.r[5], o.r[8]].some(v => (v||'').toString().toLowerCase().includes(busca)));
-  }
-  filas.sort((a,b) => (b.r[0]||'').localeCompare(a.r[0]||''));
+  const coincide = (r, campos) => !busca || campos.some(i => (r[i]||'').toString().toLowerCase().includes(busca));
 
-  if (tituloTraza) tituloTraza.textContent = filas.length + ' registro' + (filas.length !== 1 ? 's' : '') + ' del periodo';
+  const prods = regProd.filter(r => coincide(r, [1,2,5])).sort((a,b) => (b[0]||'').localeCompare(a[0]||''));
+  const sals  = regSal.filter(r => coincide(r, [1,2,4,5,8])).sort((a,b) => (b[0]||'').localeCompare(a[0]||''));
+
+  const total = prods.length + sals.length;
+  if (tituloTraza) tituloTraza.textContent = total + ' registro' + (total !== 1 ? 's' : '') + ' del periodo';
+  const nP = document.getElementById('hum-traza-nprod');
+  const nS = document.getElementById('hum-traza-nsal');
+  if (nP) nP.textContent = '· ' + prods.length + (prods.length === 1 ? ' registro' : ' registros');
+  if (nS) nS.textContent = '· ' + sals.length + (sals.length === 1 ? ' registro' : ' registros');
+
+  /* Una foto de la tabla, con su respaldo si Drive no la sirve. */
+  const _miniFotoHum = (u, rotulo) => `<img src="${urlFotoDrive(u)}" data-alt="${urlFotoDriveAlt(u)}" loading="lazy"
+         title="${rotulo}"
+         onclick="abrirFotoBaucher('${u.replace(/'/g,'')}','${rotulo.replace(/'/g,'')}')"
+         onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src=this.dataset.alt;}else{this.outerHTML='<a href=&quot;${u}&quot; target=_blank rel=noopener style=&quot;font-size:11px;color:var(--navy)&quot;>Ver</a>';}"
+         style="width:42px;height:42px;object-fit:cover;border-radius:4px;border:1px solid var(--rule);cursor:zoom-in"\>`;
+  const celdaFoto = (u, rotulo) => /^https?:\/\//i.test((u||'').toString().trim())
+    ? '<td style="text-align:center">' + _miniFotoHum((u||'').toString().trim(), rotulo) + '</td>'
+    : '<td style="text-align:center;color:var(--ink-l)" title="No se tomó foto en ese registro">—</td>';
+
+  /* ── Producción: sin lote ni destino, que no los tiene ── */
   if (head) {
-    head.innerHTML = `<th>Fecha / Hora</th><th style="text-align:center">Tipo</th><th>Línea</th><th>Presentación</th>
-      <th style="text-align:right">Cantidad</th><th>Lote / Destino</th>
-      <th>Responsable</th><th style="text-align:center">Foto</th>`;
+    head.innerHTML = `<th>Fecha / Hora</th><th>Línea</th><th>Presentación</th>
+      <th style="text-align:right">Cantidad</th><th>Responsable</th><th style="text-align:center">Foto</th>`;
   }
   if (body) {
-    body.innerHTML = filas.length ? filas.slice(0, 300).map(o => {
-      const r = o.r;
-      /* Las salidas traen dos fotos: la de la remisión (r[7]) y la del
-         despacho (r[6]). Se muestran las que existan. */
-      const _miniFotoHum = (u, rotulo) => `<img src="${urlFotoDrive(u)}" data-alt="${urlFotoDriveAlt(u)}" loading="lazy"
-             title="${rotulo}"
-             onclick="abrirFotoBaucher('${u.replace(/'/g,'')}','${rotulo.replace(/'/g,'')}')"
-             onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src=this.dataset.alt;}else{this.outerHTML='<a href=&quot;${u}&quot; target=_blank rel=noopener style=&quot;font-size:11px;color:var(--navy)&quot;>Ver</a>';}"
-             style="width:42px;height:42px;object-fit:cover;border-radius:4px;border:1px solid var(--rule);cursor:zoom-in"\>`;
-      const rotuloFoto = ((r[1]||'')+' · '+(r[2]||''));
-      const fotos = [];
-      if (/^https?:\/\//i.test((r[7] || '').toString().trim())) fotos.push(_miniFotoHum((r[7]||'').toString().trim(), 'Remisión · ' + rotuloFoto));
-      if (/^https?:\/\//i.test((r[6] || '').toString().trim())) fotos.push(_miniFotoHum((r[6]||'').toString().trim(), rotuloFoto));
-      const celdaFoto = fotos.length
-        ? '<td style="text-align:center"><div style="display:flex;gap:4px;justify-content:center">' + fotos.join('') + '</div></td>'
-        : '<td style="text-align:center;color:var(--ink-l)">—</td>';
-      const chip = o.prod
-        ? '<span style="font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--navy);color:#fff;padding:3px 9px;border-radius:10px">Producción</span>'
-        : '<span style="font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--gold);color:#fff;padding:3px 9px;border-radius:10px">Despacho</span>';
-      return `<tr>
+    body.innerHTML = prods.length ? prods.slice(0, 300).map(r => `<tr>
         <td style="white-space:nowrap">${r[0]||'—'}</td>
-        <td style="text-align:center;white-space:nowrap">${chip}</td>
         <td>${r[1]||'—'}</td>
         <td>${r[2]||'—'}</td>
-        <td style="text-align:right;font-weight:700;color:${o.prod ? 'var(--navy)' : 'var(--gold)'}">${fmt(Math.round(Number(r[3])||0))}</td>
-        <td>${o.prod ? (r[4]||'—')
-             : ((r[8] ? '<b>N.º ' + r[8] + '</b>' : '') + (r[8] && r[4] ? '<br>' : '') + (r[4] || (r[8] ? '' : '—')))}</td>
+        <td style="text-align:right;font-weight:700;color:var(--navy)">${fmt(Math.round(Number(r[3])||0))}</td>
         <td>${r[5]||'—'}</td>
-        ${celdaFoto}
+        ${celdaFoto(r[6], (r[1]||'')+' · '+(r[2]||''))}
+      </tr>`).join('') +
+      (prods.length > 300 ? '<tr><td colspan="6" style="text-align:center;font-size:11px;color:var(--ink-l);font-style:italic;padding:10px">Mostrando los 300 más recientes de ' + prods.length + '</td></tr>' : '')
+    : '<tr><td colspan="6" class="empty">Sin producción en este periodo</td></tr>';
+  }
+
+  /* ── Despachos: número de remisión, destino y sus dos fotos ── */
+  const headS = document.getElementById('hum-traza-head-sal');
+  const bodyS = document.getElementById('hum-traza-body-sal');
+  if (headS) {
+    headS.innerHTML = `<th>Fecha / Hora</th><th>Línea</th><th>Presentación</th>
+      <th style="text-align:right">Cantidad</th><th>N.º remisión</th><th>Destino</th><th>Responsable</th>
+      <th style="text-align:center">Remisión</th><th style="text-align:center">Despacho</th>`;
+  }
+  if (bodyS) {
+    bodyS.innerHTML = sals.length ? sals.slice(0, 300).map(r => {
+      const rotulo = (r[1]||'') + ' · ' + (r[2]||'');
+      return `<tr>
+        <td style="white-space:nowrap">${r[0]||'—'}</td>
+        <td>${r[1]||'—'}</td>
+        <td>${r[2]||'—'}</td>
+        <td style="text-align:right;font-weight:700;color:var(--gold)">${fmt(Math.round(Number(r[3])||0))}</td>
+        <td style="font-weight:700">${r[8] || '—'}</td>
+        <td>${r[4]||'—'}</td>
+        <td>${r[5]||'—'}</td>
+        ${celdaFoto(r[7], 'Remisión · ' + rotulo)}
+        ${celdaFoto(r[6], rotulo)}
       </tr>`;
-    }).join('') + (filas.length > 300 ? '<tr><td colspan="8" style="text-align:center;font-size:11px;color:var(--ink-l);font-style:italic;padding:10px">Mostrando los 300 más recientes de ' + filas.length + '</td></tr>' : '')
-    : '<tr><td colspan="8" class="empty">Sin registros en este periodo</td></tr>';
+    }).join('') +
+      (sals.length > 300 ? '<tr><td colspan="9" style="text-align:center;font-size:11px;color:var(--ink-l);font-style:italic;padding:10px">Mostrando los 300 más recientes de ' + sals.length + '</td></tr>' : '')
+    : '<tr><td colspan="9" class="empty">Sin despachos en este periodo</td></tr>';
   }
 }
 
@@ -36252,6 +36292,25 @@ function borrarArea(nombre){
   }).catch(function(e){ alert(e.message || 'No se pudo borrar.'); });
 }
 
+/* Los horarios distintos que tiene la gente de un área, sin repetir: con
+   eso se rehace la lista de horarios disponibles de las áreas que se
+   guardaron cuando el servicio todavía no la conservaba. */
+function horariosDeLaGente(horarios){
+  var vistos = {}, lista = [];
+  Object.keys(horarios || {}).forEach(function(c){
+    var h = horarios[c] || {};
+    if(!h.inicio || !h.fin) return;
+    var k = (h.nombre || '') + '|' + h.inicio + '|' + h.fin + '|' + (h.dias || '');
+    if(vistos[k]) return;
+    vistos[k] = true;
+    lista.push({ nombre: h.nombre || 'Horario', inicio: h.inicio, fin: h.fin,
+                 dias: h.dias || TODOS_LOS_DIAS, fijo: false,
+                 almuerzo: Number(h.almuerzo) || 0, especiales: [] });
+  });
+  lista.sort(function(a, b){ return minutosDe(a.inicio) - minutosDe(b.inicio); });
+  return lista;
+}
+
 /* ── EL FORMULARIO DEL ÁREA ── */
 function abrirArea(a){
   AREA_EDIT = a || null;
@@ -36266,7 +36325,12 @@ function abrirArea(a){
       ? a.turnos.map(function(t){ return { nombre:t.nombre, inicio:t.inicio, fin:t.fin, dias:t.dias || TODOS_LOS_DIAS,
                                            fijo:!!t.fijo, almuerzo:Number(t.almuerzo) || 0,
                                            especiales:(t.especiales || []).slice() }; })
-      : PRESETS_TURNO['3x8'].map(function(t){ return { nombre:t.nombre, inicio:t.inicio, fin:t.fin, dias:TODOS_LOS_DIAS, fijo:false, almuerzo:0, especiales:[] }; }),
+      /* Las áreas personalizadas guardadas antes no tienen la lista de
+         horarios: se rearma con los que ya tiene la gente, para no
+         mostrarles el juego de ejemplo encima del suyo. */
+      : (a && a.modo === 'personalizado' && a.horarios && Object.keys(a.horarios).length)
+        ? horariosDeLaGente(a.horarios)
+        : PRESETS_TURNO['3x8'].map(function(t){ return { nombre:t.nombre, inicio:t.inicio, fin:t.fin, dias:TODOS_LOS_DIAS, fijo:false, almuerzo:0, especiales:[] }; }),
     cobertura24: a ? !!a.cobertura24 : true,
     inicial: (a && a.inicial) ? JSON.parse(JSON.stringify(a.inicial)) : {},
     /* El almuerzo del horario general: cuánto dura, si se reparte en
