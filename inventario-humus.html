@@ -261,6 +261,10 @@
     box-shadow: 0 0 0 3px rgba(30,77,43,0.12);
   }
   .form-group textarea { resize: vertical; min-height: 70px; }
+  /* La cantidad repetida: verde si coincide, rojo si no. */
+  .form-group input.campo-bien { border-color: #2e7d46; background: #eaf5ec; }
+  .form-group input.campo-mal { border-color: var(--rojo); background: #fdeeee; }
+  .aviso-campo { font-size: 0.7rem; color: var(--rojo); margin-top: 0.35rem; min-height: 0.9rem; }
   /* ─── FOTO (producción / despacho) ─── */
   .foto-box {
     border: 1px dashed var(--verde-borde);
@@ -301,6 +305,42 @@
     cursor: pointer;
   }
   .foto-hint { font-size: 0.68rem; color: var(--texto-sec); margin-top: 0.5rem; }
+  .foto-acciones { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .foto-box button.foto-btn { font-family: 'Inter', sans-serif; cursor: pointer; }
+  .foto-box button.foto-btn { border: none; }
+
+  /* ─── RECORTAR Y GIRAR (foto de la remisión) ─── */
+  .recorte-overlay { display: none; position: fixed; inset: 0; z-index: 9000; background: #000; }
+  .recorte-overlay.abierto { display: block; }
+  .recorte-caja { position: absolute; inset: 0; display: flex; flex-direction: column; }
+  .recorte-wrap { position: relative; flex: 1; min-height: 0; background: #000; overflow: hidden; }
+  #img-recorte-remision { display: block; max-width: 100%; max-height: 100%; }
+  /* Las esquinas, grandes para agarrarlas con el dedo */
+  .recorte-overlay .cropper-point.point-nw,
+  .recorte-overlay .cropper-point.point-ne,
+  .recorte-overlay .cropper-point.point-sw,
+  .recorte-overlay .cropper-point.point-se {
+    width: 26px; height: 26px; opacity: 1; background-color: #d8b25a;
+    border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,.6);
+  }
+  .recorte-overlay .cropper-point.point-nw { top: -13px; left: -13px; }
+  .recorte-overlay .cropper-point.point-ne { top: -13px; right: -13px; }
+  .recorte-overlay .cropper-point.point-sw { bottom: -13px; left: -13px; }
+  .recorte-overlay .cropper-point.point-se { bottom: -13px; right: -13px; }
+  .recorte-overlay .cropper-view-box { outline: 2px solid #d8b25a; }
+  .recorte-overlay .cropper-line { background-color: #d8b25a; opacity: .12; }
+  .recorte-overlay .cropper-line.line-n, .recorte-overlay .cropper-line.line-s { height: 22px; margin-top: -11px; }
+  .recorte-overlay .cropper-line.line-e, .recorte-overlay .cropper-line.line-w { width: 22px; margin-left: -11px; }
+  .recorte-herramientas { display: flex; gap: 8px; justify-content: center; padding: 10px 12px; background: #000; }
+  .btn-rotar { width: 42px; height: 42px; padding: 0; font-size: 20px; line-height: 1;
+    border: 2px solid rgba(255,255,255,.6); background: rgba(0,0,0,.5); color: #fff; cursor: pointer;
+    border-radius: 6px; font-family: 'Inter', sans-serif; }
+  .btn-rotar.texto { width: auto; padding: 0 16px; font-size: 0.72rem; font-weight: 700;
+    letter-spacing: .06em; text-transform: uppercase; }
+  .btn-rotar:active { background: rgba(255,255,255,.25); }
+  .recorte-ayuda { font-size: 0.7rem; color: rgba(255,255,255,.8); text-align: center; padding: 0 12px 8px; background: #000; }
+  .recorte-btns { display: flex; gap: 0.6rem; padding: 0 12px 14px; background: #000; }
+  .recorte-btns .btn { flex: 1; }
   .miniatura {
     width: 46px; height: 46px; object-fit: cover;
     border: 1px solid var(--verde-borde); cursor: zoom-in; display: block;
@@ -408,6 +448,11 @@
     .container { padding: 1rem; }
   }
 </style>
+<!-- El recortador de fotos: el mismo que usa el sistema de ingreso de
+     material para el baucher. Si no carga (sin señal), la foto se guarda
+     completa y el registro no se traba. -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
 </head>
 <body>
 <!-- ══════════ HEADER ══════════ -->
@@ -498,6 +543,31 @@
       </div>
     </div>
   </div>
+  <!-- ══════════════════════════════════════════════════════════════
+       RECORTAR Y GIRAR LA FOTO DE LA REMISIÓN
+       Igual que en el ingreso de material: la foto se abre en grande, se
+       arrastra sobre ella para elegir el pedazo que sirve y se gira si
+       salió acostada. Si no se toca nada, se guarda completa.
+       ══════════════════════════════════════════════════════════════ -->
+  <div class="recorte-overlay" id="modal-recorte-remision">
+    <div class="recorte-caja">
+      <div class="recorte-wrap">
+        <img id="img-recorte-remision" src="" alt="Foto de la remisión">
+      </div>
+      <div class="recorte-herramientas">
+        <button type="button" class="btn-rotar" onclick="rotarRemision(-90)" title="Girar a la izquierda">⟲</button>
+        <button type="button" class="btn-rotar" onclick="rotarRemision(90)" title="Girar a la derecha">⟳</button>
+        <button type="button" class="btn-rotar texto" onclick="restablecerRemision()">Toda la foto</button>
+      </div>
+      <div class="recorte-ayuda">Arrastre sobre la foto para elegir el área; las esquinas la ajustan.
+        Si no toca nada se usa la foto completa.</div>
+      <div class="recorte-btns">
+        <button type="button" class="btn btn-secondary" onclick="cancelarRecorteRemision()">Cancelar</button>
+        <button type="button" class="btn btn-primary" onclick="confirmarRecorteRemision()">Usar foto</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ══════════ PANEL: PRODUCCIÓN ══════════ -->
   <div id="panel-produccion" class="panel">
     <div class="seccion">
@@ -520,14 +590,23 @@
         <div class="form-row">
           <div class="form-group">
             <label>Cantidad <span class="req">*</span></label>
-            <input type="number" id="prodBultos" placeholder="Cantidad producida" min="0" step="0.01">
+            <input type="number" id="prodBultos" placeholder="Cantidad producida" min="0" step="0.01"
+                   oninput="revisarCantidadProd()">
           </div>
+          <!-- Se escribe dos veces a propósito: así una cantidad mal
+               digitada no queda registrada. -->
+          <div class="form-group">
+            <label>Repetir la cantidad <span class="req">*</span></label>
+            <input type="number" id="prodBultos2" placeholder="Escriba la misma cantidad" min="0" step="0.01"
+                   oninput="revisarCantidadProd()" onpaste="return false" autocomplete="off">
+            <div class="aviso-campo" id="prodBultosMsg"></div>
+          </div>
+        </div>
+        <div class="form-row">
           <div class="form-group">
             <label>Lote</label>
             <input type="text" id="prodLote" placeholder="Ej: 2640">
           </div>
-        </div>
-        <div class="form-row">
           <div class="form-group">
             <label>Responsable <span class="req">*</span></label>
             <select id="prodResponsable">
@@ -604,10 +683,15 @@
           <div class="form-group">
             <label>Foto de la remisión <span class="req">*</span></label>
             <div class="foto-box">
-              <label class="foto-btn" for="salRemisionFoto">📷 Tomar / elegir foto</label>
-              <input type="file" id="salRemisionFoto" accept="image/*" capture="environment" onchange="capturarFoto('salRemision', this)">
+              <!-- La cámara del teléfono, no una cámara dentro de la página:
+                   sale a pantalla completa, con su flash y su resolución. -->
+              <div class="foto-acciones">
+                <button type="button" class="foto-btn" onclick="camaraRemision()">📷 Tomar foto</button>
+              </div>
+              <input type="file" id="salRemisionFoto" accept="image/*" capture="environment" onchange="recibirFotoRemision(this)">
               <div class="foto-prev" id="salRemisionFotoPrev"></div>
-              <div class="foto-hint">Obligatoria: sin la remisión no se registra la salida.</div>
+              <div class="foto-hint">Obligatoria: se toma en el momento con la cámara, no se saca de la galería.
+                Después de tomarla se puede recortar y girar.</div>
             </div>
           </div>
         </div>
@@ -789,6 +873,173 @@
     };
     rd.onerror = () => { _fotos[prefix] = ''; showToast('No se pudo leer la imagen', 'error'); };
     rd.readAsDataURL(file);
+  }
+
+  /* ══════════════════════════════════════════════════════════════════
+     LA FOTO DE LA REMISIÓN: TOMAR, RECORTAR Y GIRAR
+     ------------------------------------------------------------------
+     Lo mismo que hace el sistema de ingreso de material con el baucher.
+     Son tres pasos:
+
+     1. La cámara es la DEL TELÉFONO (un input con capture), no una
+        cámara metida en la página: sale a pantalla completa, con su
+        flash y su resolución buena.
+     2. La foto se abre en grande y se arrastra sobre ella para elegir el
+        pedazo que sirve. Si no se toca nada, se usa completa.
+     3. Los botones de girar enderezan la que salió acostada.
+
+     Si el recortador no alcanzó a cargar (sin señal), la foto se guarda
+     completa igual: nunca deja al operario sin poder registrar.
+     ══════════════════════════════════════════════════════════════════ */
+  let _recorteRemision = null;
+
+  function camaraRemision() {
+    const inp = document.getElementById('salRemisionFoto');
+    inp.value = '';
+    inp.click();
+  }
+
+  /* La foto tiene que ser de este momento. Algunos teléfonos, aunque se
+     les pida la cámara, dejan abrir la galería: si lo que llega fue hecho
+     hace más de diez minutos, no se acepta. (Si el teléfono no dice
+     cuándo se hizo, se deja pasar: no se puede comprobar.) */
+  const EDAD_MAXIMA_FOTO = 10 * 60 * 1000;
+
+  function recibirFotoRemision(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    if (file.lastModified && Date.now() - file.lastModified > EDAD_MAXIMA_FOTO) {
+      input.value = '';
+      showToast('Esa foto no es de este momento: tómela con la cámara', 'error');
+      return;
+    }
+    const rd = new FileReader();
+    rd.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        if (!window.Cropper) { guardarFotoRemision(img); return; }
+        abrirRecorteRemision(img);
+      };
+      img.onerror = () => showToast('No se pudo leer la imagen', 'error');
+      img.src = rd.result;
+    };
+    rd.onerror = () => showToast('No se pudo leer la imagen', 'error');
+    rd.readAsDataURL(file);
+    input.value = '';
+  }
+
+  function abrirRecorteRemision(img) {
+    const modal = document.getElementById('modal-recorte-remision');
+    const imgEl = document.getElementById('img-recorte-remision');
+    if (_recorteRemision) { _recorteRemision.destroy(); _recorteRemision = null; }
+    modal.classList.add('abierto');
+    /* El recortador se arma CUANDO LA FOTO YA ESTÁ CARGADA: si se arma
+       antes, queda calculado con medidas equivocadas y el recuadro no
+       coincide con la foto. */
+    let armado = false;
+    const armar = () => {
+      if (armado || !window.Cropper) return;
+      armado = true;
+      _recorteRemision = new Cropper(imgEl, {
+        viewMode: 1,
+        dragMode: 'crop',      /* arrastrar dibuja el recuadro, no mueve la foto */
+        autoCropArea: 1,
+        background: false,
+        responsive: true,
+        restore: false,
+        guides: true,
+        center: true,
+        highlight: false,
+        toggleDragModeOnDblclick: false,
+        cropBoxMovable: true,
+        cropBoxResizable: true,
+        minCropBoxWidth: 40,
+        minCropBoxHeight: 40,
+        ready: () => encajarRemision()
+      });
+    };
+    imgEl.onload = () => requestAnimationFrame(armar);
+    imgEl.src = img.src;
+    if (imgEl.complete && imgEl.naturalWidth) requestAnimationFrame(armar);
+  }
+
+  /* Deja la foto entera, centrada y del tamaño que quepa, con el recuadro
+     cubriéndola toda. El recuadro se encoge primero a propósito: mientras
+     es grande, el recortador no deja achicar la foto por debajo de él y
+     quedaba más grande que la pantalla, corrida hacia un lado. */
+  function encajarRemision() {
+    const cr = _recorteRemision;
+    if (!cr) return;
+    const cont = cr.getContainerData(), cv = cr.getCanvasData();
+    if (!cont.width || !cont.height || !cv.naturalWidth || !cv.naturalHeight) return;
+    cr.setCropBoxData({ left: cont.width / 2 - 20, top: cont.height / 2 - 20, width: 40, height: 40 });
+    const margen = 26;
+    const w = Math.max(40, cont.width - margen * 2), h = Math.max(40, cont.height - margen * 2);
+    const escala = Math.min(w / cv.naturalWidth, h / cv.naturalHeight);
+    const ancho = cv.naturalWidth * escala, alto = cv.naturalHeight * escala;
+    cr.setCanvasData({ left: (cont.width - ancho) / 2, top: (cont.height - alto) / 2, width: ancho, height: alto });
+    const cv2 = cr.getCanvasData();
+    cr.setCropBoxData({ left: cv2.left, top: cv2.top, width: cv2.width, height: cv2.height });
+  }
+
+  function restablecerRemision() { encajarRemision(); }
+
+  /* Al girar, el recortador deja la foto del mismo tamaño, girada sobre
+     su centro: una foto acostada que se pone de pie queda más alta que la
+     pantalla y se ve cortada. Por eso después de cada giro se vuelve a
+     encajar entera. */
+  function rotarRemision(grados) {
+    if (!_recorteRemision) return;
+    _recorteRemision.rotate(grados);
+    encajarRemision();
+  }
+
+  function cancelarRecorteRemision() {
+    const modal = document.getElementById('modal-recorte-remision');
+    if (modal) modal.classList.remove('abierto');
+    if (_recorteRemision) { _recorteRemision.destroy(); _recorteRemision = null; }
+    const imgEl = document.getElementById('img-recorte-remision');
+    if (imgEl) imgEl.src = '';
+  }
+
+  function confirmarRecorteRemision() {
+    let lienzo = null;
+    if (_recorteRemision) lienzo = _recorteRemision.getCroppedCanvas({ imageSmoothingQuality: 'high' });
+    if (!lienzo) {
+      /* Respaldo: si el recorte falló, se usa la foto tal cual. */
+      const imgEl = document.getElementById('img-recorte-remision');
+      lienzo = document.createElement('canvas');
+      lienzo.width = imgEl.naturalWidth || imgEl.width;
+      lienzo.height = imgEl.naturalHeight || imgEl.height;
+      lienzo.getContext('2d').drawImage(imgEl, 0, 0, lienzo.width, lienzo.height);
+    }
+    cancelarRecorteRemision();
+    guardarFotoRemision(lienzo);
+  }
+
+  /* Deja la foto en 1200 px de lado máximo, como las demás del inventario,
+     y la muestra en la vista previa. La remisión es un papel impreso: se
+     le sube un poco el contraste para que el número se lea. */
+  function guardarFotoRemision(origen) {
+    const w0 = origen.naturalWidth || origen.width, h0 = origen.naturalHeight || origen.height;
+    const MAX = 1200;
+    let w = w0, h = h0;
+    if (w > MAX || h > MAX) {
+      if (w >= h) { h = Math.round(h * MAX / w); w = MAX; }
+      else { w = Math.round(w * MAX / h); h = MAX; }
+    }
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    const ctx = cv.getContext('2d');
+    ctx.filter = 'contrast(1.25) brightness(1.05)';
+    ctx.drawImage(origen, 0, 0, w, h);
+    ctx.filter = 'none';
+    _fotos.salRemision = cv.toDataURL('image/jpeg', 0.72);
+    const prev = document.getElementById('salRemisionFotoPrev');
+    if (prev) {
+      prev.innerHTML = '<img src="' + _fotos.salRemision + '" alt="Vista previa">' +
+        '<button type="button" class="foto-quitar" onclick="quitarFoto(\'salRemision\')">Quitar foto</button>';
+    }
   }
 
   function quitarFoto(prefix) {
@@ -1111,13 +1362,46 @@
   function filtrarHistorial() {
     if (_lastData) renderHistorialFiltrado(_lastData);
   }
+  /* ── LA CANTIDAD, DOS VECES ─────────────────────────────────────
+     La cantidad producida se escribe dos veces y las dos tienen que ser
+     iguales. No se puede copiar y pegar en la segunda: la gracia es
+     volverla a escribir. Mientras no coincidan el campo se ve rojo y no
+     deja registrar. */
+  function revisarCantidadProd() {
+    const a = document.getElementById('prodBultos');
+    const b = document.getElementById('prodBultos2');
+    const m = document.getElementById('prodBultosMsg');
+    if (!a || !b || !m) return true;
+    const hayA = String(a.value).trim() !== '', hayB = String(b.value).trim() !== '';
+    const igual = hayA && hayB && Number(a.value) === Number(b.value);
+    b.classList.remove('campo-mal', 'campo-bien');
+    if (!hayB) { m.textContent = ''; return igual; }
+    if (igual) { b.classList.add('campo-bien'); m.textContent = ''; }
+    else { b.classList.add('campo-mal'); m.textContent = 'Las dos cantidades no son iguales.'; }
+    return igual;
+  }
+  window.revisarCantidadProd = revisarCantidadProd;
+
   // ═══ ENVIAR PRODUCCIÓN ═══
   async function enviarProduccion() {
     const linea = document.getElementById('prodLinea').value;
     const presentacion = document.getElementById('prodPresentacion').value;
     const cantidad = document.getElementById('prodBultos').value;
+    const cantidad2 = document.getElementById('prodBultos2').value;
     const resp = document.getElementById('prodResponsable').value;
     if (!linea || !presentacion || !cantidad || !resp) return showToast('Completa los campos obligatorios', 'error');
+    /* Sin la segunda cantidad, o si no coincide, no se registra nada. */
+    if (String(cantidad2).trim() === '') {
+      revisarCantidadProd();
+      document.getElementById('prodBultos2').focus();
+      return showToast('Escriba la cantidad otra vez para confirmarla', 'error');
+    }
+    if (Number(cantidad2) !== Number(cantidad)) {
+      revisarCantidadProd();
+      document.getElementById('prodBultos2').focus();
+      document.getElementById('prodBultos2').select();
+      return showToast('Las dos cantidades no son iguales: revise cuál es la buena', 'error');
+    }
     const payload = {
       accion: 'produccion',
       linea, presentacion, cantidad: Number(cantidad), resp,
@@ -1213,6 +1497,9 @@
       document.getElementById('prodPresentacion').innerHTML = '<option value="">— Seleccione una línea primero —</option>';
       document.getElementById('prodLote').value = '';
       document.getElementById('prodBultos').value = '';
+      document.getElementById('prodBultos2').value = '';
+      document.getElementById('prodBultos2').classList.remove('campo-bien', 'campo-mal');
+      document.getElementById('prodBultosMsg').textContent = '';
       document.getElementById('prodResponsable').value = '';
       document.getElementById('prodObs').value = '';
       quitarFoto('prod');
