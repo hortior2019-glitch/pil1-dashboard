@@ -5281,6 +5281,10 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
       <div class="kpi-lbl">Stock Actual</div>
       <div class="kpi-val" id="stock-kpi-actual">—</div>
       <div class="kpi-desc">último cierre del día</div>
+      <!-- Solo aparece cuando el que entró es Juan. Ojo: esconderlo no es
+           la seguridad; el servicio del inventario comprueba de quién es
+           la sesión antes de tocar nada. -->
+      <button type="button" id="stock-ajustar" style="display:none" onclick="abrirAjusteStock()">Ajustar</button>
     </div>
     <div class="kpi" style="--ac:var(--gold)">
       <div class="kpi-lbl">Producido en el periodo</div>
@@ -6335,6 +6339,27 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 /* ── LA PORTADA DE PERSONAL ────────────────────────────────────────
    La foto del equipo arriba de todo, con el nombre de la pestaña
    encima. Se recorta sola según el ancho y nunca tapa las caras. */
+/* ── AJUSTE DEL STOCK DE HUMUS ── */
+#stock-ajustar{margin-top:8px;padding:4px 10px;font-size:10px;font-weight:700;letter-spacing:1px;
+  text-transform:uppercase;border:1px solid var(--rule);background:var(--white);color:#2c5c42;
+  cursor:pointer;border-radius:6px;font-family:'Source Sans 3',sans-serif}
+#stock-ajustar:hover{background:#f3f6f3}
+.aj-fondo{display:none;position:fixed;inset:0;background:rgba(20,28,22,.55);z-index:9500;
+  align-items:center;justify-content:center;padding:16px}
+.aj-fondo.abierto{display:flex}
+.aj-caja{background:var(--white);border:1px solid var(--rule);border-radius:12px;padding:20px 22px;
+  max-width:380px;width:100%;box-shadow:0 18px 50px rgba(0,0,0,.25)}
+.aj-tit{font-family:'Libre Baskerville',serif;font-size:18px;font-weight:800;color:var(--ink);margin-bottom:10px}
+.aj-hoy{font-size:13px;color:var(--ink-m);margin-bottom:14px}
+.aj-lbl{display:block;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;
+  color:var(--ink-m);margin-bottom:6px}
+.aj-caja input{width:100%;padding:10px 12px;font-size:16px;font-family:'Source Sans 3',sans-serif;
+  border:1px solid var(--rule);border-radius:8px;background:var(--white);color:var(--ink)}
+.aj-nota{font-size:11px;color:var(--ink-l);margin-top:6px}
+.aj-queda{font-size:13px;font-weight:700;color:#2c5c42;margin-top:10px;min-height:18px}
+.aj-error{font-size:12px;color:#b23b3b;margin-top:6px;min-height:16px}
+.aj-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+
 /* ── INDICADORES DE PERSONAL ── */
 #panel-indicadores .ind-barra{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
 #panel-indicadores .ind-barra select{padding:8px 12px;font-size:13px;font-weight:700;border:1px solid var(--rule);
@@ -7044,6 +7069,28 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
      ausencias, carga por área y movimientos. No pide nada nuevo: todo
      sale de lo que ya se registra en Personal y en los turnos.
      ═══════════════════════════════════════════════════════════════ -->
+<!-- ═══════════════════════════════════════════════════════════════
+     AJUSTAR EL STOCK DE HUMUS
+     Para cuando lo que hay en la bodega no es lo que dice el sistema
+     (merma, bultos rotos, un conteo físico). Baja el stock sin inventar
+     una salida que después aparezca como un despacho.
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="aj-fondo" id="aj-stock-fondo">
+  <div class="aj-caja">
+    <div class="aj-tit">Ajustar el stock de humus</div>
+    <div class="aj-hoy">Hoy el sistema tiene <b id="aj-stock-actual">—</b> bultos.</div>
+    <label class="aj-lbl" for="aj-stock-cant">¿Cuántos bultos hay que quitar?</label>
+    <input type="number" id="aj-stock-cant" step="1" placeholder="Ej: 40" autocomplete="off" oninput="previaAjusteStock()">
+    <div class="aj-nota">Si lo que hay que hacer es subir el stock, escriba la cantidad en negativo.</div>
+    <div class="aj-queda" id="aj-stock-queda"></div>
+    <div class="aj-error" id="aj-stock-error"></div>
+    <div class="aj-btns">
+      <button type="button" class="per-btn" onclick="cerrarAjusteStock()">Cancelar</button>
+      <button type="button" class="per-btn fuerte" id="aj-stock-ok" onclick="aplicarAjusteStock()">Ajustar</button>
+    </div>
+  </div>
+</div>
+
 <div class="panel" id="panel-indicadores">
   <div class="sec-hdr">
     <div class="sec-title">Indicadores de Personal</div>
@@ -9159,6 +9206,9 @@ function showPanel(id, el) {
   if (id === 'mapa' && typeof window.mapaActivar === 'function') window.mapaActivar();
   if (id === 'personal' && typeof window.personalActivar === 'function') window.personalActivar();
   if (id === 'indicadores' && typeof window.indicadoresActivar === 'function') window.indicadoresActivar();
+  /* El botón de ajustar el stock aparece (o no) según quién entró, aunque
+     el panel todavía no tenga datos. */
+  if (id === 'ProduccionHumus' && typeof mostrarBotonAjuste === 'function') mostrarBotonAjuste();
   // Los logos del certificado se piden acá y no al cargar el dashboard:
   // son 12 peticiones en cadena que no le sirven a ninguna otra pestaña.
   if (id === 'certificado' && typeof window.certificadoCargarLogos === 'function'){
@@ -18890,6 +18940,80 @@ function renderViajes(data, filter) {
     Stock Actual, Diferencia vs Ayer, % Variación, Observaciones
   ═══════════════════════════════════════════════════════════
 */
+/* ══════════════════════════════════════════════════════════════════
+   AJUSTAR EL STOCK DE HUMUS  (solo Juan)
+   ------------------------------------------------------------------
+   Cuando lo que hay en la bodega no es lo que muestra el sistema, esto
+   baja el stock sin inventar una salida: no aparece como despacho, ni en
+   producción, ni en el historial. El número simplemente queda en lo que
+   de verdad hay.
+
+   Que el botón no se vea NO es la seguridad: el servicio del inventario
+   recibe el token de la sesión, le pregunta al sistema de usuarios de
+   quién es, y solo lo aplica si resulta ser Juan.
+   ══════════════════════════════════════════════════════════════════ */
+const HUM_AJUSTAN_STOCK = ['juan'];
+const HUM_API = 'https://script.google.com/macros/s/AKfycbypCbXLf03WHeq9hwQh3Jt0DrLv5hCMzqc2sGqChyVsawIwt70YDeWytRMhKpg35diXjw/exec';
+
+function puedeAjustarStock(){
+  try {
+    const u = (window._usuarioActual && window._usuarioActual.usuario || '').toString().trim().toLowerCase();
+    return HUM_AJUSTAN_STOCK.indexOf(u) > -1;
+  } catch(e){ return false; }
+}
+function mostrarBotonAjuste(){
+  const b = document.getElementById('stock-ajustar');
+  if (b) b.style.display = puedeAjustarStock() ? 'inline-block' : 'none';
+}
+function abrirAjusteStock(){
+  if (!puedeAjustarStock()) return;
+  const hoy = (document.getElementById('stock-kpi-actual') || {}).textContent || '—';
+  document.getElementById('aj-stock-actual').textContent = hoy;
+  document.getElementById('aj-stock-cant').value = '';
+  document.getElementById('aj-stock-queda').textContent = '';
+  document.getElementById('aj-stock-error').textContent = '';
+  document.getElementById('aj-stock-fondo').classList.add('abierto');
+  setTimeout(() => document.getElementById('aj-stock-cant').focus(), 50);
+}
+function cerrarAjusteStock(){
+  document.getElementById('aj-stock-fondo').classList.remove('abierto');
+}
+/* Mientras escribe, le va diciendo en cuánto quedaría. */
+function previaAjusteStock(){
+  const hoy = Number(((document.getElementById('stock-kpi-actual')||{}).textContent||'').replace(/[^0-9.-]/g,'')) || 0;
+  const q = Number(document.getElementById('aj-stock-cant').value);
+  const d = document.getElementById('aj-stock-queda');
+  d.textContent = (isFinite(q) && q !== 0) ? ('Quedaría en ' + (hoy - q) + ' bultos.') : '';
+}
+async function aplicarAjusteStock(){
+  const err = document.getElementById('aj-stock-error');
+  const btn = document.getElementById('aj-stock-ok');
+  const q = Number(document.getElementById('aj-stock-cant').value);
+  err.textContent = '';
+  if (!isFinite(q) || q === 0) { err.textContent = 'Escriba cuántos bultos hay que quitar.'; return; }
+  const antes = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Ajustando...';
+  try {
+    const res = await fetch(HUM_API, { method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ accion: 'ajustarStock', quitar: q,
+                             token: (typeof _authToken !== 'undefined' && _authToken) || '' }) });
+    const d = await res.json();
+    if (!d.ok) { err.textContent = d.error || 'No se pudo ajustar.'; return; }
+    /* El número nuevo se ve de una, sin esperar a que Google refresque la
+       hoja publicada (puede tardar unos minutos). */
+    const kpi = document.getElementById('stock-kpi-actual');
+    if (kpi && d.stock !== undefined) kpi.textContent = Number(d.stock).toLocaleString('es-CO');
+    cerrarAjusteStock();
+  } catch(e) {
+    /* Queda en la consola por si lo que falló no fue la señal. */
+    console.error('ajustarStock:', e);
+    err.textContent = 'No hubo conexión con el inventario.';
+  } finally {
+    btn.disabled = false; btn.textContent = antes;
+  }
+}
+
 // ── Producción Humus ────────────────────────────────────
 async function loadProduccionHumus() {
   const btn = event && event.target ? event.target : null;
@@ -18906,6 +19030,9 @@ async function loadProduccionHumus() {
 }
 
 function renderProduccionHumus(rows) {
+  /* Cada vez que se pinta el panel se revisa quién entró: si cambia de
+     usuario sin recargar, el botón aparece o se va con él. */
+  mostrarBotonAjuste();
   // La tabla "Histórico día por día" se eliminó del panel a pedido. La función
   // sigue viva porque calcula los KPIs, los objetivos y el comparativo; por eso
   // ya NO se aborta cuando el tbody no existe: solo se omite pintarlo.
