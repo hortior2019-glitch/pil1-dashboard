@@ -27,6 +27,8 @@
     --azul-info: #2c5f8a;
     --azul-claro: #e8f1f8;
   }
+  /* El celular manda: nada se sale de lo ancho de la pantalla. */
+  html, body { max-width: 100%; overflow-x: hidden; }
   body {
     font-family: 'Inter', sans-serif;
     background: #f4f4f0;
@@ -71,9 +73,17 @@
     display: flex;
     background: var(--verde-oscuro);
     border-bottom: 1px solid rgba(255,255,255,0.1);
+    /* Si en una pantalla muy angosta las cinco no alcanzan, se corren
+       DENTRO de la barra; la página nunca se arrastra de lado. */
+    overflow-x: auto;
+    scrollbar-width: none;
   }
+  .tabs::-webkit-scrollbar { display: none; }
   .tab {
     flex: 1;
+    /* Sin esto cada pestaña exige el ancho de su palabra completa y entre
+       las cinco empujaban la página más allá de la pantalla. */
+    min-width: 0;
     text-align: center;
     padding: 0.75rem;
     color: rgba(255,255,255,0.6);
@@ -310,9 +320,14 @@
   .foto-box button.foto-btn { border: none; }
 
   /* ─── RECORTAR Y GIRAR (foto de la remisión) ─── */
-  .recorte-overlay { display: none; position: fixed; inset: 0; z-index: 9000; background: #000; }
+  /* 100dvh es el alto que QUEDA VIENDOSE en el celular. Con 100vh (o con
+     inset:0 a secas) el navegador cuenta también lo que tapan la barra de
+     direcciones y la de botones: la foto quedaba más alta que la pantalla
+     y los botones de abajo se salían. */
+  .recorte-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%;
+    height: 100vh; height: 100dvh; z-index: 9000; background: #000; }
   .recorte-overlay.abierto { display: block; }
-  .recorte-caja { position: absolute; inset: 0; display: flex; flex-direction: column; }
+  .recorte-caja { width: 100%; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
   .recorte-wrap { position: relative; flex: 1; min-height: 0; background: #000; overflow: hidden; }
   #img-recorte-remision { display: block; max-width: 100%; max-height: 100%; }
   /* Las esquinas, grandes para agarrarlas con el dedo */
@@ -339,8 +354,16 @@
     letter-spacing: .06em; text-transform: uppercase; }
   .btn-rotar:active { background: rgba(255,255,255,.25); }
   .recorte-ayuda { font-size: 0.7rem; color: rgba(255,255,255,.8); text-align: center; padding: 0 12px 8px; background: #000; }
-  .recorte-btns { display: flex; gap: 0.6rem; padding: 0 12px 14px; background: #000; }
-  .recorte-btns .btn { flex: 1; }
+  .recorte-btns { display: flex; gap: 0.6rem; padding: 0 12px 14px; background: #000; flex-shrink: 0; }
+  .recorte-btns .btn { flex: 1; min-width: 0; }
+  .recorte-herramientas, .recorte-ayuda { flex-shrink: 0; }
+  @media (max-width: 600px) {
+    .recorte-herramientas { padding: 8px 10px; }
+    .btn-rotar { width: 38px; height: 38px; font-size: 18px; }
+    .recorte-ayuda { font-size: 0.64rem; padding: 0 10px 6px; }
+    /* Deja espacio para la barra de gestos del teléfono */
+    .recorte-btns { padding: 0 10px calc(10px + env(safe-area-inset-bottom)); }
+  }
   .miniatura {
     width: 46px; height: 46px; object-fit: cover;
     border: 1px solid var(--verde-borde); cursor: zoom-in; display: block;
@@ -441,6 +464,12 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   /* ─── RESPONSIVE ─── */
   @media (max-width: 600px) {
+    /* Las cinco pestañas caben en una sola línea con letra más pequeña */
+    .tab { font-size: 0.6rem; letter-spacing: 0.02em; padding: 0.7rem 0.2rem; }
+    header .brand h1 { font-size: 1.05rem; }
+    header .brand p { font-size: 0.68rem; }
+    header { gap: 0.6rem; }
+    .menu-btn { padding: 0.5rem 0.7rem; font-size: 0.65rem; white-space: nowrap; }
     .form-row { grid-template-columns: 1fr; }
     .resumen-grid { grid-template-columns: 1fr 1fr; }
     .resumen-grid-grande { grid-template-columns: 1fr; }
@@ -958,10 +987,27 @@
         ready: () => encajarRemision()
       });
     };
-    imgEl.onload = () => requestAnimationFrame(armar);
+    /* Se intenta armar por dos caminos a propósito. El navegador puede
+       tener dormido el 'requestAnimationFrame' (pasa cuando el teléfono
+       vuelve de la cámara y la página estuvo tapada): entonces el
+       recortador no se armaba y la pantalla quedaba con la foto pero sin
+       recuadro, sin poder recortar ni girar. El segundo intento, por
+       tiempo, siempre llega. La bandera 'armado' evita que se arme dos
+       veces. */
+    const intentarArmar = () => { requestAnimationFrame(armar); setTimeout(armar, 80); };
+    imgEl.onload = intentarArmar;
     imgEl.src = img.src;
-    if (imgEl.complete && imgEl.naturalWidth) requestAnimationFrame(armar);
+    if (imgEl.complete && imgEl.naturalWidth) intentarArmar();
   }
+
+  /* Si el teléfono se voltea con la pantalla de recorte abierta, la foto
+     se vuelve a encajar en el nuevo tamaño. */
+  window.addEventListener('resize', () => {
+    const modal = document.getElementById('modal-recorte-remision');
+    if (modal && modal.classList.contains('abierto') && _recorteRemision) {
+      setTimeout(encajarRemision, 120);
+    }
+  });
 
   /* Deja la foto entera, centrada y del tamaño que quepa, con el recuadro
      cubriéndola toda. El recuadro se encoge primero a propósito: mientras
