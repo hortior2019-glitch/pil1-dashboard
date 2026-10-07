@@ -8020,8 +8020,8 @@ function _mensajeLogin(bruto) {
   if (!e) return 'Usuario o contraseña incorrectos.';
 
   if (/no disponible/i.test(e)) {
-    return 'La solicitud no llegó bien al servidor. Recarga la página con Ctrl+Shift+R ' +
-           '(en el celular, cerrá y volvé a abrir la pestaña) e intentá de nuevo.';
+    return 'El servicio de Google no contestó en tres intentos seguidos. Espere unos segundos ' +
+           'y vuelva a entrar; si sigue igual, recargue con Ctrl+Shift+R.';
   }
   if (/demasiados intentos/i.test(e)) {
     return 'Esta cuenta quedó bloqueada por intentos fallidos. Se desbloquea sola en 15 minutos, ' +
@@ -8040,28 +8040,52 @@ function _mensajeLogin(bruto) {
   return e;   /* mensajes que ya son claros, como el de usuario o clave */
 }
 
-async function authPost(accion, extra) {
+/* Cuántas veces se vuelve a pedir cuando Google no contesta en condiciones. */
+const AUTH_INTENTOS = 3;
+
+async function authPost(accion, extra, alReintentar) {
   const cuerpo = Object.assign({ accion: accion, token: _authToken || '' }, extra || {});
-  const res = await fetch(AUTH_API, {
-    method: 'POST',
-    redirect: 'follow',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(cuerpo)
-  });
-  /* Se lee como texto primero. Google devuelve una PAGINA suya cuando el
-     servicio esta saturado o cuando el redirect se pierde, y en ese caso
-     res.json() reventaba con "Unexpected token '<'" — un mensaje que no
-     le sirve a nadie. Comprobado el 8 de septiembre de 2026: el mismo
-     pedido, repetido, devolvio HTTP 404 con pagina de Google una vez y
-     JSON correcto las ocho siguientes. Es intermitente, no un error de
-     configuracion. */
-  const txt = await res.text();
-  try {
-    return JSON.parse(txt);
-  } catch (e) {
-    console.warn('Login · el servidor no devolvió JSON (HTTP ' + res.status + '):', txt.slice(0, 200));
-    return { ok: false, error: 'No disponible' };   // lo traduce _mensajeLogin
+  let ultimo = '';
+
+  for (let intento = 1; intento <= AUTH_INTENTOS; intento++) {
+    try {
+      const res = await fetch(AUTH_API, {
+        method: 'POST',
+        redirect: 'follow',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(cuerpo)
+      });
+      /* Se lee como texto primero. Google devuelve una PAGINA suya cuando el
+         servicio esta saturado o cuando el redirect se pierde, y en ese caso
+         res.json() reventaba con "Unexpected token '<'" — un mensaje que no
+         le sirve a nadie. Comprobado el 8 de septiembre de 2026: el mismo
+         pedido, repetido, devolvio HTTP 404 con pagina de Google una vez y
+         JSON correcto las ocho siguientes. Es intermitente, no un error de
+         configuracion: por eso ahora se repite solo en vez de devolverle el
+         problema al que esta tratando de entrar. */
+      const txt = await res.text();
+      try {
+        /* Respuesta entendible: se devuelve tal cual, aunque diga que no.
+           Un "usuario o clave incorrectos" NO se reintenta. */
+        return JSON.parse(txt);
+      } catch (e) {
+        ultimo = 'HTTP ' + res.status + ' sin JSON';
+        console.warn('Auth · intento ' + intento + ' de ' + AUTH_INTENTOS +
+                     ': el servidor no devolvió JSON (HTTP ' + res.status + '):', txt.slice(0, 160));
+      }
+    } catch (e) {
+      ultimo = (e && e.message) || String(e);
+      console.warn('Auth · intento ' + intento + ' de ' + AUTH_INTENTOS + ': no hubo respuesta —', ultimo);
+    }
+
+    if (intento < AUTH_INTENTOS) {
+      if (typeof alReintentar === 'function') alReintentar(intento + 1, AUTH_INTENTOS);
+      /* Pausa corta y creciente: al servicio de Google le suele bastar. */
+      await new Promise(r => setTimeout(r, 700 * intento));
+    }
   }
+  console.error('Auth · se agotaron los ' + AUTH_INTENTOS + ' intentos. Último problema: ' + ultimo);
+  return { ok: false, error: 'No disponible' };   // lo traduce _mensajeLogin
 }
 
 async function cargarUsuariosDash() {
@@ -8153,7 +8177,11 @@ async function intentarLoginDash() {
 
   let r;
   try {
-    r = await authPost('login', { usuario: usuario, password: contrasena });
+    r = await authPost('login', { usuario: usuario, password: contrasena },
+      function (vaPor, total) {
+        /* Reintento en curso: se dice, para que no parezca que se colgó. */
+        if (btn) btn.textContent = 'Reintentando (' + vaPor + ' de ' + total + ')...';
+      });
   } catch (e) {
     // Ni el mensaje de red se detalla: no aporta nada al usuario y si al
     // que este probando el endpoint.
