@@ -36950,6 +36950,12 @@ function abrirMover(opciones){
       '<div id="mv-turno-caja" style="display:none">' +
         '<label>¿Con qué turno arranca?</label><select id="mv-turno"></select>' +
       '</div>' +
+      /* Área de horario personalizado: se le asigna uno de los horarios ya
+         guardados del área. Sin esto, quien entra queda sin horario y no
+         aparece en el cuadro. */
+      '<div id="mv-horario-caja" style="display:none">' +
+        '<label>¿Con qué horario? (de los guardados del área)</label><select id="mv-horario"></select>' +
+      '</div>' +
 
       '<label>Desde cuándo</label>' +
       '<input type="date" id="mv-efectivo" value="' + esc(hoy) + '">' +
@@ -37007,6 +37013,21 @@ function abrirMover(opciones){
       caja.style.display = '';
       $p('mv-turno').innerHTML = '<option value="">El sistema decide</option>' +
         a.turnos.map(function(t){ return '<option value="' + esc(t.nombre) + '">' + esc(t.nombre) + ' · ' +
+          esc(t.inicio) + '–' + esc(t.fin) + '</option>'; }).join('');
+    } else { caja.style.display = 'none'; }
+    pintarHorarioDestino();
+  };
+
+  /* El horario con el que entra, solo si el destino es de horario
+     personalizado. Se proponen los horarios ya guardados del área: el
+     primero queda elegido para que nadie entre sin horario. */
+  var pintarHorarioDestino = function(){
+    var a = areaPorNombre(MOVER.destino);
+    var caja = $p('mv-horario-caja');
+    if(a && a.modo === 'personalizado' && (a.turnos || []).length){
+      caja.style.display = '';
+      $p('mv-horario').innerHTML = a.turnos.map(function(t){
+        return '<option value="' + esc(t.hid) + '">' + esc(t.nombre) + ' · ' +
           esc(t.inicio) + '–' + esc(t.fin) + '</option>'; }).join('');
     } else { caja.style.display = 'none'; }
   };
@@ -37116,6 +37137,7 @@ function hacerMover(boton){
   pedir({ accion:'perMover', personas: MOVER.elegidas, destino: MOVER.destino,
           efectivo: MOVER.efectivo, incluirSemana: MOVER.incluirSemana,
           inicial: ($p('mv-turno') && $p('mv-turno').value) || '',
+          inicialHorario: ($p('mv-horario') && $p('mv-horario').value) || '',
           nota: ($p('mv-nota').value || '').trim(), quien: quienSoy() })
     .then(function(d){
       P.areas = d.areas || P.areas;
@@ -39575,6 +39597,7 @@ function cuadroMes(area, turnos){
         '<div class="mes-rango">' + esc(fechaCorta(lunes[0])) + ' al ' + esc(fechaCorta(sumarDias(lunes[lunes.length - 1], 6))) + '</div>' +
         avisoTurnos() +
         '<div class="mes-btns">' +
+          '<button type="button" id="mes-personal">Agregar / retirar personal</button>' +
           '<button type="button" id="mes-hoy">Ir a hoy</button>' +
           '<button type="button" id="mes-cerrar">Cerrar</button>' +
         '</div>' +
@@ -40177,6 +40200,7 @@ function engancharMes(){
   if(b('mes-reintentar')) b('mes-reintentar').onclick = function(){
     PLANEADAS[AREA_VIENDO] = false; ESTADO_TURNOS = ''; verMes(AREA_VIENDO, MES_VIENDO, true);
   };
+  if(b('mes-personal')) b('mes-personal').onclick = function(){ if(AREA_VIENDO) abrirMover({ origen: AREA_VIENDO }); };
   if(b('mes-hoy'))     b('mes-hoy').onclick     = function(){ CAL_MES = ''; verMes(AREA_VIENDO, isoDe(new Date())); };
   if(b('mes-cerrar'))  b('mes-cerrar').onclick  = function(){
     AREA_VIENDO = ''; DESGLOSE = null; $p('ar-turnos').innerHTML = ''; soloTurnos(false);
