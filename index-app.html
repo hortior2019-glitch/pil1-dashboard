@@ -1008,8 +1008,9 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 /* ── Fila de KPIs ── */
 /* Seis KPIs en una sola fila: con auto-fit el navegador metía cinco y
    dejaba el sexto solo, con medio renglón en blanco al lado. */
-#panel-vehiculos .vf-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:12px}
-@media(max-width:1280px){ #panel-vehiculos .vf-kpis{grid-template-columns:repeat(3,minmax(0,1fr))} }
+#panel-vehiculos .vf-kpis{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px;margin-bottom:12px}
+@media(max-width:1400px){ #panel-vehiculos .vf-kpis{grid-template-columns:repeat(4,minmax(0,1fr))} }
+@media(max-width:1000px){ #panel-vehiculos .vf-kpis{grid-template-columns:repeat(3,minmax(0,1fr))} }
 @media(max-width:620px){ #panel-vehiculos .vf-kpis{grid-template-columns:repeat(2,minmax(0,1fr))} }
 #panel-vehiculos .vf-kpi{background:#fff;border:1px solid var(--vg);border-radius:12px;padding:12px 14px}
 #panel-vehiculos .vf-kpi.alerta{border-color:#f0d7d7;background:#fefafa}
@@ -11789,6 +11790,28 @@ function _vfAceite(m, pl) {
    rellena con un número inventado, porque en planta se toman decisiones
    con esto.
    ═══════════════════════════════════════════════════════════════════ */
+/* ── TONELADAS MOVIDAS POR UNA PLACA (del mes en curso) ──────────────
+   El sistema arrastra las placas de la recepción de material (Operaciones):
+   por cada viaje cuyo PLACA coincide con la del vehículo, suma el peso neto.
+   Es del MES ACTUAL, para que cuadre con el gasto del mes del combustible.
+   Si la pestaña de ingreso aún no cargó, devuelve 0 sin romper nada. */
+function _toneladasMesPlaca(placa) {
+  const obj = _placaNorm(placa);
+  const vacio = { ton: 0, kg: 0, viajes: 0 };
+  if (!obj || typeof dataIngreso === 'undefined' || !dataIngreso.length) return vacio;
+  const hoy = new Date();
+  const mesKey = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0');
+  let kg = 0, viajes = 0;
+  dataIngreso.forEach(r => {
+    if (_placaNorm(getPlacaReg(r)) !== obj) return;
+    const f = fechaYMDdeRegistro(r);
+    if (!f || f.substring(0, 7) !== mesKey) return;
+    const p = getPesoNeto(r);
+    if (p > 0) { kg += p; viajes++; }
+  });
+  return { ton: kg / 1000, kg: kg, viajes: viajes };
+}
+
 function _vfMetricas(v) {
   const placa  = v.placa;
   const comb   = combDeVehiculo(placa);          // más reciente primero
@@ -11866,6 +11889,10 @@ function _vfMetricas(v) {
   }
   m.nInspecciones = insp.length;
   m.novedades = _vfNovedades(placa);
+
+  // ── Toneladas movidas este mes (placas arrastradas de la recepción) ──
+  const _ton = _toneladasMesPlaca(placa);
+  m.tonMes = _ton.ton; m.viajesMes = _ton.viajes;
 
   // ── Mantenimiento ──
   m.nMants = mants.length;
@@ -12133,6 +12160,10 @@ function renderFichaVehiculo(placa) {
           m.diasSinMant !== null
             ? `<span class="vf-ctx">desde el último</span>${m.kmDesdeMant !== null ? `<span class="vf-ctx">${fmt(m.kmDesdeMant)} km recorridos</span>` : ''}`
             : sd)}
+      ${_vfKpi('comb', 'Toneladas movidas', m.viajesMes ? (m.tonMes.toLocaleString('es-CO',{maximumFractionDigits:1}) + ' t') : '—',
+          m.viajesMes
+            ? `<span class="vf-ctx vf-pos">${fmt(m.viajesMes)} viaje${m.viajesMes!==1?'s':''} este mes</span><span class="vf-ctx">de la recepción de material</span>`
+            : '<span class="vf-ctx">sin viajes este mes</span>')}
     </div>
 
     <div class="vf-g2">
@@ -13796,12 +13827,17 @@ var _combPlacaModal = '';
 function verHistorialCombustible(placa) {
   _combPlacaModal = placa;
   var lista = combDeVehiculo(placa);
-  // Por defecto se abre con todo el historico: el usuario acota si quiere
-  var desde = lista.length ? lista[lista.length - 1].fecha : '';
-  var hasta = lista.length ? lista[0].fecha : '';
+  // Por defecto se abre en EL MES EN CURSO (no el histórico completo). El
+  // botón "Todo" lo abre entero y el usuario puede acotar a mano.
+  var hoyD = new Date();
+  var mesTxt = hoyD.getFullYear() + '-' + String(hoyD.getMonth() + 1).padStart(2, '0');
+  var desde = mesTxt + '-01';
+  var hasta = mesTxt + '-' + String(hoyD.getDate()).padStart(2, '0');
+  var nMes = lista.filter(function (x) { return x.fecha >= desde && x.fecha <= hasta; }).length;
+  var nombreMes = hoyD.toLocaleDateString('es-CO', { month: 'long', year: 'numeric' });
 
   _drawerVeh('Historial de tanqueos · ' + _escVeh(placa),
-    '<div style="font-size:13px;color:var(--ink-m);margin-bottom:14px">' + lista.length + ' tanqueo' + (lista.length !== 1 ? 's' : '') + ' registrado' + (lista.length !== 1 ? 's' : '') + '. Acote el intervalo si necesita un corte puntual.</div>' +
+    '<div style="font-size:13px;color:var(--ink-m);margin-bottom:14px">Mostrando <b>' + nombreMes + '</b> · ' + nMes + ' tanqueo' + (nMes !== 1 ? 's' : '') + ' este mes (' + lista.length + ' en total). Use <b>Todo</b> para ver el histórico completo o acote el intervalo.</div>' +
     '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">' +
       '<div><label style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Desde</label>' +
       '<input id="cmb-desde" type="date" value="' + desde + '" onchange="renderHistorialCombustible()" style="padding:8px 10px;font-size:13px;border:1px solid var(--rule);border-radius:4px"></div>' +
@@ -13861,19 +13897,28 @@ function renderHistorialCombustible() {
   var gasto = filas.reduce(function (s, x) { return s + x.valor; }, 0);
   var kmTot = filas.reduce(function (s, x) { return s + (x.kmRecorridos || 0); }, 0);
   var conKm = filas.filter(function (x) { return x.kmRecorridos; }).length;
+  // Costo por km y recorrido medio por tanqueo (solo con tramos medibles).
+  var costoKm = kmTot > 0 ? (gasto / kmTot) : null;
+  var kmPorTanqueo = conKm > 0 ? (kmTot / conKm) : null;
+
+  var kpiCaja = function (rotulo, valor, color, sub) {
+    return '<div style="background:var(--white);padding:12px 14px">' +
+      '<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">' + rotulo + '</div>' +
+      '<div style="font-family:\'Libre Baskerville\',serif;font-size:22px;font-weight:700;color:' + color + ';line-height:1">' + valor + '</div>' +
+      '<div style="font-size:10px;color:var(--ink-l);margin-top:3px">' + sub + '</div>' +
+    '</div>';
+  };
 
   if (kpis) {
     kpis.innerHTML =
-      '<div style="background:var(--white);padding:12px 14px">' +
-        '<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">Gasto acumulado</div>' +
-        '<div style="font-family:\'Libre Baskerville\',serif;font-size:22px;font-weight:700;color:var(--navy);line-height:1">' + _fmtPesos(gasto) + '</div>' +
-        '<div style="font-size:10px;color:var(--ink-l);margin-top:3px">' + filas.length + ' tanqueo' + (filas.length !== 1 ? 's' : '') + '</div>' +
-      '</div>' +
-      '<div style="background:var(--white);padding:12px 14px">' +
-        '<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">Km recorridos</div>' +
-        '<div style="font-family:\'Libre Baskerville\',serif;font-size:22px;font-weight:700;color:var(--ink);line-height:1">' + fmt(Math.round(kmTot)) + '</div>' +
-        '<div style="font-size:10px;color:var(--ink-l);margin-top:3px">sobre ' + conKm + ' tramo' + (conKm !== 1 ? 's' : '') + ' medible' + (conKm !== 1 ? 's' : '') + '</div>' +
-      '</div>';
+      kpiCaja('Gasto del periodo', _fmtPesos(gasto), 'var(--navy)',
+        filas.length + ' tanqueo' + (filas.length !== 1 ? 's' : '')) +
+      kpiCaja('Km recorridos', fmt(Math.round(kmTot)), 'var(--ink)',
+        'sobre ' + conKm + ' tramo' + (conKm !== 1 ? 's' : '') + ' medible' + (conKm !== 1 ? 's' : '')) +
+      kpiCaja('Costo por km', costoKm !== null ? _fmtPesos(costoKm) : '—', 'var(--gold)',
+        costoKm !== null ? 'gasto ÷ km recorridos' : 'sin km medibles') +
+      kpiCaja('Km por tanqueo', kmPorTanqueo !== null ? fmt(Math.round(kmPorTanqueo)) : '—', 'var(--green)',
+        kmPorTanqueo !== null ? 'promedio por tanqueo' : 'sin tramos medibles');
   }
 
   if (tabla) {
