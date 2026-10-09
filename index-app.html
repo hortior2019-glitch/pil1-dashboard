@@ -5690,6 +5690,16 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     </div>
   </div>
 
+  <!-- ══ OBJETIVOS POR PRODUCTO LÍQUIDO ══
+       Mismos objetivos que arriba (Superar mes anterior / Meta diaria por
+       definir) pero una tarjeta por cada línea líquida. El bloque de Humus
+       Sólido de arriba queda igual. Lo arma renderObjetivosLiquidos() con
+       _humDatos (producción por línea de la app de planta). -->
+  <div style="font-size:13px;font-weight:800;letter-spacing:.4px;color:var(--ink);margin:4px 2px 12px">Objetivos por producto líquido</div>
+  <div id="objLiquidos">
+    <div style="font-size:12.5px;color:var(--ink-l);padding:8px">Cargando objetivos de los productos líquidos…</div>
+  </div>
+
   <!-- Mejor mes histórico (banda compacta) -->
   <div class="card" style="margin-bottom:24px;padding:16px 24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-left:4px solid var(--gold)">
     <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink-l)">Mejor mes histórico</div>
@@ -14603,6 +14613,177 @@ function _humRango() {
   return { desde: '0000-01-01', hasta: '9999-12-31', etiqueta: 'Total acumulado (registros disponibles)' };
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   OBJETIVOS POR PRODUCTO LÍQUIDO
+   ------------------------------------------------------------------
+   Una tarjeta por cada línea líquida (todo lo que no es Humus Sólido),
+   con los mismos dos objetivos que el bloque de arriba:
+     · Superar mes anterior — lo producido este mes contra todo lo del
+       mes pasado, con cuánto falta y el promedio diario.
+     · Meta diaria — POR DEFINIR. El front y las variables ya están; el
+       día que se decida el número por producto se pone en
+       META_DIARIA_LIQ y la tarjeta calcula sola.
+   Debajo, el % de cada referencia (presentación) para ver cuál está más
+   activa en la producción del mes.
+   Datos: _humDatos (getResumen de la app de planta), que ya trae la
+   producción por línea del mes actual y el anterior.
+
+   LAS FOTOS: cada línea busca su archivo en el repositorio por el nombre
+   fijo de FOTO_LIQ (p. ej. "HumusLiquidoPuro.png"). Se prueban varias
+   extensiones; si no está, queda el ícono 💧.
+   ══════════════════════════════════════════════════════════════════ */
+const FOTO_LIQ = {
+  'Humus Liquido Puro': 'HumusLiquidoPuro',
+  'Humus Liquido Plus': 'HumusLiquidoPlus',
+  'Humus Liquido Organico Mineral': 'HumusLiquidoOrganicoMineral',
+  'Humus Liquido Pradera': 'HumusLiquidoPradera',
+  'Enraizador': 'Enraizador',
+  'Humus Liquido CNM': 'HumusLiquidoCNM',
+  'Horti Olor': 'HortiOlor',
+  'Horti Compostaje': 'HortiCompostaje'
+};
+const LIQ_EXT = ['png', 'jpg', 'jpeg', 'webp', 'svg', 'PNG', 'JPG'];
+
+/* META DIARIA — POR DEFINIR. Cuando se decida el número de cada líquido
+   (en unidades/día), se escribe aquí y la tarjeta lo calcula sola. */
+const META_DIARIA_LIQ = {
+  'Humus Liquido Puro': null,
+  'Humus Liquido Plus': null,
+  'Humus Liquido Organico Mineral': null,
+  'Humus Liquido Pradera': null,
+  'Enraizador': null,
+  'Humus Liquido CNM': null,
+  'Horti Olor': null,
+  'Horti Compostaje': null
+};
+
+/* La dona grande, EXACTAMENTE la del bloque de Humus Sólido (mismas clases,
+   mismo viewBox y mismo perímetro DONA_VUELTA). pct null = sin datos. */
+function _liqDonaGrande(pct, color) {
+  const sinDatos = (pct === null || pct === undefined || isNaN(pct));
+  const hecho = sinDatos ? 0 : Math.max(0, Math.min(100, pct));
+  const offset = DONA_VUELTA * (1 - hecho / 100);
+  return '<div class="dona-caja">' +
+    '<svg viewBox="0 0 140 140" class="dona-svg" aria-hidden="true">' +
+      '<circle class="dona-pista" cx="70" cy="70" r="56"></circle>' +
+      '<circle class="dona-arco" cx="70" cy="70" r="56" style="stroke:' + color + ';stroke-dashoffset:' + offset.toFixed(2) + '"></circle>' +
+    '</svg>' +
+    '<div class="dona-centro"><div class="dona-falta">' + (sinDatos ? '—' : Math.round(hecho) + ' %') + '</div>' +
+      '<div class="dona-et">' + (sinDatos ? 'sin datos' : (hecho >= 100 ? 'cumplido' : 'completado')) + '</div></div>' +
+  '</div>';
+}
+
+/* Una tarjeta de objetivo, igual a las de Humus Sólido (obj-card). */
+function _liqTarjeta(titulo, borde, dona, valor, unidad, detalle, barDet, foto, cumplido) {
+  return '<div class="card obj-card' + (cumplido ? ' cumplido' : '') + '" style="border-top:4px solid ' + borde + ';padding:22px 24px">' +
+    '<div class="obj-nombre">' + titulo + '</div>' +
+    '<div class="obj-dona">' + dona +
+      '<div class="obj-lado"><div class="obj-cifra"><b>' + valor + '</b></div>' +
+        '<div class="obj-unidad">' + unidad + '</div></div>' +
+      foto +
+    '</div>' +
+    '<div style="font-size:12.5px;color:var(--ink-m);margin-top:12px">' + detalle + '</div>' +
+    '<div style="font-size:11.5px;color:var(--ink-l);margin-top:3px">' + barDet + '</div>' +
+  '</div>';
+}
+
+function renderObjetivosLiquidos() {
+  const cont = document.getElementById('objLiquidos');
+  if (!cont || !_humDatos) return;
+
+  const hoy = (_humDatos.fechaServidor || new Date().toISOString().split('T')[0]).toString().trim();
+  const mesActual = _humDatos.mesActual || hoy.substring(0, 7);
+  const dPrev = new Date(Number(hoy.substring(0,4)), Number(hoy.substring(5,7)) - 2, 1);
+  const mesAnterior = _humDatos.mesAnterior || (dPrev.getFullYear() + '-' + String(dPrev.getMonth()+1).padStart(2,'0'));
+  const diaHoy = Number(hoy.substring(8, 10)) || new Date().getDate();
+  const diasEnMes = new Date(Number(hoy.substring(0,4)), Number(hoy.substring(5,7)), 0).getDate();
+  const diasRestantes = Math.max(diasEnMes - diaHoy + 1, 1);
+
+  const prod = _humDatos.produccion || [];
+  const num = v => Number(v) || 0;
+  const mesDe = t => (t || '').toString().trim().substring(0, 7);
+
+  // Las líneas líquidas: todo lo del catálogo que no sea Humus Sólido.
+  const cat = (_humDatos.catalogoLineas || []).filter(c => c && c.linea && _humNorm(c.linea) !== 'humus solido');
+  if (!cat.length) { cont.innerHTML = '<div style="font-size:12.5px;color:var(--ink-l);padding:8px">No hay productos líquidos en el catálogo.</div>'; return; }
+
+  cont.innerHTML = cat.map(c => {
+    const linea = c.linea;
+    const file = FOTO_LIQ[linea] || '';
+    const filas = prod.filter(r => _humNorm(r[1]) === _humNorm(linea));
+    let prodActual = 0, prodAnterior = 0, prodHoy = 0;
+    filas.forEach(r => {
+      const mes = mesDe(r[0]); const cant = num(r[3]);
+      if (mes === mesActual) { prodActual += cant; if ((r[0] || '').toString().substring(0,10) === hoy) prodHoy += cant; }
+      else if (mes === mesAnterior) { prodAnterior += cant; }
+    });
+
+    // La foto del producto, a la derecha, igual que en Humus Sólido.
+    const foto = '<figure class="obj-foto" data-foto-obj="' + file + '"><img alt="' + linea + '">' +
+      '<figcaption>' + linea + '<br>Unidades</figcaption></figure>';
+
+    // ── Objetivo 1: Superar mes anterior ──
+    let o1;
+    if (prodAnterior > 0) {
+      const falta = (prodAnterior + 1) - prodActual;
+      const meta1 = prodAnterior + 1;
+      const pct1 = Math.min(100, Math.max(0, (prodActual / meta1) * 100));
+      const bar1 = fmt(prodActual) + ' / ' + fmt(meta1) + ' unidades del mes';
+      if (falta <= 0) {
+        o1 = _liqTarjeta('Superar mes anterior', 'var(--navy)', _liqDonaGrande(pct1, 'var(--green)'),
+          '0', 'unidades · mes superado', 'Lleva ' + fmt(prodActual) + ' contra ' + fmt(prodAnterior) + ' del mes anterior', bar1, foto, true);
+      } else {
+        const prom = Math.ceil(falta / diasRestantes);
+        o1 = _liqTarjeta('Superar mes anterior', 'var(--navy)', _liqDonaGrande(pct1, 'var(--green)'),
+          fmt(falta), 'unidades faltantes', fmt(prom) + ' unidades por día en los ' + diasRestantes + ' días que quedan', bar1, foto, false);
+      }
+    } else {
+      o1 = _liqTarjeta('Superar mes anterior', 'var(--navy)', _liqDonaGrande(null, 'var(--green)'),
+        '—', 'unidades faltantes', 'No hay suficiente histórico para calcular este objetivo', 'Sin mes anterior para comparar', foto, false);
+    }
+
+    // ── Objetivo 2: Meta diaria (POR DEFINIR) ──
+    const meta = META_DIARIA_LIQ[linea];
+    let o2;
+    if (meta === null || meta === undefined) {
+      o2 = _liqTarjeta('Meta diaria (por definir)', 'var(--blue)', _liqDonaGrande(null, 'var(--blue)'),
+        '—', 'meta por definir', 'Pendiente de definir la meta de unidades por día', 'Meta por definir', foto, false);
+    } else {
+      const faltaHoy = meta - prodHoy;
+      const pct2 = Math.min(100, Math.max(0, (prodHoy / meta) * 100));
+      const bar2 = fmt(prodHoy) + ' / ' + fmt(meta) + ' unidades de hoy';
+      if (faltaHoy <= 0) {
+        o2 = _liqTarjeta('Meta de ' + fmt(meta) + ' unidades diarios', 'var(--blue)', _liqDonaGrande(pct2, 'var(--blue)'),
+          '0', 'unidades · meta cumplida', 'Hoy se produjeron ' + fmt(prodHoy) + ' unidades', bar2, foto, true);
+      } else {
+        o2 = _liqTarjeta('Meta de ' + fmt(meta) + ' unidades diarios', 'var(--blue)', _liqDonaGrande(pct2, 'var(--blue)'),
+          fmt(faltaHoy), 'unidades faltantes hoy', 'Hoy ' + fmt(prodHoy) + ' de ' + fmt(meta) + ' unidades', bar2, foto, false);
+      }
+    }
+
+    return '<div style="font-size:13px;font-weight:800;color:var(--ink);margin:6px 2px 10px">' + linea + '</div>' +
+           '<div class="g2" style="margin-bottom:22px">' + o1 + o2 + '</div>';
+  }).join('');
+
+  _buscarFotosLiq();
+}
+
+/* Igual que buscarFotoRef() del bloque Sólido, pero cada tarjeta tiene su
+   propio archivo (data-foto-obj). Se prueban extensiones; si carga, la
+   figura se muestra (.hay). */
+function _buscarFotosLiq() {
+  document.querySelectorAll('figure.obj-foto[data-foto-obj]').forEach(fig => {
+    const base = fig.getAttribute('data-foto-obj');
+    const img = fig.querySelector('img');
+    if (!base || !img || img.dataset.listo) return;
+    img.dataset.listo = '1';
+    let i = 0;
+    img.onload = () => fig.classList.add('hay');
+    img.onerror = () => { i++; if (i < LIQ_EXT.length) img.src = base + '.' + LIQ_EXT[i]; };
+    img.src = base + '.' + LIQ_EXT[0];
+  });
+}
+
 function renderHumusDetalle() {
   const contProd = document.getElementById('hum-barras-prod');
   const contSal  = document.getElementById('hum-barras-sal');
@@ -14611,6 +14792,7 @@ function renderHumusDetalle() {
   const infoPer  = document.getElementById('hum-periodo-info');
   const tituloTraza = document.getElementById('hum-traza-titulo');
   if (!contProd || !_humDatos) return;
+  try { renderObjetivosLiquidos(); } catch(e) { console.error('objetivos líquidos:', e); }
 
   const rango = _humRango();
   if (infoPer) infoPer.textContent = rango.etiqueta;
