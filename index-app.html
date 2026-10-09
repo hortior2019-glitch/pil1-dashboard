@@ -13889,36 +13889,105 @@ function _combFiltrado() {
   });
 }
 
+/* Las cuatro cifras del periodo a partir de un conjunto de tanqueos. */
+function _combMetricas(filas) {
+  var gasto = filas.reduce(function (s, x) { return s + x.valor; }, 0);
+  var kmTot = filas.reduce(function (s, x) { return s + (x.kmRecorridos || 0); }, 0);
+  var conKm = filas.filter(function (x) { return x.kmRecorridos; }).length;
+  return {
+    gasto: gasto, kmTot: kmTot, conKm: conKm, tanqueos: filas.length,
+    costoKm: kmTot > 0 ? (gasto / kmTot) : null,
+    kmPorTanqueo: conKm > 0 ? (kmTot / conKm) : null
+  };
+}
+
+/* El periodo inmediatamente anterior, del MISMO largo en días, para
+   comparar contra. Con el intervalo en "Todo" no hay con qué comparar. */
+function _combPeriodoAnterior(desde, hasta, resp) {
+  if (!desde || !hasta) return null;
+  var dDesde = new Date(desde + 'T00:00:00'), dHasta = new Date(hasta + 'T00:00:00');
+  if (isNaN(dDesde) || isNaN(dHasta)) return null;
+  var largoDias = Math.round((dHasta - dDesde) / 86400000) + 1;
+  var pHasta = new Date(dDesde.getTime() - 86400000);
+  var pDesde = new Date(pHasta.getTime() - (largoDias - 1) * 86400000);
+  var iso = function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  var pd = iso(pDesde), ph = iso(pHasta);
+  var filas = combDeVehiculo(_combPlacaModal).filter(function (x) {
+    if (x.fecha < pd || x.fecha > ph) return false;
+    if (resp && (x.encargado || '').toString().trim() !== resp) return false;
+    return true;
+  });
+  return _combMetricas(filas);
+}
+
+/* La comparación visual: flecha + variación en color y una barra doble
+   (anterior en gris, actual en color) para VER la diferencia de un vistazo.
+   subirEsMalo=true -> subir se pinta en rojo (gasto, costo); si no, subir
+   es verde (más km/actividad). */
+function _combComparativa(actual, previo, subirEsMalo, color) {
+  if (previo === null || previo === undefined || actual === null || actual === undefined) {
+    return '<div style="font-size:10px;color:var(--ink-l);margin-top:6px">sin periodo anterior</div>';
+  }
+  var hayPrev = previo > 0;
+  var pct = hayPrev ? ((actual - previo) / previo) * 100 : null;
+  var sube = pct !== null && pct > 0.5, baja = pct !== null && pct < -0.5;
+  var colDelta = (!sube && !baja) ? 'var(--ink-l)' : (subirEsMalo ? (sube ? 'var(--red)' : 'var(--green)') : (sube ? 'var(--green)' : 'var(--red)'));
+  var flecha = sube ? '▲' : baja ? '▼' : '▬';
+  var maxv = Math.max(actual, previo, 1);
+  var anchoAct = Math.max(2, (actual / maxv) * 100), anchoPrev = Math.max(2, (previo / maxv) * 100);
+  var barra = '<div style="margin-top:7px">' +
+    '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span style="width:30px;font-size:8px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-l)">Ahora</span>' +
+      '<div style="flex:1;height:7px;border-radius:99px;background:var(--rule-l);overflow:hidden"><span style="display:block;height:100%;width:' + anchoAct.toFixed(0) + '%;background:' + color + ';border-radius:99px"></span></div></div>' +
+    '<div style="display:flex;align-items:center;gap:6px"><span style="width:30px;font-size:8px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-l)">Antes</span>' +
+      '<div style="flex:1;height:7px;border-radius:99px;background:var(--rule-l);overflow:hidden"><span style="display:block;height:100%;width:' + anchoPrev.toFixed(0) + '%;background:#c7ccc8;border-radius:99px"></span></div></div>' +
+  '</div>';
+  var etiqueta = pct === null
+    ? '<span style="font-size:10px;color:var(--ink-l)">sin dato anterior</span>'
+    : '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:800;color:' + colDelta + '">' + flecha + ' ' + Math.abs(pct).toFixed(0) + '%</span>' +
+      '<span style="font-size:10px;color:var(--ink-l);margin-left:5px">vs. periodo anterior</span>';
+  return '<div style="margin-top:7px">' + etiqueta + barra + '</div>';
+}
+
 function renderHistorialCombustible() {
   var filas = _combFiltrado();
   var kpis = document.getElementById('cmb-kpis');
   var tabla = document.getElementById('cmb-tabla');
 
-  var gasto = filas.reduce(function (s, x) { return s + x.valor; }, 0);
-  var kmTot = filas.reduce(function (s, x) { return s + (x.kmRecorridos || 0); }, 0);
-  var conKm = filas.filter(function (x) { return x.kmRecorridos; }).length;
-  // Costo por km y recorrido medio por tanqueo (solo con tramos medibles).
-  var costoKm = kmTot > 0 ? (gasto / kmTot) : null;
-  var kmPorTanqueo = conKm > 0 ? (kmTot / conKm) : null;
+  var m = _combMetricas(filas);
+  var gasto = m.gasto, kmTot = m.kmTot, conKm = m.conKm;
+  var costoKm = m.costoKm, kmPorTanqueo = m.kmPorTanqueo;
 
-  var kpiCaja = function (rotulo, valor, color, sub) {
-    return '<div style="background:var(--white);padding:12px 14px">' +
-      '<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">' + rotulo + '</div>' +
-      '<div style="font-family:\'Libre Baskerville\',serif;font-size:22px;font-weight:700;color:' + color + ';line-height:1">' + valor + '</div>' +
-      '<div style="font-size:10px;color:var(--ink-l);margin-top:3px">' + sub + '</div>' +
+  // El mismo cálculo para el periodo anterior (si el filtro tiene fechas).
+  var d = (document.getElementById('cmb-desde') || {}).value || '';
+  var h = (document.getElementById('cmb-hasta') || {}).value || '';
+  var r = (document.getElementById('cmb-resp') || {}).value || '';
+  var prev = _combPeriodoAnterior(d, h, r);
+
+  // Costo por km: puede ser menor a $1, así que se muestra con un decimal
+  // cuando es chico, para que no quede en "$0".
+  var fmtCosto = function (v) {
+    if (v === null) return '—';
+    return v < 100 ? '$' + (Math.round(v * 10) / 10).toLocaleString('es-CO') : _fmtPesos(v);
+  };
+
+  var kpiCaja = function (rotulo, valor, color, comparativa) {
+    return '<div style="background:var(--white);padding:13px 14px">' +
+      '<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:4px">' + rotulo + '</div>' +
+      '<div style="font-family:\'Libre Baskerville\',serif;font-size:23px;font-weight:700;color:' + color + ';line-height:1">' + valor + '</div>' +
+      comparativa +
     '</div>';
   };
 
   if (kpis) {
     kpis.innerHTML =
       kpiCaja('Gasto del periodo', _fmtPesos(gasto), 'var(--navy)',
-        filas.length + ' tanqueo' + (filas.length !== 1 ? 's' : '')) +
+        _combComparativa(gasto, prev ? prev.gasto : null, true, 'var(--navy)')) +
       kpiCaja('Km recorridos', fmt(Math.round(kmTot)), 'var(--ink)',
-        'sobre ' + conKm + ' tramo' + (conKm !== 1 ? 's' : '') + ' medible' + (conKm !== 1 ? 's' : '')) +
-      kpiCaja('Costo por km', costoKm !== null ? _fmtPesos(costoKm) : '—', 'var(--gold)',
-        costoKm !== null ? 'gasto ÷ km recorridos' : 'sin km medibles') +
+        _combComparativa(kmTot, prev ? prev.kmTot : null, false, 'var(--ink)')) +
+      kpiCaja('Costo por km', fmtCosto(costoKm), 'var(--gold)',
+        _combComparativa(costoKm, prev ? prev.costoKm : null, true, 'var(--gold)')) +
       kpiCaja('Km por tanqueo', kmPorTanqueo !== null ? fmt(Math.round(kmPorTanqueo)) : '—', 'var(--green)',
-        kmPorTanqueo !== null ? 'promedio por tanqueo' : 'sin tramos medibles');
+        _combComparativa(kmPorTanqueo, prev ? prev.kmPorTanqueo : null, false, 'var(--green)'));
   }
 
   if (tabla) {
