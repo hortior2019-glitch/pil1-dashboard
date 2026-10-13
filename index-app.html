@@ -7576,9 +7576,33 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #per-mover-modal .rt-cel.on.sinrumbo{background:#faf6ec;border-color:#d4a017;box-shadow:0 0 0 1px #d4a017 inset}
 #per-mover-modal .rt-t{display:block;font-size:12.5px;font-weight:700;color:var(--ink);line-height:1.2}
 #per-mover-modal .rt-h{display:block;font-size:11px;color:var(--ink-l);margin-top:1px}
-#per-mover-modal .rt-flecha{display:block;font-size:11.5px;font-weight:700;color:#1c5636;margin-top:3px;
-  min-height:14px;line-height:1.2}
-#per-mover-modal .rt-cel.sinrumbo .rt-flecha{color:#8b6914}
+/* El destino de la celda es un botón aparte: abre el menú donde se elige
+   a qué turno va o con quién se cambia. */
+#per-mover-modal .rt-flecha{display:block;width:100%;font-size:11.5px;font-weight:700;color:#1c5636;
+  margin-top:2px;min-height:15px;line-height:1.25;background:none;border:none;padding:1px 2px;
+  font-family:'Source Sans 3',sans-serif;cursor:default;border-radius:5px}
+#per-mover-modal .rt-flecha.activa{cursor:pointer}
+#per-mover-modal .rt-flecha.activa:hover{background:#e3efe7}
+#per-mover-modal .rt-flecha.sinrumbo{color:#8b6914}
+#per-mover-modal .rt-flecha.sinrumbo:hover{background:#f6edd8}
+/* Una celda con destino propio se distingue de las que siguen el atajo. */
+#per-mover-modal .rt-cel.propio{border-style:dashed}
+
+#per-mover-modal .rt-menu{position:fixed;z-index:9500;background:#fff;border:1px solid var(--rule);
+  border-radius:10px;box-shadow:0 14px 34px -12px rgba(0,0,0,.45);padding:6px;min-width:216px;
+  max-width:280px;max-height:62vh;overflow-y:auto}
+#per-mover-modal .rt-menu-tit{font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;
+  color:var(--ink-l);padding:5px 9px 7px}
+#per-mover-modal .rt-menu-rot{font-size:10.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;
+  color:var(--ink-l);padding:8px 9px 4px;border-top:1px solid var(--rule-l);margin-top:3px}
+#per-mover-modal .rt-menu-it{display:block;width:100%;text-align:left;padding:8px 10px;border:none;
+  background:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;color:var(--ink);
+  font-family:'Source Sans 3',sans-serif}
+#per-mover-modal .rt-menu-it span{display:block;font-size:11px;font-weight:400;color:var(--ink-l);margin-top:1px}
+#per-mover-modal .rt-menu-it:hover{background:#f2f8f4;color:#1c5636}
+#per-mover-modal .rt-menu-it.on{background:#1c5636;color:#fff}
+#per-mover-modal .rt-menu-it.on span{color:rgba(255,255,255,.8)}
+#per-mover-modal .rt-menu-vacio{font-size:12px;color:var(--ink-l);padding:6px 10px 9px;font-style:italic}
 
 #per-mover-modal .rt-pie{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:11px}
 #per-mover-modal .rt-cuenta{font-size:12.5px;color:var(--ink-m)}
@@ -37231,8 +37255,11 @@ function montarRotador(a, semana){
   var porCelda = {};
   dela.forEach(function(t){ porCelda[t.persona + '|' + t.fecha] = t; });
 
+  /* 'destino' es el atajo que vale para todo lo marcado. 'propio' es lo
+     que se eligió para UNA celda y le gana al atajo: es lo que permite
+     decir "esta persona se cambia con esa otra, solo ese día". */
   ROT = { area: a.nombre, semana: semana, turnos: turnos, gente: gente, celdas: porCelda,
-          sel: {}, destino: '1' };
+          sel: {}, propio: {}, destino: '1' };
 
   var colores = coloresDe(dela);
   var fechas = [];
@@ -37255,7 +37282,8 @@ function montarRotador(a, semana){
         ' style="--c:' + col + '">' +
         '<span class="rt-t">' + esc(t.turno) + '</span>' +
         '<span class="rt-h">' + esc(t.inicio) + '–' + esc(t.fin) + '</span>' +
-        '<span class="rt-flecha"></span></button></td>';
+        '</button><button type="button" class="rt-flecha" data-rtmenu="' + esc(p.clave) + '|' + f + '"' +
+        ' title="Elegir a dónde va este día"></button></td>';
     }).join('');
     return '<tr><th class="rt-th-p"><button type="button" class="rt-persona" data-rtfila="' + esc(p.clave) + '">' +
       esc(p.nombre) + '</button></th>' + celdas + '</tr>';
@@ -37282,7 +37310,8 @@ function montarRotador(a, semana){
       '</div>' +
     '</div>' +
     '<div class="rt-ayuda">Toque las celdas que quiere rotar. El nombre marca toda la persona; ' +
-      'el día, toda la columna. Los días con novedad no se tocan.</div>' +
+      'el día, toda la columna. En cada celda marcada, toque <b>el destino</b> para mandarla a otro ' +
+      'turno o cambiarla con una persona concreta. Los días con novedad no se tocan.</div>' +
     '<div class="rt-scroll"><table class="rt-tabla"><thead>' + cab + '</thead><tbody>' + cuerpo + '</tbody></table></div>' +
     '<div class="rt-pie">' +
       '<div class="rt-cuenta" id="rt-cuenta">Ninguna celda marcada.</div>' +
@@ -37291,6 +37320,9 @@ function montarRotador(a, semana){
 
   caja.querySelectorAll('[data-rt]').forEach(function(b){
     b.onclick = function(){ rotMarcar(b.dataset.rt, !ROT.sel[b.dataset.rt]); rotPintar(); };
+  });
+  caja.querySelectorAll('[data-rtmenu]').forEach(function(b){
+    b.onclick = function(ev){ ev.stopPropagation(); rotMenu(b, b.dataset.rtmenu); };
   });
   caja.querySelectorAll('[data-rtfila]').forEach(function(b){
     b.onclick = function(){ rotFila(b.dataset.rtfila); };
@@ -37327,7 +37359,18 @@ function montarRotador(a, semana){
 function rotMarcar(id, si){
   var t = ROT.celdas[id];
   if(!t || !t.inicio) return;
-  if(si) ROT.sel[id] = 1; else delete ROT.sel[id];
+  if(si){ ROT.sel[id] = 1; return; }
+  delete ROT.sel[id];
+  /* Si estaba cambiada con alguien, la otra mitad del cambio se deshace
+     también: media permuta deja a dos personas en el mismo turno. */
+  var propio = ROT.propio[id];
+  if(propio && propio.tipo === 'swap'){
+    var fecha = id.split('|')[1];
+    var idOtra = propio.con + '|' + fecha;
+    delete ROT.propio[idOtra];
+    delete ROT.sel[idOtra];
+  }
+  delete ROT.propio[id];
 }
 
 function rotFila(clave){
@@ -37344,7 +37387,7 @@ function rotColumna(i){
 }
 
 function rotAtajo(cual){
-  ROT.sel = {};
+  ROT.sel = {}; ROT.propio = {};
   if(cual !== 'nada'){
     var dias = cual === 'lv' ? [0,1,2,3,4] : cual === 'finde' ? [5,6] : [0,1,2,3,4,5,6];
     ROT.gente.forEach(function(p){
@@ -37354,8 +37397,20 @@ function rotAtajo(cual){
   rotPintar();
 }
 
-/* A qué turno queda una celda con el destino elegido. */
-function rotDestinoDe(t){
+/* A qué turno queda una celda. Lo elegido para ella manda sobre el
+   atajo general; si se eligió cambiarla con alguien, el destino es el
+   turno que esa otra persona tiene ESE día. */
+function rotDestinoDe(t, id){
+  var propio = id && ROT.propio[id];
+  if(propio){
+    if(propio.tipo === 'swap'){
+      var otra = ROT.celdas[propio.con + '|' + t.fecha];
+      if(!otra || !otra.inicio) return null;         /* ya no tiene turno ese día */
+      return { nombre: otra.turno, inicio: otra.inicio, fin: otra.fin,
+               almuerzo: otra.almuerzo || 0, conQuien: otra.nombre };
+    }
+    return ROT.turnos.filter(function(x){ return x.nombre === propio.turno; })[0] || null;
+  }
   var nombres = ROT.turnos.map(function(x){ return x.nombre; });
   if(ROT.destino !== '1' && ROT.destino !== '-1'){
     return ROT.turnos.filter(function(x){ return x.nombre === ROT.destino; })[0] || null;
@@ -37368,35 +37423,149 @@ function rotDestinoDe(t){
   return ROT.turnos[j] || null;
 }
 
+/* ── EL MENÚ DE UNA CELDA ──────────────────────────────────────────
+   Dos maneras de decir a dónde va ese día: a un turno del área, o
+   cambiándose con una persona concreta. El cambio mueve a los dos: si
+   Ana pasa a la noche de Bernardo, Bernardo se queda con la mañana de
+   Ana. Eso es lo que de verdad se hace en planta, y antes no se podía
+   decir: el destino era uno solo para todo lo marcado. */
+function rotMenu(boton, id){
+  rotCerrarMenu();
+  var t = ROT.celdas[id];
+  if(!t || !t.inicio) return;
+  var fecha = t.fecha;
+  var propio = ROT.propio[id] || {};
+
+  /* Con quién se puede cambiar: los que ese día tienen otro turno. */
+  var otros = ROT.gente.filter(function(p){
+    if(p.clave === t.persona) return false;
+    var o = ROT.celdas[p.clave + '|' + fecha];
+    return o && o.inicio && o.turno !== t.turno;
+  });
+
+  var m = document.createElement('div');
+  m.className = 'rt-menu';
+  m.id = 'rt-menu';
+  m.innerHTML =
+    '<div class="rt-menu-tit">' + esc(t.nombre) + ' · ' + esc(fechaCorta(fecha)) + '</div>' +
+    '<button type="button" class="rt-menu-it' + (!ROT.propio[id] ? ' on' : '') + '" data-mdef="1">' +
+      'Usar lo de arriba' + '</button>' +
+    '<div class="rt-menu-rot">Pasarlo a</div>' +
+    ROT.turnos.map(function(x){
+      if(x.nombre === t.turno) return '';
+      return '<button type="button" class="rt-menu-it' + (propio.tipo === 'turno' && propio.turno === x.nombre ? ' on' : '') +
+        '" data-mturno="' + esc(x.nombre) + '">' + esc(x.nombre) +
+        '<span>' + esc(x.inicio) + '–' + esc(x.fin) + '</span></button>';
+    }).join('') +
+    (otros.length
+      ? '<div class="rt-menu-rot">Cambiarlo con</div>' + otros.map(function(p){
+          var o = ROT.celdas[p.clave + '|' + fecha];
+          return '<button type="button" class="rt-menu-it' + (propio.tipo === 'swap' && propio.con === p.clave ? ' on' : '') +
+            '" data-mswap="' + esc(p.clave) + '">' + esc(p.nombre) +
+            '<span>' + esc(o.turno) + ' · ' + esc(o.inicio) + '–' + esc(o.fin) + '</span></button>';
+        }).join('')
+      : '<div class="rt-menu-vacio">Nadie más tiene otro turno ese día.</div>');
+
+  document.body.appendChild(m);
+  var r = boton.getBoundingClientRect();
+  var alto = m.offsetHeight, ancho = m.offsetWidth;
+  /* Si no cabe abajo, sale hacia arriba; igual con el borde derecho. */
+  var top = r.bottom + 6;
+  if(top + alto > window.innerHeight - 8) top = Math.max(8, r.top - alto - 6);
+  var left = Math.min(r.left, window.innerWidth - ancho - 10);
+  m.style.top = top + 'px';
+  m.style.left = Math.max(8, left) + 'px';
+
+  m.querySelectorAll('[data-mdef]').forEach(function(b){
+    b.onclick = function(){ rotSoltarPareja(id); delete ROT.propio[id]; rotCerrarMenu(); rotPintar(); };
+  });
+  m.querySelectorAll('[data-mturno]').forEach(function(b){
+    b.onclick = function(){
+      rotSoltarPareja(id);
+      ROT.propio[id] = { tipo:'turno', turno: b.dataset.mturno };
+      ROT.sel[id] = 1;
+      rotCerrarMenu(); rotPintar();
+    };
+  });
+  m.querySelectorAll('[data-mswap]').forEach(function(b){
+    b.onclick = function(){
+      var con = b.dataset.mswap;
+      var idOtra = con + '|' + fecha;
+      /* Si alguna de las dos ya estaba cambiada con un tercero, ese
+         cambio se deshace primero. Si no, la pareja abandonada se queda
+         apuntando a un turno que su compañero ya no va a dejar, y dos
+         personas terminan el día en el mismo turno. */
+      rotSoltarPareja(id);
+      rotSoltarPareja(idOtra);
+      ROT.propio[id] = { tipo:'swap', con: con };
+      ROT.propio[idOtra] = { tipo:'swap', con: t.persona };
+      ROT.sel[id] = 1; ROT.sel[idOtra] = 1;
+      rotCerrarMenu(); rotPintar();
+    };
+  });
+  setTimeout(function(){ document.addEventListener('click', rotCerrarMenu, { once:true }); }, 0);
+}
+
+function rotCerrarMenu(){
+  var m = document.getElementById('rt-menu');
+  if(m) m.remove();
+}
+
+/* Deshace el cambio en el que estuviera esta celda: la pareja vuelve a
+   seguir el atajo de arriba en vez de quedarse a medias. */
+function rotSoltarPareja(id){
+  var propio = ROT.propio[id];
+  if(!propio || propio.tipo !== 'swap') return;
+  var fecha = id.split('|')[1];
+  var idPareja = propio.con + '|' + fecha;
+  var suyo = ROT.propio[idPareja];
+  /* Solo se suelta si de verdad apuntaba de vuelta a esta. */
+  if(suyo && suyo.tipo === 'swap' && suyo.con === id.split('|')[0]) delete ROT.propio[idPareja];
+}
+
 function rotPintar(){
-  var n = 0, sinRumbo = 0, personas = {};
+  var n = 0, sinRumbo = 0, cambios = 0, personas = {};
   document.querySelectorAll('#rt-panel [data-rt]').forEach(function(b){
     var id = b.dataset.rt;
     var marcada = !!ROT.sel[id];
     b.classList.toggle('on', marcada);
-    var flecha = b.querySelector('.rt-flecha');
-    if(!marcada){ flecha.textContent = ''; b.classList.remove('sinrumbo'); return; }
+    var flecha = b.parentNode.querySelector('.rt-flecha');
+    var propio = ROT.propio[id];
+    b.classList.toggle('propio', marcada && !!propio);
+    if(!marcada){
+      flecha.textContent = '';
+      flecha.classList.remove('activa', 'sinrumbo');
+      b.classList.remove('sinrumbo');
+      return;
+    }
+    flecha.classList.add('activa');
     var t = ROT.celdas[id];
-    var d = rotDestinoDe(t);
+    var d = rotDestinoDe(t, id);
     n++;
     personas[id.split('|')[0]] = 1;
     if(!d || d.nombre === t.turno){
-      flecha.textContent = d ? '· sigue igual' : '· sin turno destino';
+      flecha.textContent = d ? 'sigue igual ▾' : 'sin destino ▾';
+      flecha.classList.add('sinrumbo');
       b.classList.add('sinrumbo');
       if(!d) sinRumbo++;
     } else {
-      flecha.textContent = '→ ' + d.nombre;
+      /* En un cambio se dice con quién: es lo que hay que poder leer de
+         un vistazo antes de aplicar. */
+      flecha.textContent = (propio && propio.tipo === 'swap' ? '⇄ ' : '→ ') + d.nombre + ' ▾';
+      flecha.classList.remove('sinrumbo');
       b.classList.remove('sinrumbo');
+      cambios++;
     }
   });
   var cuenta = $p('rt-cuenta'), btn = $p('rt-aplicar');
   if(cuenta){
     var qg = Object.keys(personas).length;
     cuenta.textContent = !n ? 'Ninguna celda marcada.'
-      : n + (n === 1 ? ' turno' : ' turnos') + ' de ' + qg + (qg === 1 ? ' persona' : ' personas') +
-        (sinRumbo ? ' · ' + sinRumbo + ' sin turno destino, se dejan como están' : '');
+      : cambios + (cambios === 1 ? ' turno cambia' : ' turnos cambian') + ' · ' +
+        qg + (qg === 1 ? ' persona' : ' personas') +
+        (n - cambios ? ' · ' + (n - cambios) + ' marcados que se quedan igual' : '');
   }
-  if(btn){ btn.disabled = !n; btn.textContent = n ? 'Rotar ' + n : 'Rotar'; }
+  if(btn){ btn.disabled = !cambios; btn.textContent = cambios ? 'Aplicar ' + cambios : 'Aplicar'; }
 }
 
 function aplicarRotacion(boton){
@@ -37404,7 +37573,7 @@ function aplicarRotacion(boton){
   var cambios = [];
   Object.keys(ROT.sel).forEach(function(id){
     var t = ROT.celdas[id];
-    var d = rotDestinoDe(t);
+    var d = rotDestinoDe(t, id);
     if(!d || d.nombre === t.turno) return;          /* nada que mover */
     cambios.push({ persona: t.persona, fecha: t.fecha, turno: d.nombre,
                    inicio: d.inicio, fin: d.fin,
