@@ -8492,6 +8492,34 @@ function _guardarToken(t) {
   try { t ? sessionStorage.setItem('horti_token', t) : sessionStorage.removeItem('horti_token'); } catch(e) {}
 }
 
+/* ── TOKEN DE SESION EN TODA ESCRITURA AL BACKEND DE RECEPCION ────────
+   El backend de recepcion ya no acepta escrituras anonimas. En vez de
+   tocar cada llamada (marcarCorte, alertas de placa, precios, notas...),
+   se inyecta el token una sola vez: se envuelve fetch y, cuando el pedido
+   es un POST con cuerpo JSON a ESE endpoint (se reconoce por el id del
+   script), se le agrega el token si no lo trae. Solo toca recepcion; los
+   demas backends (vehiculos, humus, personal...) pasan sin cambios. Las
+   lecturas GET mandan el token en la URL aparte. */
+(function () {
+  if (window.__fetchTokenRecep) return;
+  window.__fetchTokenRecep = true;
+  var RECEP_ID = 'AKfycbz1CznJcepKoBIJXwnQ6yc82n7fFX7q20kCxes5Na4OgPQUoe3xe5AllPhXUAe2JNg';
+  var _fetch = window.fetch;
+  window.fetch = function (url, opts) {
+    try {
+      if (typeof url === 'string' && url.indexOf(RECEP_ID) !== -1 && opts && opts.method &&
+          String(opts.method).toUpperCase() === 'POST' && typeof opts.body === 'string') {
+        var b = JSON.parse(opts.body);
+        if (b && typeof b === 'object' && !b.token) {
+          b.token = _authToken || '';
+          opts = Object.assign({}, opts, { body: JSON.stringify(b) });
+        }
+      }
+    } catch (e) { /* cuerpo no-JSON: se deja igual */ }
+    return _fetch.apply(this, arguments.length > 1 ? [url, opts] : [url]);
+  };
+})();
+
 /* Todo va por POST con text/plain: en GET la clave quedaria en la URL, en
    el historial y en los registros de cualquier intermediario; y text/plain
    evita el preflight de CORS que Apps Script no responde. */
@@ -8854,10 +8882,21 @@ async function fetchIngreso() {
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 60000);
-    const res = await fetch(ING_LECTURA_API + '?datos=1&t=' + Date.now(), { signal: ctrl.signal });
+    /* Se manda el token de la sesion: el backend solo entrega los datos a
+       quien inicio sesion (ya no hay lectura anonima). Va en la URL porque
+       la lectura es GET; sobre HTTPS no viaja en claro. */
+    const res = await fetch(ING_LECTURA_API + '?datos=1&t=' + Date.now() + '&token=' + encodeURIComponent(_authToken || ''), { signal: ctrl.signal });
     clearTimeout(timer);
     if (res.ok) {
       const j = await res.json();
+      /* Si el backend niega por sesion, NO se cae al CSV publico (eso
+         volveria a exponer la base y saltaria el candado). Se pide volver
+         a entrar y se devuelve vacio. */
+      if (j && j.sinSesion) {
+        try { setStatus('Tu sesión venció. Vuelve a iniciar sesión para ver los datos de ingreso.', 'error'); } catch (e) {}
+        console.warn('Ingreso: el backend pidió sesión; no se usa el CSV de respaldo.');
+        return [];
+      }
       if (j && j.success && Array.isArray(j.rows)) {
         return _ingArmarObjetos(j.headers, j.rows);
       }
