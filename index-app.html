@@ -37973,12 +37973,21 @@ function aplicarRotacion(boton){
     .then(function(d){
       if(d && d.turnos && !fusionarSemana(ROT.area, ROT.semana, d.turnos, d.extras)){ P.turnos = {}; FRESCO = {}; }
       cerrarMover();
-      verMes(ROT.area, MES_VIENDO || ROT.semana, !(d && d.turnos));
+      rotRefrescarGeneral(ROT.area, MES_VIENDO || ROT.semana);
     })
     .catch(function(e){
       err.textContent = e.message || 'No se pudo aplicar.';
       boton.disabled = false; boton.textContent = 'Aplicar';
     });
+}
+
+/* Tras editar la semana, la vista general (calendario + desglose) se vuelve
+   a pedir al servidor y queda IGUAL a lo recién aplicado. Sin invalidar la
+   cache, verMes la daba por "fresca" y a veces seguía mostrando lo de antes:
+   el editor quedaba actualizado y el cuadro general no. */
+function rotRefrescarGeneral(area, mes){
+  try { delete FRESCO[area + '|' + semanasDelCuadro(mes)[0]]; } catch(e){}
+  verMes(area, mes, true);
 }
 
 /* ── HORA EXTRA A LO MARCADO ────────────────────────────────────────
@@ -38009,7 +38018,7 @@ function rotAplicarExtra(boton){
     if(i >= ids.length){
       if(ultimo && ultimo.turnos && !fusionarSemana(ROT.area, ROT.semana, ultimo.turnos, ultimo.extras)){ P.turnos = {}; FRESCO = {}; }
       cerrarMover();
-      verMes(ROT.area, MES_VIENDO || ROT.semana, !(ultimo && ultimo.turnos));
+      rotRefrescarGeneral(ROT.area, MES_VIENDO || ROT.semana);
       return;
     }
     var t = ROT.celdas[ids[i++]];
