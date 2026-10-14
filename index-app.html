@@ -7521,6 +7521,9 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-personal .tn-extra .op button.on{background:var(--gold,#b8891f);border-color:var(--gold,#b8891f);color:#fff}
 #panel-personal .tn-extra .op button.quitar{color:#b23b3b}
 #panel-personal .tn-extra .pie{font-size:11px;color:var(--ink-l);margin-top:9px}
+/* Justificación de la hora extra, visible dentro del bloque dorado */
+#panel-personal .tn-dia .c.extra .ex-just{display:block;font-size:10.5px;line-height:1.3;margin-top:3px;
+  color:#fff;opacity:.92;font-weight:600}
 /* El motivo de la hora extra: obligatorio, con motivos de siempre a un clic */
 /* El traslado de gente entre áreas */
 /* ── ROTAR TURNOS SOBRE EL CUADRO DE LA SEMANA ──────────────────
@@ -40547,10 +40550,11 @@ function tablaSemana(turnos, semana){
           var anot = extraDe(f, clave, lado);
           var apro = anot && anot.estado === 'APROBADA';
           var quienes = anot ? ((anot.planeo ? 'planeó ' + anot.planeo : '') + (anot.aprobo ? ' · aprobó ' + anot.aprobo : '')) : '';
+          var motivo = anot && anot.motivo ? ' · motivo: ' + anot.motivo : '';
           return '<span class="esq ' + (lado === 'antes' ? 'izq' : 'der') + (apro ? '' : ' plan') +
             '" style="border-top-color:' + aclarar(pinta) + '" title="' +
             (lado === 'antes' ? 'Entra ' : 'Sale ') + textoHoras(min / 60) + (lado === 'antes' ? ' antes' : ' más tarde') +
-            ' · ' + (apro ? 'aprobada' : 'planeada') + (quienes ? ' · ' + esc(quienes) : '') + '"></span>';
+            ' · ' + (apro ? 'aprobada' : 'planeada') + (quienes ? ' · ' + esc(quienes) : '') + esc(motivo) + '"></span>';
         };
         if(exA) esquinas += marcaExtra('antes', exA);
         if(exD) esquinas += marcaExtra('despues', exD);
@@ -40615,12 +40619,24 @@ function desglosePersona(clave, nombre, semana, turnos){
     var caja = function(t){
       var esExtra = t.turno === 'Hora extra';
       var col = colores[t.inicio + '-' + t.fin] || COLORES_TURNO[0];
+      /* El bloque de hora extra muestra, a la vista, su justificación y
+         quién la aprobó (o la planeó): es lo que sustenta el pago. */
+      var justif = '';
+      if(esExtra){
+        var anot = extraDe(f, clave, 'aparte');
+        if(anot){
+          var quien = anot.estado === 'APROBADA'
+            ? (anot.aprobo ? 'aprobó ' + anot.aprobo : 'aprobada')
+            : (anot.planeo ? 'planeó ' + anot.planeo : 'planeada');
+          justif = '<span class="ex-just">' + (anot.motivo ? esc(anot.motivo) + ' · ' : '') + esc(quien) + '</span>';
+        }
+      }
       return '<div class="c cel pinta' + (esExtra ? ' extra' : '') + '"' +
         ' style="background:' + (esExtra ? 'var(--gold,#b8891f)' : col) + '"' +
         ' data-cel="1" data-persona="' + esc(clave) + '" data-fecha="' + f + '" data-quien="' + esc(nombre) + '">' +
         (esExtra ? '' : tiraExtra('antes', exA, t)) +
         '<div class="tu"><span class="hs" data-turno="' + esc(t.turno) + '">' + esc(t.inicio) + '–' + esc(t.fin) + '</span>' +
-          '<span class="nt">' + esc(t.turno) + '</span></div>' +
+          '<span class="nt">' + esc(t.turno) + '</span>' + justif + '</div>' +
         (esExtra ? '' : tiraExtra('despues', exD, t)) +
       '</div>';
     };
@@ -40649,10 +40665,11 @@ function tiraExtra(donde, minutos, t){
   var anot = minutos ? extraDe(t.fecha, t.persona, donde) : null;
   var estado = anot ? anot.estado : (minutos ? 'PLANEADA' : '');
   var quienes = anot ? ((anot.planeo ? 'planeó ' + anot.planeo : '') + (anot.aprobo ? ' · aprobó ' + anot.aprobo : '')) : '';
+  var motivo = anot && anot.motivo ? ' · motivo: ' + anot.motivo : '';
   return '<div class="ex' + (minutos ? ' on' : '') + (estado === 'PLANEADA' ? ' plan' : '') + '" data-ex="' + donde + '"' +
     ' data-turno="' + esc(t.turno) + '" title="' +
     (minutos ? 'Hora extra ' + (estado === 'APROBADA' ? 'aprobada' : 'planeada') + ' · ' + textoHoras(minutos / 60) +
-        (quienes ? ' · ' + esc(quienes) : '')
+        (quienes ? ' · ' + esc(quienes) : '') + esc(motivo)
       : (donde === 'antes' ? 'Ingreso anticipado' : 'Salida posterior')) + '">' +
     (minutos ? '+' + textoHoras(minutos / 60) : '+') + '</div>';
 }
@@ -40827,33 +40844,12 @@ function editarCelda(celda){
       '<button type="button" id="ed-cancelar">Cancelar</button>' +
       '<button type="button" class="fuerte" id="ed-guardar">Guardar</button>' +
     '</div>' +
-    /* ── UN BLOQUE APARTE ─────────────────────────────────────────
-       Una hora extra que no va pegada al turno: una hora ahora, un
-       descanso, y después el turno. Es un bloque con su propio horario,
-       que se ve en el cuadro debajo del turno de ese día. */
-    '<div class="ed-bloque">' +
-      '<div class="tt2">Hora extra aparte</div>' +
-      '<div class="ayuda2">Un bloque suelto ese día, con su propio horario: no se pega al turno.' +
-        (bloqueDelDia ? ' Hoy tiene uno de ' + esc(bloqueDelDia.inicio) + ' a ' + esc(bloqueDelDia.fin) + '.' : '') + '</div>' +
-      '<div class="horas2"><label>Entra</label>' +
-        '<input type="time" id="ed-bl-ini" value="' + esc(bloqueDelDia ? bloqueDelDia.inicio : '') + '">' +
-        '<label>Sale</label>' +
-        '<input type="time" id="ed-bl-fin" value="' + esc(bloqueDelDia ? bloqueDelDia.fin : '') + '">' +
-        '<span id="ed-bl-cuantas"></span></div>' +
-      '<input type="text" class="ex-motivo" id="ed-bl-motivo" maxlength="200" ' +
-        'placeholder="Motivo de la hora extra (obligatorio)" value="' +
-        esc((extraDe(fecha, persona, 'aparte') || {}).motivo || '') + '">' +
-      '<div class="op op-motivos">' +
-        MOTIVOS_EXTRA.map(function(m){
-          return '<button type="button" data-mot2="' + esc(m) + '">' + esc(m) + '</button>';
-        }).join('') +
-      '</div>' +
-      '<div class="acc">' +
-        (bloqueDelDia ? '<button type="button" id="ed-bl-quitar">Quitar el bloque</button>' : '') +
-        '<button type="button" id="ed-bl-planear">Dejar planeado</button>' +
-        '<button type="button" class="fuerte" id="ed-bl-aprobar">Aprobar</button>' +
-      '</div>' +
-    '</div></div>';
+    /* La hora extra ya NO se crea desde aquí: se hace en “Editar turnos de
+       la semana” (un solo menú), donde además lleva su justificación y
+       queda a nombre de quien la aprobó. */
+    '<div class="ayuda2" style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--rule)">' +
+      'Las horas extra se agregan desde <b>“Editar turnos de la semana”</b>.</div>' +
+  '</div>';
 
   if(!abrirMenuTurno(cuerpo)) return;
 
@@ -40887,47 +40883,6 @@ function editarCelda(celda){
                    persona: persona, turno: turno || nombreTurno, nombreTurno: nombreTurno,
                    inicio: $p('ed-ini').value, fin: $p('ed-fin').value, todoElTurno: !!todos,
                    nota: todos ? 'el turno cambió ese día' : (sel.value === '__otro' ? 'horas especiales' : 'ajustado a mano') }, this);
-  };
-
-  /* ── El bloque suelto de horas extra ── */
-  var contarBloque = function(){
-    var i = $p('ed-bl-ini').value, f = $p('ed-bl-fin').value;
-    $p('ed-bl-cuantas').textContent = (i && f) ? '= ' + numeroHoras(horasTurno(i, f)) : '';
-  };
-  $p('ed-bl-ini').oninput = contarBloque;
-  $p('ed-bl-fin').oninput = contarBloque;
-  contarBloque();
-  document.querySelectorAll('[data-mot2]').forEach(function(b){
-    b.onclick = function(){
-      var c = $p('ed-bl-motivo');
-      c.value = b.dataset.mot2; c.classList.remove('falta'); c.focus();
-    };
-  });
-  var mandarBloque = function(estado, boton){
-    var i = $p('ed-bl-ini').value, f = $p('ed-bl-fin').value;
-    if(!i || !f){ alert('Ponga la hora de entrada y la de salida del bloque.'); return; }
-    var motivo = ($p('ed-bl-motivo').value || '').trim();
-    if(!motivo){
-      $p('ed-bl-motivo').classList.add('falta');
-      $p('ed-bl-motivo').focus();
-      alert('Falta el motivo de la hora extra.');
-      return;
-    }
-    mandarCambio({ accion:'perExtraGuardar', area: AREA_VIENDO, fecha: fecha, persona: persona,
-                   turno: turno, lado: 'aparte', inicio: i, fin: f, motivo: motivo,
-                   estado: estado, quien: quienSoy() }, boton);
-  };
-  $p('ed-bl-planear').onclick = function(){ mandarBloque('PLANEADA', this); };
-  $p('ed-bl-aprobar').onclick = function(){ mandarBloque('APROBADA', this); };
-  if($p('ed-bl-quitar')) $p('ed-bl-quitar').onclick = function(){
-    if(!confirm('¿Quitar el bloque de horas extra de ese día? El turno no se toca.')) return;
-    var anot = extraDe(fecha, persona, 'aparte');
-    if(anot){ mandarCambio({ accion:'perExtraBorrar', id: anot.id, quien: quienSoy() }, this); }
-    else {
-      /* Quedó de antes de que se anotaran: se quita mandándolo en cero. */
-      mandarCambio({ accion:'perExtraGuardar', area: AREA_VIENDO, fecha: fecha, persona: persona,
-                     turno: turno, lado: 'aparte', inicio: '', fin: '', quien: quienSoy() }, this);
-    }
   };
 }
 
@@ -41048,14 +41003,13 @@ function engancharMes(){
   caja.querySelectorAll('[data-cerrar-desglose]').forEach(function(bt){
     bt.onclick = function(){ DESGLOSE = null; repintarDesglose(); };
   });
-  /* Las tiras de arriba y abajo son para las horas extra: no abren el
-     editor de la celda. */
+  /* La hora extra ya NO se crea ni se aprueba desde el cuadro general: eso
+     se hace en “Editar turnos de la semana”, donde lleva su justificación.
+     Tocar la franja solo abre el editor del turno (horario del día). */
   caja.querySelectorAll('.cel .ex').forEach(function(tira){
     tira.onclick = function(ev){
       ev.stopPropagation();
-      /* En el cuadro general la celda es un <td>; en el desglose de una
-         persona es un div. Las dos llevan data-cel. */
-      menuExtra(tira.closest('[data-cel]'), tira.dataset.ex);
+      editarCelda(tira.closest('[data-cel]'));
     };
   });
   caja.querySelectorAll('[data-ajustar]').forEach(function(b){
