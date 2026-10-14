@@ -7309,6 +7309,11 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #per-area-modal .pp-cel .pp-fijo{font-size:12.5px}
 #per-area-modal .pp-cel .pp-op{font-size:11px}
 #per-area-modal .pp-tot{font-size:14px;padding:8px 10px !important}
+#per-area-modal .pp-tabla thead th .pp-cf{color:var(--ink-l);font-weight:600}
+#per-area-modal .pp-fav{margin-top:10px}
+#per-area-modal .pp-fav-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#per-area-modal .pp-fav-row select{width:auto;min-width:220px;flex:0 1 auto}
+#per-area-modal .pp-fav-row .per-btn{white-space:nowrap}
 @media (max-width:820px){ #per-area-modal .pp-split{grid-template-columns:1fr} }
 #per-area-modal .ar-lista{max-height:230px;overflow:auto;border:1px solid var(--rule);padding:4px 10px;margin-top:4px}
 #per-area-modal .ar-lista label{display:flex;align-items:center;gap:9px;padding:6px 0;margin:0;
@@ -7985,6 +7990,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
       <button type="button" class="per-btn" id="ar-f-masturno2" style="margin-top:4px">+ Otro horario</button>
       </div>
 
+      <div id="ar-f-favbar" class="pp-fav"></div>
       <label>Cuadro por persona</label>
       <div id="ar-f-propios"></div>
       <div class="ayuda">El cuadro se arma en vivo. Toque el <b>nombre</b> de una persona para su horario y días;
@@ -36406,7 +36412,7 @@ var PERSONAL_API = 'https://script.google.com/macros/s/AKfycbwfBXyi8vonQNA6DOEii
 var CLAVE_LOCAL = 'horti_personal_v1';
 var FOTO_LADO = 640, FOTO_CALIDAD = 0.8;
 
-var P = { gente: [], asignaciones: [], areas: [], miembros: [], turnos: {}, documentos: [], novedades: [], plantillas: [],
+var P = { gente: [], asignaciones: [], areas: [], miembros: [], turnos: {}, documentos: [], novedades: [], plantillas: [], favoritos: [],
           cargado: false, cargando: false, fallo: '', vacio: false, cuando: 0 };
 var EDITANDO = null;      /* la persona que se está editando (null = nueva) */
 var FOTO_NUEVA = '';      /* la foto elegida en el formulario, ya reducida */
@@ -36437,6 +36443,7 @@ function leerLocal(){
       P.documentos = x.documentos || [];
       P.novedades = x.novedades || [];
       P.plantillas = x.plantillas || [];
+      P.favoritos = x.favoritos || [];
       P.turnos = x.turnos || {};
       P.cuando = x.cuando || 0;
     }
@@ -36534,6 +36541,7 @@ function cargar(forzar){
     P.documentos = d.documentos || [];
     P.novedades = d.novedades || [];
     P.plantillas = d.plantillas || [];
+    P.favoritos = d.favoritos || [];
     P.traslados = d.traslados || [];
     P.cargado = true; P.cuando = Date.now();
     guardarLocal();
@@ -39455,6 +39463,58 @@ function ppHorasSemana(hz){
   return tot;
 }
 
+/* ── FAVORITOS DEL PLAN PERSONALIZADO ──────────────────────────────
+   Guardan quién, con qué horario/días/operación/valor fijo/almuerzo, para
+   reciclar la semana en otra o en otra área. Viven en el servidor. */
+function pintarFavoritos(){
+  var caja = $p('ar-f-favbar'); if(!caja) return;
+  if(AREA_FORM.modo !== 'personalizado'){ caja.innerHTML = ''; return; }
+  var favs = P.favoritos || [];
+  caja.innerHTML =
+    '<label>Favoritos</label>' +
+    '<div class="pp-fav-row">' +
+      '<select id="fav-sel"><option value="">— elegir un favorito —</option>' +
+        favs.map(function(f){ return '<option value="' + esc(f.id) + '">' + esc(f.nombre) + '</option>'; }).join('') +
+      '</select>' +
+      '<button type="button" class="per-btn" id="fav-usar">Usar</button>' +
+      '<button type="button" class="per-btn" id="fav-guardar">Guardar como favorito</button>' +
+      '<button type="button" class="per-btn peligro" id="fav-borrar">Borrar</button>' +
+    '</div>' +
+    '<div class="ayuda">Guarde este plan para reciclarlo en otra semana o área (incluye quién, horarios, operación, valor fijo y almuerzo).</div>';
+  $p('fav-guardar').onclick = guardarFavorito;
+  $p('fav-usar').onclick = usarFavorito;
+  $p('fav-borrar').onclick = borrarFavorito;
+}
+function guardarFavorito(){
+  var nombre = (prompt('Nombre del favorito (para reconocerlo después):') || '').trim();
+  if(!nombre) return;
+  var btn = $p('fav-guardar'); if(btn){ btn.disabled = true; btn.textContent = 'Guardando…'; }
+  pedir({ accion:'perFavGuardar', nombre: nombre, area: AREA_FORM.nombre,
+          horarios: AREA_FORM.horarios, personas: AREA_FORM.personas, quien: quienSoy() }, 60)
+    .then(function(d){ if(d && d.favoritos) P.favoritos = d.favoritos; pintarFavoritos();
+      var s = $p('fav-sel'); if(s && d && d.id) s.value = d.id; })
+    .catch(function(e){ alert(e.message || 'No se pudo guardar el favorito.'); pintarFavoritos(); });
+}
+function usarFavorito(){
+  var id = ($p('fav-sel') || {}).value;
+  var f = (P.favoritos || []).filter(function(x){ return x.id === id; })[0];
+  if(!f){ alert('Elija un favorito de la lista.'); return; }
+  if(!confirm('¿Aplicar el favorito “' + f.nombre + '”? Reemplaza las asignaciones actuales del área.')) return;
+  AREA_FORM.horarios = JSON.parse(JSON.stringify(f.horarios || {}));
+  if(f.personas && f.personas.length) AREA_FORM.personas = f.personas.slice();
+  PP_SEL = null;
+  pintarGenteArea(); pintarPropios();
+}
+function borrarFavorito(){
+  var id = ($p('fav-sel') || {}).value;
+  var f = (P.favoritos || []).filter(function(x){ return x.id === id; })[0];
+  if(!f){ alert('Elija un favorito de la lista.'); return; }
+  if(!confirm('¿Borrar el favorito “' + f.nombre + '”?')) return;
+  pedir({ accion:'perFavBorrar', id: id, quien: quienSoy() }, 60)
+    .then(function(d){ if(d && d.favoritos) P.favoritos = d.favoritos; pintarFavoritos(); })
+    .catch(function(e){ alert(e.message || 'No se pudo borrar.'); });
+}
+
 function pintarPropios(){
   refrescarAsignados();
   var caja = $p('ar-f-propios');
@@ -39482,8 +39542,13 @@ function pintarPropios(){
     if(!hz.especiales) hz.especiales = [];
   });
 
-  var cab = '<tr><th class="pp-th-q">Colaborador</th>' + DIAS_LETRA.map(function(d){
-    return '<th>' + DIAS_NOMBRE[d].slice(0, 3) + '</th>';
+  /* El personalizado aplica a la semana ACTUAL: se muestran sus fechas
+     (lun 12, mar 13…) para que se lea como el cuadro real. */
+  var ppLun = lunesDe(isoDe(new Date()));
+  var cab = '<tr><th class="pp-th-q">Colaborador</th>' + DIAS_LETRA.map(function(d, i){
+    var fch = sumarDias(ppLun, i);
+    var dnum = new Date(fch + 'T00:00:00').getDate();
+    return '<th><span class="pp-cd">' + DIAS_NOMBRE[d].slice(0, 3) + '</span> <span class="pp-cf">' + dnum + '</span></th>';
   }).join('') + '<th class="pp-th-h">Sem</th></tr>';
 
   var filas = marcados.map(function(p){
@@ -39506,11 +39571,17 @@ function pintarPropios(){
       celdas + '<td class="pp-tot">' + numeroHoras(ppHorasSemana(hz)) + '</td></tr>';
   }).join('');
 
+  /* Se recuerda cuánto estaba corrido el cuadro para no saltar a la
+     izquierda al re-pintar (es molesto al tocar un día de la derecha). */
+  var scrAnt = 0; var gwAnt = caja.querySelector('.pp-grid-wrap'); if(gwAnt) scrAnt = gwAnt.scrollLeft;
+
   caja.innerHTML =
     '<div class="pp-split">' +
       '<div class="pp-grid-wrap"><table class="pp-tabla"><thead>' + cab + '</thead><tbody>' + filas + '</tbody></table></div>' +
       '<div class="pp-panel" id="pp-panel"></div>' +
     '</div>';
+
+  var gwNew = caja.querySelector('.pp-grid-wrap'); if(gwNew) gwNew.scrollLeft = scrAnt;
 
   caja.querySelectorAll('[data-pppersona]').forEach(function(b){
     b.onclick = function(){ PP_SEL = { persona: b.dataset.pppersona }; pintarPropios(); };
@@ -39746,7 +39817,10 @@ function pintarAlmuerzoGeneral(){
 
 function pintarModo(){
   var rot = AREA_FORM.modo === 'rotativo';
-  $p('ar-f-general').style.display = rot ? 'none' : '';
+  /* El HORARIO y el ALMUERZO de arriba son SOLO del horario general: en el
+     personalizado cada persona lleva los suyos en el cuadro, así que ahí
+     ese bloque sobra (era un reproceso). */
+  $p('ar-f-general').style.display = (AREA_FORM.modo === 'general') ? '' : 'none';
   $p('ar-f-rotativo').style.display = rot ? '' : 'none';
   var propio = AREA_FORM.modo === 'personalizado';
   if($p('ar-f-propio')) $p('ar-f-propio').style.display = propio ? '' : 'none';
@@ -39755,7 +39829,7 @@ function pintarModo(){
     if(!AREA_FORM.turnos || !AREA_FORM.turnos.length){
       AREA_FORM.turnos = PRESETS_TURNO['3x8'].map(function(t){ return { nombre:t.nombre, inicio:t.inicio, fin:t.fin, dias:TODOS_LOS_DIAS, fijo:false, almuerzo:0, especiales:[] }; });
     }
-    pintarTurnos(); pintarPropios();
+    pintarTurnos(); pintarPropios(); pintarFavoritos();
   }
   /* La previsualización vale para los tres modos: en los rotativos la
      arma el servidor (hay que repartir), y en el general y el
