@@ -37427,7 +37427,8 @@ function rotRenderParams(acc){
           '<option value="antes">Antes del turno</option>' +
           '<option value="aparte">Bloque aparte (con su horario)</option>' +
         '</select>' +
-        '<div id="rtp-min-caja"><label>¿Cuántos minutos?</label><input type="number" id="rtp-min" min="0" max="720" step="15" value="60"></div>' +
+        '<div id="rtp-hora-caja"><label id="rtp-hora-lb">Hora de salida</label><input type="time" id="rtp-hora">' +
+          '<div class="rtp-nota" id="rtp-hora-nota">La hora extra es desde el fin del turno hasta esa hora.</div></div>' +
         '<div id="rtp-bloque-caja" class="rtp-row" style="display:none">' +
           '<div><label>Entrada</label><input type="time" id="rtp-ini"></div>' +
           '<div><label>Salida</label><input type="time" id="rtp-fin"></div>' +
@@ -37452,13 +37453,21 @@ function rotRenderParams(acc){
       fin:    ($p('rtp-fin')    || {}).value,
       almuerzo: ($p('rtp-alm')  || {}).value,
       nombre: ($p('rtp-nom')    || {}).value,
+      hora:   ($p('rtp-hora')   || {}).value,
       motivo: ($p('rtp-motivo') || {}).value
     };
-    /* Hora extra: mostrar minutos o bloque según “cuándo”. */
+    /* Hora extra: una sola hora (entrada para “antes”, salida para
+       “después”) o el bloque aparte con sus dos horas. */
     if(acc === 'extra'){
-      var ap = ROT.param.lado === 'aparte';
-      if($p('rtp-min-caja')) $p('rtp-min-caja').style.display = ap ? 'none' : '';
+      var lado = ROT.param.lado, ap = lado === 'aparte';
+      if($p('rtp-hora-caja'))   $p('rtp-hora-caja').style.display   = ap ? 'none' : '';
       if($p('rtp-bloque-caja')) $p('rtp-bloque-caja').style.display = ap ? '' : 'none';
+      var lb = $p('rtp-hora-lb');
+      if(lb) lb.textContent = lado === 'antes' ? 'Hora de entrada' : 'Hora de salida';
+      var nt = $p('rtp-hora-nota');
+      if(nt) nt.textContent = lado === 'antes'
+        ? 'La hora extra es desde esa hora hasta el inicio del turno.'
+        : 'La hora extra es desde el fin del turno hasta esa hora.';
     }
     rotPintar();
   };
@@ -37529,6 +37538,10 @@ function rotSumarMin(hhmm, delta){
   tot = ((tot % 1440) + 1440) % 1440;
   return ('0' + Math.floor(tot / 60)).slice(-2) + ':' + ('0' + (tot % 60)).slice(-2);
 }
+function rotHHMMaMin(hhmm){ var p = (hhmm || '').split(':'); return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0); }
+/* Minutos de 'desde' hasta 'hasta' yendo hacia adelante (da la vuelta al día):
+   sirve para medir la hora extra entre la hora elegida y el turno. */
+function rotDifMin(desde, hasta){ return ((rotHHMMaMin(hasta) - rotHHMMaMin(desde)) % 1440 + 1440) % 1440; }
 
 /* Aplica la acción elegida a lo marcado. La hora extra va por su camino. */
 function rotAplicarAccion(boton){
@@ -38000,31 +38013,44 @@ function rotAplicarExtra(boton){
   var motivo = (pr.motivo || '').trim();
   if(!motivo){ if(err) err.textContent = 'Escriba el motivo de la hora extra.'; return; }
   var lado = pr.lado === 'antes' ? 'antes' : (pr.lado === 'aparte' ? 'aparte' : 'despues');
-  var ini = pr.inicio, fin = pr.fin, min = Math.max(0, Math.min(720, Number(pr.min) || 0));
+  var ini = pr.inicio, fin = pr.fin, hora = pr.hora;
   if(lado === 'aparte'){ if(!ini || !fin){ if(err) err.textContent = 'Ponga la entrada y la salida del bloque.'; return; } }
-  else if(!min){ if(err) err.textContent = 'Ponga cuántos minutos de hora extra.'; return; }
+  else if(!hora){ if(err) err.textContent = (lado === 'antes' ? 'Ponga la hora de entrada.' : 'Ponga la hora de salida.'); return; }
 
-  /* Celdas marcadas que pueden llevar hora extra: con turno (antes/después)
-     o cualquiera si es bloque aparte. */
-  var ids = Object.keys(ROT.sel).filter(function(id){
-    var t = ROT.celdas[id]; if(!t) return false;
-    return lado === 'aparte' ? true : !!t.inicio;
+  /* Para antes/después, los minutos de hora extra de CADA celda salen de su
+     propio turno: lo que queda entre la hora elegida y el inicio (antes) o
+     el fin (después) de ese turno. Si la hora cae dentro del turno (no deja
+     extra) o se pasa de 12 h, esa celda se omite. El bloque aparte lleva su
+     propio horario y no depende del turno. */
+  var trabajos = [], omitidas = 0;
+  Object.keys(ROT.sel).forEach(function(id){
+    var t = ROT.celdas[id]; if(!t) return;
+    if(lado === 'aparte'){ trabajos.push({ t: t }); return; }
+    if(!t.inicio) return;
+    var min = lado === 'antes' ? rotDifMin(hora, t.inicio) : rotDifMin(t.fin, hora);
+    if(min <= 0 || min > 720){ omitidas++; return; }
+    trabajos.push({ t: t, min: min });
   });
-  if(!ids.length){ if(err) err.textContent = 'Marque celdas con turno (o use “bloque aparte”).'; return; }
+  if(!trabajos.length){
+    if(err) err.textContent = lado === 'aparte'
+      ? 'Marque al menos una celda.'
+      : ('Esa hora no deja horas extra en lo marcado' + (omitidas ? ' (' + omitidas + ' omitidas)' : '') + '.');
+    return;
+  }
 
   boton.disabled = true; boton.textContent = 'Guardando…';
   var i = 0, ultimo = null;
   var siguiente = function(){
-    if(i >= ids.length){
+    if(i >= trabajos.length){
       if(ultimo && ultimo.turnos && !fusionarSemana(ROT.area, ROT.semana, ultimo.turnos, ultimo.extras)){ P.turnos = {}; FRESCO = {}; }
       cerrarMover();
       rotRefrescarGeneral(ROT.area, MES_VIENDO || ROT.semana);
       return;
     }
-    var t = ROT.celdas[ids[i++]];
+    var w = trabajos[i++], t = w.t;
     var cuerpo = { accion:'perExtraGuardar', area: ROT.area, fecha: t.fecha, persona: t.persona,
                    turno: t.turno || '', lado: lado, motivo: motivo, quien: quienSoy() };
-    if(lado === 'aparte'){ cuerpo.inicio = ini; cuerpo.fin = fin; } else { cuerpo.minutos = min; }
+    if(lado === 'aparte'){ cuerpo.inicio = ini; cuerpo.fin = fin; } else { cuerpo.minutos = w.min; }
     pedir(cuerpo, 120).then(function(d){ ultimo = d; siguiente(); })
       .catch(function(e){
         if(err) err.textContent = (e.message || 'No se pudo guardar la hora extra.') + ' (se guardaron ' + (i - 1) + ')';
