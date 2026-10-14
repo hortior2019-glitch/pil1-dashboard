@@ -7264,6 +7264,10 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #per-area-modal .pp-cel .pp-h{font-size:12px;font-weight:700;color:#1c5636}
 #per-area-modal .pp-cel.esp .pp-h{color:#8b6914}
 #per-area-modal .pp-cel .pp-d{font-size:11.5px;color:#b7bdb8;font-weight:600}
+#per-area-modal .pp-cel .pp-op{display:block;font-size:10px;color:var(--ink-l);margin-top:2px;line-height:1.2;white-space:normal}
+#per-area-modal .pp-cel.fijo{background:#eef4f0}
+#per-area-modal .pp-cel.fijo .pp-op{color:#1c5636}
+#per-area-modal .pp-cel .pp-fijo{font-size:11px;font-weight:700;color:#1c5636}
 #per-area-modal .pp-tot{text-align:center;font-weight:800;font-size:12.5px;color:#1c5636;padding:6px 8px !important}
 #per-area-modal .pp-panel{border:1px solid var(--rule);border-radius:10px;padding:11px;background:var(--white)}
 #per-area-modal .pp-panel .pp-pt{font-size:13.5px;font-weight:700;color:var(--ink);margin-bottom:8px}
@@ -7569,6 +7573,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 /* Justificación de la hora extra, visible dentro del bloque dorado */
 #panel-personal .tn-dia .c.extra .ex-just{display:block;font-size:10.5px;line-height:1.3;margin-top:3px;
   color:#fff;opacity:.92;font-weight:600}
+#panel-personal .tn-dia .c.vf .nt-sub{display:block;font-size:10px;color:#fff;opacity:.9;font-weight:600;margin-top:2px}
 /* El motivo de la hora extra: obligatorio, con motivos de siempre a un clic */
 /* El traslado de gente entre áreas */
 /* ── ROTAR TURNOS SOBRE EL CUADRO DE LA SEMANA ──────────────────
@@ -39410,15 +39415,19 @@ function ppEspecialDe(hz, letra){
 /* Qué hace una persona un día: trabaja (con qué horas) o descansa. */
 function ppCeldaDe(hz, letra){
   var esp = ppEspecialDe(hz, letra);
-  if(esp) return { trabaja:true, inicio:esp.inicio, fin:esp.fin, especial:true };
-  if(ppDiasDe(hz).indexOf(letra) > -1) return { trabaja:true, inicio:hz.inicio, fin:hz.fin, especial:false };
+  if(esp){
+    if(esp.fijo) return { trabaja:true, fijo:true, op:(esp.op || hz.op || ''), especial:true };
+    return { trabaja:true, inicio:esp.inicio, fin:esp.fin, op:(esp.op || hz.op || ''), especial:true };
+  }
+  if(ppDiasDe(hz).indexOf(letra) > -1) return { trabaja:true, inicio:hz.inicio, fin:hz.fin, op:(hz.op || ''), especial:false };
   return { trabaja:false };
 }
 function ppHorasSemana(hz){
   var alm = Number(hz.almuerzo) || 0, tot = 0;
   DIAS_LETRA.forEach(function(letra){
     var c = ppCeldaDe(hz, letra);
-    if(c.trabaja) tot += horasTurno(c.inicio, c.fin, alm);
+    /* El valor fijo no suma horas: es un servicio pagado por un valor. */
+    if(c.trabaja && !c.fijo && c.inicio && c.fin) tot += horasTurno(c.inicio, c.fin, alm);
   });
   return tot;
 }
@@ -39459,10 +39468,14 @@ function pintarPropios(){
     var celdas = DIAS_LETRA.map(function(letra){
       var c = ppCeldaDe(hz, letra);
       var sel = PP_SEL && PP_SEL.persona === p.clave && PP_SEL.dia === letra;
+      var cont = !c.trabaja
+        ? '<span class="pp-d">descansa</span>'
+        : (c.fijo
+            ? '<span class="pp-fijo">valor fijo</span>' + (c.op ? '<span class="pp-op">' + esc(c.op) + '</span>' : '')
+            : '<span class="pp-h">' + esc(c.inicio) + '–' + esc(c.fin) + '</span>' + (c.op ? '<span class="pp-op">' + esc(c.op) + '</span>' : ''));
       return '<td class="pp-td"><button type="button" class="pp-cel' + (c.trabaja ? '' : ' descansa') +
-        (c.especial ? ' esp' : '') + (sel ? ' sel' : '') + '" data-ppcel="' + esc(p.clave) + '|' + letra + '">' +
-        (c.trabaja ? '<span class="pp-h">' + esc(c.inicio) + '–' + esc(c.fin) + '</span>'
-                   : '<span class="pp-d">descansa</span>') + '</button></td>';
+        (c.especial ? ' esp' : '') + (c.fijo ? ' fijo' : '') + (sel ? ' sel' : '') + '" data-ppcel="' + esc(p.clave) + '|' + letra + '">' +
+        cont + '</button></td>';
     }).join('');
     var selP = PP_SEL && PP_SEL.persona === p.clave && !PP_SEL.dia;
     return '<tr><th class="pp-th-p"><button type="button" class="pp-persona' + (selP ? ' sel' : '') +
@@ -39509,6 +39522,8 @@ function ppPanel(){
       '<div class="pp-row"><div><label>Entra</label><input type="time" id="pp-ini" value="' + esc(hz.inicio) + '"></div>' +
         '<div><label>Sale</label><input type="time" id="pp-fin" value="' + esc(hz.fin) + '"></div>' +
         '<div><label>Almuerzo</label><input type="number" id="pp-alm" min="0" max="240" step="5" value="' + (Number(hz.almuerzo) || 0) + '"></div></div>' +
+      '<label>Operación / servicio (opcional)</label>' +
+      '<input type="text" id="pp-op" maxlength="40" placeholder="Ej: Alquería, McCain…" value="' + esc(hz.op || '') + '">' +
       '<label>Días que trabaja</label><div class="pp-dias">' +
         DIAS_LETRA.map(function(d){ return '<button type="button" class="pp-dia' + (ppDiasDe(hz).indexOf(d) > -1 ? ' on' : '') +
           '" data-ppd="' + d + '">' + DIAS_NOMBRE[d].slice(0, 1) + '</button>'; }).join('') +
@@ -39521,6 +39536,7 @@ function ppPanel(){
       else { hz.hid = ''; }
       pintarPropios();
     };
+    if($p('pp-op')) $p('pp-op').onchange = function(){ hz.op = (this.value || '').trim(); pintarPropios(); };
     var upd = function(){
       hz.inicio = $p('pp-ini').value || hz.inicio;
       hz.fin = $p('pp-fin').value || hz.fin;
@@ -39542,13 +39558,19 @@ function ppPanel(){
     var letra = PP_SEL.dia;
     var c = ppCeldaDe(hz, letra);
     var esp = ppEspecialDe(hz, letra);
+    var opVal = c.op || '';
     panel.innerHTML =
       '<div class="pp-pt">' + esc(nombre) + ' · ' + esc(DIAS_NOMBRE[letra]) + '</div>' +
       '<label class="pp-chk"><input type="checkbox" id="pp-trab"' + (c.trabaja ? ' checked' : '') + '> Trabaja ese día</label>' +
-      '<div id="pp-horas-caja"' + (c.trabaja ? '' : ' style="display:none"') + '>' +
-        '<div class="pp-row"><div><label>Entra</label><input type="time" id="pp-cini" value="' + esc(c.trabaja ? c.inicio : hz.inicio) + '"></div>' +
-          '<div><label>Sale</label><input type="time" id="pp-cfin" value="' + esc(c.trabaja ? c.fin : hz.fin) + '"></div></div>' +
-        '<div class="pp-hint">' + (esp ? 'Tiene un horario distinto solo este día.' : 'Déjelo igual al base o cámbielo para este día.') + '</div>' +
+      '<div id="pp-trab-caja"' + (c.trabaja ? '' : ' style="display:none"') + '>' +
+        '<label class="pp-chk"><input type="checkbox" id="pp-fijo"' + (c.fijo ? ' checked' : '') + '> Valor fijo (servicio sin horas)</label>' +
+        '<div id="pp-horas-caja"' + (c.fijo ? ' style="display:none"' : '') + '>' +
+          '<div class="pp-row"><div><label>Entra</label><input type="time" id="pp-cini" value="' + esc((c.trabaja && !c.fijo) ? c.inicio : hz.inicio) + '"></div>' +
+            '<div><label>Sale</label><input type="time" id="pp-cfin" value="' + esc((c.trabaja && !c.fijo) ? c.fin : hz.fin) + '"></div></div>' +
+        '</div>' +
+        '<label>Operación / servicio (opcional)</label>' +
+        '<input type="text" id="pp-cop" maxlength="40" placeholder="Ej: Alquería, McCain…" value="' + esc(opVal) + '">' +
+        '<div class="pp-hint">' + (esp ? 'Horario u operación distintos solo este día.' : 'Déjelo igual al base o cámbielo para este día.') + '</div>' +
         (esp ? '<button type="button" class="pp-mini" id="pp-base-dia">Volver al horario base</button>' : '') +
       '</div>';
     $p('pp-trab').onchange = function(){
@@ -39558,18 +39580,30 @@ function ppPanel(){
       hz.dias = DIAS_LETRA.filter(function(x){ return arr.indexOf(x) > -1; }).join(',');
       pintarPropios();
     };
-    var updC = function(){
-      var ini = $p('pp-cini').value, fin = $p('pp-cfin').value;
-      if(!ini || !fin) return;
+    var guardarCelda = function(){
+      /* Ese día trabaja (si no, el check de arriba lo deja en descanso). */
       var arr = ppDiasDe(hz);
       if(arr.indexOf(letra) < 0){ arr.push(letra); hz.dias = DIAS_LETRA.filter(function(x){ return arr.indexOf(x) > -1; }).join(','); }
+      var fijo = $p('pp-fijo') && $p('pp-fijo').checked;
+      var op = (($p('pp-cop') || {}).value || '').trim();
+      var ini = ($p('pp-cini') || {}).value || '';
+      var fin = ($p('pp-cfin') || {}).value || '';
       hz.especiales = (hz.especiales || []).filter(function(e){ return e.dia !== letra; });
-      /* Solo se guarda como “día distinto” si de verdad difiere del base. */
-      if(ini !== hz.inicio || fin !== hz.fin) hz.especiales.push({ dia: letra, inicio: ini, fin: fin });
+      if(fijo){
+        /* Valor fijo: servicio sin horas, no suma al total. */
+        hz.especiales.push({ dia: letra, fijo: true, op: op });
+      } else if(ini && fin){
+        var difHoras = (ini !== hz.inicio || fin !== hz.fin);
+        var difOp = (op !== (hz.op || ''));
+        /* Solo se guarda como día distinto si de verdad cambia algo. */
+        if(difHoras || difOp) hz.especiales.push({ dia: letra, inicio: ini, fin: fin, op: (difOp ? op : '') });
+      }
       pintarPropios();
     };
-    if($p('pp-cini')) $p('pp-cini').onchange = updC;
-    if($p('pp-cfin')) $p('pp-cfin').onchange = updC;
+    if($p('pp-fijo')) $p('pp-fijo').onchange = guardarCelda;
+    if($p('pp-cini')) $p('pp-cini').onchange = guardarCelda;
+    if($p('pp-cfin')) $p('pp-cfin').onchange = guardarCelda;
+    if($p('pp-cop')) $p('pp-cop').onchange = guardarCelda;
     if($p('pp-base-dia')) $p('pp-base-dia').onclick = function(){
       hz.especiales = (hz.especiales || []).filter(function(e){ return e.dia !== letra; });
       pintarPropios();
@@ -40673,9 +40707,12 @@ function tablaSemana(turnos, semana){
       var esDom = new Date(f + 'T00:00:00').getDay() === 0;
       var hoy = suyos.filter(function(t){ return t.fecha === f; });
       var t0 = hoy[0];
+      /* Valor fijo: un servicio sin horas. NO es novedad: se ve como día
+         trabajado y muestra la operación. */
+      var esVF = t0 && !t0.inicio && /valor fijo/i.test(String(t0.nota || ''));
       /* Una novedad —incapacidad, permiso, vacaciones— no lleva horas:
          el día se ve gris y dice qué pasó. */
-      var esNov = t0 && !t0.inicio;
+      var esNov = t0 && !t0.inicio && !esVF;
       var pinta = (t0 && !esNov) ? (colores[t0.inicio + '-' + t0.fin] || COLORES_TURNO[0]) : '';
       var tocado = hoy.some(function(t){ return t.ajuste; }) && !esNov;
       var datos = ' data-cel="1" data-persona="' + esc(clave) + '" data-fecha="' + f + '" data-quien="' + esc(p) + '"';
@@ -40751,7 +40788,9 @@ function desglosePersona(clave, nombre, semana, turnos){
        hora ahora, descanso, y después el turno— va como su propia caja,
        en el orden en que se trabajan. */
     var t0 = hoy.filter(function(t){ return t.turno !== 'Hora extra'; })[0] || hoy[0];
-    var esNov = t0 && !t0.inicio;
+    /* Valor fijo: servicio sin horas, no es novedad. */
+    var esVF = t0 && !t0.inicio && /valor fijo/i.test(String(t0.nota || ''));
+    var esNov = t0 && !t0.inicio && !esVF;
     var pinta = (t0 && !esNov) ? (colores[t0.inicio + '-' + t0.fin] || COLORES_TURNO[0]) : '';
     var base = (t0 && !esNov) ? baseDelTurno(t0) : null;
     var exA = base ? minutosAntes(base.inicio, t0.inicio) : 0;
@@ -40759,6 +40798,7 @@ function desglosePersona(clave, nombre, semana, turnos){
     var horasDia = hoy.reduce(function(s, t){ return s + (t.horas || horasTurno(t.inicio, t.fin, t.almuerzo)); }, 0);
     var caja = function(t){
       var esExtra = t.turno === 'Hora extra';
+      var vf = !t.inicio && /valor fijo/i.test(String(t.nota || ''));
       var col = colores[t.inicio + '-' + t.fin] || COLORES_TURNO[0];
       /* El bloque de hora extra muestra, a la vista, su justificación y
          quién la aprobó (o la planeó): es lo que sustenta el pago. */
@@ -40772,20 +40812,22 @@ function desglosePersona(clave, nombre, semana, turnos){
           justif = '<span class="ex-just">' + (anot.motivo ? esc(anot.motivo) + ' · ' : '') + esc(quien) + '</span>';
         }
       }
-      return '<div class="c cel pinta' + (esExtra ? ' extra' : '') + '"' +
-        ' style="background:' + (esExtra ? 'var(--gold,#b8891f)' : col) + '"' +
+      return '<div class="c cel pinta' + (esExtra ? ' extra' : '') + (vf ? ' vf' : '') + '"' +
+        ' style="background:' + (esExtra || vf ? 'var(--gold,#b8891f)' : col) + '"' +
         ' data-cel="1" data-persona="' + esc(clave) + '" data-fecha="' + f + '" data-quien="' + esc(nombre) + '">' +
-        (esExtra ? '' : tiraExtra('antes', exA, t)) +
-        '<div class="tu"><span class="hs" data-turno="' + esc(t.turno) + '">' + esc(t.inicio) + '–' + esc(t.fin) + '</span>' +
-          '<span class="nt">' + esc(t.turno) + '</span>' + justif + '</div>' +
-        (esExtra ? '' : tiraExtra('despues', exD, t)) +
+        (esExtra || vf ? '' : tiraExtra('antes', exA, t)) +
+        '<div class="tu">' +
+          (vf ? '' : '<span class="hs" data-turno="' + esc(t.turno) + '">' + esc(t.inicio) + '–' + esc(t.fin) + '</span>') +
+          '<span class="nt">' + esc(t.turno) + '</span>' +
+          (vf ? '<span class="nt-sub">valor fijo</span>' : '') + justif + '</div>' +
+        (esExtra || vf ? '' : tiraExtra('despues', exD, t)) +
       '</div>';
     };
     h += '<div class="tn-dia' + (esDom ? ' dom' : '') + '">' +
       '<div class="f"><b>' + d.toLocaleDateString('es-CO', { weekday:'long' }) + '</b>' +
         '<span>' + fechaCorta(f) + '</span></div>' +
       (t0 && !esNov
-        ? '<div class="cajas">' + hoy.filter(function(t){ return t.inicio; }).map(caja).join('') + '</div>'
+        ? '<div class="cajas">' + hoy.filter(function(t){ return t.inicio || (!t.inicio && /valor fijo/i.test(String(t.nota || ''))); }).map(caja).join('') + '</div>'
         : '<div class="c cel ' + (esNov ? 'novedad' : 'libre') +
           '" data-cel="1" data-persona="' + esc(clave) + '" data-fecha="' + f + '" data-quien="' + esc(nombre) + '">' +
           '<div class="tu"><span class="nt">' + esc(esNov ? t0.turno : 'descanso') + '</span></div></div>') +
