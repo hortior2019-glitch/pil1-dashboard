@@ -7290,6 +7290,25 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #per-area-modal .pp-desc{font-size:12px;color:var(--ink-m);line-height:1.4;margin-top:10px;padding:9px 10px;
   border:1px dashed var(--rule);border-radius:8px;background:#fcfcfb}
 #per-area-modal .pp-desc b{color:var(--ink)}
+/* Toggle Trabaja / Descanso del panel de celda */
+#per-area-modal .pp-seg{display:flex;border:1px solid var(--rule);border-radius:9px;overflow:hidden;margin:4px 0 10px}
+#per-area-modal .pp-seg-b{flex:1;padding:10px 8px;font-size:13px;font-weight:700;border:none;background:#fff;
+  color:var(--ink-m);cursor:pointer;font-family:'Source Sans 3',sans-serif}
+#per-area-modal .pp-seg-b + .pp-seg-b{border-left:1px solid var(--rule)}
+#per-area-modal .pp-seg-b:hover{background:#f2f8f4;color:#1c5636}
+#per-area-modal .pp-seg-b.on{background:#1c5636;color:#fff}
+/* Cuadro más grande y fácil de leer */
+#per-area-modal .pp-tabla{font-size:13.5px}
+#per-area-modal .pp-tabla thead th{padding:10px 8px;font-size:12px}
+#per-area-modal .pp-th-q,#per-area-modal .pp-th-p{min-width:168px}
+#per-area-modal .pp-persona{padding:12px 14px;font-size:14px}
+#per-area-modal .pp-td{min-width:118px;padding:5px !important}
+#per-area-modal .pp-cel{padding:11px 7px;border-radius:8px}
+#per-area-modal .pp-cel .pp-h{font-size:14px}
+#per-area-modal .pp-cel .pp-d{font-size:13px}
+#per-area-modal .pp-cel .pp-fijo{font-size:12.5px}
+#per-area-modal .pp-cel .pp-op{font-size:11px}
+#per-area-modal .pp-tot{font-size:14px;padding:8px 10px !important}
 @media (max-width:820px){ #per-area-modal .pp-split{grid-template-columns:1fr} }
 #per-area-modal .ar-lista{max-height:230px;overflow:auto;border:1px solid var(--rule);padding:4px 10px;margin-top:4px}
 #per-area-modal .ar-lista label{display:flex;align-items:center;gap:9px;padding:6px 0;margin:0;
@@ -39569,7 +39588,10 @@ function ppPanel(){
     var opVal = c.op || '';
     panel.innerHTML =
       '<div class="pp-pt">' + esc(nombre) + ' · ' + esc(DIAS_NOMBRE[letra]) + '</div>' +
-      '<label class="pp-chk"><input type="checkbox" id="pp-trab"' + (c.trabaja ? ' checked' : '') + '> Trabaja ese día</label>' +
+      '<div class="pp-seg">' +
+        '<button type="button" class="pp-seg-b' + (c.trabaja ? ' on' : '') + '" data-pptrab="1">Trabaja</button>' +
+        '<button type="button" class="pp-seg-b' + (!c.trabaja ? ' on' : '') + '" data-pptrab="0">Descanso</button>' +
+      '</div>' +
       '<div id="pp-trab-caja"' + (c.trabaja ? '' : ' style="display:none"') + '>' +
         '<label class="pp-chk"><input type="checkbox" id="pp-fijo"' + (c.fijo ? ' checked' : '') + '> Valor fijo (servicio sin horas)</label>' +
         '<div id="pp-horas-caja"' + (c.fijo ? ' style="display:none"' : '') + '>' +
@@ -39582,13 +39604,16 @@ function ppPanel(){
         (esp ? '<button type="button" class="pp-mini" id="pp-base-dia">Volver al horario base</button>' : '') +
       '</div>' +
       (!c.trabaja ? '<div class="pp-desc">Queda en <b>descanso</b> ese día. Marque “Trabaja ese día” si quiere darle horario.</div>' : '');
-    $p('pp-trab').onchange = function(){
-      var arr = ppDiasDe(hz), i = arr.indexOf(letra);
-      if(this.checked){ if(i < 0) arr.push(letra); }
-      else { if(i > -1) arr.splice(i, 1); hz.especiales = (hz.especiales || []).filter(function(e){ return e.dia !== letra; }); }
-      hz.dias = DIAS_LETRA.filter(function(x){ return arr.indexOf(x) > -1; }).join(',');
-      pintarPropios();
-    };
+    panel.querySelectorAll('[data-pptrab]').forEach(function(b){
+      b.onclick = function(){
+        var trabaja = b.dataset.pptrab === '1';
+        var arr = ppDiasDe(hz), i = arr.indexOf(letra);
+        if(trabaja){ if(i < 0) arr.push(letra); }
+        else { if(i > -1) arr.splice(i, 1); hz.especiales = (hz.especiales || []).filter(function(e){ return e.dia !== letra; }); }
+        hz.dias = DIAS_LETRA.filter(function(x){ return arr.indexOf(x) > -1; }).join(',');
+        pintarPropios();
+      };
+    });
     var guardarCelda = function(){
       /* Ese día trabaja (si no, el check de arriba lo deja en descanso). */
       var arr = ppDiasDe(hz);
