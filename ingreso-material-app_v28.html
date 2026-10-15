@@ -778,8 +778,9 @@ html.modo-noche .vi-est.error{background:#3a1d1d;color:#ef8a80}
           <div class="mf-kpi"><b id="mf-k-total">—</b><i>viajes en el filtro</i></div>
         </div>
         <div class="mf-nota-filtro">
-          Toma los viajes del filtro de arriba (periodo y operación). Van ordenados por número
-          de manifiesto, de menor a mayor; los que no traen consecutivo quedan al final, por hora de entrega.
+          Muestra <b>solo los viajes que faltan por verificar</b> del filtro de arriba (periodo y operación);
+          los ya certificados no aparecen. Van ordenados por número de manifiesto, de menor a mayor; los que
+          no traen consecutivo quedan al final, por hora de entrega.
         </div>
 
         <!-- EL VIAJE QUE SE ESTA VERIFICANDO -->
@@ -6212,7 +6213,8 @@ var MF_MARCA_NC = 'MANIFIESTO NO COINCIDE';
 var MF = {
   abierto: false,
   preparado: false,      // ya se pidieron las columnas al servidor
-  lista: [],             // los viajes del filtro, en orden de trabajo
+  lista: [],             // SOLO los viajes que faltan por verificar, en orden de trabajo
+  totales: 0,            // cuantos trae el filtro en total (para los contadores)
   i: 0,                  // en cual va
   clave: '',             // marca temporal del viaje actual, para no perderlo al repintar
   foto: null,            // dataUrl del manifiesto recien fotografiado
@@ -6337,10 +6339,11 @@ function mfRender() {
   var cuerpo = mfEl('mf-cuerpo');
   if (!cuerpo) return;
 
-  MF.lista = mfArmarLista();
+  /* Todos los del filtro: solo para los contadores (KPIs). */
+  var todos = mfArmarLista();
 
   var pend = 0, cert = 0, nd = 0, nc = 0;
-  MF.lista.forEach(function (r) {
+  todos.forEach(function (r) {
     var e = mfEstado(r);
     if (e === '') pend++;
     else if (e === MF_MARCA_ND) nd++;
@@ -6348,10 +6351,15 @@ function mfRender() {
     else cert++;
   });
 
+  /* El visor SOLO navega los que FALTAN por verificar: los ya certificados
+     (o no disponibles / no coinciden) no se muestran. */
+  MF.lista = todos.filter(mfPendiente);
+  MF.totales = todos.length;
+
   var badge = mfEl('mf-badge');
   if (badge) {
     badge.style.display = pend ? 'inline-block' : 'none';
-    badge.textContent = pend + (pend === 1 ? ' por verificar' : ' por verificar');
+    badge.textContent = pend + ' por verificar';
   }
   if (!MF.abierto) return;
 
@@ -6359,7 +6367,7 @@ function mfRender() {
   if (mfEl('mf-k-cert'))  mfEl('mf-k-cert').textContent  = cert;
   if (mfEl('mf-k-nd'))    mfEl('mf-k-nd').textContent    = nd;
   if (mfEl('mf-k-nc'))    mfEl('mf-k-nc').textContent    = nc;
-  if (mfEl('mf-k-total')) mfEl('mf-k-total').textContent = MF.lista.length;
+  if (mfEl('mf-k-total')) mfEl('mf-k-total').textContent = todos.length;
 
   /* Al repintar (un filtro nuevo, datos recargados) se vuelve al mismo
      viaje por su marca temporal. Si ya no esta en el filtro, se arranca
@@ -6382,8 +6390,11 @@ function mfPintarLead() {
   if (!caja) return;
 
   if (!MF.lista.length) {
-    caja.innerHTML = '<div class="mf-vacio">No hay viajes en el filtro de arriba. ' +
-                     'Cambiá el periodo o la operación para traer los viajes que querés verificar.</div>';
+    caja.innerHTML = (MF.totales > 0)
+      ? '<div class="mf-vacio">✓ ¡Todo verificado! No quedan viajes por verificar en este filtro. ' +
+        'Ya podés generar el certificado abajo, o cambiá el periodo/operación para ver otros.</div>'
+      : '<div class="mf-vacio">No hay viajes en el filtro de arriba. ' +
+        'Cambiá el periodo o la operación para traer los viajes que querés verificar.</div>';
     return;
   }
 
