@@ -7768,6 +7768,10 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 }
 #panel-personal .ex-motivo:focus{outline:none;border-color:var(--gold,#b8891f);box-shadow:0 0 0 3px rgba(184,137,31,.15)}
 #panel-personal .ex-motivo.falta{border-color:#c0392b;box-shadow:0 0 0 3px rgba(192,57,43,.14)}
+/* Aviso cuando se intenta crear hora extra desde el editor del turno */
+#panel-personal .ed-extra-msg{margin-top:10px;font-size:12.5px;font-weight:600;color:#c0392b;line-height:1.4;
+  background:#fdf2f0;border:1px solid #f2cbc4;border-radius:7px;padding:9px 11px}
+#panel-personal .ed-extra-msg:empty{display:none}
 #panel-personal .op-motivos{margin-top:6px}
 #panel-personal .op-motivos button{font-size:10.5px;font-weight:600;padding:5px 9px}
 </style>
@@ -9003,6 +9007,7 @@ function _ingArmarObjetos(headers, rows) {
 }
 
 async function fetchIngreso() {
+  _ingSinSesion = false;   // se reevalúa en cada carga
   // 1. Endpoint rapido del backend
   try {
     const ctrl = new AbortController();
@@ -9018,6 +9023,7 @@ async function fetchIngreso() {
          volveria a exponer la base y saltaria el candado). Se pide volver
          a entrar y se devuelve vacio. */
       if (j && j.sinSesion) {
+        _ingSinSesion = true;
         try { setStatus('Tu sesión venció. Vuelve a iniciar sesión para ver los datos de ingreso.', 'error'); } catch (e) {}
         console.warn('Ingreso: el backend pidió sesión; no se usa el CSV de respaldo.');
         return [];
@@ -9059,6 +9065,11 @@ let currentFilter = 'hoy'; // Filtro de periodo activo ('hoy','semana','mes','to
 */
 let dataIngreso = [], dataSolicitudes = [], dataHE = [], dataPreopVol = [], dataPreopCar = [], dataViajes = [], dataProduccionHumus = [];
 let dataCombustible = [];   // hoja "Combustible": tanqueos por placa
+/* Se enciende cuando el backend de recepción niega la lectura de ingreso por
+   falta de sesión. Sirve para que el estado final NO tape esa advertencia con
+   el mensaje verde de "actualizado": si está en true, dataIngreso quedó vacío
+   por sesión, no porque no haya datos. */
+let _ingSinSesion = false;
 
 /*
   UTILIDADES DE DATOS
@@ -9773,7 +9784,11 @@ async function loadAllData() {
   const now = new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   document.getElementById('last-update').textContent = 'Ultima actualizacion: '+now;
 
-  if (errors.length === 0) {
+  if (_ingSinSesion) {
+    /* El ingreso quedó vacío porque el backend pidió sesión: no se tapa con
+       el verde de "actualizado", porque entonces parecería que no hay datos. */
+    setStatus('Los datos de Ingreso no se cargaron: la sesión venció o no está iniciada. Vuelve a iniciar sesión (cierra sesión y entra de nuevo).', 'error');
+  } else if (errors.length === 0) {
     setStatus('Datos actualizados correctamente — ' + now, 'ok');
   } else if (ok > 0) {
     setStatus('Actualizacion parcial. Error en: ' + errors.join(', ') + '. Verifique que los Sheets esten publicados.', 'error');
@@ -11812,12 +11827,13 @@ async function cargarVehiculos(forzar) {
   if (_vehiculosCargados && !forzar) { renderVehiculos(); return; }
   const cont = document.getElementById('veh-lista');
   if (cont && !_vehiculos.length) cont.innerHTML = '<div class="empty" style="padding:30px">Cargando vehículos...</div>';
-  /* Los viajes internos del día alimentan un KPI de la ficha: se traen en
-     paralelo para que el indicador tenga datos desde el primer render. */
+  /* Los viajes internos alimentan un KPI de la ficha, pero se traen de OTRO
+     Apps Script: se cargan en segundo plano y NO deben frenar la lista de
+     vehículos. Si ese endpoint tarda o falla, la pestaña igual carga; cuando
+     los datos lleguen, se refresca sola la ficha que esté abierta. */
   const viajesP = _cargarViajesInternosDatos(forzar);
   const d = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
     body: JSON.stringify({ accion:'listarVehiculos' }) });
-  await viajesP;
   if (d && Array.isArray(d.vehiculos)) {
     _vehiculos = d.vehiculos;
     _mantenimientos = Array.isArray(d.mantenimientos) ? d.mantenimientos : [];
@@ -11833,6 +11849,9 @@ async function cargarVehiculos(forzar) {
     return;
   }
   renderVehiculos();
+  /* Cuando lleguen los viajes internos (en segundo plano), refresca la ficha
+     abierta para que el KPI y el comparativo tomen el dato. */
+  viajesP.then(() => { try { if (_vehFichaAbierta) renderFichaVehiculo(_vehFichaAbierta); } catch (e) {} });
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -41245,6 +41264,7 @@ function editarCelda(celda){
        queda a nombre de quien la aprobó. */
     '<div class="ayuda2" style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--rule)">' +
       'Las horas extra se agregan desde <b>“Editar turnos de la semana”</b>.</div>' +
+    '<div id="ed-extra-msg" class="ed-extra-msg"></div>' +
   '</div>';
 
   if(!abrirMenuTurno(cuerpo)) return;
@@ -41275,9 +41295,22 @@ function editarCelda(celda){
     var sel = $p('ed-turno');
     var nombreTurno = sel.value === '__otro' ? 'Horas especiales' : sel.value;
     var todos = $p('ed-todos') && $p('ed-todos').checked;
+    var ini = $p('ed-ini').value, fin = $p('ed-fin').value;
+    /* No se puede CREAR hora extra desde aquí: si el horario se sale del
+       turno base (entra antes o sale después) y no es un cambio de todo el
+       turno ni un horario especial, se bloquea. La hora extra va por
+       “Editar turnos de la semana”, con su justificación y aprobador. */
+    if(sel.value !== '__otro' && !todos){
+      var base = baseDelTurno({ turno: nombreTurno, fecha: fecha });
+      if(base && (minutosAntes(base.inicio, ini) > 0 || minutosDespues(base.fin, fin) > 0)){
+        var msg = $p('ed-extra-msg');
+        if(msg) msg.textContent = 'Ese horario se sale del turno (entra antes o sale después): eso es hora extra y se agrega desde “Editar turnos de la semana”, con justificación y aprobador. Aquí solo se ajusta el turno dentro de su horario.';
+        return;
+      }
+    }
     mandarCambio({ accion:'perTurnoEditar', area: AREA_VIENDO, semana: lunesDe(fecha), fecha: fecha,
                    persona: persona, turno: turno || nombreTurno, nombreTurno: nombreTurno,
-                   inicio: $p('ed-ini').value, fin: $p('ed-fin').value, todoElTurno: !!todos,
+                   inicio: ini, fin: fin, todoElTurno: !!todos,
                    nota: todos ? 'el turno cambió ese día' : (sel.value === '__otro' ? 'horas especiales' : 'ajustado a mano') }, this);
   };
 }
