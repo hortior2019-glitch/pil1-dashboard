@@ -6990,6 +6990,11 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-personal .tn-personas .cel.pinta .tn-hp,#per-area-modal .tn-personas .cel.pinta .tn-hp{
   color:#fff;background:rgba(255,255,255,.2);border-radius:5px;padding:1px 6px;display:inline-block;
 }
+/* Almuerzo del día (o N-A) junto a las horas */
+#panel-personal .tn-personas .cel .tn-alm,#per-area-modal .tn-personas .cel .tn-alm{
+  display:block;font-size:10px;font-weight:700;letter-spacing:.3px;margin-top:3px;opacity:.9}
+#panel-personal .tn-personas .cel .tn-alm.na,#per-area-modal .tn-personas .cel .tn-alm.na{opacity:.75;font-style:italic}
+#panel-personal .tn-personas .cel.pinta .tn-alm,#per-area-modal .tn-personas .cel.pinta .tn-alm{color:rgba(255,255,255,.92)}
 /* El color lo pone cada celda: uno por horario. */
 #panel-personal .tn-personas .cel.pinta,#per-area-modal .tn-personas .cel.pinta{color:#fff}
 #panel-personal .tn-personas .cel.libre,#per-area-modal .tn-personas .cel.libre{background:var(--s2);color:var(--ink-l)}
@@ -37554,6 +37559,7 @@ function montarRotador(a, semana){
     ['sumar',     'Sumar horas…'],
     ['reducir',   'Reducir horas…'],
     ['horas',     'Horas a medida…'],
+    ['almuerzo',  'Almuerzo: poner / quitar…'],
     ['descanso',  'Cancelar turno (descanso)'],
     ['trabajar',  'Poner a trabajar…'],
     ['extra',     'Hora extra…'],
@@ -37643,6 +37649,14 @@ function rotRenderParams(acc){
           '<div><label>Salida</label><input type="time" id="rtp-fin"></div>' +
           '<div><label>Almuerzo</label><input type="number" id="rtp-alm" min="0" max="240" step="5" value="0"></div>' +
         '</div>';
+  } else if(acc === 'almuerzo'){
+    h = '<label>¿Qué hacer?</label><select id="rtp-almacc">' +
+          '<option value="poner">Poner almuerzo</option>' +
+          '<option value="quitar">Quitar almuerzo (N-A)</option>' +
+        '</select>' +
+        '<div id="rtp-almmin-caja"><label>Minutos de almuerzo</label>' +
+          '<input type="number" id="rtp-alm" min="0" max="240" step="5" value="60"></div>' +
+        '<div class="rtp-nota">Solo cambia el almuerzo de las jornadas marcadas (con horario). No toca las horas de entrada/salida.</div>';
   } else if(acc === 'trabajar'){
     h = '<label>¿En qué turno?</label><select id="rtp-turno">' + turnosOpc + '</select>' +
         '<div class="rtp-nota">Para un horario distinto a los del área, use “Horas a medida”.</div>';
@@ -37677,10 +37691,16 @@ function rotRenderParams(acc){
       inicio: ($p('rtp-ini')    || {}).value,
       fin:    ($p('rtp-fin')    || {}).value,
       almuerzo: ($p('rtp-alm')  || {}).value,
+      almacc: ($p('rtp-almacc') || {}).value,
       nombre: ($p('rtp-nom')    || {}).value,
       hora:   ($p('rtp-hora')   || {}).value,
       motivo: ($p('rtp-motivo') || {}).value
     };
+    /* Almuerzo: si se elige "quitar", se ocultan los minutos. */
+    if(acc === 'almuerzo'){
+      var cj = $p('rtp-almmin-caja');
+      if(cj) cj.style.display = (ROT.param.almacc === 'quitar') ? 'none' : '';
+    }
     /* Hora extra: una sola hora (entrada para “antes”, salida para
        “después”) o el bloque aparte con sus dos horas. */
     if(acc === 'extra'){
@@ -37743,6 +37763,12 @@ function rotMaterializar(){
     } else if(acc === 'horas'){
       if(pr.inicio && pr.fin) ROT.propio[id] = { tipo:'horas', turno: (pr.nombre || t.turno || 'Horario'),
         inicio: pr.inicio, fin: pr.fin, almuerzo: Math.max(0, Math.min(240, Number(pr.almuerzo) || 0)) };
+    } else if(acc === 'almuerzo'){
+      /* Poner o quitar almuerzo SIN tocar las horas. Solo en jornadas con
+         horario cerrado (no descanso, no valor fijo, no "por definir"). */
+      if(!t.inicio || !t.fin) return;
+      var nuevoAlm = (pr.almacc === 'quitar') ? 0 : Math.max(0, Math.min(240, Number(pr.almuerzo) || 0));
+      ROT.propio[id] = { tipo:'horas', turno: t.turno || 'Horario', inicio: t.inicio, fin: t.fin, almuerzo: nuevoAlm };
     } else if(acc === 'sumar' || acc === 'reducir'){
       if(!t.inicio) return;
       var m = Math.max(0, Number(pr.min) || 0);
@@ -37840,7 +37866,7 @@ function rotDestinoDe(t, id){
      tiene propio (p. ej. “Horas a medida” sin completar) no muestra el
      atajo de rotación: queda a la espera, para no engañar con una flecha
      que no es la acción elegida. */
-  if(ROT.accion && ['descanso','horas','sumar','reducir','trabajar','swap','extra'].indexOf(ROT.accion) > -1) return null;
+  if(ROT.accion && ['descanso','horas','sumar','reducir','trabajar','swap','extra','almuerzo'].indexOf(ROT.accion) > -1) return null;
   /* Una celda de descanso sin elección propia no va a ningún lado con el
      atajo de rotación: solo se mueve si se le elige turno u horas. */
   if(t && t.vacia && (ROT.destino === '1' || ROT.destino === '-1')) return null;
@@ -40961,8 +40987,7 @@ function cuadroMes(area, turnos){
       '</summary><div class="cuerpo">' +
       (dela.length ? tablaSemana(dela, sem) +
           '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">' +
-            '<button type="button" class="per-btn fuerte" data-ajustar="' + sem + '">Editar turnos de la semana</button>' +
-            '<button type="button" class="per-btn" data-rehacer="' + sem + '">Rehacer esta semana</button></div>'
+            '<button type="button" class="per-btn fuerte" data-ajustar="' + sem + '">Editar turnos de la semana</button></div>'
         : '<div class="per-vacio" style="padding:14px">Esta semana aún no está generada.' +
           ' <button type="button" class="per-btn" data-armar="' + sem + '">Generar la semana</button>' +
           (turnos.some(function(t){ return t.semana < sem; })
@@ -41121,9 +41146,14 @@ function tablaSemana(turnos, semana){
                 ? ((t.inicio ? esc(t.inicio) : '<span class="pp-pd">por definir</span>') + '–' +
                    (t.fin ? esc(t.fin) : '<span class="pp-pd">por definir</span>'))
                 : '';
+              /* Si ese día tuvo almuerzo (no interesa a qué hora): se muestra
+                 los minutos; si no tuvo, N-A. Solo en jornadas con horario. */
+              var almN = Number(t.almuerzo) || 0;
+              var almTxt = cerrado ? (almN > 0 ? 'alm ' + almN + ' min' : 'N-A') : '';
               return (htxt ? '<span class="hs" data-turno="' + esc(t.turno) + '">' + htxt + '</span>' : '') +
                      '<span class="nt">' + esc(t.turno) + '</span>' +
-                     (hp ? '<span class="tn-hp">' + esc(hp) + '</span>' : '');
+                     (hp ? '<span class="tn-hp">' + esc(hp) + '</span>' : '') +
+                     (almTxt ? '<span class="tn-alm' + (almN > 0 ? '' : ' na') + '">' + almTxt + '</span>' : '');
             }).join('')
           : '<span class="nt">descanso</span>') + '</td>';
     });
