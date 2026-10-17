@@ -7264,7 +7264,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #per-area-modal .pp-cel.sel{border-color:#1c5636;box-shadow:0 0 0 1px #1c5636 inset}
 #per-area-modal .pp-cel.esp{background:#faf6ec}
 #per-area-modal .pp-cel.descansa{background:#fcfcfb;border-style:dashed;border-color:var(--rule)}
-#per-area-modal .pp-cel .pp-h{font-size:12px;font-weight:700;color:#1c5636}
+#per-area-modal .pp-cel .pp-h{display:block;font-size:12px;font-weight:700;color:#1c5636;line-height:1.25}
 #per-area-modal .pp-cel.esp .pp-h{color:#8b6914}
 #per-area-modal .pp-cel .pp-d{font-size:11.5px;color:#b7bdb8;font-weight:600}
 #per-area-modal .pp-cel .pp-op{display:block;font-size:10px;color:var(--ink-l);margin-top:2px;line-height:1.2;white-space:normal}
@@ -7275,9 +7275,16 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #per-area-modal .pp-panel{border:1px solid var(--rule);border-radius:10px;padding:11px;background:var(--white)}
 #per-area-modal .pp-panel .pp-pt{font-size:13.5px;font-weight:700;color:var(--ink);margin-bottom:8px}
 #per-area-modal .pp-panel label{font-size:10px !important;margin:9px 0 3px !important}
-#per-area-modal .pp-panel select,#per-area-modal .pp-panel input[type=time],#per-area-modal .pp-panel input[type=number]{
-  width:100%;padding:7px 8px;font-size:13px}
+#per-area-modal .pp-panel select,#per-area-modal .pp-panel input[type=time],#per-area-modal .pp-panel input[type=number],#per-area-modal .pp-panel input[type=text]{
+  width:100%;padding:7px 8px;font-size:13px;box-sizing:border-box}
 #per-area-modal .pp-panel .pp-row{display:flex;gap:6px}
+/* Bloques del horario (horario partido / punta "por definir") */
+#per-area-modal .pp-bloque{display:flex;gap:6px;align-items:flex-end;margin-bottom:7px}
+#per-area-modal .pp-bloque > div{flex:1;min-width:0}
+#per-area-modal .pp-bquitar{flex:0 0 auto;width:30px;height:33px;border:1px solid var(--rule);border-radius:7px;
+  background:#fff;color:#b23b3b;font-size:17px;font-weight:800;cursor:pointer;line-height:1}
+#per-area-modal .pp-bquitar:hover{border-color:#b23b3b;background:#fbeaea}
+#per-area-modal .pp-pd{font-style:italic;color:#8b6914;font-weight:700}
 #per-area-modal .pp-panel .pp-row > div{flex:1;min-width:0}
 #per-area-modal .pp-dias{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px}
 #per-area-modal .pp-dia{width:26px;height:26px;border:1px solid var(--rule);background:var(--bg);border-radius:6px;
@@ -37523,7 +37530,7 @@ function montarRotador(a, semana){
         ' title="Asignar turno u horas este día"></button></td>';
       /* Un día de novedad no tiene horas: no se rota, se respeta. */
       if(!t || !t.inicio) return '<td class="rt-td"><span class="rt-nov">' + esc((t && t.turno) || 'novedad') + '</span></td>';
-      var col = colores[t.inicio + '-' + t.fin] || '#e5e7eb';
+      var col = colores[claveColor(t.inicio, t.fin)] || '#e5e7eb';
       return '<td class="rt-td"><button type="button" class="rt-cel" data-rt="' + esc(p.clave) + '|' + f + '"' +
         ' style="--c:' + col + '">' +
         '<span class="rt-t">' + esc(t.turno) + '</span>' +
@@ -38536,7 +38543,7 @@ function escribirExcelQuincena(d){
     var A = areas[t.area] || (areas[t.area] = { nombre: t.area, gente: {}, turnos: {} });
     var p = A.gente[t.persona] || (A.gente[t.persona] = { nombre: t.nombre, cargo: t.cargo || '', dias: {} });
     p.dias[t.fecha] = t;
-    A.turnos[t.inicio + '-' + t.fin] = { inicio: t.inicio, fin: t.fin, nombre: t.turno };
+    A.turnos[claveColor(t.inicio, t.fin)] = { inicio: t.inicio, fin: t.fin, nombre: t.turno };
   });
 
   var filas = [];      /* la hoja, fila por fila */
@@ -38605,7 +38612,7 @@ function escribirExcelQuincena(d){
           } else if(t && t.horas){
             fila.push(t.horas);
             nDias++; nHoras += t.horas;
-            pintaCeldas.push({ c: 2 + i, e: relleno(colorTurno[t.inicio + '-' + t.fin] || colorArea, 'FFFFFF', true) });
+            pintaCeldas.push({ c: 2 + i, e: relleno(colorTurno[claveColor(t.inicio, t.fin)] || colorArea, 'FFFFFF', true) });
           } else {
             fila.push('');
             pintaCeldas.push({ c: 2 + i, e: { fill:{ patternType:'solid', fgColor:{ rgb:'F5F5F3' } }, border: bordeFino() } });
@@ -39584,25 +39591,79 @@ function ppDiasDe(hz){ return String(hz.dias || '').split(',').filter(Boolean); 
 function ppEspecialDe(hz, letra){
   return (hz.especiales || []).filter(function(e){ return !e.fecha && e.dia === letra; })[0] || null;
 }
-/* Qué hace una persona un día: trabaja (con qué horas) o descansa. */
+
+/* Normaliza lo que el usuario ESCRIBE a "HH:MM". Acepta "6", "6:30", "630",
+   "0630", "6.30"… Límite: hora 0–24 (24 solo como fin de jornada = 24:00),
+   minutos 00–59. Devuelve '' si está vacío o no se entiende (vacío = una
+   punta "por definir"). */
+function perParseHora(txt){
+  var s = String(txt == null ? '' : txt).trim();
+  if(!s) return '';
+  s = s.replace(/[.\s]/g, ':');
+  var h, m, mm = s.match(/^(\d{1,2}):(\d{1,2})$/);
+  if(mm){ h = Number(mm[1]); m = Number(mm[2]); }
+  else {
+    var d = s.replace(/\D/g, '');
+    if(!d) return '';
+    if(d.length <= 2){ h = Number(d); m = 0; }
+    else if(d.length === 3){ h = Number(d.slice(0,1)); m = Number(d.slice(1)); }
+    else { h = Number(d.slice(0,2)); m = Number(d.slice(2,4)); }
+  }
+  if(isNaN(h) || isNaN(m)) return '';
+  if(h === 24 && m === 0) return '24:00';     /* medianoche como fin de jornada */
+  if(h < 0 || h > 23 || m < 0 || m > 59) return '';
+  return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+}
+
+/* Los bloques (tramos) de un día: un horario normal tiene uno; un horario
+   partido tiene varios. Un bloque con una punta vacía queda "por definir".
+   Lee el formato nuevo (esp.bloques) y también el viejo (esp.inicio/fin). */
+function ppBloquesDeEsp(esp, almBase){
+  if(esp && Array.isArray(esp.bloques)){
+    return esp.bloques.map(function(b){
+      return { inicio: b.inicio || '', fin: b.fin || '', almuerzo: (b.almuerzo != null ? Number(b.almuerzo) : 0) };
+    });
+  }
+  if(esp && (esp.inicio || esp.fin)){
+    return [{ inicio: esp.inicio || '', fin: esp.fin || '', almuerzo: (esp.almuerzo != null ? Number(esp.almuerzo) : almBase) }];
+  }
+  return null;
+}
+/* Texto de un bloque para el cuadro: "06:00–14:00" o "06:00 → por definir". */
+function ppBloqueTexto(b){
+  var ini = b.inicio ? esc(b.inicio) : '<span class="pp-pd">por definir</span>';
+  var fin = b.fin ? esc(b.fin) : '<span class="pp-pd">por definir</span>';
+  return ini + '–' + fin;
+}
+
+/* Qué hace una persona un día: trabaja (con qué bloques) o descansa. */
 function ppCeldaDe(hz, letra){
   var base = Number(hz.almuerzo) || 0;
   var esp = ppEspecialDe(hz, letra);
   if(esp){
-    var almE = (esp.almuerzo != null) ? Number(esp.almuerzo) : base;
-    if(esp.fijo) return { trabaja:true, fijo:true, op:(esp.op || hz.op || ''), almuerzo:0, especial:true };
-    return { trabaja:true, inicio:esp.inicio, fin:esp.fin, op:(esp.op || hz.op || ''), almuerzo:almE, especial:true };
+    if(esp.fijo) return { trabaja:true, fijo:true, op:(esp.op || hz.op || ''), almuerzo:0, especial:true, bloques:null };
+    var bl = ppBloquesDeEsp(esp, base);
+    var p0 = (bl && bl[0]) || { inicio:'', fin:'', almuerzo:base };
+    return { trabaja:true, op:(esp.op || hz.op || ''), especial:true, bloques:bl,
+             inicio:p0.inicio, fin:p0.fin, almuerzo:p0.almuerzo };
   }
-  if(ppDiasDe(hz).indexOf(letra) > -1) return { trabaja:true, inicio:hz.inicio, fin:hz.fin, op:(hz.op || ''), almuerzo:base, especial:false };
+  if(ppDiasDe(hz).indexOf(letra) > -1)
+    return { trabaja:true, inicio:hz.inicio, fin:hz.fin, op:(hz.op || ''), almuerzo:base, especial:false,
+             bloques:[{ inicio:hz.inicio, fin:hz.fin, almuerzo:base }] };
   return { trabaja:false };
 }
 function ppHorasSemana(hz){
   var tot = 0;
   DIAS_LETRA.forEach(function(letra){
     var c = ppCeldaDe(hz, letra);
-    /* El valor fijo no suma horas: es un servicio pagado por un valor. El
-       almuerzo del día (0 = sin almuerzo) se descuenta. */
-    if(c.trabaja && !c.fijo && c.inicio && c.fin) tot += horasTurno(c.inicio, c.fin, Number(c.almuerzo) || 0);
+    /* El valor fijo no suma horas; un bloque "por definir" (sin alguna punta)
+       tampoco, porque no se sabe cuánto dura. Se suma cada bloque cerrado,
+       descontando su propio almuerzo. */
+    if(c.trabaja && !c.fijo && c.bloques){
+      c.bloques.forEach(function(b){
+        if(b.inicio && b.fin) tot += horasTurno(b.inicio, b.fin, Number(b.almuerzo) || 0);
+      });
+    }
   });
   return tot;
 }
@@ -39700,11 +39761,15 @@ function pintarPropios(){
     var celdas = DIAS_LETRA.map(function(letra){
       var c = ppCeldaDe(hz, letra);
       var sel = PP_SEL && PP_SEL.persona === p.clave && PP_SEL.dia === letra;
+      /* Cada bloque del día en su renglón: un horario partido muestra varios;
+         una punta vacía se ve como "por definir". */
+      var bloquesTxt = (c.bloques || []).filter(function(b){ return b.inicio || b.fin; })
+        .map(function(b){ return '<span class="pp-h">' + ppBloqueTexto(b) + '</span>'; }).join('');
       var cont = !c.trabaja
         ? '<span class="pp-d">descansa</span>'
         : (c.fijo
             ? '<span class="pp-fijo">valor fijo</span>' + (c.op ? '<span class="pp-op">' + esc(c.op) + '</span>' : '')
-            : '<span class="pp-h">' + esc(c.inicio) + '–' + esc(c.fin) + '</span>' + (c.op ? '<span class="pp-op">' + esc(c.op) + '</span>' : ''));
+            : (bloquesTxt || '<span class="pp-h">' + esc(c.inicio) + '–' + esc(c.fin) + '</span>') + (c.op ? '<span class="pp-op">' + esc(c.op) + '</span>' : ''));
       return '<td class="pp-td"><button type="button" class="pp-cel' + (c.trabaja ? '' : ' descansa') +
         (c.especial ? ' esp' : '') + (c.fijo ? ' fijo' : '') + (sel ? ' sel' : '') + '" data-ppcel="' + esc(p.clave) + '|' + letra + '">' +
         cont + '</button></td>';
@@ -39797,6 +39862,19 @@ function ppPanel(){
     var c = ppCeldaDe(hz, letra);
     var esp = ppEspecialDe(hz, letra);
     var opVal = c.op || '';
+    /* Los bloques del día. Un horario normal tiene uno; el partido, varios.
+       Si el día está en base (sin especial) se parte del horario base. */
+    var bloques = (c.trabaja && !c.fijo && c.bloques && c.bloques.length)
+      ? c.bloques
+      : [{ inicio: hz.inicio || '', fin: hz.fin || '', almuerzo: Number(hz.almuerzo) || 0 }];
+    var filaBloque = function(b, bi, quitable){
+      return '<div class="pp-bloque" data-ppb="' + bi + '">' +
+        '<div><label>Entra</label><input type="text" class="pp-bini" inputmode="numeric" maxlength="5" placeholder="HH:MM" value="' + esc(b.inicio || '') + '"></div>' +
+        '<div><label>Sale</label><input type="text" class="pp-bfin" inputmode="numeric" maxlength="5" placeholder="vacío = por definir" value="' + esc(b.fin || '') + '"></div>' +
+        '<div><label>Almuerzo (min)</label><input type="number" class="pp-balm" min="0" max="240" step="5" value="' + (Number(b.almuerzo) || 0) + '"></div>' +
+        (quitable ? '<button type="button" class="pp-bquitar" data-bq="' + bi + '" title="Quitar este bloque">×</button>' : '') +
+      '</div>';
+    };
     panel.innerHTML =
       '<div class="pp-pt">' + esc(nombre) + ' · ' + esc(DIAS_NOMBRE[letra]) + '</div>' +
       '<div class="pp-seg">' +
@@ -39806,11 +39884,12 @@ function ppPanel(){
       '<div id="pp-trab-caja"' + (c.trabaja ? '' : ' style="display:none"') + '>' +
         '<label class="pp-chk"><input type="checkbox" id="pp-fijo"' + (c.fijo ? ' checked' : '') + '> Valor fijo (servicio sin horas)</label>' +
         '<div id="pp-horas-caja"' + (c.fijo ? ' style="display:none"' : '') + '>' +
-          '<div class="pp-row"><div><label>Entra</label><input type="time" id="pp-cini" value="' + esc((c.trabaja && !c.fijo) ? c.inicio : hz.inicio) + '"></div>' +
-            '<div><label>Sale</label><input type="time" id="pp-cfin" value="' + esc((c.trabaja && !c.fijo) ? c.fin : hz.fin) + '"></div>' +
-            '<div><label>Almuerzo (min)</label><input type="number" id="pp-calm" min="0" max="240" step="5" value="' +
-              ((c.trabaja && !c.fijo) ? (Number(c.almuerzo) || 0) : (Number(hz.almuerzo) || 0)) + '"></div></div>' +
-          '<div class="pp-hint">Almuerzo en 0 = esa jornada no descuenta almuerzo.</div>' +
+          '<div id="pp-bloques">' +
+            bloques.map(function(b, bi){ return filaBloque(b, bi, bloques.length > 1); }).join('') +
+          '</div>' +
+          '<button type="button" class="pp-mini" id="pp-bmas">+ Agregar bloque (horario partido)</button>' +
+          '<div class="pp-hint">Escriba la hora (ej. <b>6</b>, <b>6:30</b>, <b>2200</b>). Deje <b>Sale</b> (o Entra) vacío para dejarlo <b>por definir</b> ' +
+            '—ej. sale cuando entrega el carro—: ese tramo no suma horas. Hora 0–24, minutos 00–59. Almuerzo en 0 = sin almuerzo.</div>' +
         '</div>' +
         '<label>Operación / servicio (opcional)</label>' +
         '<input type="text" id="pp-cop" maxlength="40" placeholder="Ej: Alquería, McCain…" value="' + esc(opVal) + '">' +
@@ -39828,39 +39907,59 @@ function ppPanel(){
         pintarPropios();
       };
     });
-    var guardarCelda = function(){
-      /* Ese día trabaja (si no, el check de arriba lo deja en descanso). */
+    /* Lee TODOS los bloques del panel (incluso los vacíos, para que un bloque
+       recién agregado no se pierda al re-pintar). Las horas se normalizan al
+       escribirlas; una punta vacía queda "por definir". */
+    var leerBloques = function(){
+      var out = [];
+      panel.querySelectorAll('.pp-bloque').forEach(function(row){
+        var ini = perParseHora((row.querySelector('.pp-bini') || {}).value);
+        var fin = perParseHora((row.querySelector('.pp-bfin') || {}).value);
+        var alm = Math.max(0, Math.min(240, Number((row.querySelector('.pp-balm') || {}).value) || 0));
+        out.push({ inicio: ini, fin: fin, almuerzo: alm });
+      });
+      return out;
+    };
+    /* Guarda el especial del día a partir de lo que haya en el panel. */
+    var escribirEspecial = function(bloquesNuevos){
       var arr = ppDiasDe(hz);
       if(arr.indexOf(letra) < 0){ arr.push(letra); hz.dias = DIAS_LETRA.filter(function(x){ return arr.indexOf(x) > -1; }).join(','); }
-      var fijo = $p('pp-fijo') && $p('pp-fijo').checked;
       var op = (($p('pp-cop') || {}).value || '').trim();
-      var ini = ($p('pp-cini') || {}).value || '';
-      var fin = ($p('pp-cfin') || {}).value || '';
-      var alm = Math.max(0, Math.min(240, Number(($p('pp-calm') || {}).value) || 0));
       hz.especiales = (hz.especiales || []).filter(function(e){ return e.dia !== letra; });
-      if(fijo){
-        /* Valor fijo: servicio sin horas, no suma al total. */
-        hz.especiales.push({ dia: letra, fijo: true, op: op });
-      } else if(ini && fin){
-        var difHoras = (ini !== hz.inicio || fin !== hz.fin);
-        var difOp = (op !== (hz.op || ''));
-        var difAlm = (alm !== (Number(hz.almuerzo) || 0));
-        /* Solo se guarda como día distinto si de verdad cambia algo
-           (horario, operación o el almuerzo de esa jornada). */
-        if(difHoras || difOp || difAlm){
-          var e = { dia: letra, inicio: ini, fin: fin };
-          if(difOp) e.op = op;
-          if(difAlm) e.almuerzo = alm;
-          hz.especiales.push(e);
-        }
+      if($p('pp-fijo') && $p('pp-fijo').checked){
+        hz.especiales.push({ dia: letra, fijo: true, op: op, bloques: [] });
+        return;
       }
+      var bs = bloquesNuevos || leerBloques();
+      var conAlgo = bs.filter(function(b){ return b.inicio || b.fin; });
+      /* Un solo bloque cerrado, igual al base y misma operación/almuerzo: no
+         es un día distinto, se deja en base. */
+      var igualBase = (bs.length === 1 && bs[0].inicio === (hz.inicio || '') && bs[0].fin === (hz.fin || '') &&
+                       (Number(bs[0].almuerzo) || 0) === (Number(hz.almuerzo) || 0) && op === (hz.op || ''));
+      if(conAlgo.length && !igualBase){
+        var e = { dia: letra, bloques: bs, inicio: bs[0].inicio, fin: bs[0].fin };
+        if(op !== (hz.op || '')) e.op = op;
+        hz.especiales.push(e);
+      }
+    };
+    var guardarCelda = function(){ escribirEspecial(); pintarPropios(); };
+    panel.querySelectorAll('.pp-bini,.pp-bfin,.pp-balm').forEach(function(inp){ inp.onchange = guardarCelda; });
+    if($p('pp-fijo')) $p('pp-fijo').onchange = guardarCelda;
+    if($p('pp-cop')) $p('pp-cop').onchange = guardarCelda;
+    if($p('pp-bmas')) $p('pp-bmas').onclick = function(){
+      var bs = leerBloques();
+      bs.push({ inicio: '', fin: '', almuerzo: 0 });
+      escribirEspecial(bs);
       pintarPropios();
     };
-    if($p('pp-fijo')) $p('pp-fijo').onchange = guardarCelda;
-    if($p('pp-cini')) $p('pp-cini').onchange = guardarCelda;
-    if($p('pp-cfin')) $p('pp-cfin').onchange = guardarCelda;
-    if($p('pp-calm')) $p('pp-calm').onchange = guardarCelda;
-    if($p('pp-cop')) $p('pp-cop').onchange = guardarCelda;
+    panel.querySelectorAll('.pp-bquitar').forEach(function(b){
+      b.onclick = function(){
+        var bs = leerBloques();
+        bs.splice(Number(b.dataset.bq), 1);
+        escribirEspecial(bs);
+        pintarPropios();
+      };
+    });
     if($p('pp-base-dia')) $p('pp-base-dia').onclick = function(){
       hz.especiales = (hz.especiales || []).filter(function(e){ return e.dia !== letra; });
       pintarPropios();
@@ -40893,10 +40992,20 @@ function minutosDe(hora){
   return isNaN(m) ? 0 : m;
 }
 /* Arma el mapa horario -> color para un cuadro. */
+/* Normaliza la hora a HH:MM para que "6:00" y "06:00" sean la MISMA clave de
+   color. Antes el cero a la izquierda cambiaba la clave y el mismo turno
+   (p. ej. 6–14) se pintaba de colores distintos según el día. */
+function hhmm(h){
+  var s = String(h == null ? '' : h).trim();
+  var m = s.match(/^(\d{1,2}):(\d{2})/);
+  return m ? (m[1].length < 2 ? '0' + m[1] : m[1]) + ':' + m[2] : s;
+}
+function claveColor(inicio, fin){ return hhmm(inicio) + '-' + hhmm(fin); }
+
 function coloresDe(turnos){
   var vistos = {}, lista = [];
   turnos.forEach(function(t){
-    var k = t.inicio + '-' + t.fin;
+    var k = claveColor(t.inicio, t.fin);
     if(vistos[k]) return;
     vistos[k] = 1;
     lista.push({ k: k, m: minutosDe(t.inicio) });
@@ -40973,7 +41082,7 @@ function tablaSemana(turnos, semana){
       /* Una novedad —incapacidad, permiso, vacaciones— no lleva horas:
          el día se ve gris y dice qué pasó. */
       var esNov = t0 && !t0.inicio && !esVF;
-      var pinta = (t0 && !esNov) ? (colores[t0.inicio + '-' + t0.fin] || COLORES_TURNO[0]) : '';
+      var pinta = (t0 && !esNov) ? (colores[claveColor(t0.inicio, t0.fin)] || COLORES_TURNO[0]) : '';
       var tocado = hoy.some(function(t){ return t.ajuste; }) && !esNov;
       var datos = ' data-cel="1" data-persona="' + esc(clave) + '" data-fecha="' + f + '" data-quien="' + esc(p) + '"';
       /* Las horas extra se marcan en la esquina: a la izquierda si entra
@@ -41003,11 +41112,16 @@ function tablaSemana(turnos, semana){
         (t0 ? ' title="' + esc(t0.turno) + (t0.ajuste ? ' · ' + esc(t0.ajuste) : '') + '"' : '') + '>' + esquinas +
         (hoy.length
           ? hoy.map(function(t){
-              /* Horas proyectadas de ese turno (ya descontando el almuerzo):
-                 lo que se le suma a la persona ese día. El descanso o un valor
-                 fijo no proyectan horas, así que no se muestra número. */
-              var hp = t.inicio ? numeroHoras(t.horas || horasTurno(t.inicio, t.fin, t.almuerzo)) : '';
-              return (t.inicio ? '<span class="hs" data-turno="' + esc(t.turno) + '">' + esc(t.inicio) + '–' + esc(t.fin) + '</span>' : '') +
+              /* Horas proyectadas de ese turno (ya descontando el almuerzo).
+                 Si una punta quedó "por definir" (sin hora de entrada o
+                 salida) no se proyectan horas: no se sabe cuánto dura. */
+              var cerrado = t.inicio && t.fin;
+              var hp = cerrado ? numeroHoras(t.horas || horasTurno(t.inicio, t.fin, t.almuerzo)) : '';
+              var htxt = (t.inicio || t.fin)
+                ? ((t.inicio ? esc(t.inicio) : '<span class="pp-pd">por definir</span>') + '–' +
+                   (t.fin ? esc(t.fin) : '<span class="pp-pd">por definir</span>'))
+                : '';
+              return (htxt ? '<span class="hs" data-turno="' + esc(t.turno) + '">' + htxt + '</span>' : '') +
                      '<span class="nt">' + esc(t.turno) + '</span>' +
                      (hp ? '<span class="tn-hp">' + esc(hp) + '</span>' : '');
             }).join('')
@@ -41056,7 +41170,7 @@ function desglosePersona(clave, nombre, semana, turnos){
     /* Valor fijo: servicio sin horas, no es novedad. */
     var esVF = t0 && !t0.inicio && /valor fijo/i.test(String(t0.nota || ''));
     var esNov = t0 && !t0.inicio && !esVF;
-    var pinta = (t0 && !esNov) ? (colores[t0.inicio + '-' + t0.fin] || COLORES_TURNO[0]) : '';
+    var pinta = (t0 && !esNov) ? (colores[claveColor(t0.inicio, t0.fin)] || COLORES_TURNO[0]) : '';
     var base = (t0 && !esNov) ? baseDelTurno(t0) : null;
     var exA = base ? minutosAntes(base.inicio, t0.inicio) : 0;
     var exD = base ? minutosDespues(base.fin, t0.fin) : 0;
@@ -41064,7 +41178,7 @@ function desglosePersona(clave, nombre, semana, turnos){
     var caja = function(t){
       var esExtra = t.turno === 'Hora extra';
       var vf = !t.inicio && /valor fijo/i.test(String(t.nota || ''));
-      var col = colores[t.inicio + '-' + t.fin] || COLORES_TURNO[0];
+      var col = colores[claveColor(t.inicio, t.fin)] || COLORES_TURNO[0];
       /* El bloque de hora extra muestra, a la vista, su justificación y
          quién la aprobó (o la planeó): es lo que sustenta el pago. */
       var justif = '';
@@ -41082,7 +41196,7 @@ function desglosePersona(clave, nombre, semana, turnos){
         ' data-cel="1" data-persona="' + esc(clave) + '" data-fecha="' + f + '" data-quien="' + esc(nombre) + '">' +
         (esExtra || vf ? '' : tiraExtra('antes', exA, t)) +
         '<div class="tu">' +
-          (vf ? '' : '<span class="hs" data-turno="' + esc(t.turno) + '">' + esc(t.inicio) + '–' + esc(t.fin) + '</span>') +
+          (vf ? '' : '<span class="hs" data-turno="' + esc(t.turno) + '">' + (t.inicio ? esc(t.inicio) : '<span class="pp-pd">por definir</span>') + '–' + (t.fin ? esc(t.fin) : '<span class="pp-pd">por definir</span>') + '</span>') +
           '<span class="nt">' + esc(t.turno) + '</span>' +
           (vf ? '<span class="nt-sub">valor fijo</span>' : '') + justif + '</div>' +
         (esExtra || vf ? '' : tiraExtra('despues', exD, t)) +
