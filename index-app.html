@@ -7780,6 +7780,12 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-personal .ed-extra-msg{margin-top:10px;font-size:12.5px;font-weight:600;color:#c0392b;line-height:1.4;
   background:#fdf2f0;border:1px solid #f2cbc4;border-radius:7px;padding:9px 11px}
 #panel-personal .ed-extra-msg:empty{display:none}
+/* Descargar por fecha: inicio y fin lado a lado */
+#per-mover-modal .qc-fechas{display:flex;gap:14px;flex-wrap:wrap;margin-top:4px}
+#per-mover-modal .qc-fechas>div{flex:1 1 140px;min-width:0}
+#per-mover-modal .qc-fechas input[type=date]{width:100%;box-sizing:border-box;padding:8px 10px;font-size:14px;
+  border:1px solid var(--rule);border-radius:7px;background:var(--white);color:var(--ink);font-family:'Source Sans 3',sans-serif}
+#per-mover-modal .qc-fechas input[type=date]:focus{outline:none;border-color:var(--green,#1a5c35);box-shadow:0 0 0 3px rgba(26,92,53,.14)}
 #panel-personal .op-motivos{margin-top:6px}
 #panel-personal .op-motivos button{font-size:10.5px;font-weight:600;padding:5px 9px}
 </style>
@@ -38337,19 +38343,26 @@ function abrirQuincena(){
                       t: q.etq + ' de ' + MESES[d.getMonth()] + ' ' + d.getFullYear() });
     });
   }
-  /* La quincena que corre queda elegida de entrada. */
+  /* La quincena que corre queda puesta por defecto, pero el usuario puede
+     elegir cualquier fecha de inicio y de fin. El atajo de quincenas sigue
+     disponible para no tener que digitarlas. */
   var actual = quincenasDelMes(hoy.getFullYear(), hoy.getMonth())[hoy.getDate() <= 15 ? 0 : 1];
 
   $p('mv-caja').innerHTML =
-    '<div class="per-tit">Descargar la quincena</div>' +
+    '<div class="per-tit">Descargar turnos por fecha</div>' +
     '<div class="per-sub">Todas las áreas, con los cambios que haya habido: traslados, horas extra y novedades.</div>' +
-    '<label>Periodo</label><select id="qc-periodo">' +
+    '<div class="qc-fechas">' +
+      '<div><label>Desde</label><input type="date" id="qc-desde" value="' + esc(actual.desde) + '"></div>' +
+      '<div><label>Hasta</label><input type="date" id="qc-hasta" value="' + esc(actual.hasta) + '"></div>' +
+    '</div>' +
+    '<label>Atajo de quincenas</label><select id="qc-periodo">' +
+      '<option value="">— elegir una quincena —</option>' +
       opciones.map(function(o){
         return '<option value="' + esc(o.v) + '"' +
           (o.v === actual.desde + '|' + actual.hasta ? ' selected' : '') + '>' + esc(o.t) + '</option>';
       }).join('') +
     '</select>' +
-    '<div class="ayuda">El archivo trae dos hojas: el detalle día por día y el resumen por persona.</div>' +
+    '<div class="ayuda">Elija las fechas, o use el atajo. El archivo trae dos hojas: el detalle día por día y el resumen por persona.</div>' +
     '<div class="per-error" id="qc-error"></div>' +
     '<div class="per-btns">' +
       '<button type="button" class="cancelar" id="qc-cancelar">Cancelar</button>' +
@@ -38357,16 +38370,23 @@ function abrirQuincena(){
     '</div>';
   $p('per-mover-modal').classList.add('open');
   $p('qc-cancelar').onclick = function(){ cerrarMover(); };
+  /* El atajo solo rellena las dos fechas: manda lo que haya en los campos. */
+  $p('qc-periodo').onchange = function(){
+    var p = (this.value || '').split('|');
+    if(p.length === 2){ $p('qc-desde').value = p[0]; $p('qc-hasta').value = p[1]; }
+  };
   $p('qc-bajar').onclick = function(){ bajarQuincena(this); };
 }
 
 function bajarQuincena(boton){
   var err = $p('qc-error');
-  var partes = ($p('qc-periodo').value || '').split('|');
-  if(partes.length !== 2){ err.textContent = 'Elija el periodo.'; return; }
+  var desde = ($p('qc-desde').value || '').trim();
+  var hasta = ($p('qc-hasta').value || '').trim();
+  if(!desde || !hasta){ err.textContent = 'Elija la fecha de inicio y la de fin.'; return; }
+  if(desde > hasta){ err.textContent = 'La fecha de inicio debe ser anterior o igual a la de fin.'; return; }
   err.textContent = '';
   boton.disabled = true; boton.textContent = 'Armando…';
-  pedir({ accion:'perQuincena', desde: partes[0], hasta: partes[1] }, 120)
+  pedir({ accion:'perQuincena', desde: desde, hasta: hasta }, 120)
     .then(function(d){
       if(!d.turnos || !d.turnos.length){
         err.textContent = 'No hay turnos guardados en ese periodo.';
@@ -41241,6 +41261,17 @@ function menuExtra(celda, donde){
    jornada más larga suma sola en el total de la semana: no hay que
    anotar las horas extra en otro lado. Lo tocado a mano queda marcado.
    ══════════════════════════════════════════════════════════════════ */
+/* Tocar un día ya NO abre un editor suelto (ese dejaba poner horas a mano y
+   crear hora extra por fuera del flujo). Lleva a “Editar turnos de la semana”
+   de la semana de ese día: el único lugar donde se cambian turnos y se cargan
+   horas extra, con su justificación y aprobador. */
+function abrirEdicionSemana(cel){
+  if(!cel) return;
+  var det = cel.closest ? cel.closest('details[data-sem]') : null;
+  var semana = det ? det.dataset.sem : lunesDe(cel.dataset.fecha);
+  abrirAjusteSemana(semana);
+}
+
 function editarCelda(celda){
   var persona = celda.dataset.persona, fecha = celda.dataset.fecha, quien = celda.dataset.quien;
   /* La franja con las horas del día: la celda la pinta con la clase 'hs'. */
@@ -41433,7 +41464,7 @@ function engancharMes(){
     bt.onclick = function(){ repetirSemana(bt.dataset.repetir, bt); };
   });
   caja.querySelectorAll('[data-cel]').forEach(function(td){
-    td.onclick = function(){ editarCelda(td); };
+    td.onclick = function(){ abrirEdicionSemana(td); };
   });
   /* Tocar a una persona despliega su semana día por día. */
   caja.querySelectorAll('[data-ver-persona]').forEach(function(bt){
@@ -41445,13 +41476,13 @@ function engancharMes(){
   caja.querySelectorAll('[data-cerrar-desglose]').forEach(function(bt){
     bt.onclick = function(){ DESGLOSE = null; repintarDesglose(); };
   });
-  /* La hora extra ya NO se crea ni se aprueba desde el cuadro general: eso
-     se hace en “Editar turnos de la semana”, donde lleva su justificación.
-     Tocar la franja solo abre el editor del turno (horario del día). */
+  /* La hora extra —y cualquier cambio de turno— se hace SOLO en “Editar
+     turnos de la semana”. Tocar un día (celda o franja) lleva directo a ese
+     menú de la semana correspondiente; ya no abre un editor suelto. */
   caja.querySelectorAll('.cel .ex').forEach(function(tira){
     tira.onclick = function(ev){
       ev.stopPropagation();
-      editarCelda(tira.closest('[data-cel]'));
+      abrirEdicionSemana(tira.closest('[data-cel]'));
     };
   });
   caja.querySelectorAll('[data-ajustar]').forEach(function(b){
