@@ -78,7 +78,15 @@
     break-inside:avoid;page-break-inside:avoid;}
 
   .cierre{margin-top:20px;}
-  .firma-wrap{margin-top:30px;}
+  .firma-row{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;margin-top:30px;}
+  .firma-wrap{margin-top:0;}
+  /* Bloque de verificación con QR (por encima de la marca de agua) */
+  .verif-wrap{display:none;text-align:center;position:relative;z-index:5;
+    background:#fff;padding:8px 10px;border:1px solid var(--line);border-radius:6px;}
+  .verif-wrap #qr{display:inline-block;line-height:0;}
+  .verif-wrap #qr img,.verif-wrap #qr canvas{display:block;}
+  .verif-cod{font-size:12px;letter-spacing:1.5px;color:var(--accent-dark);margin:6px 0 0;font-variant-numeric:tabular-nums;}
+  .verif-txt{font-size:9.5px;color:var(--muted);max-width:130px;margin:3px auto 0;line-height:1.3;}
   .firma-wrap img{max-height:80px;display:block;margin-bottom:2px;}
   .firma-nombre{font-weight:700;margin:0;}
   .firma-cargo{color:var(--accent-dark);font-style:italic;font-weight:600;margin:0;}
@@ -99,6 +107,8 @@
     .page{padding:28px 20px 48px;}
   }
 </style>
+<!-- Librería para generar el QR (sin servicios externos de imagen) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 
@@ -107,7 +117,8 @@
   <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
     <label class="chk"><input type="checkbox" id="chk-punto4" checked onchange="togglePunto4()"> Incluir punto 4 (resultados)</label>
     <button class="sec" id="btn-tabla" onclick="generarTabla()">🔄 Nuevos resultados</button>
-    <button onclick="window.print()">🖨️ Imprimir / PDF</button>
+    <button class="sec" id="btn-generar" onclick="generarCertificado()">🔖 Generar código + QR</button>
+    <button onclick="exportarPDF()">🖨️ Exportar PDF</button>
   </div>
 </div>
 
@@ -119,7 +130,7 @@
   </div>
 
   <h1 class="titulo">Certificado de Tratamiento y Disposición</h1>
-  <p class="num">N.° <span class="edit" contenteditable="true" data-ph="número de certificado"></span></p>
+  <p class="num">N.° <span class="edit" id="f-numero" contenteditable="true" data-ph="número de certificado" oninput="resetCodigo()"></span></p>
 
   <p>La <b>UNIÓN TEMPORAL PTARND – SABANA DE OCCIDENTE (UT PTARND SO.)</b>, identificada con
   NIT 901.163.727-3, en calidad de operador de la planta de tratamiento de aguas residuales
@@ -145,8 +156,8 @@
     <li>Los datos del servicio prestado son los siguientes:
       <ul class="datos">
         <li><b>Tipo de agua residual:</b> Industrial.</li>
-        <li><b>Volumen tratado:</b> <span class="edit" contenteditable="true" data-ph="cantidad"></span> kg</li>
-        <li><b>Periodo de tratamiento:</b> <span class="edit" contenteditable="true" data-ph="periodo"></span></li>
+        <li><b>Volumen tratado:</b> <span class="edit" id="f-cantidad" contenteditable="true" data-ph="cantidad" oninput="resetCodigo()"></span> kg</li>
+        <li><b>Periodo de tratamiento:</b> <span class="edit" id="f-periodo" contenteditable="true" data-ph="periodo" oninput="resetCodigo()"></span></li>
         <li><b>Proceso de tratamiento aplicado:</b> pretratamiento y tratamiento primario (cribado
         grueso, desarenador, trampas de grasas, tanque de homogenización, hiperoxidación y
         desinfección primaria); tratamiento secundario (mezclador estático de alta turbulencia,
@@ -173,15 +184,23 @@
   </ol>
 
   <div class="cierre">
-    <p>Se expide la presente certificación el <span class="edit" contenteditable="true" data-ph="fecha de expedición"></span>.</p>
+    <p>Se expide la presente certificación el <span class="edit" id="f-fecha" contenteditable="true" data-ph="fecha de expedición" oninput="resetCodigo()"></span>.</p>
     <p>Cordialmente,</p>
   </div>
 
-  <div class="firma-wrap">
-    <img src="ptarnd-firma.jpeg" alt="Firma">
-    <p class="firma-nombre">Wilmer Alexis Suárez Saldaña</p>
-    <p class="firma-cargo">Gerente General</p>
-    <p class="firma-emp">UNIÓN TEMPORAL PTARND – SABANA DE OCCIDENTE</p>
+  <div class="firma-row">
+    <div class="firma-wrap">
+      <img src="ptarnd-firma.jpeg" alt="Firma">
+      <p class="firma-nombre">Wilmer Alexis Suárez Saldaña</p>
+      <p class="firma-cargo">Gerente General</p>
+      <p class="firma-emp">UNIÓN TEMPORAL PTARND – SABANA DE OCCIDENTE</p>
+    </div>
+
+    <div class="verif-wrap" id="verif-wrap">
+      <div id="qr"></div>
+      <p class="verif-cod" id="qr-codigo"></p>
+      <p class="verif-txt">Escanee el QR para verificar la autenticidad de este certificado.</p>
+    </div>
   </div>
 </div>
 
@@ -214,6 +233,7 @@
                      '<td>' + p[3] + '</td>';
       tb.appendChild(tr);
     });
+    if(typeof resetCodigo === 'function') resetCodigo();
   }
 
   // Incluir / quitar el punto 4 (resultados) del certificado
@@ -221,6 +241,100 @@
     var incluir = document.getElementById('chk-punto4').checked;
     document.getElementById('punto4').style.display = incluir ? '' : 'none';
     document.getElementById('btn-tabla').style.display = incluir ? '' : 'none';
+    resetCodigo();
+  }
+
+  /* =========================================================
+     VERIFICACIÓN POR QR  —  CONFIGURACIÓN
+     1) Pega la URL /exec de tu Apps Script en APPS_SCRIPT_URL.
+     2) (Opcional) Pega la URL pública de verificar-ptarnd.html.
+        Si la dejas vacía, el QR apunta directo al Apps Script.
+     3) El SECRETO debe ser el mismo que pusiste en el Code.gs.
+     ========================================================= */
+  var APPS_SCRIPT_URL = 'PEGA_AQUI_TU_URL_DEL_APPS_SCRIPT/exec';
+  var VERIFICAR_URL   = '';   // ej: 'https://tuusuario.github.io/repo/verificar-ptarnd.html'
+  var SECRETO         = 'cambia-esto';
+
+  // Datos fijos del generador (van al registro)
+  var GENERADOR = 'Sabanalac S.A.S.';
+  var NIT_GEN   = '860.512.466-6';
+
+  var CODIGO = null;  // código del certificado ya registrado
+
+  function val(id){ return (document.getElementById(id).textContent || '').trim(); }
+
+  // Lee la tabla de resultados actual (para guardarla en el registro)
+  function leerResultados(){
+    var filas = document.querySelectorAll('#tbody-res tr');
+    return Array.prototype.map.call(filas, function(tr){
+      var c = tr.querySelectorAll('td');
+      return { parametro:c[0].textContent, unidad:c[1].textContent,
+               valor:c[2].textContent, limite:c[3].textContent };
+    });
+  }
+
+  // Al editar cualquier campo, el código anterior deja de ser válido
+  function resetCodigo(){
+    CODIGO = null;
+    var w = document.getElementById('verif-wrap');
+    if(w){ w.style.display='none'; document.getElementById('qr').innerHTML=''; }
+  }
+
+  function pintarQR(codigo){
+    var destino = (VERIFICAR_URL ? VERIFICAR_URL + '?codigo=' :
+                   APPS_SCRIPT_URL + '?verificarJson=') + encodeURIComponent(codigo);
+    var caja = document.getElementById('qr');
+    caja.innerHTML = '';
+    new QRCode(caja, { text:destino, width:110, height:110,
+      correctLevel: QRCode.CorrectLevel.M });
+    document.getElementById('qr-codigo').textContent = codigo;
+    document.getElementById('verif-wrap').style.display = 'block';
+  }
+
+  // Registra el certificado en la hoja y genera el QR
+  async function generarCertificado(){
+    if(APPS_SCRIPT_URL.indexOf('PEGA_AQUI') > -1){
+      alert('Falta configurar APPS_SCRIPT_URL en el HTML (la URL /exec de tu Apps Script).');
+      return false;
+    }
+    if(!val('f-cantidad') || !val('f-periodo') || !val('f-fecha')){
+      alert('Completa la cantidad, el periodo y la fecha antes de generar el QR.');
+      return false;
+    }
+    var btn = document.getElementById('btn-generar');
+    btn.disabled = true; btn.textContent = 'Registrando…';
+    var qs = new URLSearchParams({
+      accion:'guardar', secreto:SECRETO,
+      numero: val('f-numero'), generador:GENERADOR, nit:NIT_GEN,
+      cantidad: val('f-cantidad'), periodo: val('f-periodo'),
+      fechaExpedicion: val('f-fecha'),
+      incluyePunto4: document.getElementById('chk-punto4').checked ? '1' : '',
+      resultados: JSON.stringify(leerResultados())
+    });
+    try{
+      var r = await fetch(APPS_SCRIPT_URL + '?' + qs.toString());
+      var d = await r.json();
+      if(!d.ok){ throw new Error(d.error || 'Respuesta inválida'); }
+      CODIGO = d.codigo;
+      pintarQR(CODIGO);
+      return true;
+    }catch(e){
+      alert('No se pudo registrar el certificado: ' + e.message);
+      return false;
+    }finally{
+      btn.disabled = false; btn.textContent = '🔖 Generar código + QR';
+    }
+  }
+
+  // Exportar a PDF: si aún no hay código, lo genera primero
+  async function exportarPDF(){
+    if(!CODIGO){
+      var ok = await generarCertificado();
+      if(!ok){
+        if(!confirm('¿Deseas exportar el PDF SIN código de verificación?')) return;
+      }
+    }
+    setTimeout(function(){ window.print(); }, 350);
   }
 
   generarTabla();
