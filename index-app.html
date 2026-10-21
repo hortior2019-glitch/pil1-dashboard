@@ -7001,6 +7001,12 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-personal .per-tablero{margin-top:18px}
 
 /* Pastel: solo para dos */
+/* El cuadro de este mes contra el pasado */
+#panel-personal .hex-graf{display:flex;flex-direction:column;gap:10px}
+#panel-personal .hex-svg{width:100%;height:auto;display:block;overflow:visible}
+#panel-personal .hex-graf .hex-leyenda.hex-leyenda-h{flex-direction:row;flex-wrap:wrap;gap:20px;
+  align-items:center;padding-top:4px;border-top:1px solid #eceee9}
+#panel-personal .hex-dif{font-size:12.5px;font-weight:700;margin-left:auto}
 #panel-personal .hex-pastel{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
 #panel-personal .hex-pie{width:124px;height:124px;flex-shrink:0}
 #panel-personal .hex-leyenda{display:flex;flex-direction:column;gap:12px;min-width:0}
@@ -12180,15 +12186,29 @@ function renderFlotaSeguro(){
   }
 }
 
+/* Las placas que de verdad están registradas en Vehículos de Carga. El
+   tablero salía con todas las que aparecieran en los tiquetes —mulas de
+   terceros, equipos de otra empresa, placas mal digitadas—, y eso no es
+   la flota. Fuera de esta lista, nada entra. */
+function _flSoloFlota(){
+  var set = {};
+  (_vehiculos || []).forEach(function(v){
+    var k = (v.placa || '').toString().trim().toUpperCase();
+    if(k) set[k] = true;
+  });
+  return set;
+}
+
 /* Lo movido por cada placa en el periodo que esté elegido arriba. */
 function _flotaToneladas(){
   var regs = (typeof dataIngreso !== 'undefined' ? dataIngreso : []) || [];
+  var dela = _flSoloFlota();
   var porPlaca = {};
   regs.forEach(function(r){
     var f = getMarcaTemporal(r);
     if(f && !inPeriod(f, currentFilter)) return;
     var pl = getPlacaReg(r);
-    if(!pl) return;
+    if(!pl || !dela[pl]) return;
     var kg = getPesoNeto(r) || 0;
     if(!porPlaca[pl]) porPlaca[pl] = { placa: pl, kg: 0, viajes: 0 };
     porPlaca[pl].kg += kg;
@@ -12201,12 +12221,13 @@ function _flotaToneladas(){
 /* Qué hizo hoy cada equipo: las operaciones del día, por placa. */
 function _flotaOperacionesHoy(){
   var regs = (typeof dataIngreso !== 'undefined' ? dataIngreso : []) || [];
+  var dela = _flSoloFlota();
   var hoy = _flHoy();
   var porPlaca = {};
   regs.forEach(function(r){
     if(fechaIsoDeRegistro(r) !== hoy) return;
     var pl = getPlacaReg(r);
-    if(!pl) return;
+    if(!pl || !dela[pl]) return;
     var op = opDeRegistro(r) || 'Sin operación';
     if(!porPlaca[pl]) porPlaca[pl] = { placa: pl, ops: {}, viajes: 0, kg: 0 };
     porPlaca[pl].ops[op] = (porPlaca[pl].ops[op] || 0) + 1;
@@ -12220,12 +12241,13 @@ function _flotaOperacionesHoy(){
 /* El combustible de toda la flota en el periodo. */
 function _flotaCombustible(){
   var lista = (typeof dataCombustible !== 'undefined' ? dataCombustible : []) || [];
+  var dela = _flSoloFlota();
   var porPlaca = {};
   lista.forEach(function(r){
     var f = _fechaComb(r);
     if(!f || !inPeriod(f, currentFilter)) return;
     var pl = (r['Placa / Equipo'] || r['Placa'] || r['PLACA'] || r['placa'] || '').toString().trim().toUpperCase();
-    if(!pl) return;
+    if(!pl || !dela[pl]) return;
     if(!porPlaca[pl]) porPlaca[pl] = { placa: pl, valor: 0, n: 0, ultima: '' };
     porPlaca[pl].valor += _numComb(r['Valor tanqueado']);
     porPlaca[pl].n++;
@@ -37477,6 +37499,14 @@ function cargarHorasExtra(){
   }
   HEX.cargando = true;
   var desdeS = _hexLunes(HEX.desde), hastaS = _hexDomingo(HEX.hasta);
+  /* El cuadro de este mes contra el pasado necesita los dos meses
+     completos, así que se piden de una vez: una sola consulta por área
+     sirve para los indicadores y para la comparación. */
+  var hoyD = new Date();
+  var iniMesPasado = isoDe(new Date(hoyD.getFullYear(), hoyD.getMonth() - 1, 1));
+  if(iniMesPasado < desdeS) desdeS = iniMesPasado;
+  var finHoy = isoDe(hoyD);
+  if(finHoy > hastaS) hastaS = finHoy;
   var turnos = [], extras = [], fallos = [], listas = 0;
 
   var avisar = function(){
@@ -37494,7 +37524,7 @@ function cargarHorasExtra(){
     var dentro = extras.filter(function(e){
       return (!HEX.desde || e.fecha >= HEX.desde) && (!HEX.hasta || e.fecha <= HEX.hasta);
     });
-    HEX.datos = { turnos: turnos, extras: dentro,
+    HEX.datos = { turnos: turnos, extras: dentro, extrasTodas: extras,
                   novedades: P.novedades || [], traslados: P.traslados || [],
                   fallos: fallos, areas: areas.length };
     _hexGuardarCache(HEX.datos);
@@ -37659,6 +37689,133 @@ function _hexBarras(filas){
   }).join('') + '</div>';
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   ESTE MES CONTRA EL PASADO, DÍA A DÍA
+   ------------------------------------------------------------------
+   Un punto por día: cuántas horas extra se anotaron ese día de este mes
+   y del pasado. Sirve para ver si la cosa va subiendo, y en qué días de
+   la quincena se dispara.
+
+   Los dos ejes van rotulados y con sus números: un punto sin saber a qué
+   altura está no dice nada. El eje de la izquierda son horas; el de
+   abajo, los días del mes.
+   ══════════════════════════════════════════════════════════════════ */
+
+/* Horas extra anotadas por día de un mes. Devuelve un hueco (null) en
+   los días que todavía no han llegado, para no pintar una caída falsa
+   hasta cero al final del mes en curso. */
+function _hexSerieMes(extras, anio, mes, hastaDia){
+  var dias = new Date(anio, mes + 1, 0).getDate();
+  var serie = [];
+  for(var i = 0; i < dias; i++) serie.push(hastaDia && (i + 1) > hastaDia ? null : 0);
+  (extras || []).forEach(function(e){
+    var m = String(e.fecha || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if(!m) return;
+    if(Number(m[1]) !== anio || Number(m[2]) - 1 !== mes) return;
+    var d = Number(m[3]) - 1;
+    if(d < 0 || d >= dias || serie[d] === null) return;
+    serie[d] += (Number(e.minutos) || 0) / 60;
+  });
+  return serie;
+}
+
+function _hexGraficoMeses(extras){
+  var hoy = new Date();
+  var aA = hoy.getFullYear(), mA = hoy.getMonth();
+  var pasado = new Date(aA, mA - 1, 1);
+  var aB = pasado.getFullYear(), mB = pasado.getMonth();
+  var MESES = ['enero','febrero','marzo','abril','mayo','junio','julio',
+               'agosto','septiembre','octubre','noviembre','diciembre'];
+
+  var A = _hexSerieMes(extras, aA, mA, hoy.getDate());
+  var B = _hexSerieMes(extras, aB, mB);
+  var hayA = A.some(function(v){ return v; }), hayB = B.some(function(v){ return v; });
+  if(!hayA && !hayB){
+    return '<div class="hex-vacio">Sin horas extra anotadas ni este mes ni el pasado.</div>';
+  }
+
+  var dias = Math.max(A.length, B.length);
+  var tope = 0;
+  A.concat(B).forEach(function(v){ if(v !== null && v > tope) tope = v; });
+  /* La escala sube a un número redondo: así las marcas del eje caen en
+     valores que se leen, no en 7,3 h. */
+  var paso = tope <= 4 ? 1 : tope <= 10 ? 2 : tope <= 25 ? 5 : tope <= 50 ? 10 : 20;
+  var techo = Math.max(paso, Math.ceil(tope / paso) * paso);
+
+  var an = 620, al = 230;
+  var izq = 44, der = 14, arr = 14, aba = 34;
+  var cW = an - izq - der, cH = al - arr - aba;
+  var px = function(i){ return izq + (dias <= 1 ? 0 : (i / (dias - 1)) * cW); };
+  var py = function(v){ return arr + cH * (1 - v / techo); };
+
+  /* Eje de horas, con su línea guía y su número */
+  var guias = '';
+  for(var k = 0; k <= techo; k += paso){
+    var y = py(k);
+    guias += '<line x1="' + izq + '" y1="' + y.toFixed(1) + '" x2="' + (an - der) + '" y2="' + y.toFixed(1) +
+             '" stroke="#e9ece9" stroke-width="1"/>' +
+             '<text x="' + (izq - 7) + '" y="' + (y + 3.5).toFixed(1) + '" text-anchor="end" ' +
+             'font-size="10" fill="#5b625e">' + k + '</text>';
+  }
+
+  /* Eje de días: uno de cada cinco, más el último */
+  var marcas = '';
+  for(var d = 0; d < dias; d++){
+    var n = d + 1;
+    if(n !== 1 && n % 5 !== 0 && n !== dias) continue;
+    marcas += '<text x="' + px(d).toFixed(1) + '" y="' + (al - aba + 16) +
+              '" text-anchor="middle" font-size="10" fill="#5b625e">' + n + '</text>';
+  }
+
+  var serieSVG = function(serie, color, radio, opacidad){
+    var circ = '';
+    serie.forEach(function(v, i){
+      if(v === null) return;
+      var x = px(i), y = py(v);
+      /* Solo se dibuja punto donde hubo horas: un cero no es un dato que
+         merezca marca, y 31 puntos pegados al eje tapan la lectura. */
+      if(v > 0) circ += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + radio +
+                        '" fill="' + color + '" opacity="' + opacidad + '"><title>Día ' + (i + 1) + ': ' +
+                        numeroHoras(v) + '</title></circle>';
+    });
+    /* Sin línea que los una: entre dos días con horas extra no pasa
+       nada que unir, y la línea bajando a cero en los días vacíos
+       dibujaba una sierra que tapaba los puntos. */
+    return circ;
+  };
+
+  var totA = A.reduce(function(x, v){ return x + (v || 0); }, 0);
+  var totB = B.reduce(function(x, v){ return x + (v || 0); }, 0);
+  var dif = totB > 0 ? ((totA - totB) / totB) * 100 : null;
+
+  return '<div class="hex-graf">' +
+    '<svg viewBox="0 0 ' + an + ' ' + al + '" class="hex-svg" role="img" ' +
+      'aria-label="Horas extra por día, este mes contra el pasado">' +
+      guias +
+      '<line x1="' + izq + '" y1="' + arr + '" x2="' + izq + '" y2="' + (arr + cH) +
+        '" stroke="#cfd4d0" stroke-width="1"/>' +
+      '<text x="' + (izq - 7) + '" y="' + (arr - 3) + '" text-anchor="end" font-size="9.5" ' +
+        'fill="#8a8f8b">horas</text>' +
+      marcas +
+      '<text x="' + (an - der) + '" y="' + (al - 2) + '" text-anchor="end" font-size="9.5" ' +
+        'fill="#8a8f8b">día del mes</text>' +
+      serieSVG(B, '#d9b65c', 4.5, .95) +
+      serieSVG(A, '#1c5636', 5, 1) +
+    '</svg>' +
+    '<div class="hex-leyenda hex-leyenda-h">' +
+      '<div class="hex-lg"><span style="background:#1c5636"></span><div><b>' +
+        MESES[mA].charAt(0).toUpperCase() + MESES[mA].slice(1) + '</b><em>' + numeroHoras(totA) +
+        ' hasta el día ' + hoy.getDate() + '</em></div></div>' +
+      '<div class="hex-lg"><span style="background:#d9b65c"></span><div><b>' +
+        MESES[mB].charAt(0).toUpperCase() + MESES[mB].slice(1) + '</b><em>' + numeroHoras(totB) +
+        ' en todo el mes</em></div></div>' +
+      (dif === null ? '' :
+        '<div class="hex-dif" style="color:' + (dif > 0 ? '#b23b3b' : '#1c5636') + '">' +
+          (dif > 0 ? '▲ ' : '▼ ') + Math.abs(dif).toFixed(0) + '% vs. el mes pasado</div>') +
+    '</div>' +
+  '</div>';
+}
+
 function pintarHorasExtra(deCache){
   var caja = $p('per-hex');
   if(!caja) return;
@@ -37731,25 +37888,9 @@ function pintarHorasExtra(deCache){
         _hexBarras(areas) +
       '</div>' +
       '<div class="hex-card">' +
-        '<div class="hex-tit">Aprobadas y por aprobar</div>' +
-        (tot
-          ? '<div class="hex-pastel">' +
-              '<svg viewBox="0 0 140 140" class="hex-pie" aria-hidden="true">' +
-                '<circle cx="70" cy="70" r="' + r + '" fill="none" stroke="#d9b65c" stroke-width="26"></circle>' +
-                '<circle cx="70" cy="70" r="' + r + '" fill="none" stroke="#1c5636" stroke-width="26"' +
-                  ' stroke-dasharray="' + (c * pa).toFixed(1) + ' ' + c.toFixed(1) + '"' +
-                  ' transform="rotate(-90 70 70)"></circle>' +
-              '</svg>' +
-              '<div class="hex-leyenda">' +
-                '<div class="hex-lg"><span style="background:#1c5636"></span><div><b>Aprobadas</b>' +
-                  '<em>' + numeroHoras(m.aprobadas) + ' · ' + Math.round(pa * 100) + '%</em></div></div>' +
-                '<div class="hex-lg"><span style="background:#d9b65c"></span><div><b>Por aprobar</b>' +
-                  '<em>' + numeroHoras(m.porAprobar) + ' · ' + Math.round((1 - pa) * 100) + '%</em></div></div>' +
-                (m.deJornada ? '<div class="hex-lg"><span style="background:#b23b3b"></span><div><b>Sobre las ' +
-                  HEX_TOPE_SEMANAL + ' h</b><em>' + numeroHoras(m.deJornada) + ' sin anotar</em></div></div>' : '') +
-              '</div>' +
-            '</div>'
-          : '<div class="hex-vacio">Sin horas extra en el periodo.</div>') +
+        '<div class="hex-tit">Horas extra por día' +
+          '<span class="hex-sub">este mes contra el pasado · solo las anotadas</span></div>' +
+        _hexGraficoMeses((HEX.datos && HEX.datos.extrasTodas) || []) +
       '</div>' +
     '</div>' +
 
