@@ -7050,6 +7050,32 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
    semana: así no hay que bajar a buscarlo ni se pierde de vista la fila. */
 #per-turno-modal .per-caja{max-width:470px;padding:0;border-top:4px solid var(--gold,#b8891f)}
 #per-turno-modal .tn-editor,#per-turno-modal .tn-extra{border:none;background:var(--white);padding:20px 22px}
+/* ── La previa del día: la semana con el cambio ya puesto ──────── */
+#per-turno-modal .ed-previa{margin-top:14px;padding-top:12px;border-top:1px dashed var(--rule)}
+#per-turno-modal .epv-rot{font-size:10.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;
+  color:var(--ink-l);margin-bottom:7px}
+#per-turno-modal .epv-fila{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+#per-turno-modal .epv-d{border:1px solid var(--rule-l);border-radius:7px;padding:6px 4px;text-align:center;
+  background:#fcfcfb;min-height:56px}
+#per-turno-modal .epv-d.libre{background:#f3f4f2}
+#per-turno-modal .epv-d.nov{background:#faf6ec}
+/* El día que se está tocando: es lo único que cambia, y se ve. */
+#per-turno-modal .epv-d.cambia{background:#eaf4ee;border-color:#1c5636;box-shadow:0 0 0 1px #1c5636 inset}
+#per-turno-modal .epv-dia{font-size:9.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;
+  color:var(--ink-l)}
+#per-turno-modal .epv-t{font-size:11px;font-weight:700;color:var(--ink);margin-top:3px;line-height:1.2;
+  overflow:hidden;text-overflow:ellipsis}
+#per-turno-modal .epv-d.libre .epv-t{font-weight:600;color:var(--ink-l)}
+#per-turno-modal .epv-h{font-size:10px;color:var(--ink-m);margin-top:1px}
+#per-turno-modal .epv-era{font-size:9px;color:#8b6914;margin-top:2px;text-decoration:line-through}
+#per-turno-modal .epv-tot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:9px;
+  padding:8px 11px;background:#f6f7f5;border-radius:8px;font-size:12px;color:var(--ink-m)}
+#per-turno-modal .epv-tot b{font-size:14px;color:var(--ink)}
+#per-turno-modal .epv-fl{color:var(--ink-l)}
+#per-turno-modal .epv-nuevo{color:#1c5636}
+#per-turno-modal .epv-dif{font-weight:700;font-size:12.5px}
+#per-turno-modal .epv-igual{font-size:11.5px;color:var(--ink-l);font-style:italic}
+@media(max-width:620px){ #per-turno-modal .epv-fila{grid-template-columns:repeat(4,1fr)} }
 #per-turno-modal .tn-editor .tt,#per-turno-modal .tn-extra .tt{
   font-family:'Playfair Display',serif;font-size:18px;font-weight:700;color:var(--ink);
   text-transform:none;margin-bottom:12px;line-height:1.25;
@@ -41499,6 +41525,7 @@ function editarCelda(celda){
     /* La hora extra ya NO se crea desde aquí: se hace en “Editar turnos de
        la semana” (un solo menú), donde además lleva su justificación y
        queda a nombre de quien la aprobó. */
+    '<div id="ed-previa" class="ed-previa"></div>' +
     '<div class="ayuda2" style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--rule)">' +
       'Las horas extra se agregan desde <b>“Editar turnos de la semana”</b>.</div>' +
     '<div id="ed-extra-msg" class="ed-extra-msg"></div>' +
@@ -41515,6 +41542,9 @@ function editarCelda(celda){
     var hs = horasTurno($p('ed-ini').value, $p('ed-fin').value, alm);
     $p('ed-cuantas').textContent = ($p('ed-ini').value && $p('ed-fin').value)
       ? '= ' + numeroHoras(hs) + (alm ? ' (menos ' + textoAlmuerzo(alm) + ')' : '') : '';
+    /* Y cómo queda la semana con ese cambio, antes de guardarlo. */
+    pintarPreviaDia(persona, quien, fecha, sel.value,
+                    $p('ed-ini').value, $p('ed-fin').value, alm);
   };
   $p('ed-turno').onchange = function(){
     var o = this.options[this.selectedIndex];
@@ -41589,6 +41619,94 @@ function repintarDesglose(){
    Las horas extra y los cambios de un día se gestionan en un menú que
    sale encima, centrado. Antes aparecía pegado al final de la semana y
    había que bajar a buscarlo. */
+/* ══════════════════════════════════════════════════════════════════
+   CÓMO QUEDA LA SEMANA, ANTES DE GUARDAR
+   ------------------------------------------------------------------
+   Al cambiar las horas de un día no se veía el efecto: había que
+   guardar, mirar el cuadro y, si no era lo que se esperaba, volver a
+   entrar. Y lo que de verdad importa —cuántas horas le quedan a la
+   persona esa semana— no se veía en ningún lado hasta después.
+
+   Esto dibuja la semana de esa persona con el cambio ya aplicado,
+   mientras se escribe: el día tocado resaltado, el total de antes, el
+   de después y la diferencia.
+   ══════════════════════════════════════════════════════════════════ */
+function semanaDePersona(persona, fecha){
+  var lunes = lunesDe(fecha);
+  var clave = AREA_VIENDO + '|' + semanasDelCuadro(MES_VIENDO)[0];
+  var suyos = (P.turnos[clave] || []).filter(function(t){
+    return t.persona === persona && t.fecha >= lunes && t.fecha <= sumarDias(lunes, 6);
+  });
+  var dias = [];
+  for(var i = 0; i < 7; i++){
+    var f = sumarDias(lunes, i);
+    /* El bloque suelto de hora extra es una fila aparte: en la previa se
+       deja fuera para no contarlo dos veces ni confundirlo con el turno. */
+    var t = suyos.filter(function(x){ return x.fecha === f && x.turno !== 'Hora extra'; })[0] || null;
+    dias.push({ fecha: f, idx: i, t: t });
+  }
+  return dias;
+}
+
+function pintarPreviaDia(persona, quien, fecha, turnoNuevo, iniNuevo, finNuevo, almNuevo){
+  var caja = $p('ed-previa');
+  if(!caja) return;
+  var dias = semanaDePersona(persona, fecha);
+  var hayCambio = !!(iniNuevo && finNuevo);
+
+  var horasDe = function(t){
+    if(!t || !t.inicio) return 0;
+    return t.horas || horasTurno(t.inicio, t.fin, t.almuerzo);
+  };
+  var antes = 0, despues = 0;
+  dias.forEach(function(d){
+    var h = horasDe(d.t);
+    antes += h;
+    despues += (d.fecha === fecha && hayCambio)
+      ? horasTurno(iniNuevo, finNuevo, almNuevo)
+      : h;
+  });
+
+  var celdas = dias.map(function(d){
+    var esElDia = d.fecha === fecha;
+    var t = d.t;
+    var tit, horas, clase = '';
+    if(esElDia && hayCambio){
+      tit = turnoNuevo === '__otro' ? 'Horas especiales' : turnoNuevo;
+      horas = iniNuevo + '–' + finNuevo;
+      clase = ' cambia';
+    } else if(t && t.inicio){
+      tit = t.turno; horas = t.inicio + '–' + t.fin;
+    } else if(t){
+      tit = t.turno; horas = ''; clase = ' nov';      /* novedad: sin horas */
+    } else {
+      tit = 'Descansa'; horas = ''; clase = ' libre';
+    }
+    return '<div class="epv-d' + clase + '">' +
+      '<div class="epv-dia">' + DIAS_NOMBRE[DIAS_LETRA[d.idx]].slice(0, 3) + ' ' + Number(d.fecha.slice(8, 10)) + '</div>' +
+      '<div class="epv-t">' + esc(tit) + '</div>' +
+      (horas ? '<div class="epv-h">' + esc(horas) + '</div>' : '') +
+      (esElDia && hayCambio && t && t.inicio && (t.inicio !== iniNuevo || t.fin !== finNuevo)
+        ? '<div class="epv-era">antes ' + esc(t.inicio) + '–' + esc(t.fin) + '</div>' : '') +
+    '</div>';
+  }).join('');
+
+  var dif = Math.round((despues - antes) * 10) / 10;
+  var signo = dif > 0 ? '+' : '';
+  var colorDif = !dif ? 'var(--ink-l)' : (dif > 0 ? '#8b6914' : '#1c5636');
+
+  caja.innerHTML =
+    '<div class="epv-rot">Así quedaría la semana de ' + esc(quien) + '</div>' +
+    '<div class="epv-fila">' + celdas + '</div>' +
+    '<div class="epv-tot">' +
+      '<span>Horas de la semana</span>' +
+      '<b>' + numeroHoras(antes) + '</b>' +
+      (dif ? '<span class="epv-fl">→</span><b class="epv-nuevo">' + numeroHoras(despues) + '</b>' +
+             '<span class="epv-dif" style="color:' + colorDif + '">' + signo + numeroHoras(dif) + '</span>'
+           : '<span class="epv-igual">sin cambio</span>') +
+    '</div>';
+}
+
 function abrirMenuTurno(html){
   var m = $p('per-turno-modal');
   if(!m) return null;
