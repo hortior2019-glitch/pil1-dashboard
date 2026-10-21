@@ -4457,6 +4457,19 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <button class="fbtn" onclick="setFilter('semana',this)">Esta semana</button>
   <button class="fbtn" onclick="setFilter('mes',this)">Este mes</button>
   <button class="fbtn" onclick="setFilter('total',this)">Total</button>
+  <!-- Filtro de fechas de Vehículos de Carga: aparece al volver a hacer
+       clic en la pestaña, igual que el de Ingreso por Cliente -->
+  <div id="veh-filtros-extra" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;border-left:1px solid var(--rule);margin-left:4px;padding-left:12px">
+    <div style="display:flex;align-items:center;gap:4px">
+      <span style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">Desde</span>
+      <input type="date" id="veh-fecha-desde" onchange="vehAplicarRango()" title="Fecha desde" style="padding:4px 8px;font-size:10px;border:1px solid var(--rule);background:var(--bg);font-family:'Source Sans 3',sans-serif;color:var(--ink);cursor:pointer">
+    </div>
+    <div style="display:flex;align-items:center;gap:4px">
+      <span style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l)">Hasta</span>
+      <input type="date" id="veh-fecha-hasta" onchange="vehAplicarRango()" title="Fecha hasta" style="padding:4px 8px;font-size:10px;border:1px solid var(--rule);background:var(--bg);font-family:'Source Sans 3',sans-serif;color:var(--ink);cursor:pointer">
+    </div>
+    <button type="button" onclick="vehLimpiarRango()" title="Volver al periodo de arriba" style="padding:4px 10px;font-size:10px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);font-family:'Source Sans 3',sans-serif;cursor:pointer">Limpiar</button>
+  </div>
   <!-- Filtros extra solo para pestaña clientes -->
   <div id="cli-filtros-extra" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;border-left:1px solid var(--rule);margin-left:4px;padding-left:12px">
     <div style="display:flex;align-items:center;gap:4px">
@@ -10318,6 +10331,9 @@ function mostrarPestanaActiva(el){
 }
 
 function showPanel(id, el) {
+  /* Volver a hacer clic en la pestaña que ya está abierta despliega su
+     filtro de fechas, como en Ingreso por Cliente. */
+  const _yaEstaba = !!(el && el.classList.contains('active'));
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('panel-'+id).classList.add('active');
@@ -10342,6 +10358,14 @@ function showPanel(id, el) {
   } else {
     extra.style.display = 'none';
     restaurarBotonesPeriodo();
+  }
+  const extraVeh = document.getElementById('veh-filtros-extra');
+  if (extraVeh) {
+    if (id !== 'vehiculos') extraVeh.style.display = 'none';
+    else if (_yaEstaba) extraVeh.style.display = (extraVeh.style.display === 'flex') ? 'none' : 'flex';
+    else if (typeof _flHayRango === 'function' && _flHayRango()) extraVeh.style.display = 'flex';
+    /* Si quedó un rango puesto, la barra se abre sola: si no, el tablero
+       mostraría un recorte sin decir de dónde sale. */
   }
   if (id === 'accesos') renderAccesos();
   if (id === 'mapa' && typeof window.mapaActivar === 'function') window.mapaActivar();
@@ -12307,6 +12331,45 @@ function renderFlotaSeguro(){
   }
 }
 
+/* ── EL RANGO DE FECHAS PROPIO DE VEHÍCULOS ─────────────────────────
+   El filtro de arriba (Ayer / Hoy / Esta semana / Este mes / Total) sigue
+   mandando mientras no se escriba un día concreto. Si se escribe, manda
+   el rango, igual que en Ingreso por Cliente. */
+var VEH_RANGO = { desde: '', hasta: '' };
+
+function vehAplicarRango(){
+  VEH_RANGO.desde = (document.getElementById('veh-fecha-desde') || {}).value || '';
+  VEH_RANGO.hasta = (document.getElementById('veh-fecha-hasta') || {}).value || '';
+  renderFlotaSeguro();
+}
+function vehLimpiarRango(){
+  var d = document.getElementById('veh-fecha-desde'); if(d) d.value = '';
+  var h = document.getElementById('veh-fecha-hasta'); if(h) h.value = '';
+  vehAplicarRango();
+}
+function _flHayRango(){ return !!(VEH_RANGO.desde || VEH_RANGO.hasta); }
+
+/* ¿Entra este registro en el periodo? iso es la fecha aaaa-mm-dd y cruda
+   la que entiende inPeriod. */
+function _flPeriodoOk(iso, cruda){
+  if(_flHayRango()){
+    if(!iso) return false;
+    if(VEH_RANGO.desde && iso < VEH_RANGO.desde) return false;
+    if(VEH_RANGO.hasta && iso > VEH_RANGO.hasta) return false;
+    return true;
+  }
+  return !cruda || inPeriod(cruda, currentFilter);
+}
+
+/* Cómo se llama el periodo que se está viendo. */
+function _flEtiquetaPeriodo(){
+  if(_flHayRango()){
+    return 'Del ' + (VEH_RANGO.desde || '…') + ' al ' + (VEH_RANGO.hasta || '…');
+  }
+  return { ayer:'Ayer', hoy:'Hoy', semana:'Esta semana', mes:'Este mes',
+           total:'Total acumulado' }[currentFilter] || '';
+}
+
 /* Las placas que de verdad están registradas en Vehículos de Carga. El
    tablero salía con todas las que aparecieran en los tiquetes —mulas de
    terceros, equipos de otra empresa, placas mal digitadas—, y eso no es
@@ -12326,8 +12389,7 @@ function _flotaToneladas(){
   var dela = _flSoloFlota();
   var porPlaca = {};
   regs.forEach(function(r){
-    var f = getMarcaTemporal(r);
-    if(f && !inPeriod(f, currentFilter)) return;
+    if(!_flPeriodoOk(fechaIsoDeRegistro(r), getMarcaTemporal(r))) return;
     var pl = getPlacaReg(r);
     if(!pl || !dela[pl]) return;
     var kg = getPesoNeto(r) || 0;
@@ -12366,7 +12428,7 @@ function _flotaCombustible(){
   var porPlaca = {};
   lista.forEach(function(r){
     var f = _fechaComb(r);
-    if(!f || !inPeriod(f, currentFilter)) return;
+    if(!f || !_flPeriodoOk(f, f)) return;
     var pl = (r['Placa / Equipo'] || r['Placa'] || r['PLACA'] || r['placa'] || '').toString().trim().toUpperCase();
     if(!pl || !dela[pl]) return;
     if(!porPlaca[pl]) porPlaca[pl] = { placa: pl, valor: 0, n: 0, ultima: '' };
@@ -12520,8 +12582,7 @@ function _flotaPorOperacion(){
   var dela = _flSoloFlota();
   var porOp = {};
   regs.forEach(function(r){
-    var f = getMarcaTemporal(r);
-    if(f && !inPeriod(f, currentFilter)) return;
+    if(!_flPeriodoOk(fechaIsoDeRegistro(r), getMarcaTemporal(r))) return;
     var pl = getPlacaReg(r);
     if(!pl || !dela[pl]) return;
     var op = opDeRegistro(r) || 'Sin operación';
@@ -12638,8 +12699,7 @@ function renderFlota(){
   var nTanq = comb.reduce(function(x, y){ return x + y.n; }, 0);
   var tonsF = function(kg){ return fmt(Math.round(kg / 100) / 10) + ' T'; };
   var viajesF = function(n){ return fmt(n); };
-  var lbl = { ayer:'Ayer', hoy:'Hoy', semana:'Esta semana', mes:'Este mes',
-              total:'Total acumulado' }[currentFilter] || '';
+  var lbl = _flEtiquetaPeriodo();
 
   /* Los diez que más mueven: con más, la barra más corta deja de verse. */
   var topTon = tons.slice(0, 10).map(function(x){
