@@ -6944,6 +6944,10 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   border-radius:7px;background:#fff;font-family:'Source Sans 3',sans-serif}
 #panel-personal .hex-nota{font-size:12px;color:var(--ink-l)}
 #panel-personal .hex-cargando{padding:26px;text-align:center;font-size:13.5px;color:var(--ink-l)}
+#panel-personal .hex-aviso{font-size:12.5px;color:#5b625e;background:#f6f7f5;border:1px solid var(--rule);
+  border-radius:9px;padding:9px 13px;margin-bottom:12px}
+#panel-personal .hex-aviso.malo{background:#fdf7f7;border-color:#f0d7d7;color:#b23b3b;font-weight:600}
+#panel-personal .hex-cargando.hex-ok{display:none}
 #panel-personal .hex-vacio{font-size:13px;color:var(--ink-l);font-style:italic;padding:14px 0}
 
 #panel-personal .hex-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px;margin-bottom:14px}
@@ -37397,37 +37401,114 @@ function abrirHorasExtra(){
   var caja = $p('per-hex');
   if(!caja) return;
   var r = _hexRango();
-  /* Si el filtro cambió, lo guardado ya no sirve. */
   if(HEX.filtro !== currentFilter || HEX.desde !== r.desde || HEX.hasta !== r.hasta){
     HEX.datos = null;
     HEX.filtro = currentFilter;
     HEX.desde = r.desde; HEX.hasta = r.hasta;
   }
   if(HEX.datos){ pintarHorasExtra(); return; }
-  caja.innerHTML = '<div class="hex-cargando">Trayendo las horas extra del periodo…</div>';
+  /* Lo de la última vez se pinta ya mismo y se refresca por detrás: el
+     tablero nunca arranca en blanco esperando al servicio. */
+  var guardado = _hexLeerCache();
+  if(guardado){ HEX.datos = guardado; pintarHorasExtra(true); }
   cargarHorasExtra();
+}
+
+/* ── LO GUARDADO DE LA ÚLTIMA VEZ ──────────────────────────────────
+   Una copia por rango en el navegador. Vale media hora: pasada esa,
+   mejor esperar al servicio que mostrar cifras viejas de nómina. */
+function _hexClaveCache(){ return 'hexTablero|' + HEX.desde + '|' + HEX.hasta; }
+function _hexLeerCache(){
+  try {
+    var x = JSON.parse(localStorage.getItem(_hexClaveCache()) || 'null');
+    if(!x || !x.cuando || Date.now() - x.cuando > 30 * 60 * 1000) return null;
+    return x.d;
+  } catch(e){ return null; }
+}
+function _hexGuardarCache(d){
+  try { localStorage.setItem(_hexClaveCache(), JSON.stringify({ cuando: Date.now(), d: d })); }
+  catch(e){ /* sin espacio: el tablero funciona igual, solo arranca vacío */ }
+}
+
+/* ── LA CARGA ──────────────────────────────────────────────────────
+   Antes esto pedía perQuincena, que recorre la hoja de turnos entera y
+   NO se guarda en la memoria del servicio: cada entrada a Personal eran
+   dos minutos de espera y, a menudo, un "Google no devolvió la
+   respuesta".
+
+   Ahora se pide área por área con perTurnosRango, que el servicio SÍ
+   deja en caché seis horas, y cada área se pinta apenas llega. Las
+   novedades y los traslados no se piden: ya vinieron con los datos de
+   Personal al abrir la pestaña.
+
+   El rango se estira a semanas completas porque la regla de las 42
+   horas se mide por semana: con media semana el total nunca llega al
+   tope y la cuenta saldría mal. */
+function _hexLunes(f){
+  var d = new Date(f + 'T00:00:00');
+  if(isNaN(d.getTime())) return f;
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return isoDe(d);
+}
+function _hexDomingo(f){
+  var d = new Date(f + 'T00:00:00');
+  if(isNaN(d.getTime())) return f;
+  d.setDate(d.getDate() + (6 - ((d.getDay() + 6) % 7)));
+  return isoDe(d);
 }
 
 function cargarHorasExtra(){
   if(HEX.cargando) return;
+  var areas = (P.areas || []).map(function(a){ return a.nombre; }).filter(Boolean);
+  var caja = $p('per-hex');
+  if(!areas.length){
+    if(caja && !HEX.datos) caja.innerHTML = '<div class="hex-cargando">Todavía no hay áreas creadas.</div>';
+    return;
+  }
   HEX.cargando = true;
-  pedir({ accion:'perQuincena', desde: HEX.desde, hasta: HEX.hasta }, 120)
-    .then(function(d){
-      HEX.datos = d;
-      pintarHorasExtra();
-      /* Las secciones que venían de "Indicadores Personal" —ausentes,
-         novedades, carga por área y movimientos— se llenan con esta
-         misma respuesta: una sola consulta para todo el tablero. */
-      try {
-        IND.desde = HEX.desde; IND.hasta = HEX.hasta; IND.datos = d;
-        pintarIndicadores();
-      } catch(e){}
-    })
-    .catch(function(e){
-      var caja = $p('per-hex');
-      if(caja) caja.innerHTML = '<div class="hex-cargando">' + esc(e.message || 'No se pudo consultar.') + '</div>';
-    })
-    .then(function(){ HEX.cargando = false; });
+  var desdeS = _hexLunes(HEX.desde), hastaS = _hexDomingo(HEX.hasta);
+  var turnos = [], extras = [], fallos = [], listas = 0;
+
+  var avisar = function(){
+    var el = $p('hex-progreso');
+    if(el) el.textContent = listas < areas.length
+      ? 'Trayendo ' + listas + ' de ' + areas.length + ' áreas…'
+      : (fallos.length ? 'No respondieron: ' + fallos.join(', ') : '');
+    if(el && listas >= areas.length && !fallos.length) el.classList.add('hex-ok');
+  };
+
+  var cerrar = function(){
+    HEX.cargando = false;
+    /* Las extras anotadas se recortan al rango que se pidió; los turnos
+       se dejan completos, que es lo que necesita la regla semanal. */
+    var dentro = extras.filter(function(e){
+      return (!HEX.desde || e.fecha >= HEX.desde) && (!HEX.hasta || e.fecha <= HEX.hasta);
+    });
+    HEX.datos = { turnos: turnos, extras: dentro,
+                  novedades: P.novedades || [], traslados: P.traslados || [],
+                  fallos: fallos, areas: areas.length };
+    _hexGuardarCache(HEX.datos);
+    pintarHorasExtra();
+    try { IND.desde = HEX.desde; IND.hasta = HEX.hasta; IND.datos = HEX.datos; pintarIndicadores(); } catch(e){}
+  };
+
+  if(caja && !HEX.datos){
+    caja.innerHTML = '<div class="hex-cargando" id="hex-progreso">Trayendo 0 de ' + areas.length + ' áreas…</div>';
+  }
+
+  areas.forEach(function(nombre){
+    pedir({ accion:'perTurnosRango', area: nombre, desde: desdeS, hasta: hastaS }, 40)
+      .then(function(d){
+        (d.turnos || []).forEach(function(t){ if(!t.area) t.area = nombre; turnos.push(t); });
+        (d.extras || []).forEach(function(e){ if(!e.area) e.area = nombre; extras.push(e); });
+      })
+      .catch(function(){ fallos.push(nombre); })
+      .then(function(){
+        listas++;
+        avisar();
+        if(listas >= areas.length) cerrar();
+      });
+  });
 }
 
 /* Reparte las horas extra por área y por persona. Se saca aparte para
@@ -37528,6 +37609,12 @@ function _hexTermo(valor, tope){
   return 'rgb(' + c.join(',') + ')';
 }
 
+function _flEscHex(x){
+  return (x == null ? '' : String(x)).replace(/[&<>"]/g, function(c){
+    return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c];
+  });
+}
+
 /* La carita de alguien, por su clave. Las fotos ya están cargadas con
    la gente: se aprovechan en vez de pintar un círculo vacío. */
 function _hexCarita(clave, nombre){
@@ -37554,10 +37641,11 @@ function _hexBarras(filas){
   }).join('') + '</div>';
 }
 
-function pintarHorasExtra(){
+function pintarHorasExtra(deCache){
   var caja = $p('per-hex');
   if(!caja) return;
   var m = calcHorasExtra(HEX.datos);
+  var fallos = (HEX.datos && HEX.datos.fallos) || [];
 
   /* Cada área con su color, y el mismo color en todas partes. */
   var colorDe = {};
@@ -37588,6 +37676,15 @@ function pintarHorasExtra(){
   var r = 54, c = 2 * Math.PI * r;
 
   caja.innerHTML =
+    /* Se dice de dónde salen las cifras: lo guardado de la última vez
+       mientras llega lo nuevo, o qué área no respondió. Un número de
+       nómina sin saber si está completo no sirve. */
+    (deCache ? '<div class="hex-aviso" id="hex-progreso">Mostrando lo de la última consulta · actualizando…</div>' : '') +
+    (!deCache && fallos.length
+      ? '<div class="hex-aviso malo">' +
+        (fallos.length === 1 ? 'Falta un área que no respondió: ' : 'Faltan ' + fallos.length + ' áreas que no respondieron: ') +
+        _flEscHex(fallos.join(', ')) + '. Las cifras están incompletas.</div>'
+      : '') +
     '<div class="hex-kpis">' +
       '<div class="hex-kpi"><div class="r">Horas extra</div><div class="v">' + numeroHoras(m.total) + '</div>' +
         '<div class="p">anotadas y por jornada</div></div>' +
