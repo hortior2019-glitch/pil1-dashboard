@@ -6998,6 +6998,9 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
    sale al pasar por encima. */
 #panel-personal .hex-chip{display:inline-block;margin-top:3px;font-size:10.5px;font-weight:700;
   padding:2px 8px;border-radius:999px;background:#fbeaea;color:#b23b3b;white-space:nowrap}
+/* El peso de las horas extra sobre lo programado no es una alerta: va
+   en gris, no en rojo. */
+#panel-personal .hex-chip.suave{background:#eef0ed;color:#5b625e}
 #panel-personal .hex-tit .hex-sub{font-size:11.5px;font-weight:500;color:#5b625e;margin-left:9px}
 #panel-personal .hex-kpi.malo{border-color:#f0d7d7;background:#fdf7f7}
 #panel-personal .hex-kpi.malo .v{color:#b23b3b}
@@ -8064,20 +8067,12 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 
   <div class="ind-grid">
     <div class="ind-caja">
-      <div class="ind-tit">Horas extra por área</div>
-      <div id="ind-extra-area" hidden></div>
-    </div>
-    <div class="ind-caja">
       <div class="ind-tit">Personal ausente hoy</div>
       <div id="ind-ausentes"></div>
     </div>
     <div class="ind-caja">
       <div class="ind-tit">Novedades por tipo</div>
       <div id="ind-novedades"></div>
-    </div>
-    <div class="ind-caja">
-      <div class="ind-tit">Carga por área</div>
-      <div id="ind-horas-area"></div>
     </div>
     <div class="ind-caja">
       <div class="ind-tit">Movimientos de personal</div>
@@ -37447,7 +37442,12 @@ function abrirHorasExtra(){
 /* ── LO GUARDADO DE LA ÚLTIMA VEZ ──────────────────────────────────
    Una copia por rango en el navegador. Vale media hora: pasada esa,
    mejor esperar al servicio que mostrar cifras viejas de nómina. */
-function _hexClaveCache(){ return 'hexTablero|' + HEX.desde + '|' + HEX.hasta; }
+/* La versión va en la clave: cuando cambia lo que se guarda, lo viejo
+   deja de servir solo. Sin esto, una copia guardada antes de que
+   existiera 'extrasTodas' dejaba el cuadro diciendo que no había horas
+   extra cuando sí las había. */
+var HEX_CACHE_VER = 2;
+function _hexClaveCache(){ return 'hexTablero|v' + HEX_CACHE_VER + '|' + HEX.desde + '|' + HEX.hasta; }
 function _hexLeerCache(){
   try {
     var x = JSON.parse(localStorage.getItem(_hexClaveCache()) || 'null');
@@ -37620,12 +37620,25 @@ function calcHorasExtra(d){
     total += sobra;
   });
 
-  var areas = Object.keys(porArea).map(function(k){ return { etiqueta: k, valor: porArea[k] }; })
-    .sort(function(a, b){ return b.valor - a.valor; });
+  /* La carga: las horas programadas de cada área. Es el contexto que
+     le falta a las horas extra —cinco horas extra sobre cien no es lo
+     mismo que sobre mil— y antes vivía en otra caja, con otro color y
+     otra forma de barra. */
+  var cargaArea = {};
+  turnos.forEach(function(t){
+    var h = Number(t.horas) || 0;
+    if(!h) return;
+    var ar = t.area || 'Sin área';
+    cargaArea[ar] = (cargaArea[ar] || 0) + h;
+  });
+
+  var areas = Object.keys(porArea).map(function(k){
+    return { etiqueta: k, valor: porArea[k], carga: cargaArea[k] || 0 };
+  }).sort(function(a, b){ return b.valor - a.valor; });
   var personas = Object.keys(porPersona).map(function(k){ return porPersona[k]; })
     .sort(function(a, b){ return b.horas - a.horas; });
   return { total: total, aprobadas: aprobadas, porAprobar: porAprobar, deJornada: deJornada,
-           areas: areas, personas: personas, cuantas: extras.length,
+           areas: areas, personas: personas, cargaArea: cargaArea, cuantas: extras.length,
            sobreTope: personas.filter(function(p){ return p.jornada > 0; }).length };
 }
 
@@ -37660,6 +37673,10 @@ function _hexEtiquetaPeriodo(){
          (HEX.desde !== HEX.hasta ? ' al ' + _flEscHex(fechaCorta(HEX.hasta)) : '');
 }
 
+function fmtHoras1(n){
+  return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' h';
+}
+
 function _flEscHex(x){
   return (x == null ? '' : String(x)).replace(/[&<>"]/g, function(c){
     return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c];
@@ -37687,7 +37704,7 @@ function _hexBarras(filas){
         '</div></div>' +
       '<div class="hex-b-via"><span style="width:' + pct.toFixed(1) + '%;background:' + f.color + '"></span></div>' +
       '<div class="hex-b-val">' + numeroHoras(f.valor) +
-        (f.chip ? '<span class="hex-chip">' + esc(f.chip) + '</span>' : '') + '</div>' +
+        (f.chip ? '<span class="hex-chip' + (f.chipSuave ? ' suave' : '') + '">' + esc(f.chip) + '</span>' : '') + '</div>' +
     '</div>';
   }).join('') + '</div>';
 }
@@ -37704,6 +37721,18 @@ function _hexBarras(filas){
    abajo, los días del mes.
    ══════════════════════════════════════════════════════════════════ */
 
+/* Año, mes y día de una fecha. La hoja devuelve lo que se ve en la
+   celda, y según cómo esté formateada puede llegar 2026-10-21 o
+   21/10/2026: las dos tienen que servir. */
+function _hexPartesFecha(f){
+  var t = String(f || '').trim();
+  var m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m) return { a: +m[1], m: +m[2], d: +m[3] };
+  m = t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/);
+  if(m) return { a: +m[3], m: +m[2], d: +m[1] };
+  return null;
+}
+
 /* Horas extra anotadas por día de un mes. Devuelve un hueco (null) en
    los días que todavía no han llegado, para no pintar una caída falsa
    hasta cero al final del mes en curso. */
@@ -37712,10 +37741,10 @@ function _hexSerieMes(extras, anio, mes, hastaDia){
   var serie = [];
   for(var i = 0; i < dias; i++) serie.push(hastaDia && (i + 1) > hastaDia ? null : 0);
   (extras || []).forEach(function(e){
-    var m = String(e.fecha || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    var m = _hexPartesFecha(e.fecha);
     if(!m) return;
-    if(Number(m[1]) !== anio || Number(m[2]) - 1 !== mes) return;
-    var d = Number(m[3]) - 1;
+    if(m.a !== anio || m.m - 1 !== mes) return;
+    var d = m.d - 1;
     if(d < 0 || d >= dias || serie[d] === null) return;
     serie[d] += (Number(e.minutos) || 0) / 60;
   });
@@ -37830,7 +37859,14 @@ function pintarHorasExtra(deCache){
   m.areas.forEach(function(a, i){ colorDe[a.etiqueta] = _hexColorArea(a.etiqueta, i); });
 
   var areas = m.areas.slice(0, 10).map(function(a){
-    return { etiqueta: a.etiqueta, valor: a.valor, color: colorDe[a.etiqueta] };
+    /* El porcentaje sobre lo programado es lo que de verdad compara dos
+       áreas de distinto tamaño. */
+    var pct = a.carga > 0 ? (a.valor / a.carga) * 100 : null;
+    return { etiqueta: a.etiqueta, valor: a.valor, color: colorDe[a.etiqueta],
+             sub: a.carga ? fmtHoras1(a.carga) + ' programadas' : '',
+             chip: pct !== null ? pct.toFixed(1).replace('.', ',') + '%' : '',
+             chipSuave: true,
+             titulo: a.carga ? numeroHoras(a.valor) + ' extra sobre ' + numeroHoras(a.carga) + ' programadas' : '' };
   });
 
   var tope = m.personas.length ? m.personas[0].horas : 0;
@@ -37892,13 +37928,13 @@ function pintarHorasExtra(deCache){
 
     '<div class="hex-g2">' +
       '<div class="hex-card">' +
-        '<div class="hex-tit">Qué áreas consumen más</div>' +
+        '<div class="hex-tit">Horas extra por área</div>' +
         _hexBarras(areas) +
       '</div>' +
       '<div class="hex-card">' +
         '<div class="hex-tit">Horas extra por día' +
           '<span class="hex-sub">este mes contra el pasado · solo las anotadas</span></div>' +
-        _hexGraficoMeses((HEX.datos && HEX.datos.extrasTodas) || []) +
+        _hexGraficoMeses((HEX.datos && (HEX.datos.extrasTodas || HEX.datos.extras)) || []) +
       '</div>' +
     '</div>' +
 
@@ -37972,12 +38008,8 @@ function pintarIndicadores(){
     kpi(nocturnos, 'Turnos de noche', 'en el periodo') +
     kpi(dominicales, 'Turnos en domingo', 'en el periodo');
 
-  /* ── Horas extra por área ── */
-  var listaEA = Object.keys(extraArea).map(function(k){ return { k: k, v: extraArea[k] }; })
-                      .sort(function(a, b){ return b.v - a.v; });
-  /* Las horas extra por área y por persona las pinta ahora el tablero,
-     con color por área y termómetro. Acá quedarían repetidas. */
-  if($p('ind-extra-area')) $p('ind-extra-area').innerHTML = indBarras(listaEA, 'var(--gold,#b8891f)', ' h');
+  /* Las horas extra por área las pinta el tablero de arriba, con su
+     color por área. Acá quedaban repetidas y, encima, vacías. */
 
   /* ── Ausentes hoy ── */
   $p('ind-ausentes').innerHTML = vigentes.length
@@ -38004,10 +38036,8 @@ function pintarIndicadores(){
   }).sort(function(a, b){ return b.horas - a.horas; });
   if($p('ind-extra-persona')) $p('ind-extra-persona').innerHTML = '';
 
-  /* ── Carga por área ── */
-  var listaHA = Object.keys(horasArea).map(function(k){ return { k: k, v: horasArea[k] }; })
-                      .sort(function(a, b){ return b.v - a.v; });
-  $p('ind-horas-area').innerHTML = indBarras(listaHA, '#2d8a4e', ' h');
+  /* La carga por área la pinta el tablero, con el mismo color de cada
+     área que el resto de barras. */
 
   /* ── Movimientos de personal ── */
   var movs = (P.traslados || []).filter(function(t){
