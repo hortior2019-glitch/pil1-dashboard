@@ -6944,6 +6944,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   border-radius:7px;background:#fff;font-family:'Source Sans 3',sans-serif}
 #panel-personal .hex-nota{font-size:12px;color:var(--ink-l)}
 #panel-personal .hex-cargando{padding:26px;text-align:center;font-size:13.5px;color:var(--ink-l)}
+#panel-personal .hex-periodo{font-size:12.5px;color:#5b625e;margin-bottom:11px;font-weight:600}
+#panel-personal .hex-periodo b{color:#1c5636}
 #panel-personal .hex-aviso{font-size:12.5px;color:#5b625e;background:#f6f7f5;border:1px solid var(--rule);
   border-radius:9px;padding:9px 13px;margin-bottom:12px}
 #panel-personal .hex-aviso.malo{background:#fdf7f7;border-color:#f0d7d7;color:#b23b3b;font-weight:600}
@@ -10314,10 +10316,7 @@ function setFilter(f, el) {
   try { if (window.mapaTrazaActualizar) window.mapaTrazaActualizar(); } catch(e) {}
   /* El tablero de Personal obedece al mismo filtro: antes tenía su
      propio juego de fechas y los dos podían decir cosas distintas. */
-  try {
-    var vt = document.getElementById('per-vista-tablero');
-    if (vt && vt.style.display !== 'none' && typeof abrirHorasExtra === 'function') abrirHorasExtra();
-  } catch(e) {}
+  try { if (window.personalTableroRefrescar) window.personalTableroRefrescar(); } catch(e) {}
   /* Y el tablero de la flota, que también mira el periodo. */
   try { if (typeof VEH_VISTA !== 'undefined' && VEH_VISTA === 'flota' && typeof renderFlotaSeguro === 'function') renderFlotaSeguro(); } catch(e) {}
 }
@@ -37173,6 +37172,12 @@ function cargar(forzar){
     pintar();
     try { pintarAreas(); } catch(e) {}
     try { if(window.mapaPersonalActualizar) window.mapaPersonalActualizar(); } catch(e){}
+    /* El tablero necesita la lista de áreas para pedir sus turnos. Si se
+       abrió antes de que llegaran, acá es cuando por fin puede armarse. */
+    try {
+      var vt = $p('per-vista-tablero');
+      if(vt && vt.style.display !== 'none') abrirHorasExtra();
+    } catch(e){ console.error('tablero de personal:', e); }
     return g;
   });
 }
@@ -37462,7 +37467,12 @@ function cargarHorasExtra(){
   var areas = (P.areas || []).map(function(a){ return a.nombre; }).filter(Boolean);
   var caja = $p('per-hex');
   if(!areas.length){
-    if(caja && !HEX.datos) caja.innerHTML = '<div class="hex-cargando">Todavía no hay áreas creadas.</div>';
+    /* Puede que las áreas aún no hayan llegado: en ese caso el tablero
+       se arma solo cuando lleguen, no hay que decir que no existen. */
+    if(caja && !HEX.datos){
+      caja.innerHTML = '<div class="hex-cargando">' +
+        (P.cargado ? 'Todavía no hay áreas creadas.' : 'Esperando los datos de Personal…') + '</div>';
+    }
     return;
   }
   HEX.cargando = true;
@@ -37609,6 +37619,14 @@ function _hexTermo(valor, tope){
   return 'rgb(' + c.join(',') + ')';
 }
 
+/* El periodo que manda el filtro de arriba, en palabras. */
+function _hexEtiquetaPeriodo(){
+  var n = { ayer:'Ayer', hoy:'Hoy', semana:'Esta semana', mes:'Este mes', total:'Año corrido' };
+  var et = n[currentFilter] || 'Este mes';
+  return et + ' · ' + _flEscHex(fechaCorta(HEX.desde)) +
+         (HEX.desde !== HEX.hasta ? ' al ' + _flEscHex(fechaCorta(HEX.hasta)) : '');
+}
+
 function _flEscHex(x){
   return (x == null ? '' : String(x)).replace(/[&<>"]/g, function(c){
     return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c];
@@ -37679,6 +37697,14 @@ function pintarHorasExtra(deCache){
     /* Se dice de dónde salen las cifras: lo guardado de la última vez
        mientras llega lo nuevo, o qué área no respondió. Un número de
        nómina sin saber si está completo no sirve. */
+    /* Qué periodo se está mirando. Con el filtro en "Hoy" lo normal es
+       que no haya ninguna hora extra todavía, y un tablero en ceros sin
+       decir de cuándo son parece roto. */
+    '<div class="hex-periodo">' + _hexEtiquetaPeriodo() +
+      (m.total ? '' : ' · sin horas extra en este periodo' +
+        (currentFilter === 'hoy' || currentFilter === 'ayer'
+          ? '. Pruebe <b>Esta semana</b> o <b>Este mes</b> arriba.' : '.')) +
+    '</div>' +
     (deCache ? '<div class="hex-aviso" id="hex-progreso">Mostrando lo de la última consulta · actualizando…</div>' : '') +
     (!deCache && fallos.length
       ? '<div class="hex-aviso malo">' +
@@ -37851,8 +37877,26 @@ function pintarIndicadores(){
 
 window.personalActivar = function(){
   pintar();
+  /* La vista de entrada es el tablero, y nada lo pintaba al abrir la
+     pestaña: solo el clic en su botón. Se quedaba en blanco. */
+  try { verVista(_perVistaActual()); } catch(e){ console.error('vista de personal:', e); }
   if(!P.cargado || Date.now() - P.cuando > PER_FRESCO_MS){ P.cargado = false; cargar(true); }
 };
+
+/* El filtro de arriba vive fuera de este módulo y no ve las funciones
+   de adentro. Por eso se expone esta puerta: es la tercera vez que un
+   cruce de ámbitos deja algo sin funcionar. */
+window.personalTableroRefrescar = function(){
+  var vt = $p('per-vista-tablero');
+  if(!vt || vt.style.display === 'none') return;
+  try { abrirHorasExtra(); } catch(e){ console.error('tablero de personal:', e); }
+};
+
+/* Qué pestaña de Personal está marcada ahora mismo. */
+function _perVistaActual(){
+  var b = document.querySelector('#panel-personal .per-tab.on');
+  return (b && b.dataset.perVista) || 'tablero';
+}
 document.addEventListener('visibilitychange', function(){
   if(document.hidden) return;
   var panel = $p('panel-personal');
