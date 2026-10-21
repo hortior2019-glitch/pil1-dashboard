@@ -939,10 +939,9 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-vehiculos .veh-vt + .veh-vt{border-left:1px solid var(--rule)}
 #panel-vehiculos .veh-vt.on{background:#1c5636;color:#fff}
 
-#panel-vehiculos .fl-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;
-  background:var(--rule);border:1px solid var(--rule);margin-bottom:14px}
+#panel-vehiculos .fl-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;
+  background:var(--rule);border:1px solid var(--rule);margin-bottom:24px}
 @media(max-width:860px){ #panel-vehiculos .fl-kpis{grid-template-columns:1fr} }
-#panel-vehiculos .fl-kpis .kpi-val{font-size:clamp(30px,3.2vw,48px);letter-spacing:-1.5px;white-space:nowrap}
 
 #panel-vehiculos .fl-g2{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px;
   margin-bottom:12px;align-items:start}
@@ -12816,6 +12815,106 @@ function _flAvanceMes(){
   return r;
 }
 
+/* ── COMPARATIVO MES CONTRA MES DE LA FLOTA ─────────────────────────
+   Es la misma tarjeta de "Análisis comparativo · Ingreso de material":
+   los mismos dos lienzos, los mismos selectores y la misma rutina de
+   dibujo (buildBuckets + drawCmpChart). Lo único que cambia es que los
+   registros se recortan a las placas de la flota. */
+var VEH_CMP = { a: null, b: null };
+
+function _vehCmpOpts(valor){
+  var M = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto',
+           'Septiembre','Octubre','Noviembre','Diciembre'];
+  return M.map(function(n, i){
+    return '<option value="' + i + '"' + (i === valor ? ' selected' : '') + '>' + n + '</option>';
+  }).join('');
+}
+
+function _vehCmpHTML(){
+  var ahora = new Date();
+  if(VEH_CMP.a === null) VEH_CMP.a = ahora.getMonth();
+  if(VEH_CMP.b === null) VEH_CMP.b = ahora.getMonth() === 0 ? 11 : ahora.getMonth() - 1;
+  return '<div class="card" style="margin-bottom:20px;padding:0;overflow:hidden">' +
+    '<div style="padding:20px 28px 16px;border-bottom:1px solid var(--rule-l);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">' +
+      '<div style="font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink-l)">Análisis comparativo · Flota de carga</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+        '<select id="veh-cmp-mes-a" onchange="vehCmpCambio()" style="padding:6px 12px;font-size:13px;font-weight:700;border:2px solid var(--navy);background:var(--white);color:var(--navy);font-family:\'Source Sans 3\',sans-serif">' +
+          _vehCmpOpts(VEH_CMP.a) + '</select>' +
+        '<select id="veh-cmp-mes-b" onchange="vehCmpCambio()" style="padding:6px 12px;font-size:13px;font-weight:700;border:2px solid var(--gold);background:var(--white);color:var(--gold);font-family:\'Source Sans 3\',sans-serif">' +
+          _vehCmpOpts(VEH_CMP.b) + '</select>' +
+      '</div>' +
+    '</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0">' +
+      '<div style="padding:20px 24px;border-right:1px solid var(--rule-l)">' +
+        '<div style="display:flex;align-items:center;gap:16px;margin-bottom:14px">' +
+          '<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-m)">Número de viajes</div>' +
+          '<div style="display:flex;align-items:center;gap:10px;margin-left:auto">' +
+            '<div style="display:flex;align-items:center;gap:6px"><div style="width:24px;height:4px;background:var(--navy);border-radius:2px"></div><span id="veh-cmp-leg-v-a" style="font-size:11px;font-weight:700;color:var(--navy)">—</span></div>' +
+            '<div style="display:flex;align-items:center;gap:6px"><div style="width:24px;height:2px;background:var(--gold);border-radius:2px;border-top:2px dashed var(--gold)"></div><span id="veh-cmp-leg-v-b" style="font-size:11px;font-weight:700;color:var(--gold)">—</span></div>' +
+          '</div>' +
+        '</div>' +
+        '<canvas id="veh-cmp-chart-viajes" style="width:100%;display:block"></canvas>' +
+      '</div>' +
+      '<div style="padding:20px 24px">' +
+        '<div style="display:flex;align-items:center;gap:16px;margin-bottom:14px">' +
+          '<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-m)">Peso neto movido</div>' +
+          '<div style="display:flex;align-items:center;gap:10px;margin-left:auto">' +
+            '<div style="display:flex;align-items:center;gap:6px"><div style="width:24px;height:4px;background:var(--green);border-radius:2px"></div><span id="veh-cmp-leg-k-a" style="font-size:11px;font-weight:700;color:var(--green)">—</span></div>' +
+            '<div style="display:flex;align-items:center;gap:6px"><div style="width:24px;height:2px;background:#c8a84b;border-radius:2px;border-top:2px dashed #c8a84b"></div><span id="veh-cmp-leg-k-b" style="font-size:11px;font-weight:700;color:#c8a84b">—</span></div>' +
+          '</div>' +
+        '</div>' +
+        '<canvas id="veh-cmp-chart-kg" style="width:100%;display:block"></canvas>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function vehCmpCambio(){
+  VEH_CMP.a = parseInt((document.getElementById('veh-cmp-mes-a') || {}).value, 10);
+  VEH_CMP.b = parseInt((document.getElementById('veh-cmp-mes-b') || {}).value, 10);
+  renderVehCmpChart();
+}
+
+function renderVehCmpChart(){
+  var selA = document.getElementById('veh-cmp-mes-a');
+  var selB = document.getElementById('veh-cmp-mes-b');
+  if(!selA || !selB) return;
+  var dela = _flSoloFlota();
+  var datos = ((typeof dataIngreso !== 'undefined' ? dataIngreso : []) || [])
+    .filter(function(r){ var pl = getPlacaReg(r); return pl && dela[pl]; });
+
+  var now = new Date();
+  var MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto',
+                 'septiembre','octubre','noviembre','diciembre'];
+  var mA = parseInt(selA.value, 10), mB = parseInt(selB.value, 10);
+  var yA = mA > now.getMonth() ? now.getFullYear() - 1 : now.getFullYear();
+  var yB = mB > now.getMonth() ? now.getFullYear() - 1 : now.getFullYear();
+  var iniA = new Date(yA, mA, 1), finA = new Date(yA, mA + 1, 1);
+  var iniB = new Date(yB, mB, 1), finB = new Date(yB, mB + 1, 1);
+  var lblA = MESES_L[mA] + ' ' + yA, lblB = MESES_L[mB] + ' ' + yB;
+
+  var poner = function(id, t){ var e = document.getElementById(id); if(e) e.textContent = t; };
+  poner('veh-cmp-leg-v-a', lblA); poner('veh-cmp-leg-v-b', lblB);
+  poner('veh-cmp-leg-k-a', lblA); poner('veh-cmp-leg-k-b', lblB);
+
+  var bkA = buildBuckets(filterByRange(datos, iniA, finA), iniA, finA, 'dia');
+  var bkB = buildBuckets(filterByRange(datos, iniB, finB), iniB, finB, 'dia');
+  var keys = Array.from(new Set(Object.keys(bkA).concat(Object.keys(bkB)))).sort();
+
+  var diasMax = Math.max(new Date(yA, mA + 1, 0).getDate(), new Date(yB, mB + 1, 0).getDate());
+  var labels = [];
+  for(var i = 1; i <= diasMax; i++) labels.push(String(i));
+
+  var viajesA = keys.map(function(k){ return (bkA[k] && bkA[k].viajes) || 0; });
+  var viajesB = keys.map(function(k){ return (bkB[k] && bkB[k].viajes) || 0; });
+  var kgA = keys.map(function(k){ return Math.round((bkA[k] && bkA[k].kg) || 0); });
+  var kgB = keys.map(function(k){ return Math.round((bkB[k] && bkB[k].kg) || 0); });
+
+  var cada = labels.length > 14 ? Math.ceil(labels.length / 12) : 1;
+  drawCmpChart('veh-cmp-chart-viajes', viajesA, viajesB, '#1a5c35', '#8b6914', labels, cada);
+  drawCmpChart('veh-cmp-chart-kg',     kgA,     kgB,     '#2d8a4e', '#c8a84b', labels, cada);
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    EL BLOQUE DE COMBUSTIBLE
    ───────────────────────────────────────────────────────────────────
@@ -12986,6 +13085,10 @@ function renderFlota(){
   var tonsF = function(kg){ return fmt(Math.round(kg / 100) / 10) + ' T'; };
   var viajesF = function(n){ return fmt(n); };
   var lbl = _flEtiquetaPeriodo();
+  var MESES_KPI = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto',
+                   'Septiembre','Octubre','Noviembre','Diciembre'];
+  var _ah = new Date();
+  var mesActual = MESES_KPI[_ah.getMonth()] + ' ' + _ah.getFullYear();
 
   /* Los diez que más mueven: con más, la barra más corta deja de verse. */
   var topTon = tons.slice(0, 10).map(function(x){
@@ -13020,10 +13123,13 @@ function renderFlota(){
 
   caja.innerHTML =
     '<div class="fl-kpis">' +
-      _flKpi('Toneladas movidas', tonsF(totKg), tons.length + ' equipos con carga', 'var(--green)', lbl) +
+      _flKpi('Toneladas movidas', tonsF(totKg), tons.length + ' equipos con carga', 'var(--gold)', lbl) +
       _flKpi('Viajes', fmt(totViajes), 'ingresos en el periodo', 'var(--navy)', lbl) +
+      _flKpi('T movidas este mes', tonsF(av.kg), fmt(av.viajes) + ' viajes del mes', 'var(--green)', mesActual) +
       _flKpi('Combustible', _fmtPesos(totComb), nTanq + (nTanq === 1 ? ' tanqueo' : ' tanqueos'), 'var(--gold)', lbl) +
     '</div>' +
+
+    _vehCmpHTML() +
 
     _flSeccion('Operación', 'qué movió la flota · ' + (lbl || 'el periodo elegido')) +
 
@@ -13074,6 +13180,9 @@ function renderFlota(){
           '</tbody></table></div>'
         : '<div class="fl-vacio">Todavía no hay tanqueos registrados de estos equipos.</div>') +
     '</details>';
+
+  /* El lienzo ya está en el documento: ahora sí se puede dibujar. */
+  try { renderVehCmpChart(); } catch(e){ console.error('Comparativo de la flota:', e); }
 }
 
 /* El rótulo que separa un bloque del siguiente. El tablero traía los
