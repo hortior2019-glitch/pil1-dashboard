@@ -1022,6 +1022,13 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-vehiculos .fl-cb-via{background:var(--rule-l);border-radius:2px;height:14px;overflow:hidden}
 #panel-vehiculos .fl-cb-via span{display:block;height:100%;border-radius:2px;transition:width .5s ease}
 #panel-vehiculos .fl-cb .fl-mini{width:84px;height:60px;border-radius:7px}
+#panel-vehiculos .fl-cb-id{min-width:0}
+#panel-vehiculos .fl-cond{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;
+  color:#5b625e;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#panel-vehiculos .fl-cond.hoy{color:#1c5636;font-weight:700}
+#panel-vehiculos .fl-cond svg{width:15px;height:15px;flex-shrink:0;fill:none;stroke:currentColor;
+  stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+#panel-vehiculos .fl-cond em{font-style:normal;font-weight:600;color:#9aa39d}
 #panel-vehiculos .fl-logo{width:56px;height:56px;object-fit:contain;flex-shrink:0}
 
 /* ── Distribución de viajes: la barra partida por placa ── */
@@ -12542,6 +12549,34 @@ function _flotaCombustible(){
     .sort(function(a, b){ return b.valor - a.valor; });
 }
 
+/* ── QUIÉN LO ESTÁ MANEJANDO ────────────────────────────────────────
+   El preoperacional lo firma el conductor que recibe el equipo ese día,
+   así que de ahí sale quién lo maneja. Se busca el más reciente dentro
+   del periodo que se esté viendo; si no hay ninguno, se dice la fecha
+   del último que haya, para no dar por conductor de hoy a quien manejó
+   hace dos semanas. Sin preoperacional, no se muestra nada. */
+function _flConductorDe(placa){
+  var lista = [];
+  try { lista = preopDeVehiculo(placa) || []; } catch(e){ return null; }
+  var aIso = function(p){
+    var d = parseDateTime(p.ts) || parseDate(p.fecha);
+    if(!d || isNaN(d)) return '';
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') +
+           '-' + String(d.getDate()).padStart(2, '0');
+  };
+  var conNombre = lista.filter(function(p){ return p.conductor; });
+  if(!conNombre.length) return null;
+  var hoy = _flHoy();
+  /* La lista ya viene del más reciente al más viejo. */
+  var enPeriodo = conNombre.filter(function(p){
+    var iso = aIso(p);
+    return iso && _flPeriodoOk(iso, iso);
+  })[0];
+  var elegido = enPeriodo || conNombre[0];
+  var iso = aIso(elegido);
+  return { nombre: elegido.conductor, fecha: iso, hoy: iso === hoy, vigente: !!enPeriodo };
+}
+
 /* La foto del vehículo, si la tiene registrada. */
 function _fotoPlaca(placa){
   var v = (_vehiculos || []).filter(function(x){
@@ -12611,7 +12646,16 @@ function _flBarrasCli(filas, maxVal, color, formato){
       : (f.foto ? _miniPlaca(f.etiqueta) : '');
     return '<div class="fl-cb">' +
       '<div class="fl-cb-top">' +
-        '<div class="fl-cb-et">' + cara + '<b>' + _flEsc(f.etiqueta) + '</b></div>' +
+        '<div class="fl-cb-et">' + cara +
+          '<div class="fl-cb-id"><b>' + _flEsc(f.etiqueta) + '</b>' +
+            (f.conductor ? '<span class="fl-cond' + (f.conductor.hoy ? ' hoy' : '') + '"' +
+              ' title="Del preoperacional del ' + _flEsc(f.conductor.fecha) + '">' +
+              '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.6"/>' +
+              '<path d="M5 20c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6"/></svg>' +
+              _flEsc(f.conductor.nombre) +
+              (f.conductor.hoy ? '' : ' <em>' + _flEsc(_fmtFechaVeh(f.conductor.fecha)) + '</em>') +
+            '</span>' : '') +
+          '</div></div>' +
         '<div class="fl-cb-val" style="color:' + col + '">' + formato(f.valor) + '</div>' +
       '</div>' +
       '<div class="fl-cb-via"><span style="width:' + pct.toFixed(1) + '%;background:' + col + '"></span></div>' +
@@ -13120,7 +13164,7 @@ function renderFlota(){
 
   /* Los diez que más mueven: con más, la barra más corta deja de verse. */
   var topTon = tons.slice(0, 10).map(function(x){
-    return { etiqueta: x.placa, valor: x.kg, foto: true };
+    return { etiqueta: x.placa, valor: x.kg, foto: true, conductor: _flConductorDe(x.placa) };
   });
   var maxTon = topTon.length ? topTon[0].valor : 0;
 
@@ -13129,7 +13173,7 @@ function renderFlota(){
      al lado de las toneladas no dice nada nuevo. */
   var topViajes = tons.slice().sort(function(a, b){ return b.viajes - a.viajes; })
     .slice(0, 10).map(function(x){
-      return { etiqueta: x.placa, valor: x.viajes, foto: true };
+      return { etiqueta: x.placa, valor: x.viajes, foto: true, conductor: _flConductorDe(x.placa) };
     });
   var maxViajes = topViajes.length ? topViajes[0].valor : 0;
 
