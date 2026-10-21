@@ -1048,10 +1048,40 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-vehiculos .fl-opton-val{font-family:'Libre Baskerville',serif;font-size:15px;font-weight:700;
   color:#8b6914;white-space:nowrap;font-variant-numeric:lining-nums tabular-nums}
 
-/* Comparativo del mes de toda la flota: cuatro lecturas en una fila */
-#panel-vehiculos .fl-mes .vf-compgrid{grid-template-columns:repeat(4,minmax(0,1fr))}
-@media(max-width:1180px){ #panel-vehiculos .fl-mes .vf-compgrid{grid-template-columns:repeat(2,minmax(0,1fr))} }
-@media(max-width:620px){ #panel-vehiculos .fl-mes .vf-compgrid{grid-template-columns:1fr} }
+/* Rótulo que separa un bloque del siguiente */
+#panel-vehiculos .fl-sec{display:flex;align-items:baseline;gap:12px;margin:26px 0 12px;
+  padding-bottom:9px;border-bottom:2px solid var(--ink)}
+#panel-vehiculos .fl-sec b{font-size:11px;font-weight:800;letter-spacing:2.4px;text-transform:uppercase;
+  color:var(--ink)}
+#panel-vehiculos .fl-sec em{font-size:12.5px;font-style:normal;font-weight:600;color:var(--ink-l)}
+
+/* Las dos cifras grandes del bloque de combustible, a la misma altura */
+#panel-vehiculos .fl-cifras{display:flex;gap:34px;flex-wrap:wrap}
+#panel-vehiculos .fl-cifra .vf-an-val{font-family:'Libre Baskerville',serif;font-size:26px;font-weight:700;
+  letter-spacing:-.5px;font-variant-numeric:lining-nums tabular-nums}
+#panel-vehiculos .fl-cifra .vf-tend{font-size:14px;font-weight:800}
+#panel-vehiculos .fl-cifra .vf-tend svg{width:16px;height:16px}
+#panel-vehiculos .fl-subtit{font-size:11px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;
+  color:var(--ink-l);margin:16px 0 2px;padding-top:12px;border-top:1px solid var(--rule-l)}
+#panel-vehiculos .fl-mes .vf-compgrid{margin-top:12px}
+
+/* Los tanqueos van plegados: es un historial, no un indicador */
+#panel-vehiculos .fl-plegable{padding:0}
+#panel-vehiculos .fl-plegable > summary{display:flex;align-items:baseline;gap:12px;cursor:pointer;
+  padding:15px 17px;list-style:none}
+#panel-vehiculos .fl-plegable > summary::-webkit-details-marker{display:none}
+#panel-vehiculos .fl-plegable > summary::after{content:'';margin-left:auto;width:9px;height:9px;
+  border-right:2px solid var(--ink-l);border-bottom:2px solid var(--ink-l);transform:rotate(45deg);
+  transition:transform .2s ease;flex-shrink:0;align-self:center}
+#panel-vehiculos .fl-plegable[open] > summary::after{transform:rotate(-135deg)}
+#panel-vehiculos .fl-plegable > summary .fl-tit{margin:0;padding:0;border:none}
+#panel-vehiculos .fl-plegable > summary em{font-size:12.5px;font-style:normal;font-weight:600;color:var(--ink-l)}
+#panel-vehiculos .fl-plegable > .fl-scroll,
+#panel-vehiculos .fl-plegable > .fl-vacio{padding:0 17px 15px}
+#panel-vehiculos .fl-foto{text-align:center}
+#panel-vehiculos .fl-foto img{max-width:46px;max-height:36px;border-radius:5px;display:inline-block}
+#panel-vehiculos .fl-tabla th:nth-child(5),
+#panel-vehiculos .fl-tabla th:nth-child(6){text-align:center}
 
 /* ══ VEHÍCULOS: MAESTRO-DETALLE ═════════════════════════════════
    Lista a la izquierda, tablero del vehículo a la derecha. El verde se
@@ -12477,6 +12507,8 @@ function _flUltimosTanqueos(n){
     if(!(val > 0)) return;
     out.push({ placa: pl, fecha: f, hora: _horaComb(r), valor: val,
                km: _numComb(r['Kilometraje']),
+               fotoTablero: (r['Foto tablero'] || '').toString().trim(),
+               fotoRecibo: (r['Foto recibo'] || '').toString().trim(),
                encargado: (r['Encargado'] || '').toString().trim() });
   });
   out.sort(function(a, b){
@@ -12620,6 +12652,8 @@ function renderFlota(){
       _flKpi('Combustible', _fmtPesos(totComb), nTanq + (nTanq === 1 ? ' tanqueo' : ' tanqueos'), 'var(--gold)', lbl) +
     '</div>' +
 
+    _flSeccion('Operación', 'qué movió la flota · ' + (lbl || 'el periodo elegido')) +
+
     '<div class="fl-g2">' +
       '<div class="fl-card">' +
         '<div class="fl-tit">Toneladas movidas por vehículo</div>' +
@@ -12644,42 +12678,31 @@ function renderFlota(){
       '</div>' +
     '</div>' +
 
-    '<div class="fl-g2">' +
-      '<div class="fl-card">' +
-        '<div class="fl-tit">Gasto de combustible por vehículo</div>' +
-        _flBarrasCli(topComb, maxComb, '#8b6914', _fmtPesos) +
-      '</div>' +
-      '<div class="fl-card">' +
-        '<div class="fl-tit">Últimos tanqueos</div>' +
-        (ultimos.length
-          ? '<div class="fl-scroll"><table class="fl-tabla"><thead><tr>' +
-              '<th>Fecha</th><th>Placa</th><th>Kilometraje</th><th>Valor</th></tr></thead><tbody>' +
-            ultimos.map(function(x){
-              return '<tr><td>' + _flEsc(_fmtFechaVeh(x.fecha)) +
-                  (x.hora ? ' <em>' + _flEsc(x.hora) + '</em>' : '') + '</td>' +
-                '<td>' + _miniPlaca(x.placa) + '<span>' + _flEsc(x.placa) + '</span></td>' +
-                '<td>' + (x.km ? fmt(x.km) + ' km' : '—') + '</td>' +
-                '<td class="fl-num">' + _fmtPesos(x.valor) + '</td></tr>';
-            }).join('') +
-            '</tbody></table></div>'
-          : '<div class="fl-vacio">Todavía no hay tanqueos registrados de estos equipos.</div>') +
-      '</div>' +
-    '</div>' +
+    _flSeccion('Combustible', 'lo que costó moverla · este mes contra el anterior') +
 
     '<div class="fl-card fl-mes">' +
-      '<div class="fl-tit">Comparativo del mes · toda la flota</div>' +
       '<div class="vf-comp-fuel">' +
         '<div class="vf-comp-head">' +
-          '<div>' +
-            '<div class="vf-an-rot">' + (ico.comb || '') + 'Combustible por fecha</div>' +
-            '<div class="vf-an-val">' + _fmtPesos(cm.gasto) + '</div>' +
-            '<div class="vf-an-pie">' + ((cm.act.length || cm.ant.length)
-              ? _vfTend(cm.tend, true, 'mes anterior')
-              : '<span class="vf-ctx">Sin datos suficientes</span>') + '</div>' +
+          '<div class="fl-cifras">' +
+            '<div class="fl-cifra">' +
+              '<div class="vf-an-rot">' + (ico.comb || '') + 'Combustible del mes</div>' +
+              '<div class="vf-an-val">' + _fmtPesos(cm.gasto) + '</div>' +
+              '<div class="vf-an-pie">' + ((cm.act.length || cm.ant.length)
+                ? _vfTend(cm.tend, true, 'mes anterior')
+                : '<span class="vf-ctx">Sin datos suficientes</span>') + '</div>' +
+            '</div>' +
+            '<div class="fl-cifra">' +
+              '<div class="vf-an-rot">' + (ico.barras || '') + 'Combustible por tonelada</div>' +
+              '<div class="vf-an-val">' + (porTon !== null ? _fmtPesos(porTon) + ' / T' : '—') + '</div>' +
+              '<div class="vf-an-pie">' + (porTon === null
+                ? '<span class="vf-ctx">Sin toneladas este mes</span>'
+                : _vfTend(tendPorTon, true, 'mes anterior')) + '</div>' +
+            '</div>' +
           '</div>' +
           '<div class="vf-leyenda"><span><i style="background:#2e8b45"></i>este mes</span>' +
             '<span><i style="background:#c2cbc5"></i>mes anterior</span></div>' +
         '</div>' +
+        '<div class="fl-subtit">Lo tanqueado día por día</div>' +
         _vfFuelChart(cm.act, cm.ant) +
       '</div>' +
       '<div class="vf-compgrid">' +
@@ -12689,13 +12712,40 @@ function renderFlota(){
            _vfComp(av.kg, av.kgAntTot, tonsF, '#2d8a4e')) +
         an((ico.ruta || '') + 'Viajes',
            _vfComp(av.viajes, av.viajesAntTot, function(v){ return fmt(v) + (v === 1 ? ' viaje' : ' viajes'); }, '#1a5c35')) +
-        an((ico.comb || '') + 'Combustible por tonelada',
-           '<div class="vf-an-val">' + (porTon !== null ? _fmtPesos(porTon) + ' / T' : '—') + '</div>' +
-           '<div class="vf-an-pie">' + (porTon === null
-             ? '<span class="vf-ctx">Sin toneladas este mes</span>'
-             : _vfTend(tendPorTon, true, 'mes anterior')) + '</div>') +
       '</div>' +
-    '</div>';
+    '</div>' +
+
+    '<div class="fl-card">' +
+      '<div class="fl-tit">Gasto de combustible por vehículo</div>' +
+      _flBarrasCli(topComb, maxComb, '#8b6914', _fmtPesos) +
+    '</div>' +
+
+    '<details class="fl-card fl-plegable">' +
+      '<summary><span class="fl-tit">Últimos tanqueos</span>' +
+        '<em>' + (ultimos.length ? ultimos.length + ' registros con foto de horómetro y recibo' : 'sin registros') + '</em></summary>' +
+      (ultimos.length
+        ? '<div class="fl-scroll"><table class="fl-tabla"><thead><tr>' +
+            '<th>Fecha</th><th>Placa</th><th>Horómetro</th><th>Valor</th>' +
+            '<th>Foto horómetro</th><th>Recibo</th></tr></thead><tbody>' +
+          ultimos.map(function(x){
+            return '<tr><td>' + _flEsc(_fmtFechaVeh(x.fecha)) +
+                (x.hora ? ' <em>' + _flEsc(x.hora) + '</em>' : '') + '</td>' +
+              '<td>' + _miniPlaca(x.placa) + '<span>' + _flEsc(x.placa) + '</span></td>' +
+              '<td>' + (x.km ? fmt(x.km) + ' km' : '—') + '</td>' +
+              '<td class="fl-num">' + _fmtPesos(x.valor) + '</td>' +
+              '<td class="fl-foto">' + _fotoComb(x.fotoTablero, x.placa + ' · horómetro') + '</td>' +
+              '<td class="fl-foto">' + _fotoComb(x.fotoRecibo, x.placa + ' · recibo') + '</td></tr>';
+          }).join('') +
+          '</tbody></table></div>'
+        : '<div class="fl-vacio">Todavía no hay tanqueos registrados de estos equipos.</div>') +
+    '</details>';
+}
+
+/* El rótulo que separa un bloque del siguiente. El tablero traía los
+   indicadores uno detrás de otro sin decir dónde empieza cada asunto. */
+function _flSeccion(titulo, pie){
+  return '<div class="fl-sec"><b>' + _flEsc(titulo) + '</b>' +
+    (pie ? '<em>' + _flEsc(pie) + '</em>' : '') + '</div>';
 }
 
 /* Mismo KPI que el resto del tablero (Ingreso por Cliente): la banda de
