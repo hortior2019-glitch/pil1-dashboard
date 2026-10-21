@@ -952,7 +952,9 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-vehiculos .fl-card{background:#fff;border:1px solid #e5e7eb;border-radius:13px;padding:15px 17px;
   margin-bottom:12px}
 #panel-vehiculos .fl-g2 .fl-card{margin-bottom:0}
-#panel-vehiculos .fl-tit{font-size:14.5px;font-weight:800;color:#15201a;margin-bottom:13px}
+#panel-vehiculos .fl-tit{font-family:'Playfair Display',serif;font-size:20px;font-weight:700;
+  color:var(--ink);margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid var(--rule-l);
+  letter-spacing:-.3px}
 #panel-vehiculos .fl-vacio{font-size:13px;color:#5b625e;font-style:italic;padding:14px 0}
 
 /* Barras laterales */
@@ -987,7 +989,8 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-vehiculos .fl-h-p{font-size:14px;font-weight:800;color:#15201a}
 #panel-vehiculos .fl-h-o{display:flex;gap:5px;flex-wrap:wrap;margin-top:4px}
 #panel-vehiculos .fl-op{font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:999px;
-  background:#e8f3ec;color:#1c5636}
+  background:#e8f3ec;color:#1c5636;display:inline-flex;align-items:center;gap:5px}
+#panel-vehiculos .fl-op img{width:18px;height:18px;object-fit:contain;display:block}
 #panel-vehiculos .fl-h-n{text-align:right;font-size:14px;font-weight:800;color:#15201a;white-space:nowrap}
 #panel-vehiculos .fl-h-n em{display:block;font-size:11.5px;font-weight:500;font-style:normal;color:#5b625e}
 
@@ -1002,6 +1005,40 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-vehiculos .fl-tabla th:nth-child(3){text-align:right}
 #panel-vehiculos .fl-tabla tfoot td{font-weight:800;border-top:2px solid #e5e7eb;border-bottom:none;
   background:#fafbfa}
+
+/* ── Barras al estilo "Ingreso por cliente": rótulo y valor arriba, la
+   barra ancha debajo. Misma letra y mismos tamaños que ese panel para
+   que los dos tableros se lean igual. ── */
+#panel-vehiculos .fl-cbarras{display:flex;flex-direction:column;gap:12px;padding:8px 0}
+#panel-vehiculos .fl-cb{display:flex;flex-direction:column;gap:6px}
+#panel-vehiculos .fl-cb-top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+#panel-vehiculos .fl-cb-et{display:flex;align-items:center;gap:10px;min-width:0}
+#panel-vehiculos .fl-cb-et b{font-family:'Playfair Display',serif;font-size:16px;font-weight:700;
+  color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#panel-vehiculos .fl-cb-et em{font-size:11.5px;font-style:normal;font-weight:600;color:#5b625e;
+  white-space:nowrap;flex-shrink:0}
+#panel-vehiculos .fl-cb-val{font-family:'Libre Baskerville',serif;font-size:22px;font-weight:700;
+  flex-shrink:0;font-variant-numeric:lining-nums tabular-nums}
+#panel-vehiculos .fl-cb-via{background:var(--rule-l);border-radius:2px;height:14px;overflow:hidden}
+#panel-vehiculos .fl-cb-via span{display:block;height:100%;border-radius:2px;transition:width .5s ease}
+#panel-vehiculos .fl-cb .fl-mini{width:46px;height:34px}
+#panel-vehiculos .fl-logo{width:56px;height:56px;object-fit:contain;flex-shrink:0}
+
+/* ── Cómo vamos en el mes: viajes y kilos ── */
+#panel-vehiculos .fl-avance{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:26px}
+#panel-vehiculos .fl-av-r{font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;
+  color:var(--ink-l);margin-bottom:6px}
+#panel-vehiculos .fl-av-v{font-family:'Libre Baskerville',serif;font-size:34px;font-weight:700;
+  color:var(--ink);line-height:1;font-variant-numeric:lining-nums tabular-nums}
+#panel-vehiculos .fl-av-v small{font-family:'Source Sans 3',sans-serif;font-size:13px;font-weight:600;
+  color:#5b625e;margin-left:6px}
+#panel-vehiculos .fl-av-via{background:var(--rule-l);border-radius:2px;height:14px;overflow:hidden;
+  margin:12px 0 7px;position:relative}
+#panel-vehiculos .fl-av-via span{display:block;height:100%;border-radius:2px;transition:width .5s ease}
+#panel-vehiculos .fl-av-p{font-size:12.5px;color:#5b625e}
+#panel-vehiculos .fl-av-p b{font-weight:800}
+#panel-vehiculos .fl-av-sube{color:#1c5636}
+#panel-vehiculos .fl-av-baja{color:#b23b3b}
 
 /* ══ VEHÍCULOS: MAESTRO-DETALLE ═════════════════════════════════
    Lista a la izquierda, tablero del vehículo a la derecha. El verde se
@@ -12309,18 +12346,93 @@ function _flPastel(a, b, colA, colB){
   '</div>';
 }
 
+/* ── Barras al estilo "Ingreso por cliente" ──────────────────────────
+   Cada fila: logo o foto, el nombre en Playfair, el valor en Libre
+   Baskerville y la barra ancha debajo. Es el mismo lenguaje visual del
+   panel de clientes, para que los dos tableros se lean igual.
+   filas: { etiqueta, valor, sub?, foto?:true, logo?:url, color?:css } */
+function _flBarrasCli(filas, maxVal, color, formato){
+  if(!filas.length) return '<div class="fl-vacio">Sin datos en el periodo elegido.</div>';
+  return '<div class="fl-cbarras">' + filas.map(function(f){
+    var pct = maxVal > 0 ? Math.max(2, (f.valor / maxVal) * 100) : 0;
+    var col = f.color || color;
+    var cara = f.logo
+      ? '<img class="fl-logo" src="' + f.logo + '" alt="" onerror="this.style.display=\'none\'">'
+      : (f.foto ? _miniPlaca(f.etiqueta) : '');
+    return '<div class="fl-cb">' +
+      '<div class="fl-cb-top">' +
+        '<div class="fl-cb-et">' + cara + '<b>' + _flEsc(f.etiqueta) + '</b>' +
+          (f.sub ? '<em>' + _flEsc(f.sub) + '</em>' : '') + '</div>' +
+        '<div class="fl-cb-val" style="color:' + col + '">' + formato(f.valor) + '</div>' +
+      '</div>' +
+      '<div class="fl-cb-via"><span style="width:' + pct.toFixed(1) + '%;background:' + col + '"></span></div>' +
+    '</div>';
+  }).join('') + '</div>';
+}
+
+/* Las operaciones que mueven estas placas, ordenadas por viajes. */
+function _flotaPorOperacion(){
+  var regs = (typeof dataIngreso !== 'undefined' ? dataIngreso : []) || [];
+  var dela = _flSoloFlota();
+  var porOp = {};
+  regs.forEach(function(r){
+    var f = getMarcaTemporal(r);
+    if(f && !inPeriod(f, currentFilter)) return;
+    var pl = getPlacaReg(r);
+    if(!pl || !dela[pl]) return;
+    var op = opDeRegistro(r) || 'Sin operación';
+    if(!porOp[op]) porOp[op] = { op: op, viajes: 0, kg: 0, placas: {} };
+    porOp[op].viajes++;
+    porOp[op].kg += getPesoNeto(r) || 0;
+    porOp[op].placas[pl] = true;
+  });
+  return Object.keys(porOp).map(function(k){ return porOp[k]; })
+    .sort(function(a, b){ return b.viajes - a.viajes; });
+}
+
+/* Cómo vamos en el mes: viajes y kilos de la flota, contra el mes
+   pasado cortado el mismo día, que es la única comparación honesta a
+   mitad de mes. No depende del filtro de arriba: el mes es el mes. */
+function _flAvanceMes(){
+  var regs = (typeof dataIngreso !== 'undefined' ? dataIngreso : []) || [];
+  var dela = _flSoloFlota();
+  var hoy = new Date();
+  var a = hoy.getFullYear(), m = hoy.getMonth() + 1, dia = hoy.getDate();
+  var ant = new Date(a, m - 2, 1);
+  var aA = ant.getFullYear(), mA = ant.getMonth() + 1;
+  var r = { viajes: 0, kg: 0, viajesAnt: 0, kgAnt: 0, viajesAntTot: 0, kgAntTot: 0, dia: dia };
+  regs.forEach(function(reg){
+    var pl = getPlacaReg(reg);
+    if(!pl || !dela[pl]) return;
+    var iso = fechaIsoDeRegistro(reg);
+    if(!iso) return;
+    var pz = iso.split('-');
+    var aa = +pz[0], mm = +pz[1], dd = +pz[2];
+    var kg = getPesoNeto(reg) || 0;
+    if(aa === a && mm === m){ r.viajes++; r.kg += kg; }
+    else if(aa === aA && mm === mA){
+      r.viajesAntTot++; r.kgAntTot += kg;
+      if(dd <= dia){ r.viajesAnt++; r.kgAnt += kg; }
+    }
+  });
+  return r;
+}
+
 function renderFlota(){
   var caja = document.getElementById('veh-flota');
   if(!caja) return;
   var tons = _flotaToneladas();
   var hoy  = _flotaOperacionesHoy();
   var comb = _flotaCombustible();
+  var ops  = _flotaPorOperacion();
+  var av   = _flAvanceMes();
 
   var totKg = tons.reduce(function(x, y){ return x + y.kg; }, 0);
   var totViajes = tons.reduce(function(x, y){ return x + y.viajes; }, 0);
   var totComb = comb.reduce(function(x, y){ return x + y.valor; }, 0);
   var nTanq = comb.reduce(function(x, y){ return x + y.n; }, 0);
   var tonsF = function(kg){ return fmt(Math.round(kg / 100) / 10) + ' t'; };
+  var viajesF = function(n){ return fmt(n); };
 
   /* Los diez que más mueven: con más, la barra más corta deja de verse. */
   var topTon = tons.slice(0, 10).map(function(x){
@@ -12328,6 +12440,21 @@ function renderFlota(){
              sub: x.viajes + (x.viajes === 1 ? ' viaje' : ' viajes') };
   });
   var maxTon = topTon.length ? topTon[0].valor : 0;
+
+  /* Lo mismo pero en viajes, que es la otra cara de la misma pregunta. */
+  var topViajes = tons.slice().sort(function(a, b){ return b.viajes - a.viajes; })
+    .slice(0, 10).map(function(x){
+      return { etiqueta: x.placa, valor: x.viajes, foto: true, sub: tonsF(x.kg) };
+    });
+  var maxViajes = topViajes.length ? topViajes[0].valor : 0;
+
+  var topOps = ops.slice(0, 10).map(function(x){
+    var nPl = Object.keys(x.placas).length;
+    return { etiqueta: x.op, valor: x.viajes, logo: getClientLogo(x.op),
+             color: getClientColor(x.op) || '#1c5636',
+             sub: tonsF(x.kg) + ' · ' + nPl + (nPl === 1 ? ' placa' : ' placas') };
+  });
+  var maxOps = topOps.length ? topOps[0].valor : 0;
 
   var topComb = comb.slice(0, 10).map(function(x){
     return { etiqueta: x.placa, valor: x.valor, foto: true,
@@ -12348,10 +12475,29 @@ function renderFlota(){
       _flKpi('Trabajando hoy', String(conHoy), 'de ' + ((_vehiculos || []).length) + ' equipos') +
     '</div>' +
 
+    '<div class="fl-card">' +
+      '<div class="fl-tit">Ingreso de material · cómo vamos en el mes</div>' +
+      '<div class="fl-avance">' +
+        _flAvance('Viajes del mes', av.viajes, '', av.viajesAnt, av.viajesAntTot, av.dia, '#1c5636', viajesF) +
+        _flAvance('Material ingresado', av.kg, '', av.kgAnt, av.kgAntTot, av.dia, '#8b6914', tonsF) +
+      '</div>' +
+    '</div>' +
+
     '<div class="fl-g2">' +
       '<div class="fl-card">' +
         '<div class="fl-tit">Toneladas movidas por vehículo</div>' +
-        _flBarras(topTon, maxTon, '#1c5636', tonsF) +
+        _flBarrasCli(topTon, maxTon, '#1c5636', tonsF) +
+      '</div>' +
+      '<div class="fl-card">' +
+        '<div class="fl-tit">Viajes por vehículo</div>' +
+        _flBarrasCli(topViajes, maxViajes, '#3b6ea5', viajesF) +
+      '</div>' +
+    '</div>' +
+
+    '<div class="fl-g2">' +
+      '<div class="fl-card">' +
+        '<div class="fl-tit">Operaciones con más viajes</div>' +
+        _flBarrasCli(topOps, maxOps, '#1c5636', viajesF) +
       '</div>' +
       '<div class="fl-card">' +
         '<div class="fl-tit">Equipos con carga hoy</div>' +
@@ -12365,11 +12511,14 @@ function renderFlota(){
       '<div class="fl-tit">Qué hace cada equipo hoy</div>' +
       (hoy.length
         ? '<div class="fl-hoy">' + hoy.map(function(x){
-            var ops = Object.keys(x.ops).sort(function(p, q){ return x.ops[q] - x.ops[p]; });
+            var opsv = Object.keys(x.ops).sort(function(p, q){ return x.ops[q] - x.ops[p]; });
             return '<div class="fl-h">' + _miniPlaca(x.placa) +
               '<div class="fl-h-d"><div class="fl-h-p">' + _flEsc(x.placa) + '</div>' +
-                '<div class="fl-h-o">' + ops.map(function(o){
-                  return '<span class="fl-op">' + _flEsc(o) + (x.ops[o] > 1 ? ' ×' + x.ops[o] : '') + '</span>';
+                '<div class="fl-h-o">' + opsv.map(function(o){
+                  var lg = getClientLogo(o);
+                  return '<span class="fl-op">' +
+                    (lg ? '<img src="' + lg + '" alt="" onerror="this.style.display=\'none\'">' : '') +
+                    _flEsc(o) + (x.ops[o] > 1 ? ' ×' + x.ops[o] : '') + '</span>';
                 }).join('') + '</div></div>' +
               '<div class="fl-h-n">' + tonsF(x.kg) + '<em>' + x.viajes + (x.viajes === 1 ? ' viaje' : ' viajes') + '</em></div>' +
             '</div>';
@@ -12380,7 +12529,7 @@ function renderFlota(){
     '<div class="fl-g2">' +
       '<div class="fl-card">' +
         '<div class="fl-tit">Gasto de combustible por vehículo</div>' +
-        _flBarras(topComb, maxComb, '#8b6914', _fmtPesos) +
+        _flBarrasCli(topComb, maxComb, '#8b6914', _fmtPesos) +
       '</div>' +
       '<div class="fl-card">' +
         '<div class="fl-tit">Combustible · detalle</div>' +
@@ -12397,6 +12546,35 @@ function renderFlota(){
           : '<div class="fl-vacio">Sin tanqueos en el periodo elegido.</div>') +
       '</div>' +
     '</div>';
+}
+
+/* Un bloque de "cómo vamos en el mes": el acumulado, la barra contra el
+   total del mes pasado y la diferencia al mismo día. Si el mes pasado no
+   tiene registros se dice, no se inventa un porcentaje. */
+function _flAvance(rotulo, actual, _u, mismoDia, totalAnt, dia, color, formato){
+  var pct = totalAnt > 0 ? Math.min(100, (actual / totalAnt) * 100)
+                         : (actual > 0 ? 100 : 0);
+  var pie;
+  if(mismoDia > 0){
+    var dif = ((actual - mismoDia) / mismoDia) * 100;
+    pie = '<b class="' + (dif >= 0 ? 'fl-av-sube' : 'fl-av-baja') + '">' +
+      (dif >= 0 ? '+' : '') + dif.toFixed(1) + '%</b> contra el mes pasado al día ' + dia +
+      ' (' + formato(mismoDia) + ')';
+  } else if(actual > 0){
+    pie = 'El mes pasado no tenía registros a esta altura';
+  } else {
+    pie = 'Sin registros este mes';
+  }
+  var meta = totalAnt > 0
+    ? Math.round(pct) + '% del mes pasado completo (' + formato(totalAnt) + ')'
+    : 'Sin mes pasado para comparar';
+  return '<div class="fl-av">' +
+    '<div class="fl-av-r">' + _flEsc(rotulo) + '</div>' +
+    '<div class="fl-av-v">' + formato(actual) + '</div>' +
+    '<div class="fl-av-via"><span style="width:' + pct.toFixed(1) + '%;background:' + color + '"></span></div>' +
+    '<div class="fl-av-p">' + meta + '</div>' +
+    '<div class="fl-av-p">' + pie + '</div>' +
+  '</div>';
 }
 
 function _flKpi(rotulo, valor, pie){
