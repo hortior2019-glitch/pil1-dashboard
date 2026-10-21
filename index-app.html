@@ -997,7 +997,11 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-vehiculos .fl-tabla th{text-align:left;padding:7px 9px;font-size:11.5px;font-weight:700;
   letter-spacing:.4px;text-transform:uppercase;color:#5b625e;border-bottom:1px solid #e5e7eb}
 #panel-vehiculos .fl-tabla td{padding:8px 9px;border-bottom:1px solid #f1f2f0;color:#15201a}
-#panel-vehiculos .fl-tabla td:first-child{display:flex;align-items:center;gap:8px;font-weight:700}
+#panel-vehiculos .fl-tabla td:first-child{font-weight:700;white-space:nowrap}
+#panel-vehiculos .fl-tabla td:first-child em{font-style:normal;font-weight:500;color:#5b625e;font-size:12px}
+#panel-vehiculos .fl-tabla td:nth-child(2){display:flex;align-items:center;gap:8px;font-weight:700}
+#panel-vehiculos .fl-tabla th:nth-child(3){text-align:left}
+#panel-vehiculos .fl-tabla th:nth-child(4){text-align:right}
 #panel-vehiculos .fl-num{text-align:right;font-weight:700;white-space:nowrap}
 #panel-vehiculos .fl-tabla th:nth-child(3){text-align:right}
 #panel-vehiculos .fl-tabla tfoot td{font-weight:800;border-top:2px solid #e5e7eb;border-bottom:none;
@@ -12457,6 +12461,30 @@ function _flotaPorOperacion(){
     .sort(function(a, b){ return b.viajes - a.viajes; });
 }
 
+/* Los últimos tanqueos de la flota, uno por uno y del más reciente al más
+   viejo. La tabla anterior repetía el corte del periodo: con el filtro en
+   "Hoy" quedaba un renglón suelto, que no es un detalle de nada. */
+function _flUltimosTanqueos(n){
+  var lista = (typeof dataCombustible !== 'undefined' ? dataCombustible : []) || [];
+  var dela = _flSoloFlota();
+  var out = [];
+  lista.forEach(function(r){
+    var pl = (r['Placa / Equipo'] || r['Placa'] || r['PLACA'] || r['placa'] || '').toString().trim().toUpperCase();
+    if(!pl || !dela[pl]) return;
+    var f = _fechaComb(r);
+    if(!f) return;
+    var val = _numComb(r['Valor tanqueado']);
+    if(!(val > 0)) return;
+    out.push({ placa: pl, fecha: f, hora: _horaComb(r), valor: val,
+               km: _numComb(r['Kilometraje']),
+               encargado: (r['Encargado'] || '').toString().trim() });
+  });
+  out.sort(function(a, b){
+    return (b.fecha + ' ' + b.hora).localeCompare(a.fecha + ' ' + a.hora);
+  });
+  return out.slice(0, n || 15);
+}
+
 /* El combustible de la flota día por día: un punto por fecha con lo que se
    tanqueó ese día, este mes y el anterior. Es la misma lectura que ya tiene
    cada vehículo en su ficha, pero de toda la flota. */
@@ -12526,32 +12554,30 @@ function renderFlota(){
   var ops  = _flotaPorOperacion();
   var av   = _flAvanceMes();
   var cm   = _flCombMeses();
+  var ultimos = _flUltimosTanqueos(15);
   var ico  = (typeof ICO_VF !== 'undefined') ? ICO_VF : {};
 
   var totKg = tons.reduce(function(x, y){ return x + y.kg; }, 0);
   var totViajes = tons.reduce(function(x, y){ return x + y.viajes; }, 0);
   var totComb = comb.reduce(function(x, y){ return x + y.valor; }, 0);
   var nTanq = comb.reduce(function(x, y){ return x + y.n; }, 0);
-  var tonsF = function(kg){ return fmt(Math.round(kg / 100) / 10) + ' t'; };
+  var tonsF = function(kg){ return fmt(Math.round(kg / 100) / 10) + ' T'; };
   var viajesF = function(n){ return fmt(n); };
   var lbl = { ayer:'Ayer', hoy:'Hoy', semana:'Esta semana', mes:'Este mes',
               total:'Total acumulado' }[currentFilter] || '';
 
   /* Los diez que más mueven: con más, la barra más corta deja de verse. */
-  var maxViajesTon = tons.reduce(function(a, x){ return Math.max(a, x.viajes); }, 0);
   var topTon = tons.slice(0, 10).map(function(x){
-    return { etiqueta: x.placa, valor: x.kg, foto: true,
-             sec: { valor: x.viajes, max: maxViajesTon, color: '#3b6ea5',
-                    texto: fmt(x.viajes) + (x.viajes === 1 ? ' viaje' : ' viajes') } };
+    return { etiqueta: x.placa, valor: x.kg, foto: true };
   });
   var maxTon = topTon.length ? topTon[0].valor : 0;
 
-  /* Lo mismo pero en viajes, que es la otra cara de la misma pregunta. */
-  var maxTonKg = tons.reduce(function(a, x){ return Math.max(a, x.kg); }, 0);
+  /* Lo mismo pero en viajes: la tarjeta de al lado. Aquí van los viajes y
+     nada más, que repetir las toneladas al lado de los viajes y los viajes
+     al lado de las toneladas no dice nada nuevo. */
   var topViajes = tons.slice().sort(function(a, b){ return b.viajes - a.viajes; })
     .slice(0, 10).map(function(x){
-      return { etiqueta: x.placa, valor: x.viajes, foto: true,
-               sec: { valor: x.kg, max: maxTonKg, color: '#8b6914', texto: tonsF(x.kg) } };
+      return { etiqueta: x.placa, valor: x.viajes, foto: true };
     });
   var maxViajes = topViajes.length ? topViajes[0].valor : 0;
 
@@ -12566,11 +12592,8 @@ function renderFlota(){
   var maxOps = topOps.length ? topOps[0].viajes : 0;
   var maxOpsKg = topOps.reduce(function(a, x){ return Math.max(a, x.kg); }, 0);
 
-  var maxTanq = comb.reduce(function(a, x){ return Math.max(a, x.n); }, 0);
   var topComb = comb.slice(0, 10).map(function(x){
-    return { etiqueta: x.placa, valor: x.valor, foto: true,
-             sec: { valor: x.n, max: maxTanq, color: '#5b625e',
-                    texto: fmt(x.n) + (x.n === 1 ? ' tanqueo' : ' tanqueos') } };
+    return { etiqueta: x.placa, valor: x.valor, foto: true };
   });
   var maxComb = topComb.length ? topComb[0].valor : 0;
 
@@ -12604,7 +12627,7 @@ function renderFlota(){
       '</div>' +
       '<div class="fl-card">' +
         '<div class="fl-tit">Viajes por vehículo</div>' +
-        _flBarrasCli(topViajes, maxViajes, '#3b6ea5', viajesF) +
+        _flBarrasCli(topViajes, maxViajes, 'var(--blue)', viajesF) +
       '</div>' +
     '</div>' +
 
@@ -12627,18 +12650,19 @@ function renderFlota(){
         _flBarrasCli(topComb, maxComb, '#8b6914', _fmtPesos) +
       '</div>' +
       '<div class="fl-card">' +
-        '<div class="fl-tit">Combustible · detalle</div>' +
-        (comb.length
+        '<div class="fl-tit">Últimos tanqueos</div>' +
+        (ultimos.length
           ? '<div class="fl-scroll"><table class="fl-tabla"><thead><tr>' +
-              '<th>Placa</th><th>Tanqueos</th><th>Valor</th><th>Último</th></tr></thead><tbody>' +
-            comb.map(function(x){
-              return '<tr><td>' + _miniPlaca(x.placa) + '<span>' + _flEsc(x.placa) + '</span></td>' +
-                '<td>' + x.n + '</td><td class="fl-num">' + _fmtPesos(x.valor) + '</td>' +
-                '<td>' + _flEsc(_fmtFechaVeh(x.ultima)) + '</td></tr>';
+              '<th>Fecha</th><th>Placa</th><th>Kilometraje</th><th>Valor</th></tr></thead><tbody>' +
+            ultimos.map(function(x){
+              return '<tr><td>' + _flEsc(_fmtFechaVeh(x.fecha)) +
+                  (x.hora ? ' <em>' + _flEsc(x.hora) + '</em>' : '') + '</td>' +
+                '<td>' + _miniPlaca(x.placa) + '<span>' + _flEsc(x.placa) + '</span></td>' +
+                '<td>' + (x.km ? fmt(x.km) + ' km' : '—') + '</td>' +
+                '<td class="fl-num">' + _fmtPesos(x.valor) + '</td></tr>';
             }).join('') +
-            '</tbody><tfoot><tr><td>Total</td><td>' + nTanq + '</td>' +
-              '<td class="fl-num">' + _fmtPesos(totComb) + '</td><td></td></tr></tfoot></table></div>'
-          : '<div class="fl-vacio">Sin tanqueos en el periodo elegido.</div>') +
+            '</tbody></table></div>'
+          : '<div class="fl-vacio">Todavía no hay tanqueos registrados de estos equipos.</div>') +
       '</div>' +
     '</div>' +
 
@@ -12666,7 +12690,7 @@ function renderFlota(){
         an((ico.ruta || '') + 'Viajes',
            _vfComp(av.viajes, av.viajesAntTot, function(v){ return fmt(v) + (v === 1 ? ' viaje' : ' viajes'); }, '#1a5c35')) +
         an((ico.comb || '') + 'Combustible por tonelada',
-           '<div class="vf-an-val">' + (porTon !== null ? _fmtPesos(porTon) + ' / t' : '—') + '</div>' +
+           '<div class="vf-an-val">' + (porTon !== null ? _fmtPesos(porTon) + ' / T' : '—') + '</div>' +
            '<div class="vf-an-pie">' + (porTon === null
              ? '<span class="vf-ctx">Sin toneladas este mes</span>'
              : _vfTend(tendPorTon, true, 'mes anterior')) + '</div>') +
