@@ -6542,7 +6542,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 
   <!-- Maestro-detalle: la lista elige, el tablero de la derecha muestra.
        Cambiar de vehículo no hace perder de vista a los demás. -->
-  <div class="veh-split" id="veh-split">
+  <div class="veh-split" id="veh-split" style="display:none">
     <div id="veh-lista" class="veh-lista"></div>
     <div id="veh-ficha"></div>
   </div>
@@ -10315,7 +10315,7 @@ function setFilter(f, el) {
     if (vt && vt.style.display !== 'none' && typeof abrirHorasExtra === 'function') abrirHorasExtra();
   } catch(e) {}
   /* Y el tablero de la flota, que también mira el periodo. */
-  try { if (typeof VEH_VISTA !== 'undefined' && VEH_VISTA === 'flota' && typeof renderFlota === 'function') renderFlota(); } catch(e) {}
+  try { if (typeof VEH_VISTA !== 'undefined' && VEH_VISTA === 'flota' && typeof renderFlotaSeguro === 'function') renderFlotaSeguro(); } catch(e) {}
 }
 
 // ── RELOJ ─────────────────────────────────────────
@@ -12124,6 +12124,33 @@ const ICO_VF = {
    ═══════════════════════════════════════════════════════════════════ */
 var VEH_VISTA = 'flota';
 
+/* Los botones de vista se enganchan al cargar la página, no al pintar
+   la lista: si los vehículos no llegan —se cayó la red, el servicio
+   tardó— la lista no se pinta, y antes los botones quedaban muertos y
+   las dos vistas se veían encimadas. */
+document.addEventListener('DOMContentLoaded', function(){
+  document.querySelectorAll('#panel-vehiculos [data-vehvista]').forEach(function(b){
+    b.onclick = function(){ verVistaVeh(b.dataset.vehvista); };
+  });
+});
+
+/* La fecha de hoy en yyyy-mm-dd. El tablero de Personal tiene su isoDe,
+   pero vive en otro ámbito y aquí no se ve: usarlo dejaba la pestaña en
+   blanco con un "isoDe is not defined". */
+function _flHoy(){
+  var d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') +
+         '-' + String(d.getDate()).padStart(2, '0');
+}
+
+/* Escapar lo que va al HTML. Igual que isoDe, el _flEsc() del tablero de
+   Personal vive en otro ámbito y aquí no existe. */
+function _flEsc(x){
+  return (x == null ? '' : String(x)).replace(/[&<>"]/g, function(c){
+    return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c];
+  });
+}
+
 function verVistaVeh(cual){
   VEH_VISTA = cual;
   var flota = document.getElementById('veh-flota');
@@ -12133,7 +12160,21 @@ function verVistaVeh(cual){
   document.querySelectorAll('#panel-vehiculos [data-vehvista]').forEach(function(b){
     b.classList.toggle('on', b.dataset.vehvista === cual);
   });
-  if(cual === 'flota') renderFlota();
+  if(cual === 'flota') renderFlotaSeguro();
+}
+
+/* Si el tablero de la flota falla, la pestaña no se puede quedar en
+   blanco: la lista y la ficha de cada vehículo tienen que seguir
+   sirviendo. El error se dice en pantalla y queda en la consola. */
+function renderFlotaSeguro(){
+  try { renderFlota(); }
+  catch(e){
+    console.error('Tablero de flota:', e);
+    var caja = document.getElementById('veh-flota');
+    if(caja) caja.innerHTML = '<div class="fl-card"><div class="fl-tit">No se pudo armar el tablero</div>' +
+      '<div class="fl-vacio">' + String(e && e.message || e) +
+      '. Use «Por vehículo» mientras tanto.</div></div>';
+  }
 }
 
 /* Lo movido por cada placa en el periodo que esté elegido arriba. */
@@ -12157,7 +12198,7 @@ function _flotaToneladas(){
 /* Qué hizo hoy cada equipo: las operaciones del día, por placa. */
 function _flotaOperacionesHoy(){
   var regs = (typeof dataIngreso !== 'undefined' ? dataIngreso : []) || [];
-  var hoy = isoDe(new Date());
+  var hoy = _flHoy();
   var porPlaca = {};
   regs.forEach(function(r){
     if(fechaIsoDeRegistro(r) !== hoy) return;
@@ -12214,9 +12255,9 @@ function _flBarras(filas, maxVal, color, formato){
     var pct = maxVal > 0 ? Math.max(2, (f.valor / maxVal) * 100) : 0;
     return '<div class="fl-b">' +
       '<div class="fl-b-et">' + (f.foto ? _miniPlaca(f.etiqueta) : '') +
-        '<span>' + esc(f.etiqueta) + '</span></div>' +
+        '<span>' + _flEsc(f.etiqueta) + '</span></div>' +
       '<div class="fl-b-via"><span style="width:' + pct.toFixed(1) + '%;background:' + color + '"></span></div>' +
-      '<div class="fl-b-val">' + formato(f.valor) + (f.sub ? '<em>' + esc(f.sub) + '</em>' : '') + '</div>' +
+      '<div class="fl-b-val">' + formato(f.valor) + (f.sub ? '<em>' + _flEsc(f.sub) + '</em>' : '') + '</div>' +
     '</div>';
   }).join('') + '</div>';
 }
@@ -12238,9 +12279,9 @@ function _flPastel(a, b, colA, colB){
     '</svg>' +
     '<div class="fl-leyenda">' +
       '<div class="fl-lg"><span style="background:' + colA + '"></span>' +
-        '<div><b>' + esc(a.etiqueta) + '</b><em>' + a.texto + ' · ' + Math.round(pa * 100) + '%</em></div></div>' +
+        '<div><b>' + _flEsc(a.etiqueta) + '</b><em>' + a.texto + ' · ' + Math.round(pa * 100) + '%</em></div></div>' +
       '<div class="fl-lg"><span style="background:' + colB + '"></span>' +
-        '<div><b>' + esc(b.etiqueta) + '</b><em>' + b.texto + ' · ' + Math.round((1 - pa) * 100) + '%</em></div></div>' +
+        '<div><b>' + _flEsc(b.etiqueta) + '</b><em>' + b.texto + ' · ' + Math.round((1 - pa) * 100) + '%</em></div></div>' +
     '</div>' +
   '</div>';
 }
@@ -12303,9 +12344,9 @@ function renderFlota(){
         ? '<div class="fl-hoy">' + hoy.map(function(x){
             var ops = Object.keys(x.ops).sort(function(p, q){ return x.ops[q] - x.ops[p]; });
             return '<div class="fl-h">' + _miniPlaca(x.placa) +
-              '<div class="fl-h-d"><div class="fl-h-p">' + esc(x.placa) + '</div>' +
+              '<div class="fl-h-d"><div class="fl-h-p">' + _flEsc(x.placa) + '</div>' +
                 '<div class="fl-h-o">' + ops.map(function(o){
-                  return '<span class="fl-op">' + esc(o) + (x.ops[o] > 1 ? ' ×' + x.ops[o] : '') + '</span>';
+                  return '<span class="fl-op">' + _flEsc(o) + (x.ops[o] > 1 ? ' ×' + x.ops[o] : '') + '</span>';
                 }).join('') + '</div></div>' +
               '<div class="fl-h-n">' + tonsF(x.kg) + '<em>' + x.viajes + (x.viajes === 1 ? ' viaje' : ' viajes') + '</em></div>' +
             '</div>';
@@ -12324,9 +12365,9 @@ function renderFlota(){
           ? '<div class="fl-scroll"><table class="fl-tabla"><thead><tr>' +
               '<th>Placa</th><th>Tanqueos</th><th>Valor</th><th>Último</th></tr></thead><tbody>' +
             comb.map(function(x){
-              return '<tr><td>' + _miniPlaca(x.placa) + '<span>' + esc(x.placa) + '</span></td>' +
+              return '<tr><td>' + _miniPlaca(x.placa) + '<span>' + _flEsc(x.placa) + '</span></td>' +
                 '<td>' + x.n + '</td><td class="fl-num">' + _fmtPesos(x.valor) + '</td>' +
-                '<td>' + esc(_fmtFechaVeh(x.ultima)) + '</td></tr>';
+                '<td>' + _flEsc(_fmtFechaVeh(x.ultima)) + '</td></tr>';
             }).join('') +
             '</tbody><tfoot><tr><td>Total</td><td>' + nTanq + '</td>' +
               '<td class="fl-num">' + _fmtPesos(totComb) + '</td><td></td></tr></tfoot></table></div>'
@@ -12336,9 +12377,9 @@ function renderFlota(){
 }
 
 function _flKpi(rotulo, valor, pie){
-  return '<div class="fl-kpi"><div class="fl-kpi-r">' + esc(rotulo) + '</div>' +
+  return '<div class="fl-kpi"><div class="fl-kpi-r">' + _flEsc(rotulo) + '</div>' +
     '<div class="fl-kpi-v">' + valor + '</div>' +
-    '<div class="fl-kpi-p">' + esc(pie) + '</div></div>';
+    '<div class="fl-kpi-p">' + _flEsc(pie) + '</div></div>';
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -12663,16 +12704,7 @@ function _vfNovedades(placa) {
 function renderVehiculos() {
   const cont = document.getElementById('veh-lista');
   if (!cont) return;
-  /* Los botones de vista se enganchan una sola vez, la primera que se
-     pinta la pestaña. */
-  if(!cont.dataset.vistasListas){
-    cont.dataset.vistasListas = '1';
-    document.querySelectorAll('#panel-vehiculos [data-vehvista]').forEach(function(b){
-      b.onclick = function(){ verVistaVeh(b.dataset.vehvista); };
-    });
-    verVistaVeh(VEH_VISTA);
-  }
-  if(VEH_VISTA === 'flota') renderFlota();
+  if(VEH_VISTA === 'flota') renderFlotaSeguro();
   const busca = (document.getElementById('veh-buscar')||{}).value || '';
 
   let lista = _vehiculos.slice();
