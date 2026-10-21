@@ -6993,8 +6993,11 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-personal .hex-b-via span:last-child{border-radius:0 6px 6px 0}
 #panel-personal .hex-b-via span:only-child{border-radius:6px}
 #panel-personal .hex-b-val{font-size:13px;font-weight:800;color:#15201a;text-align:right;white-space:nowrap}
-#panel-personal .hex-b-val em{display:block;font-size:11px;font-weight:500;font-style:normal;color:#5b625e;
-  max-width:300px;white-space:normal;line-height:1.3;text-align:right}
+#panel-personal .hex-b-val em{display:block;font-size:11px;font-weight:500;font-style:normal;color:#5b625e}
+/* Las semanas que pasaron del tope: un chip, no un párrafo. El detalle
+   sale al pasar por encima. */
+#panel-personal .hex-chip{display:inline-block;margin-top:3px;font-size:10.5px;font-weight:700;
+  padding:2px 8px;border-radius:999px;background:#fbeaea;color:#b23b3b;white-space:nowrap}
 #panel-personal .hex-tit .hex-sub{font-size:11.5px;font-weight:500;color:#5b625e;margin-left:9px}
 #panel-personal .hex-kpi.malo{border-color:#f0d7d7;background:#fdf7f7}
 #panel-personal .hex-kpi.malo .v{color:#b23b3b}
@@ -37677,14 +37680,14 @@ function _hexBarras(filas){
   var tope = filas[0].valor || 1;
   return '<div class="hex-barras">' + filas.map(function(f){
     var pct = Math.max(2, (f.valor / tope) * 100);
-    return '<div class="hex-b">' +
+    return '<div class="hex-b"' + (f.titulo ? ' title="' + esc(f.titulo) + '"' : '') + '>' +
       '<div class="hex-b-et">' + (f.carita || '') +
         '<div class="hex-b-nom"><span>' + esc(f.etiqueta) + '</span>' +
         (f.sub ? '<em style="' + (f.subColor ? 'color:' + f.subColor : '') + '">' + esc(f.sub) + '</em>' : '') +
         '</div></div>' +
       '<div class="hex-b-via"><span style="width:' + pct.toFixed(1) + '%;background:' + f.color + '"></span></div>' +
       '<div class="hex-b-val">' + numeroHoras(f.valor) +
-        (f.pie ? '<em>' + f.pie + '</em>' : '') + '</div>' +
+        (f.chip ? '<span class="hex-chip">' + esc(f.chip) + '</span>' : '') + '</div>' +
     '</div>';
   }).join('') + '</div>';
 }
@@ -37832,17 +37835,22 @@ function pintarHorasExtra(deCache){
 
   var tope = m.personas.length ? m.personas[0].horas : 0;
   var gente = m.personas.slice(0, 12).map(function(p){
-    var partes = [];
-    if(p.aprobadas)  partes.push(numeroHoras(p.aprobadas) + ' aprobadas');
-    if(p.porAprobar) partes.push(numeroHoras(p.porAprobar) + ' por aprobar');
+    /* El desglose completo iba escrito en la fila y la convertía en un
+       párrafo: "24 h sobre las 42 h (48 h, 48 h, 44 h…)". Ahora el dato
+       que se mira es el número, las semanas pasadas de tope son un chip
+       y el detalle sale al pasar por encima. */
+    var nSem = Object.keys(p.semanas).length;
+    var det = [];
+    if(p.aprobadas)  det.push(numeroHoras(p.aprobadas) + ' aprobadas');
+    if(p.porAprobar) det.push(numeroHoras(p.porAprobar) + ' por aprobar');
     if(p.jornada){
-      var sem = Object.keys(p.semanas).sort();
-      partes.push(numeroHoras(p.jornada) + ' sobre las ' + HEX_TOPE_SEMANAL + ' h' +
-                  (sem.length ? ' (' + sem.map(function(k){ return p.semanas[k] + ' h'; }).join(', ') + ')' : ''));
+      var sem = Object.keys(p.semanas).sort().map(function(k){ return p.semanas[k] + ' h'; });
+      det.push(numeroHoras(p.jornada) + ' sobre las ' + HEX_TOPE_SEMANAL + ' h · semanas de ' + sem.join(', '));
     }
     return { etiqueta: p.nombre, valor: p.horas, color: _hexTermo(p.horas, tope),
              sub: p.area, subColor: colorDe[p.area] || '',
-             pie: partes.join(' · '), carita: _hexCarita(p.clave, p.nombre) };
+             chip: nSem ? nSem + (nSem === 1 ? ' sem.' : ' sem.') + ' +' + HEX_TOPE_SEMANAL + ' h' : '',
+             titulo: det.join(' · '), carita: _hexCarita(p.clave, p.nombre) };
   });
 
   /* Dos variables: va en pastel, como pide la casa. */
