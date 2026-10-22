@@ -22176,9 +22176,20 @@ async function aplicarAjusteStock(){
     if (!d.ok) { err.textContent = d.error || 'No se pudo ajustar.'; return; }
     /* El número nuevo se ve de una, sin esperar a que Google refresque la
        hoja publicada (puede tardar unos minutos). */
-    const kpi = document.getElementById('stock-kpi-actual');
-    if (kpi && d.stock !== undefined) kpi.textContent = Number(d.stock).toLocaleString('es-CO');
+    /* El ajuste se anota en los datos ya cargados y se vuelven a pintar las
+       TRES tarjetas: stock y producido cambian juntos y siguen cuadrando. */
+    if (_humDatos) {
+      const f = d.fecha || new Date().toISOString().slice(0, 10);
+      _humDatos.ajustesStock = _humDatos.ajustesStock || {};
+      _humDatos.ajustesStock[f] = (Number(_humDatos.ajustesStock[f]) || 0) - q;
+    }
+    try {
+      const filas = window._humFilasResumen || dataProduccionHumus;
+      if (filas) renderProduccionHumus(filas);
+    } catch (eR) { console.error('repintar tras ajuste:', eR); }
     cerrarAjusteStock();
+    /* Y se trae lo del servidor por detras, para quedar igual a la hoja. */
+    try { cargarHumusDetalle(true); } catch (eC) {}
   } catch(e) {
     /* Queda en la consola por si lo que falló no fue la señal. */
     console.error('ajustarStock:', e);
@@ -22572,9 +22583,26 @@ function renderProduccionHumus(rows) {
      cuanto están los registros de la app de planta mandan ellos y el
      x 25 kg se va a su propio bloque. Sin registros, la hoja. */
   const _x50 = (typeof _humTotalesPres === 'function') ? _humTotalesPres(_humEsX50) : null;
-  const totalProd = _x50 ? _x50.mes : rowsMesActual.reduce((s,r) => s + parseNum(r[colProd]), 0);
+  /* AJUSTES MANUALES DEL STOCK (los hace Juan: merma, conteo fisico).
+     Viven en el backend, no en los registros. Se SUMAN AL PRODUCIDO del dia
+     en que se hicieron (negativo = se quitaron bultos), asi:
+       - el stock no "vuelve" al numero sin ajuste al recargar, y
+       - en el periodo cuadra: stock = inicio del mes + producido − despachado. */
+  const _aj = (_humDatos && _humDatos.ajustesStock && typeof _humDatos.ajustesStock === 'object') ? _humDatos.ajustesStock : {};
+  let ajusteTotal = 0, ajusteMes = 0;
+  Object.keys(_aj).forEach(f => {
+    const n = Number(_aj[f]) || 0;
+    ajusteTotal += n;
+    if (String(f).slice(0, 7) === keyMesReal) ajusteMes += n;
+  });
+  const totalProd = (_x50 ? _x50.mes : rowsMesActual.reduce((s,r) => s + parseNum(r[colProd]), 0)) + ajusteMes;
   const totalDesp = _x50 ? _x50.mesSal : rowsMesActual.reduce((s,r) => s + parseNum(r[colDesp]), 0);
-  const stockAct  = _x50 ? _x50.stock : parseNum(ultimo[colAct]);
+  /* Con registros, el stock se calcula y hay que sumarle los ajustes. La
+     hoja de resumen (sin registros) ya los trae incluidos. */
+  const stockAct  = _x50 ? (_x50.stock + ajusteTotal) : parseNum(ultimo[colAct]);
+  /* Lo que habia al empezar el mes: con esto la cuenta se puede leer en las
+     tres tarjetas sin hacer cuentas a escondidas. */
+  const stockInicioMes = stockAct - totalProd + totalDesp;
   const variacion = (ultimo[colVar] || '').toString().trim();
   const fechaAct  = (ultimo[colFecha] || '').toString().trim();
 
@@ -22610,14 +22638,14 @@ function renderProduccionHumus(rows) {
   }
 
   setT('stock-kpi-actual',     fmtInt(stockAct));
-  setT('stock-kpi-actual-pie', _x50
-    ? 'x 50 kg · producido menos despachado'
-    : 'último cierre del día');
+  setT('stock-kpi-actual-pie', (_x50 ? 'x 50 kg · ' : '') +
+    'inicio del mes ' + fmtInt(stockInicioMes) + ' + producido − despachado');
   setT('stock-kpi-producido',  fmtInt(totalProd));
   setT('stock-kpi-despachado', fmtInt(totalDesp));
   const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   const nombreMesCorto = MESES[ahora.getMonth()] + ' ' + ahora.getFullYear();
-  setT('stock-kpi-producido-p', nombreMesCorto);
+  setT('stock-kpi-producido-p', nombreMesCorto + (ajusteMes
+    ? ' · incluye ajuste ' + (ajusteMes > 0 ? '+' : '') + fmtInt(ajusteMes) : ''));
   setT('stock-kpi-despachado-p', nombreMesCorto);
   setT('stock-sub', sorted.length + ' días registrados · último: ' + (fechaAct || '—') + ' · KPIs: ' + nombreMesCorto);
 
