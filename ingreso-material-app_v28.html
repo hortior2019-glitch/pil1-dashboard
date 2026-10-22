@@ -778,8 +778,9 @@ html.modo-noche .vi-est.error{background:#3a1d1d;color:#ef8a80}
           <div class="mf-kpi"><b id="mf-k-total">—</b><i>viajes en el filtro</i></div>
         </div>
         <div class="mf-nota-filtro">
-          Toma los viajes del filtro de arriba (periodo y operación). Van ordenados por número
-          de manifiesto, de menor a mayor; los que no traen consecutivo quedan al final, por hora de entrega.
+          Muestra <b>solo los viajes que faltan por verificar</b> del filtro de arriba (periodo y operación);
+          los ya certificados no aparecen. Van ordenados por número de manifiesto, de menor a mayor; los que
+          no traen consecutivo quedan al final, por hora de entrega.
         </div>
 
         <!-- EL VIAJE QUE SE ESTA VERIFICANDO -->
@@ -2378,10 +2379,19 @@ async function obtenerRegistrosBackend() {
   try {
     var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 60000) : null;
-    var res = await fetch(WEBAPP_URL + '?datos=1&t=' + Date.now(), ctrl ? { signal: ctrl.signal } : {});
+    /* Se manda el token de la sesion: el backend ya no entrega datos de
+       forma anonima. Va en la URL por ser GET; sobre HTTPS no viaja en claro. */
+    var res = await fetch(WEBAPP_URL + '?datos=1&t=' + Date.now() + '&token=' + encodeURIComponent(_authToken || ''), ctrl ? { signal: ctrl.signal } : {});
     if (timer) clearTimeout(timer);
     if (res.ok) {
       var j = await res.json();
+      /* Si el backend niega por sesion, NO se cae al CSV publico (eso
+         volveria a exponer la base). Se devuelve vacio; el operario ya
+         deberia estar con sesion, asi que esto solo pasa si vencio. */
+      if (j && j.sinSesion) {
+        console.warn('Registros: el backend pidió sesión; no se usa el CSV de respaldo.');
+        return [];
+      }
       if (j && j.success && Array.isArray(j.rows)) return armarObjetosIngreso(j.headers, j.rows);
       /* Backend sin actualizar: devuelve los valores con su tipo nativo
          (el tiquete llega como numero) y todo el codigo espera texto,
@@ -3683,6 +3693,8 @@ async function guardarNotaRegistro() {
       body: JSON.stringify({
         accion: 'agregar_nota',
         marca_temporal: ctx.marcaTemporal,
+        tiquete: ctx.tiquete,
+        placa: ctx.placa,
         columna: columna,
         campo: campoNombre,
         texto: texto,
@@ -4513,7 +4525,7 @@ async function obtenerFotoBase64Cliente(driveUrl) {
   var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 20000) : null;
   try {
     var opts = ctrl ? { signal: ctrl.signal } : {};
-    var res = await fetch(WEBAPP_URL + '?foto=1&id=' + encodeURIComponent(id) + '&t=' + Date.now(), opts);
+    var res = await fetch(WEBAPP_URL + '?foto=1&id=' + encodeURIComponent(id) + '&t=' + Date.now() + '&token=' + encodeURIComponent(_authToken || ''), opts);
     var json = await res.json();
     return json.success ? json.dataUrl : '';
   } catch (e) {
@@ -4875,6 +4887,34 @@ const AUTH_API = "https://script.google.com/macros/s/AKfycbwmseO6aZVuEaEWsfnXWKc
    manda solo y otro sitio no puede actuar en nombre del operario. */
 var _authToken = null;
 try { _authToken = localStorage.getItem('pil1_token') || null; } catch(e) {}
+
+/* ── TOKEN DE SESION EN TODA ESCRITURA AL BACKEND DE RECEPCION ────────
+   El backend ya no acepta escrituras anonimas. En vez de tocar cada una
+   de las ~10 llamadas (registro, piscina, reportes, manifiestos mf*),
+   se inyecta el token una sola vez, aca: se envuelve fetch y, cuando el
+   pedido es un POST con cuerpo JSON al endpoint de recepcion (WEBAPP_URL),
+   se le agrega el token si no lo trae. Cualquier POST nuevo a ese endpoint
+   queda cubierto sin tener que acordarse. Las lecturas GET mandan el token
+   en la URL aparte. No toca otros endpoints (implementacion, piscina, auth). */
+(function () {
+  if (window.__fetchTokenRecep) return;           // no envolver dos veces
+  window.__fetchTokenRecep = true;
+  var _fetch = window.fetch;
+  window.fetch = function (url, opts) {
+    try {
+      if (typeof url === 'string' && typeof WEBAPP_URL === 'string' &&
+          url.indexOf(WEBAPP_URL) === 0 && opts && opts.method &&
+          String(opts.method).toUpperCase() === 'POST' && typeof opts.body === 'string') {
+        var b = JSON.parse(opts.body);
+        if (b && typeof b === 'object' && !b.token) {
+          b.token = _authToken || '';
+          opts = Object.assign({}, opts, { body: JSON.stringify(b) });
+        }
+      }
+    } catch (e) { /* si el cuerpo no es JSON, se deja igual */ }
+    return _fetch.apply(this, arguments.length > 1 ? [url, opts] : [url]);
+  };
+})();
 
 function _guardarToken(t) {
   _authToken = t || null;
@@ -6175,7 +6215,8 @@ var MF_MARCA_NC = 'MANIFIESTO NO COINCIDE';
 var MF = {
   abierto: false,
   preparado: false,      // ya se pidieron las columnas al servidor
-  lista: [],             // los viajes del filtro, en orden de trabajo
+  lista: [],             // SOLO los viajes que faltan por verificar, en orden de trabajo
+  totales: 0,            // cuantos trae el filtro en total (para los contadores)
   i: 0,                  // en cual va
   clave: '',             // marca temporal del viaje actual, para no perderlo al repintar
   foto: null,            // dataUrl del manifiesto recien fotografiado
@@ -6300,10 +6341,11 @@ function mfRender() {
   var cuerpo = mfEl('mf-cuerpo');
   if (!cuerpo) return;
 
-  MF.lista = mfArmarLista();
+  /* Todos los del filtro: solo para los contadores (KPIs). */
+  var todos = mfArmarLista();
 
   var pend = 0, cert = 0, nd = 0, nc = 0;
-  MF.lista.forEach(function (r) {
+  todos.forEach(function (r) {
     var e = mfEstado(r);
     if (e === '') pend++;
     else if (e === MF_MARCA_ND) nd++;
@@ -6311,10 +6353,15 @@ function mfRender() {
     else cert++;
   });
 
+  /* El visor SOLO navega los que FALTAN por verificar: los ya certificados
+     (o no disponibles / no coinciden) no se muestran. */
+  MF.lista = todos.filter(mfPendiente);
+  MF.totales = todos.length;
+
   var badge = mfEl('mf-badge');
   if (badge) {
     badge.style.display = pend ? 'inline-block' : 'none';
-    badge.textContent = pend + (pend === 1 ? ' por verificar' : ' por verificar');
+    badge.textContent = pend + ' por verificar';
   }
   if (!MF.abierto) return;
 
@@ -6322,7 +6369,7 @@ function mfRender() {
   if (mfEl('mf-k-cert'))  mfEl('mf-k-cert').textContent  = cert;
   if (mfEl('mf-k-nd'))    mfEl('mf-k-nd').textContent    = nd;
   if (mfEl('mf-k-nc'))    mfEl('mf-k-nc').textContent    = nc;
-  if (mfEl('mf-k-total')) mfEl('mf-k-total').textContent = MF.lista.length;
+  if (mfEl('mf-k-total')) mfEl('mf-k-total').textContent = todos.length;
 
   /* Al repintar (un filtro nuevo, datos recargados) se vuelve al mismo
      viaje por su marca temporal. Si ya no esta en el filtro, se arranca
@@ -6345,8 +6392,11 @@ function mfPintarLead() {
   if (!caja) return;
 
   if (!MF.lista.length) {
-    caja.innerHTML = '<div class="mf-vacio">No hay viajes en el filtro de arriba. ' +
-                     'Cambiá el periodo o la operación para traer los viajes que querés verificar.</div>';
+    caja.innerHTML = (MF.totales > 0)
+      ? '<div class="mf-vacio">✓ ¡Todo verificado! No quedan viajes por verificar en este filtro. ' +
+        'Ya podés generar el certificado abajo, o cambiá el periodo/operación para ver otros.</div>'
+      : '<div class="mf-vacio">No hay viajes en el filtro de arriba. ' +
+        'Cambiá el periodo o la operación para traer los viajes que querés verificar.</div>';
     return;
   }
 

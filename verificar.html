@@ -3,142 +3,179 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Verificar Certificado - HORTI ORGANIC SAS CI BIC</title>
+<title>Verificación de certificado · Horti Organic</title>
+<meta name="description" content="Verificación de autenticidad de los certificados de disposición emitidos por HORTI ORGANIC SAS CI BIC.">
+<link rel="icon" href="icon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+<!--
+  PÁGINA PÚBLICA DE VERIFICACIÓN
+  El QR de cada certificado apunta acá (?codigo=XXXX-XXXX). La página no
+  guarda nada: le pregunta al Apps Script de certificados si ese código
+  existe y muestra lo que el certificado registró. Vive en GitHub Pages,
+  así quien escanea no ve el aviso de Google ("creado por un usuario de
+  Apps Script") que aparece al abrir script.google.com directo.
+-->
 <style>
-  :root{--green:#3f9142;--green-dark:#2c5e28;--border:#ddd;}
-  *{box-sizing:border-box;}
-  body{font-family:'Segoe UI',Arial,sans-serif;margin:0;background:#f2f4f2;color:#222;display:flex;justify-content:center;padding:40px 16px;}
-  .box{width:100%;max-width:440px;background:#fff;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,0.1);padding:28px;}
-  h1{font-size:17px;color:var(--green-dark);margin:0 0 4px;text-align:center;}
-  p.sub{font-size:12px;color:#888;text-align:center;margin:0 0 22px;}
-  label{display:block;font-size:12px;font-weight:600;color:#555;margin-bottom:6px;}
-  input{width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:14px;text-transform:uppercase;letter-spacing:1px;text-align:center;}
-  button{width:100%;margin-top:12px;padding:11px;border:none;border-radius:6px;background:var(--green);color:#fff;font-size:14px;font-weight:600;cursor:pointer;}
-  button:hover{background:var(--green-dark);}
-  button:disabled{background:#9bbf9c;cursor:default;}
-  .resultado{margin-top:20px;border-radius:8px;padding:16px;font-size:13px;line-height:1.6;display:none;}
-  .resultado.ok{background:#eaf6ec;border:1px solid #b8dfc0;}
-  .resultado.err{background:#fbeaea;border:1px solid #eabcbc;}
-  .resultado h2{font-size:14px;margin:0 0 10px;}
-  .resultado.ok h2{color:var(--green-dark);}
-  .resultado.err h2{color:#a13a3a;}
-  .resultado dt{font-weight:600;color:#555;font-size:11px;margin-top:8px;}
-  .resultado dd{margin:0;}
-  .config-warning{margin-top:20px;border-radius:8px;padding:14px;font-size:12px;line-height:1.6;background:#fff8e6;border:1px solid #f0dca0;color:#7a5c00;display:none;}
+  :root{
+    --verde:#1c5636; --verde-2:#2e7d32; --verde-claro:#eaf5ec; --dorado:#b8912f;
+    --tinta:#1f2a24; --tinta-2:#54605a; --tinta-3:#8a8f8a; --linea:#e3e6e1; --fondo:#f4f5f1; --blanco:#fff;
+    --rojo:#a13a3a; --rojo-claro:#fbeeee;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{font-family:'Source Sans 3',system-ui,-apple-system,'Segoe UI',Arial,sans-serif;background:var(--fondo);color:var(--tinta);
+    min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:32px 16px 40px}
+  .marca{display:flex;flex-direction:column;align-items:center;gap:6px;margin-bottom:18px;text-align:center}
+  .marca img{width:96px;height:96px;object-fit:contain}
+  .marca .nombre{font:700 13px 'Source Sans 3',sans-serif;letter-spacing:2px;text-transform:uppercase;color:var(--verde)}
+  .marca .sub{font-size:12px;color:var(--tinta-3)}
+  .caja{width:100%;max-width:480px;background:var(--blanco);border:1px solid var(--linea);border-top:4px solid var(--dorado);
+    border-radius:6px;box-shadow:0 10px 30px rgba(20,40,28,.08);padding:26px 24px 22px}
+  h1{font:700 22px 'Playfair Display',Georgia,serif;margin:0 0 4px;color:var(--tinta);text-align:center}
+  .intro{font-size:13px;color:var(--tinta-2);text-align:center;margin:0 0 20px;line-height:1.5}
+  form{display:flex;gap:8px}
+  input{flex:1;min-width:0;padding:11px 12px;border:1px solid var(--linea);border-radius:4px;font:600 16px 'Source Sans 3',sans-serif;
+    letter-spacing:2px;text-transform:uppercase;text-align:center;color:var(--tinta)}
+  input:focus{outline:2px solid var(--dorado);outline-offset:1px;border-color:var(--dorado)}
+  button{padding:11px 18px;border:none;border-radius:4px;background:var(--verde);color:#fff;font:700 13px 'Source Sans 3',sans-serif;
+    letter-spacing:.5px;text-transform:uppercase;cursor:pointer}
+  button:hover{background:#15432a}
+  button:disabled{opacity:.6;cursor:progress}
+  .res{margin-top:20px;display:none}
+  .sello{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:4px}
+  .sello .ic{flex:0 0 auto;width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff}
+  .sello b{display:block;font:700 17px 'Playfair Display',Georgia,serif}
+  .sello span{font-size:12.5px;line-height:1.4}
+  .ok .sello{background:var(--verde-claro);border:1px solid #bfdcc5}
+  .ok .sello .ic{background:var(--verde-2)}
+  .ok .sello b{color:var(--verde)}
+  .err .sello{background:var(--rojo-claro);border:1px solid #e8c2c2}
+  .err .sello .ic{background:var(--rojo)}
+  .err .sello b{color:var(--rojo)}
+  dl{margin:14px 0 0;display:grid;grid-template-columns:auto 1fr;gap:9px 14px;font-size:13.5px}
+  dt{color:var(--tinta-3);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding-top:2px;white-space:nowrap}
+  dd{margin:0;color:var(--tinta);line-height:1.45;word-break:break-word}
+  dd.codigo{font-weight:700;letter-spacing:1.5px}
+  .mats{list-style:none;margin:0;padding:0}
+  .mats li{display:flex;justify-content:space-between;gap:12px;padding:3px 0;border-bottom:1px dashed var(--linea)}
+  .mats li:last-child{border-bottom:none}
+  .mats .kg{font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:600}
+  .pie-res{margin-top:14px;font-size:11.5px;color:var(--tinta-3);text-align:center;line-height:1.5}
+  .cargando{text-align:center;color:var(--tinta-2);font-size:13px;padding:10px 0}
+  .pie{margin-top:22px;font-size:11.5px;color:var(--tinta-3);text-align:center;line-height:1.6;max-width:480px}
+  @media (max-width:420px){ form{flex-direction:column} dl{grid-template-columns:1fr} dt{padding-top:6px} }
 </style>
 </head>
 <body>
-<div class="box">
-  <h1>Verificación de Certificado</h1>
-  <p class="sub">HORTI ORGANIC SAS CI BIC</p>
-
-  <form id="formVerificar">
-    <label>Código de verificación</label>
-    <input id="inputCodigo" placeholder="XXXX-XXXX" autocomplete="off">
-    <button id="btnVerificar" type="submit">Verificar</button>
-  </form>
-
-  <div id="resultado" class="resultado"></div>
-  <div id="configWarning" class="config-warning">
-    Esta página aún no está configurada: falta poner la URL real de tu Apps Script en la
-    constante <code>APPS_SCRIPT_URL</code> dentro de este archivo (verificar.html).
+  <div class="marca">
+    <img src="logoverde.png" alt="Horti Organic" onerror="this.style.display='none'">
+    <div class="nombre">Horti Organic SAS CI BIC</div>
+    <div class="sub">Km. 5 vía Zipaquirá · Nemocón · Colombia</div>
   </div>
-</div>
+
+  <main class="caja">
+    <h1>Verificación de certificado</h1>
+    <p class="intro">Escriba el código que aparece junto al QR del certificado para confirmar que fue emitido por Horti Organic.</p>
+    <form id="form">
+      <input id="codigo" placeholder="XXXX-XXXX" autocomplete="off" maxlength="12" aria-label="Código de verificación">
+      <button id="btn" type="submit">Verificar</button>
+    </form>
+    <div id="res" class="res" role="status" aria-live="polite"></div>
+  </main>
+
+  <p class="pie">Esta consulta se hace directamente contra el registro de certificados de Horti Organic.<br>
+    Ante cualquier duda sobre un certificado, comuníquese con la empresa.</p>
 
 <script>
-  // ⚠️ CONFIGURACIÓN OBLIGATORIA ANTES DE USAR ESTA PÁGINA:
-  // Reemplaza el texto de abajo por la URL /exec de tu Apps Script desplegado
-  // (la misma URL que usa el generador en APPS_SCRIPT_URL).
-  // Ejemplo: 'https://script.google.com/macros/s/AKfycb.../exec'
-  const APPS_SCRIPT_URL = 'PEGA_AQUI_LA_URL_DE_TU_APPS_SCRIPT';
+  /* El Apps Script de certificados (el mismo que usa el generador del tablero). */
+  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzq4P0XvEDXAKAPti3B_JL_J1CjogE60bn6TOdiNf69WVmvaRLdpkxabkGTsEX3_7ogwA/exec';
 
-  const form = document.getElementById('formVerificar');
-  const input = document.getElementById('inputCodigo');
-  const boton = document.getElementById('btnVerificar');
-  const resultadoEl = document.getElementById('resultado');
-  const configWarningEl = document.getElementById('configWarning');
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const limpio = (s) => String(s == null ? '' : s).replace(/\*\*/g, '').trim();
 
-  function escaparHtml(s){
-    return String(s == null ? '' : s)
-      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  /* Cantidades como las escribe el certificado: 484740 -> 484.740 */
+  function numero(v){
+    const x = String(v == null ? '' : v).trim().replace(/[^\d.,]/g, '');
+    if(!x) return '';
+    let n;
+    if(/,\d{1,3}$/.test(x) && x.indexOf('.') > -1) n = Number(x.replace(/\./g, '').replace(',', '.'));
+    else if(/^\d{1,3}(\.\d{3})+$/.test(x)) n = Number(x.replace(/\./g, ''));
+    else n = Number(x.replace(/,/g, ''));
+    if(isNaN(n)) return esc(v);
+    const [ent, dec] = n.toFixed(3).split('.');
+    const d = dec.replace(/0+$/, '');
+    return ent.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + (d ? ',' + d : '');
   }
 
-  function mostrarResultado(html, tipo){
-    resultadoEl.className = 'resultado ' + tipo;
-    resultadoEl.innerHTML = html;
-    resultadoEl.style.display = 'block';
+  /* Del texto del certificado: razón social y NIT tal como se imprimieron. */
+  function datosDelTexto(rec){
+    let texto = '';
+    try { texto = (JSON.parse(rec.Parrafo1Datos || '{}').texto) || ''; } catch(e){}
+    const empresa = (texto.match(/a la empresa\s+\*\*([^*]+)\*\*/i) || [])[1] || '';
+    const nit = (texto.match(/NIT:?\s*\*\*([^*]+)\*\*/i) || [])[1] || '';
+    let unidad = 'kg';
+    try { unidad = (JSON.parse(rec.Parrafo1Datos || '{}').unidad) || 'kg'; } catch(e){}
+    return { empresa: limpio(empresa), nit: limpio(nit), unidad };
   }
 
-  // Si alguien abrió esta página con ?codigo=XXXX-XXXX (por ejemplo desde un QR),
-  // verifica automáticamente al cargar.
-  const params = new URLSearchParams(window.location.search);
-  const codigoInicial = params.get('codigo');
-  if (codigoInicial){
-    input.value = codigoInicial.toUpperCase();
+  function mostrar(html, tipo){
+    const r = $('res');
+    r.className = 'res ' + (tipo || '');
+    r.innerHTML = html;
+    r.style.display = 'block';
   }
 
   async function verificar(codigo){
-    if (!codigo){
-      mostrarResultado('<h2>⚠️ Escribe un código</h2>Ingresa el código de verificación que aparece en el certificado.', 'err');
-      return;
-    }
-    if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.indexOf('PEGA_AQUI') !== -1){
-      configWarningEl.style.display = 'block';
-      return;
-    }
-    configWarningEl.style.display = 'none';
-    boton.disabled = true;
-    boton.textContent = 'Verificando...';
-    resultadoEl.style.display = 'none';
-
+    codigo = String(codigo || '').trim().toUpperCase();
+    if(!codigo){ mostrar('<div class="sello"><div class="ic">!</div><div><b>Escriba un código</b><span>Es el que aparece junto al QR del certificado.</span></div></div>', 'err'); return; }
+    $('btn').disabled = true; $('btn').textContent = 'Verificando…';
+    mostrar('<div class="cargando">Consultando el registro de certificados…</div>');
     try{
-      const url = APPS_SCRIPT_URL + '?verificarJson=' + encodeURIComponent(codigo);
-      const res = await fetch(url);
+      const res = await fetch(APPS_SCRIPT_URL + '?verificarJson=' + encodeURIComponent(codigo));
       const data = await res.json();
-
-      if (!data.found){
-        mostrarResultado(
-          '<h2>⚠️ Código no encontrado</h2>Este código no corresponde a ningún certificado emitido por HORTI ORGANIC SAS CI BIC. El documento podría ser falso o el código fue transcrito incorrectamente.',
-          'err'
-        );
-      } else if (data.legado){
-        mostrarResultado('<h2>✅ Documento auténtico</h2>Este código corresponde a un certificado emitido por HORTI ORGANIC SAS CI BIC.', 'ok');
-      } else {
-        const rec = data.record || {};
-        let materiales = [];
-        try { materiales = JSON.parse(rec.Materiales || '[]'); } catch(e){}
-        const materialesHtml = materiales.map(function(m){
-          return escaparHtml(m.descripcion || '') + ': ' + escaparHtml(m.cantidad || '0') + ' kg';
-        }).join('<br>') || '—';
-
-        mostrarResultado(
-          '<h2>✅ Documento auténtico</h2><dl>' +
-          '<dt>Acta</dt><dd>' + escaparHtml(rec.Acta) + '</dd>' +
-          '<dt>Empresa receptora</dt><dd>' + escaparHtml(rec['Empresa Receptora']) + '</dd>' +
-          '<dt>NIT</dt><dd>' + escaparHtml(rec.NIT) + '</dd>' +
-          '<dt>Materiales</dt><dd>' + materialesHtml + '</dd>' +
-          '<dt>Periodo</dt><dd>' + escaparHtml(rec.Periodo) + '</dd>' +
-          '<dt>Fecha de expedición</dt><dd>' + escaparHtml(rec['Fecha Expedicion']) + '</dd>' +
-          '</dl>',
-          'ok'
-        );
+      if(!data || !data.found){
+        mostrar('<div class="sello"><div class="ic">✕</div><div><b>Código no encontrado</b>' +
+          '<span>El código <b style="display:inline;font:inherit;letter-spacing:1px">' + esc(codigo) + '</b> no corresponde a ningún certificado emitido por Horti Organic. Revise que esté bien escrito.</span></div></div>', 'err');
+        return;
       }
+      if(data.legado){
+        mostrar('<div class="sello"><div class="ic">✓</div><div><b>Documento auténtico</b><span>Este código corresponde a un certificado emitido por Horti Organic SAS CI BIC.</span></div></div>', 'ok');
+        return;
+      }
+      const rec = data.record || {};
+      const t = datosDelTexto(rec);
+      let mats = [];
+      try { mats = JSON.parse(rec.Materiales || '[]'); } catch(e){}
+      const unidad = t.unidad === 'viajes' ? 'viajes' : 'kg';
+      const matsHtml = mats.length
+        ? '<ul class="mats">' + mats.map(m => '<li><span>' + esc(m.descripcion || '—') + '</span><span class="kg">' + numero(m.cantidad) + ' ' + unidad + '</span></li>').join('') + '</ul>'
+        : '—';
+      const fila = (et, val, cls) => val ? '<dt>' + et + '</dt><dd' + (cls ? ' class="' + cls + '"' : '') + '>' + val + '</dd>' : '';
+      mostrar(
+        '<div class="sello"><div class="ic">✓</div><div><b>Documento auténtico</b><span>Certificado de disposición emitido por Horti Organic SAS CI BIC.</span></div></div>' +
+        '<dl>' +
+          fila('Código', esc(rec.Codigo || codigo), 'codigo') +
+          fila('Acta', esc(limpio(rec.Acta))) +
+          fila('Empresa', esc(t.empresa || limpio(rec['Empresa Receptora']))) +
+          fila('NIT', esc(limpio(rec.NIT) || t.nit)) +
+          fila('Periodo', esc(limpio(rec.Periodo))) +
+          fila('Expedido', esc(limpio(rec['Fecha Expedicion']))) +
+          fila('Material', matsHtml) +
+        '</dl>' +
+        '<div class="pie-res">Consultado el ' + new Date().toLocaleString('es-CO', { dateStyle:'long', timeStyle:'short' }) + '</div>',
+        'ok');
     }catch(err){
-      mostrarResultado('<h2>⚠️ Error al verificar</h2>No se pudo consultar el servidor de verificación. Intenta de nuevo en un momento.<br><br><small>' + escaparHtml(err.message) + '</small>', 'err');
+      mostrar('<div class="sello"><div class="ic">!</div><div><b>No se pudo consultar</b><span>El registro de certificados no respondió. Intente de nuevo en un momento.</span></div></div>', 'err');
     }finally{
-      boton.disabled = false;
-      boton.textContent = 'Verificar';
+      $('btn').disabled = false; $('btn').textContent = 'Verificar';
     }
   }
 
-  form.addEventListener('submit', function(ev){
-    ev.preventDefault();
-    verificar(input.value.trim().toUpperCase());
-  });
-
-  if (codigoInicial){
-    verificar(codigoInicial.trim().toUpperCase());
-  }
+  $('form').addEventListener('submit', (ev) => { ev.preventDefault(); verificar($('codigo').value); });
+  const inicial = new URLSearchParams(location.search).get('codigo');
+  if(inicial){ $('codigo').value = inicial.toUpperCase(); verificar(inicial); }
 </script>
 </body>
 </html>
