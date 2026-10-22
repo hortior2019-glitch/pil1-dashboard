@@ -1174,6 +1174,12 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-vehiculos .cb-fila-var{width:58px;text-align:right;font-size:12.5px;font-weight:800}
 #panel-vehiculos .cb-fila-var em{font-style:normal}
 
+/* Dos tarjetas apiladas donde antes había una sola y sobraba el espacio */
+#panel-vehiculos .fl-col{display:flex;flex-direction:column;gap:12px}
+#panel-vehiculos .fl-col .fl-card{margin-bottom:0}
+#panel-vehiculos .fl-aparte{font-size:12.5px;color:#5b625e;margin-top:12px;padding-top:11px;
+  border-top:1px solid #f1f2f0}
+
 /* ── Preoperacional: solo lo malo y lo regular ── */
 #panel-vehiculos .fp-rejilla{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 @media(max-width:860px){ #panel-vehiculos .fp-rejilla{grid-template-columns:1fr} }
@@ -13225,6 +13231,7 @@ function renderFlota(){
      Es la pregunta de la mañana, y con dos cosas el pastel se lee. */
   var conHoy = hoy.length;
   var sinHoy = Math.max(0, (_vehiculos || []).length - conHoy);
+  var estPre = _flEstadoPreopResumen();
 
   caja.innerHTML =
     '<div class="fl-kpis">' +
@@ -13252,11 +13259,28 @@ function renderFlota(){
         '<div class="fl-tit">Distribución de viajes</div>' +
         _flBarrasOps(topOps, maxOps, maxOpsKg, tonsF) +
       '</div>' +
-      '<div class="fl-card">' +
-        '<div class="fl-tit">Equipos con carga hoy</div>' +
-        _flPastel({ etiqueta:'Con movimiento', valor: conHoy, texto: conHoy + ' equipos' },
-                  { etiqueta:'Sin movimiento', valor: sinHoy, texto: sinHoy + ' equipos' },
-                  '#1c5636', '#dfe3de') +
+      '<div class="fl-col">' +
+        '<div class="fl-card">' +
+          '<div class="fl-tit">Equipos con carga hoy</div>' +
+          _flPastel({ etiqueta:'Con movimiento', valor: conHoy, texto: conHoy + ' equipos' },
+                    { etiqueta:'Sin movimiento', valor: sinHoy, texto: sinHoy + ' equipos' },
+                    '#1c5636', '#dfe3de') +
+        '</div>' +
+        '<div class="fl-card">' +
+          '<div class="fl-tit">Estado según el preoperacional</div>' +
+          ((estPre.conNov + estPre.alDia)
+            ? _flPastel({ etiqueta:'Con novedades', valor: estPre.conNov,
+                          texto: estPre.conNov + ' equipos' },
+                        { etiqueta:'Sin novedades', valor: estPre.alDia,
+                          texto: estPre.alDia + ' equipos' },
+                        '#b23b3b', '#1c5636')
+            : '<div class="fl-vacio">Ningún equipo de la flota tiene preoperacional registrado.</div>') +
+          (estPre.sinPreop
+            ? '<div class="fl-aparte">' + estPre.sinPreop +
+              (estPre.sinPreop === 1 ? ' equipo sin preoperacional registrado'
+                                     : ' equipos sin preoperacional registrado') + '</div>'
+            : '') +
+        '</div>' +
       '</div>' +
     '</div>' +
 
@@ -13320,6 +13344,23 @@ function _flPreopEstado(){
     return (b.malos - a.malos) || (b.regulares - a.regulares) ||
            a.placa.localeCompare(b.placa);
   });
+}
+
+/* Cómo está la flota según el último preoperacional de cada placa. Las
+   que no tienen preoperacional no son "equipos al día": van aparte, que
+   no es lo mismo no tener novedades que no haber revisado. */
+function _flEstadoPreopResumen(){
+  var dela = _flSoloFlota();
+  var r = { conNov: 0, alDia: 0, sinPreop: 0 };
+  Object.keys(dela).forEach(function(pl){
+    var lista = [];
+    try { lista = preopDeVehiculo(pl) || []; } catch(e){ lista = []; }
+    var u = lista[0];
+    if(!u) r.sinPreop++;
+    else if(u.malos || u.regulares) r.conNov++;
+    else r.alDia++;
+  });
+  return r;
 }
 
 function _flPreopTarjeta(x){
@@ -13457,10 +13498,6 @@ function _flCombustibleHTML(cm, av, tonsF){
           porKm !== null ? _fmtPesos(porKm) : null,
           (porKm !== null && porKmAnt !== null) ? _cbPct(porKm, porKmAnt) : null, true,
           'Hacen falta dos lecturas seguidas de kilometraje en los tanqueos') +
-        _cbFila((ico.km || ''), 'Kilómetros recorridos',
-          cm.km > 0 ? fmt(Math.round(cm.km)) + ' km' : null,
-          cm.kmAnt > 0 ? _cbPct(cm.km, cm.kmAnt) : null, false,
-          'Se calculan restando kilometrajes consecutivos: hacen falta al menos dos por placa') +
         _cbFila((ico.barras || ''), 'Costo por tonelada',
           porTon !== null ? _fmtPesos(porTon) : null, d.pctPorTon, true,
           'No hay toneladas registradas de estas placas este mes') +
