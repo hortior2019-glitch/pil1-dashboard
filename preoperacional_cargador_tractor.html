@@ -703,6 +703,15 @@
      cámara adentro de la página — y hasta ese abre la cámara del
      teléfono, no la galería. */
   .file-input.oculto { display: none; }
+
+  /* Tipo de tanqueo: en bomba (pesos) o interno (pimpinas) */
+  .tipo-tanqueo { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+  .tt-opt {
+    flex: 1 1 160px; padding: 11px 12px; border: 1.5px solid var(--border); border-radius: 8px;
+    background: #fff; color: var(--text-muted); font-family: 'Barlow', sans-serif; font-weight: 700;
+    font-size: 13px; letter-spacing: .03em; cursor: pointer;
+  }
+  .tt-opt.on { border-color: var(--green-dark); background: var(--green-light); color: var(--green-dark); }
   .file-input {
     flex: 1; min-width: 180px;
     border: 1.5px dashed var(--green-border);
@@ -1059,6 +1068,30 @@
       <div class="card-title">Valor del tanqueo</div>
     </div>
     <div class="card-body">
+      <!-- Tanqueo en la bomba (se paga, hay recibo: pesos) o interno, con
+           el combustible de la planta (no hay recibo de bomba: pimpinas). -->
+      <div class="tipo-tanqueo" role="group" aria-label="Tipo de tanqueo">
+        <button type="button" class="tt-opt on" data-tt="bomba" onclick="setTipoTanqueo('bomba')">En bomba (pesos)</button>
+        <button type="button" class="tt-opt" data-tt="interno" onclick="setTipoTanqueo('interno')">Tanqueo interno (pimpinas)</button>
+      </div>
+
+      <div id="bloque-pimpinas" style="display:none">
+        <div class="field-group">
+          <div class="field">
+            <label>Pimpinas tanqueadas <span>*</span></label>
+            <input type="number" id="comb-pimp" inputmode="numeric" autocomplete="off" min="1"
+                   placeholder="Ej: 3" oninput="verificarPar('pimp')">
+          </div>
+          <div class="field">
+            <label>Confirme las pimpinas <span>*</span></label>
+            <input type="number" id="comb-pimp2" inputmode="numeric" autocomplete="off" min="1"
+                   placeholder="Repita la cantidad" onpaste="return false" oninput="verificarPar('pimp')">
+          </div>
+        </div>
+        <div class="match-msg" id="comb-pimp-msg"></div>
+      </div>
+
+      <div id="bloque-pesos">
       <div class="field-group">
         <div class="field">
           <label>Valor tanqueado (pesos) <span>*</span></label>
@@ -1073,6 +1106,7 @@
         </div>
       </div>
       <div class="match-msg" id="comb-valor-msg"></div>
+      </div><!-- /bloque-pesos -->
     </div>
   </div>
 
@@ -1084,7 +1118,7 @@
     </div>
     <div class="card-body">
       <div class="field">
-        <label>Foto del recibo <span>*</span></label>
+        <label id="comb-recibo-label">Foto del recibo <span>*</span></label>
         <div class="foto-controls">
           <button type="button" class="btn-cam" onclick="abrirCamara('comb-recibo-preview','combRecibo')">Tomar foto</button>
           <input type="file" id="comb-recibo" accept="image/*" capture="environment"
@@ -1659,11 +1693,13 @@ function verificarPar(campo) {
   b.classList.remove('campo-nocoincide');
   msg.className = 'match-msg';
   if (!va || !vb) { msg.innerHTML = ''; return false; }
-  const etiqueta = campo === 'km' ? 'El kilometraje' : 'El valor';
+  const etiqueta = campo === 'km' ? 'El kilometraje' : campo === 'pimp' ? 'La cantidad de pimpinas' : 'El valor';
   if (va === vb) {
     const txt = campo === 'km'
       ? Number(va).toLocaleString('es-CO') + ' km'
-      : '$ ' + Number(va).toLocaleString('es-CO');
+      : campo === 'pimp'
+        ? Number(va).toLocaleString('es-CO') + (Number(va) === 1 ? ' pimpina' : ' pimpinas')
+        : '$ ' + Number(va).toLocaleString('es-CO');
     msg.className = 'match-msg ok';
     msg.innerHTML = '<span class="match-ico">&#10003;</span>' + etiqueta + ' coincide — se enviará ' + txt + '.';
     return true;
@@ -1674,12 +1710,25 @@ function verificarPar(campo) {
   return false;
 }
 
+/* Tanqueo en bomba (pesos + recibo) o interno con el combustible de la
+   planta (pimpinas; no hay recibo de bomba, la foto queda opcional). */
+let tipoTanqueo = 'bomba';
+function setTipoTanqueo(tipo) {
+  tipoTanqueo = tipo === 'interno' ? 'interno' : 'bomba';
+  document.querySelectorAll('.tt-opt').forEach(b => b.classList.toggle('on', b.dataset.tt === tipoTanqueo));
+  const interno = tipoTanqueo === 'interno';
+  const bp = document.getElementById('bloque-pesos');     if (bp) bp.style.display = interno ? 'none' : '';
+  const bi = document.getElementById('bloque-pimpinas');  if (bi) bi.style.display = interno ? '' : 'none';
+  const lr = document.getElementById('comb-recibo-label');
+  if (lr) lr.innerHTML = interno ? 'Foto del tanqueo (opcional)' : 'Foto del recibo <span>*</span>';
+}
+
 function limpiarCombustible() {
-  ['comb-km', 'comb-km2', 'comb-valor', 'comb-valor2'].forEach(id => {
+  ['comb-km', 'comb-km2', 'comb-valor', 'comb-valor2', 'comb-pimp', 'comb-pimp2'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.value = ''; el.classList.remove('campo-nocoincide'); }
   });
-  ['comb-km-msg', 'comb-valor-msg'].forEach(id => {
+  ['comb-km-msg', 'comb-valor-msg', 'comb-pimp-msg'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.className = 'match-msg'; el.innerHTML = ''; }
   });
@@ -1688,6 +1737,7 @@ function limpiarCombustible() {
   ['comb-tablero', 'comb-recibo'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   ['comb-tablero-preview', 'comb-recibo-preview'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
   delete fotos.combTablero; delete fotos.combRecibo;
+  setTipoTanqueo('bomba');
 }
 
 function resetCombustible() {
@@ -1723,27 +1773,44 @@ async function submitCombustible() {
     return;
   }
 
-  const val  = soloDigitos(document.getElementById('comb-valor').value);
-  const val2 = soloDigitos(document.getElementById('comb-valor2').value);
-  if (!val || !val2) {
-    toastMsg('Digite el valor del tanqueo en las dos casillas.', true);
-    document.getElementById('comb-valor').scrollIntoView({ behavior: 'smooth', block: 'center' });
-    return;
-  }
-  if (!verificarPar('valor')) {
-    toastMsg('El valor no coincide en las dos casillas.', true);
-    document.getElementById('comb-valor2').scrollIntoView({ behavior: 'smooth', block: 'center' });
-    return;
+  const interno = tipoTanqueo === 'interno';
+  let val = '', pimp = '';
+  if (interno) {
+    pimp = soloDigitos(document.getElementById('comb-pimp').value);
+    const pimp2 = soloDigitos(document.getElementById('comb-pimp2').value);
+    if (!pimp || !pimp2 || Number(pimp) <= 0) {
+      toastMsg('Digite las pimpinas en las dos casillas.', true);
+      document.getElementById('comb-pimp').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    if (!verificarPar('pimp')) {
+      toastMsg('La cantidad de pimpinas no coincide en las dos casillas.', true);
+      document.getElementById('comb-pimp2').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+  } else {
+    val = soloDigitos(document.getElementById('comb-valor').value);
+    const val2 = soloDigitos(document.getElementById('comb-valor2').value);
+    if (!val || !val2) {
+      toastMsg('Digite el valor del tanqueo en las dos casillas.', true);
+      document.getElementById('comb-valor').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    if (!verificarPar('valor')) {
+      toastMsg('El valor no coincide en las dos casillas.', true);
+      document.getElementById('comb-valor2').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    if (!fotos.combRecibo) {
+      toastMsg('Adjunte la foto del recibo.', true);
+      document.getElementById('comb-recibo').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
   }
 
-  if (!fotos.combRecibo) {
-    toastMsg('Adjunte la foto del recibo.', true);
-    document.getElementById('comb-recibo').scrollIntoView({ behavior: 'smooth', block: 'center' });
-    return;
-  }
-
+  const rec = fotos.combRecibo || {};
   const ubic = fotos.combTablero.lat ? (fotos.combTablero.lat + ',' + fotos.combTablero.lng)
-             : (fotos.combRecibo.lat ? (fotos.combRecibo.lat + ',' + fotos.combRecibo.lng) : '');
+             : (rec.lat ? (rec.lat + ',' + rec.lng) : '');
 
   const payload = {
     tipo:   'combustible',
@@ -1752,11 +1819,15 @@ async function submitCombustible() {
     encargado: encargado,
     placa:  placa,
     km:     Number(km),      // un solo dato, ya confirmado
-    valor:  Number(val),     // un solo dato, ya confirmado
+    /* En bomba: pesos. Interno: pimpinas, y el valor va vacio para no
+       sumar pesos que no se pagaron en una bomba. */
+    tipo_tanqueo: interno ? 'interno' : 'bomba',
+    valor:    interno ? '' : Number(val),
+    pimpinas: interno ? Number(pimp) : '',
     foto_tablero:      fotos.combTablero.b64,
     foto_tablero_mime: fotos.combTablero.mime,
-    foto_recibo:       fotos.combRecibo.b64,
-    foto_recibo_mime:  fotos.combRecibo.mime,
+    foto_recibo:       rec.b64 || '',
+    foto_recibo_mime:  rec.mime || '',
     ubicacion: ubic,
   };
 
