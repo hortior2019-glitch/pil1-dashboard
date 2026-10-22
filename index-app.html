@@ -15864,7 +15864,10 @@ function preopDeVehiculo(placa) {
   fuentes.forEach(f => {
     const items = Object.values(f.secc).flat();
     f.rows.forEach(r => {
-      const pl = r['Placa'] || r['placa'] || r['PLACA'] || '';
+      /* La hoja de cargador/tractor guarda la maquina en "Placa / Referencia"
+         (ej. MI754090), no en "Placa": sin esto sus preoperacionales nunca
+         aparecian en la ficha del vehiculo. */
+      const pl = r['Placa'] || r['placa'] || r['PLACA'] || r['Placa / Referencia'] || r['Referencia'] || '';
       if (_placaNorm(pl) !== objetivo) return;
       let malos = 0, regulares = 0, buenos = 0;
       const detMalos = [], detReg = [];
@@ -16107,10 +16110,61 @@ function abrirFormVehiculo(placa) {
       </div>
       <div id="vf-error" style="display:none;font-size:12px;color:var(--red);font-weight:600"></div>
     </div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;flex-wrap:wrap">
+      ${v ? `<button onclick="pedirPinEliminarVehiculo('${_escAttrVeh(v.placa)}')" title="Pide el PIN de operaciones (el mismo de Cortes a Proveedor)" style="margin-right:auto;padding:9px 16px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--white);color:var(--red);border:1px solid var(--red);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Eliminar vehículo</button>` : ''}
       <button onclick="_cerrarModalVeh()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Cancelar</button>
       <button id="vf-guardar" onclick="guardarVehiculo(${v?'true':'false'})" style="padding:9px 20px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Guardar</button>
     </div>`);
+}
+
+/* ── ELIMINAR UN VEHÍCULO ────────────────────────────────────────────
+   Pide el PIN de operaciones (el mismo de Cortes a Proveedor). Se revisa
+   aquí contra el servicio de cortes para avisar rápido si está mal, y el
+   backend de vehículos lo VUELVE a revisar antes de borrar: el botón no es
+   la seguridad. La fila borrada queda copiada en VEHICULOS_BORRADOS; los
+   mantenimientos y documentos de la placa no se tocan. */
+function pedirPinEliminarVehiculo(placa) {
+  _modalVeh(`
+    <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--red);margin-bottom:4px">Eliminar vehículo · ${_escVeh(placa)}</div>
+    <div style="font-size:12.5px;color:var(--ink-m);margin-bottom:14px;line-height:1.5">Se quita de la lista de Vehículos de Carga. Sus mantenimientos, documentos y tanqueos <b>no</b> se borran, y la fila queda respaldada en la hoja <b>VEHICULOS_BORRADOS</b>.</div>
+    <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">PIN de operaciones</label>
+    <input id="vdel-pin" type="password" inputmode="numeric" autocomplete="off" placeholder="El mismo de Cortes a Proveedor"
+      onkeydown="if(event.key==='Enter') confirmarEliminarVehiculo('${_escAttrVeh(placa)}')"
+      style="width:100%;box-sizing:border-box;padding:10px 12px;font-size:16px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif">
+    <div id="vdel-error" style="display:none;margin-top:8px;font-size:12px;color:var(--red);font-weight:600"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px">
+      <button onclick="abrirFormVehiculo('${_escAttrVeh(placa)}')" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Volver</button>
+      <button id="vdel-ok" onclick="confirmarEliminarVehiculo('${_escAttrVeh(placa)}')" style="padding:9px 20px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--red);color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Eliminar</button>
+    </div>`);
+  setTimeout(() => { const i = document.getElementById('vdel-pin'); if (i) i.focus(); }, 50);
+}
+
+async function confirmarEliminarVehiculo(placa) {
+  const pin = ((document.getElementById('vdel-pin') || {}).value || '').trim();
+  const err = document.getElementById('vdel-error');
+  const btn = document.getElementById('vdel-ok');
+  const _err = m => { if (err) { err.textContent = m; err.style.display = 'block'; } };
+  if (!pin) { _err('Escribe el PIN.'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Verificando…'; }
+  const listo = () => { if (btn) { btn.disabled = false; btn.textContent = 'Eliminar'; } };
+
+  const v = await fetchJSONTolerante(CORTES_FAV_API + '?accion=verificarPin&pin=' + encodeURIComponent(pin) + '&t=' + Date.now(),
+    { redirect: 'follow', timeoutMs: 30000 }, 2);
+  if (!v || typeof v.valido === 'undefined') { _err('No se pudo verificar el PIN (el servidor no respondió). Intenta de nuevo.'); listo(); return; }
+  if (!v.valido) { _err('PIN incorrecto.'); listo(); const i = document.getElementById('vdel-pin'); if (i) { i.value = ''; i.focus(); } return; }
+
+  if (!confirm('¿Eliminar definitivamente el vehículo ' + placa + ' de la lista?')) { listo(); return; }
+  if (btn) btn.textContent = 'Eliminando…';
+  const autor = (typeof _usuarioActual !== 'undefined' && _usuarioActual && _usuarioActual.usuario) ? _usuarioActual.usuario : '';
+  const d = await fetchJSONTolerante(VEHICULOS_API, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ accion: 'eliminarVehiculo', placa: placa, pin: pin, autor: autor }) }, 0);
+  if (!d || !d.success) {
+    _err((d && d.error) ? d.error : 'No se pudo eliminar. Revisa la conexión e intenta de nuevo.');
+    listo(); return;
+  }
+  _cerrarModalVeh();
+  if (typeof _vehFichaAbierta !== 'undefined' && String(_vehFichaAbierta || '').toUpperCase() === placa.toUpperCase()) _vehFichaAbierta = '';
+  await cargarVehiculos(true);
 }
 
 async function _previewFotoVeh(input) {
