@@ -18716,8 +18716,9 @@ let _calendarioCargado = false;
 async function cargarCalendarioRemoto() {
   if (typeof CORTES_FAV_API === 'undefined' || CORTES_FAV_API.includes('PEGAR')) { return; }
   try {
-    const res = await fetch(CORTES_FAV_API + '?accion=listarCalendario', { redirect:'follow' });
-    const data = await res.json();
+    const data = await fetchJSONTolerante(CORTES_FAV_API + '?accion=listarCalendario',
+      { redirect:'follow', timeoutMs: 15000 }, 0);
+    if (!data) { console.warn('Calendario de cortes: el servicio no respondió.'); return; }
     if (data.ok && Array.isArray(data.calendario) && data.calendario.length > 0) {
       // Reconstruir CORTES_BASE desde el Sheet
       CORTES_BASE = data.calendario.map(c => ({
@@ -20262,6 +20263,8 @@ function guardarInformeCorte() {
 
 // ── RESUMEN DE FACTURACIÓN (informes guardados, vista gerencia) ──
 let _informesGuardados = [];
+/* Si la última consulta al servicio de cortes no respondió. */
+let _informesFallo = false;
 
 let _informesUltimaCarga = 0;
 function cargarInformesGuardados(forzar) {
@@ -20272,15 +20275,32 @@ function cargarInformesGuardados(forzar) {
   const tieneCache = _informesGuardados && _informesGuardados.length > 0;
   // Con cache: pintar ya mismo y refrescar en segundo plano (sin borrar la lista).
   if (tieneCache) renderInformesGuardados();
-  else if (lista) lista.innerHTML = '<div style="color:var(--ink-l);font-size:13px;padding:8px">Cargando informes...</div>';
+  else if (lista) lista.innerHTML = '<div style="color:var(--ink-l);font-size:13px;padding:8px">' +
+    'Consultando los informes guardados… <span id="corte-inf-reloj">0 s</span> de 15</div>';
   if (!forzar && tieneCache && (Date.now() - _informesUltimaCarga) < 60000) return;
-  fetchJSONTolerante(CORTES_FAV_API + '?accion=listarInformes', { redirect:'follow' })
+  /* Un reloj a la vista: "Cargando…" sin fin no dice si esta trabajando o
+     si se colgo. A los 15 segundos se corta y se explica. */
+  if (!tieneCache) {
+    var _t0Inf = Date.now();
+    var _relojInf = setInterval(function(){
+      var e = document.getElementById('corte-inf-reloj');
+      if (!e) { clearInterval(_relojInf); return; }
+      e.textContent = Math.round((Date.now() - _t0Inf) / 1000) + ' s';
+    }, 1000);
+    setTimeout(function(){ clearInterval(_relojInf); }, 20000);
+  }
+  /* Sin reintento y con tope corto: si el servicio de cortes no contesta,
+     reintentar solo duplica la espera. */
+  fetchJSONTolerante(CORTES_FAV_API + '?accion=listarInformes', { redirect:'follow', timeoutMs: 15000 }, 0)
     .then(data => {
       if (data && data.ok && Array.isArray(data.informes)) {
+        _informesFallo = false;
         _informesGuardados = data.informes;
         _informesUltimaCarga = Date.now();
         renderInformesGuardados();
       } else if (lista && !tieneCache) {
+        _informesFallo = true;
+        renderInformesGuardados();
         lista.innerHTML = '<div style="color:var(--ink-m);font-size:13px;padding:8px;line-height:1.5">' +
           'Google no devolvió los informes guardados. Los cortes se pueden generar igual: ' +
           'esto solo afecta la lista de informes ya guardados.' +
@@ -20949,8 +20969,23 @@ function _renderInformesGuardadosImpl() {
   // Ordenar de mayor a menor valor (el corte más valioso arriba)
   itemsFiltrados = itemsFiltrados.slice().sort((a, b) => (parseFloat(b.valorSistema)||0) - (parseFloat(a.valorSistema)||0));
 
-  // Si no hay NINGÚN favorito/informe en absoluto, ocultar toda la tarjeta
+  /* Sin favoritos ni informes se oculta la tarjeta... salvo que la lista no
+     se haya podido consultar: entonces hay que DECIRLO. Antes se escondia
+     igual y el aviso quedaba dentro de un bloque invisible, asi que el
+     usuario no veia ni los cortes ni el motivo. */
   if (items.length === 0) {
+    if (_informesFallo) {
+      if (card) card.style.display = '';
+      if (lista) lista.innerHTML = '<div style="padding:22px 8px;color:var(--ink-m);font-size:13px;line-height:1.55">' +
+        '<b style="color:var(--red)">El servicio de cortes no respondió.</b><br>' +
+        'No se pudieron traer los cortes guardados ni sus informes. Los cortes se pueden generar igual: ' +
+        'esto solo afecta la lista de lo ya guardado.' +
+        '<button type="button" onclick="cargarCortesFavoritosRemoto(true);cargarInformesGuardados(true)" ' +
+        'style="display:block;margin-top:11px;padding:8px 16px;font-size:11px;font-weight:700;letter-spacing:.5px;' +
+        'text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);' +
+        'border-radius:4px;cursor:pointer;font-family:\'Source Sans 3\',sans-serif">Reintentar</button></div>';
+      return;
+    }
     if (card) card.style.display = 'none';
     return;
   }
@@ -21547,12 +21582,13 @@ async function cargarCortesFavoritosRemoto(forzar) {
 
   const loadingEl = document.getElementById('corte-fav-loading');
   if (loadingEl && !tieneCache) loadingEl.textContent = 'Cargando favoritos...';
-  const data = await fetchJSONTolerante(CORTES_FAV_API + '?accion=listar', { redirect: 'follow' });
+  const data = await fetchJSONTolerante(CORTES_FAV_API + '?accion=listar', { redirect: 'follow', timeoutMs: 15000 }, 0);
   if (data && data.ok) {
     _cortesFavoritosCache = data.favoritos || [];
     _favUltimaCarga = Date.now();
   }
-  if (loadingEl) loadingEl.textContent = '';
+  if (loadingEl) loadingEl.textContent = (!data && !tieneCache)
+    ? 'El servicio de cortes no respondió: no se pudieron cargar los cortes guardados.' : '';
   renderCortesFavoritos();
   // Re-renderizar el resumen de facturación (que ahora también lista los favoritos)
   renderInformesGuardados();
