@@ -18716,8 +18716,10 @@ let _calendarioCargado = false;
 async function cargarCalendarioRemoto() {
   if (typeof CORTES_FAV_API === 'undefined' || CORTES_FAV_API.includes('PEGAR')) { return; }
   try {
+    _corteDiagIni('cal');
     const data = await fetchJSONTolerante(CORTES_FAV_API + '?accion=listarCalendario',
       { redirect:'follow', timeoutMs: 60000 }, 0);
+    _corteDiagFin('cal', !!data, 'sin respuesta');
     if (!data) { console.warn('Calendario de cortes: el servicio no respondió.'); return; }
     if (data.ok && Array.isArray(data.calendario) && data.calendario.length > 0) {
       // Reconstruir CORTES_BASE desde el Sheet
@@ -20268,6 +20270,26 @@ let _informesFallo = false;
 /* Hay una consulta en vuelo: la tarjeta no se puede esconder, o el
    mensaje de "consultando…" queda dentro de un bloque invisible. */
 let _informesCargando = false;
+/* ── DIAGNOSTICO DEL PANEL DE CORTES ────────────────────────────────
+   Tres consultas distintas al mismo servicio. Cuando una se queda
+   colgada hay que poder ver CUAL, sin abrir la consola: el panel lo
+   muestra mientras espera. */
+const _corteDiag = {};
+function _corteDiagIni(k){ _corteDiag[k] = { t0: Date.now(), estado: 'esperando' }; }
+function _corteDiagFin(k, ok, detalle){
+  const d = _corteDiag[k] || (_corteDiag[k] = { t0: Date.now() });
+  d.seg = Math.round((Date.now() - d.t0) / 1000);
+  d.estado = ok ? ('ok en ' + d.seg + ' s') : ((detalle || 'falló') + ' a los ' + d.seg + ' s');
+}
+function _corteDiagTexto(){
+  const nombre = { fav: 'cortes guardados', inf: 'informes', cal: 'calendario' };
+  return Object.keys(nombre).map(function (k) {
+    const d = _corteDiag[k];
+    if (!d) return nombre[k] + ': no se pidió';
+    return nombre[k] + ': ' + (d.estado === 'esperando'
+      ? 'esperando ' + Math.round((Date.now() - d.t0) / 1000) + ' s' : d.estado);
+  }).join(' · ');
+}
 /* Segundos que se espera al servicio de cortes antes de darlo por caído.
    Tres minutos: esa consulta lee la hoja de informes entera y puede
    tardar; el usuario ve el reloj y puede dejar de esperar cuando quiera. */
@@ -20294,9 +20316,11 @@ function cargarInformesGuardados(forzar) {
   var _t0 = Date.now();
   var _listo = false;
   _informesCargando = true;
+  _corteDiagIni('inf');
   if (!tieneCache && lista) lista.innerHTML =
     '<div style="padding:20px 8px;color:var(--ink-m);font-size:13px;line-height:1.55">' +
       'Consultando los informes guardados… <b id="corte-inf-reloj">0 s</b>' +
+      '<div id="corte-inf-diag" style="margin-top:6px;font-size:12px;color:var(--ink-l)"></div>' +
       '<div id="corte-inf-lento" style="margin-top:7px;color:var(--gold);display:none">' +
         'El servicio de cortes está tardando más de lo normal. Puede seguir trabajando: ' +
         'generar un corte nuevo no depende de esta lista.</div>' +
@@ -20309,6 +20333,8 @@ function cargarInformesGuardados(forzar) {
     var seg = Math.round((Date.now() - _t0) / 1000);
     var e = document.getElementById('corte-inf-reloj');
     if (e) e.textContent = seg + ' s';
+    var dg = document.getElementById('corte-inf-diag');
+    if (dg) dg.textContent = _corteDiagTexto();
     var l = document.getElementById('corte-inf-lento');
     if (l && seg >= 20) l.style.display = '';
   }, 1000);
@@ -20317,6 +20343,7 @@ function cargarInformesGuardados(forzar) {
     if (_listo) return;
     _listo = true;
     _informesCargando = false;
+    _corteDiagFin('inf', !!(data && data.ok), motivo);
     clearInterval(_reloj);
     var seg = Math.round((Date.now() - _t0) / 1000);
     if (data && data.ok && Array.isArray(data.informes)) {
@@ -20334,6 +20361,7 @@ function cargarInformesGuardados(forzar) {
     if (lista) lista.innerHTML = '<div style="padding:20px 8px;color:var(--ink-m);font-size:13px;line-height:1.55">' +
       '<b style="color:var(--red)">No se pudo traer la lista de cortes guardados</b> (' + motivo + ', ' + seg + ' s).<br>' +
       'Generar un corte nuevo no depende de esta lista: eso sigue funcionando.' +
+      '<div style="margin-top:8px;font-size:12px;color:var(--ink-l)">' + _corteDiagTexto() + '</div>' +
       '<button type="button" onclick="cargarCortesFavoritosRemoto(true);cargarInformesGuardados(true)" ' +
       'style="display:block;margin-top:11px;padding:8px 16px;font-size:11px;font-weight:700;letter-spacing:.5px;' +
       'text-transform:uppercase;border:1px solid var(--rule);background:var(--bg);color:var(--ink-m);' +
@@ -21616,7 +21644,9 @@ async function cargarCortesFavoritosRemoto(forzar) {
 
   const loadingEl = document.getElementById('corte-fav-loading');
   if (loadingEl && !tieneCache) loadingEl.textContent = 'Cargando favoritos...';
+  _corteDiagIni('fav');
   const data = await fetchJSONTolerante(CORTES_FAV_API + '?accion=listar', { redirect: 'follow', timeoutMs: 120000 }, 0);
+  _corteDiagFin('fav', !!(data && data.ok), data ? 'respondió sin la lista' : 'sin respuesta');
   if (data && data.ok) {
     _cortesFavoritosCache = data.favoritos || [];
     _favUltimaCarga = Date.now();
