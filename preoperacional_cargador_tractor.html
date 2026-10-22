@@ -998,7 +998,7 @@
 <div class="tab-panel" id="panel-combustible">
 
   <div class="notice">
-    Registro de tanqueo. El <strong>kilometraje</strong> y el <strong>valor</strong> se digitan dos veces para confirmar;
+    Registro de tanqueo. El <strong>horómetro</strong> y el <strong>valor</strong> se digitan dos veces para confirmar;
     al formulario se envía un solo dato, y únicamente cuando ambas casillas coinciden.
   </div>
 
@@ -1028,15 +1028,15 @@
     </div>
   </div>
 
-  <!-- 2. KILOMETRAJE -->
+  <!-- 2. HORÓMETRO -->
   <div class="card">
     <div class="card-header">
       <div class="step-badge">2</div>
-      <div class="card-title">Kilometraje del tablero</div>
+      <div class="card-title">Horómetro del tablero</div>
     </div>
     <div class="card-body">
       <div class="field">
-        <label>Foto del tablero (kilometraje) <span>*</span></label>
+        <label>Foto del tablero (horómetro) <span>*</span></label>
         <div class="foto-controls">
           <button type="button" class="btn-cam" onclick="abrirCamara('comb-tablero-preview','combTablero')">Tomar foto</button>
           <input type="file" id="comb-tablero" accept="image/*" capture="environment"
@@ -1047,14 +1047,14 @@
 
       <div class="field-group" style="margin-top:20px">
         <div class="field">
-          <label>Kilometraje <span>*</span></label>
-          <input type="number" id="comb-km" inputmode="numeric" autocomplete="off"
-                 placeholder="Ej: 125000" oninput="verificarPar('km')">
+          <label>Horómetro (horas) <span>*</span></label>
+          <input type="text" id="comb-km" inputmode="decimal" autocomplete="off"
+                 placeholder="Ej: 4523,5" oninput="verificarPar('km')">
         </div>
         <div class="field">
-          <label>Confirme el kilometraje <span>*</span></label>
-          <input type="number" id="comb-km2" inputmode="numeric" autocomplete="off"
-                 placeholder="Repita el kilometraje" onpaste="return false" oninput="verificarPar('km')">
+          <label>Confirme el horómetro <span>*</span></label>
+          <input type="text" id="comb-km2" inputmode="decimal" autocomplete="off"
+                 placeholder="Repita el horómetro" onpaste="return false" oninput="verificarPar('km')">
         </div>
       </div>
       <div class="match-msg" id="comb-km-msg"></div>
@@ -1675,6 +1675,17 @@ function revisarEquipos() {
 
 // "$ 120.000" -> "120000"
 function soloDigitos(v) { return (v == null ? '' : v).toString().replace(/\D/g, ''); }
+/* El horómetro lleva decimales (4523,5 horas): se acepta coma o punto y se
+   deja un solo separador decimal. Antes se borraba todo lo que no fuera
+   dígito y 4523,5 quedaba como 45235. */
+function numHorometro(v) {
+  let s = (v == null ? '' : v).toString().trim().replace(/\s/g, '').replace(',', '.').replace(/[^0-9.]/g, '');
+  const i = s.indexOf('.');
+  if (i > -1) s = s.slice(0, i + 1) + s.slice(i + 1).replace(/\./g, '');
+  if (s === '' || s === '.') return '';
+  const n = Number(s);
+  return isNaN(n) ? '' : String(n);
+}
 
 // Da formato de pesos mientras se escribe: 120000 -> "$ 120.000"
 function formatearPesos(input) {
@@ -1688,15 +1699,16 @@ function verificarPar(campo) {
   const b   = document.getElementById('comb-' + campo + '2');
   const msg = document.getElementById('comb-' + campo + '-msg');
   if (!a || !b || !msg) return false;
-  const va = soloDigitos(a.value), vb = soloDigitos(b.value);
+  const leer = campo === 'km' ? numHorometro : soloDigitos;
+  const va = leer(a.value), vb = leer(b.value);
   a.classList.remove('campo-nocoincide');
   b.classList.remove('campo-nocoincide');
   msg.className = 'match-msg';
   if (!va || !vb) { msg.innerHTML = ''; return false; }
-  const etiqueta = campo === 'km' ? 'El kilometraje' : campo === 'pimp' ? 'La cantidad de pimpinas' : 'El valor';
+  const etiqueta = campo === 'km' ? 'El horómetro' : campo === 'pimp' ? 'La cantidad de pimpinas' : 'El valor';
   if (va === vb) {
     const txt = campo === 'km'
-      ? Number(va).toLocaleString('es-CO') + ' km'
+      ? Number(va).toLocaleString('es-CO', { maximumFractionDigits: 1 }) + ' h'
       : campo === 'pimp'
         ? Number(va).toLocaleString('es-CO') + (Number(va) === 1 ? ' pimpina' : ' pimpinas')
         : '$ ' + Number(va).toLocaleString('es-CO');
@@ -1755,20 +1767,20 @@ async function submitCombustible() {
   if (!placa)     { toastMsg('Indique la placa o el equipo.', true); return; }
 
   if (!fotos.combTablero) {
-    toastMsg('Adjunte la foto del tablero (kilometraje).', true);
+    toastMsg('Adjunte la foto del tablero (horómetro).', true);
     document.getElementById('comb-tablero').scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
 
-  const km  = soloDigitos(document.getElementById('comb-km').value);
-  const km2 = soloDigitos(document.getElementById('comb-km2').value);
+  const km  = numHorometro(document.getElementById('comb-km').value);
+  const km2 = numHorometro(document.getElementById('comb-km2').value);
   if (!km || !km2) {
-    toastMsg('Digite el kilometraje en las dos casillas.', true);
+    toastMsg('Digite el horómetro en las dos casillas.', true);
     document.getElementById('comb-km').scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
   if (!verificarPar('km')) {
-    toastMsg('El kilometraje no coincide en las dos casillas.', true);
+    toastMsg('El horómetro no coincide en las dos casillas.', true);
     document.getElementById('comb-km2').scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
