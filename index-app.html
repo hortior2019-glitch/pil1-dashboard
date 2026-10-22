@@ -6745,7 +6745,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
       <div>
         <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--navy)">Cortes y facturación</div>
-        <div style="font-size:11px;color:var(--ink-l);margin-top:2px">Tus cortes guardados y su estado — verde: facturado · rojo: pendiente</div>
+        <div style="font-size:11px;color:var(--ink-l);margin-top:2px">Tus cortes guardados y su estado — verde: facturado · rojo: pendiente<span id="corte-resumen-frescura"></span></div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button id="btn-backfill-cortes" onclick="rellenarMarcasCortesAnteriores()" style="padding:7px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--white);color:#8b6914;border:1px solid #8b6914;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif" title="Marca en el sheet los viajes de todos los cortes guardados antes de este cambio">Marcar cortes anteriores</button>
@@ -19036,6 +19036,14 @@ function initCortesProveedores() {
       </label>`).join('');
     cont.dataset.init = '1';
   }
+  /* Primero lo de la última vez, para no dejar la pantalla vacía
+     mientras el servicio de cortes se toma su tiempo. */
+  try {
+    if (cortesDesdeCache()) {
+      _corteFrescura('mostrando lo guardado ' + _corteCacheEtiqueta() + ', actualizando…');
+      renderInformesGuardados();
+    }
+  } catch(e) { console.warn('cache de cortes:', e); }
   cargarCortesFavoritosRemoto();
   cargarInformesGuardados();
   try { cargarAlertasPlacas(); } catch(e) { console.warn('cargarAlertasPlacas:', e); }
@@ -20270,6 +20278,62 @@ let _informesFallo = false;
 /* Hay una consulta en vuelo: la tarjeta no se puede esconder, o el
    mensaje de "consultando…" queda dentro de un bloque invisible. */
 let _informesCargando = false;
+/* ── LO ÚLTIMO QUE SÍ LLEGÓ, GUARDADO EN EL NAVEGADOR ───────────────
+   La consulta de informes del servicio de cortes tarda. Hasta ahora esa
+   espera se pagaba ENTERA en cada recarga de la página, y mientras tanto
+   no había nada que mirar. Lo que llegó la última vez se guarda aquí y
+   se pinta de una, mientras por detrás se vuelve a pedir: si la respuesta
+   nueva llega, reemplaza; si no llega, al menos se ven los cortes de la
+   última vez, con su fecha. No arregla que el servicio sea lento —eso es
+   del lado del Apps Script—, pero deja de dejar la pantalla en blanco. */
+const CORTE_CACHE_KEY = 'horti_cortes_v1';
+const CORTE_CACHE_MAX_MS = 7 * 24 * 60 * 60 * 1000;   // una semana
+let _corteCacheFecha = 0;
+
+function _corteCacheLeer(){
+  try {
+    const crudo = localStorage.getItem(CORTE_CACHE_KEY);
+    if (!crudo) return null;
+    const o = JSON.parse(crudo);
+    if (!o || !o.ts || (Date.now() - o.ts) > CORTE_CACHE_MAX_MS) return null;
+    return o;
+  } catch (e) { return null; }
+}
+function _corteCacheGuardar(){
+  try {
+    localStorage.setItem(CORTE_CACHE_KEY, JSON.stringify({
+      ts: Date.now(),
+      informes: _informesGuardados || [],
+      favoritos: _cortesFavoritosCache || []
+    }));
+    _corteCacheFecha = Date.now();
+  } catch (e) { /* sin espacio o en privado: se sigue sin cache */ }
+}
+/* Se llama al abrir el panel: deja la pantalla con datos antes de pedir
+   nada. Devuelve true si habia algo guardado. */
+function cortesDesdeCache(){
+  const o = _corteCacheLeer();
+  if (!o) return false;
+  if (!(_informesGuardados || []).length && Array.isArray(o.informes)) _informesGuardados = o.informes;
+  if (!(_cortesFavoritosCache || []).length && Array.isArray(o.favoritos)) _cortesFavoritosCache = o.favoritos;
+  _corteCacheFecha = o.ts;
+  return !!((o.informes || []).length || (o.favoritos || []).length);
+}
+/* Avisa en el subtitulo si lo que se ve viene de la ultima vez. */
+function _corteFrescura(estado){
+  const e = document.getElementById('corte-resumen-frescura');
+  if (!e) return;
+  if (!estado) { e.textContent = ''; return; }
+  e.innerHTML = ' · <span style="color:var(--gold);font-weight:700">' + estado + '</span>';
+}
+function _corteCacheEtiqueta(){
+  if (!_corteCacheFecha) return '';
+  const m = Math.round((Date.now() - _corteCacheFecha) / 60000);
+  return m < 1 ? 'hace un momento' : m < 60 ? ('hace ' + m + ' min')
+       : m < 1440 ? ('hace ' + Math.round(m / 60) + ' h')
+       : ('el ' + new Date(_corteCacheFecha).toLocaleDateString('es-CO'));
+}
+
 /* ── DIAGNOSTICO DEL PANEL DE CORTES ────────────────────────────────
    Tres consultas distintas al mismo servicio. Cuando una se queda
    colgada hay que poder ver CUAL, sin abrir la consola: el panel lo
@@ -20351,12 +20415,18 @@ function cargarInformesGuardados(forzar) {
       _informesGuardados = data.informes;
       _informesUltimaCarga = Date.now();
       console.log('listarInformes: ' + data.informes.length + ' informes en ' + seg + ' s');
+      _corteCacheGuardar();
+      _corteFrescura('');
       renderInformesGuardados();
       return;
     }
     console.warn('listarInformes: ' + motivo + ' (' + seg + ' s)');
     _informesFallo = true;
-    if (tieneCache) { renderInformesGuardados(); return; }
+    if (tieneCache) {
+      _corteFrescura('el servicio no respondió: esto es lo guardado ' + _corteCacheEtiqueta());
+      renderInformesGuardados();
+      return;
+    }
     if (card) card.style.display = '';
     if (lista) lista.innerHTML = '<div style="padding:20px 8px;color:var(--ink-m);font-size:13px;line-height:1.55">' +
       '<b style="color:var(--red)">No se pudo traer la lista de cortes guardados</b> (' + motivo + ', ' + seg + ' s).<br>' +
@@ -21650,6 +21720,7 @@ async function cargarCortesFavoritosRemoto(forzar) {
   if (data && data.ok) {
     _cortesFavoritosCache = data.favoritos || [];
     _favUltimaCarga = Date.now();
+    _corteCacheGuardar();
   }
   if (loadingEl) loadingEl.textContent = (!data && !tieneCache)
     ? 'El servicio de cortes no respondió: no se pudieron cargar los cortes guardados.' : '';
