@@ -1174,6 +1174,12 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-vehiculos .cb-fila-var{width:58px;text-align:right;font-size:12.5px;font-weight:800}
 #panel-vehiculos .cb-fila-var em{font-style:normal}
 
+/* Dos tarjetas apiladas donde antes había una sola y sobraba el espacio */
+#panel-vehiculos .fl-col{display:flex;flex-direction:column;gap:12px}
+#panel-vehiculos .fl-col .fl-card{margin-bottom:0}
+#panel-vehiculos .fl-aparte{font-size:12.5px;color:#5b625e;margin-top:12px;padding-top:11px;
+  border-top:1px solid #f1f2f0}
+
 /* ── Preoperacional: solo lo malo y lo regular ── */
 #panel-vehiculos .fp-rejilla{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 @media(max-width:860px){ #panel-vehiculos .fp-rejilla{grid-template-columns:1fr} }
@@ -12809,7 +12815,8 @@ function _flCombMeses(){
   var hoy = new Date();
   var a = hoy.getFullYear(), m = hoy.getMonth();
   var ant = new Date(a, m - 1, 1), aA = ant.getFullYear(), mA = ant.getMonth();
-  var porDiaA = {}, porDiaB = {}, nA = 0, nB = 0;
+  var diaHoy = hoy.getDate();
+  var porDiaA = {}, porDiaB = {}, nA = 0, nB = 0, gBdia = 0, nBdia = 0;
   lista.forEach(function(r){
     var pl = (r['Placa / Equipo'] || r['Placa'] || r['PLACA'] || r['placa'] || '').toString().trim().toUpperCase();
     if(!pl || !dela[pl]) return;
@@ -12819,7 +12826,11 @@ function _flCombMeses(){
     var val = _numComb(r['Valor tanqueado']);
     if(!(val > 0)) return;
     if(aa === a && mm === m){ porDiaA[dd] = (porDiaA[dd] || 0) + val; nA++; }
-    else if(aa === aA && mm === mA){ porDiaB[dd] = (porDiaB[dd] || 0) + val; nB++; }
+    else if(aa === aA && mm === mA){
+      porDiaB[dd] = (porDiaB[dd] || 0) + val; nB++;
+      /* Hasta el mismo día: comparar 22 días contra 30 no es comparar. */
+      if(dd <= diaHoy){ gBdia += val; nBdia++; }
+    }
   });
   var armar = function(o){
     return Object.keys(o).map(function(d){ return { dia: +d, valor: o[d] }; })
@@ -12828,10 +12839,14 @@ function _flCombMeses(){
   var act = armar(porDiaA), anterior = armar(porDiaB);
   var sum = function(s){ return s.reduce(function(x, y){ return x + y.valor; }, 0); };
   var gA = sum(act), gB = sum(anterior);
-  var km = _flKmMeses(a, m, aA, mA);
-  return { act: act, ant: anterior, gasto: gA, gastoAnt: gB, n: nA, nAnt: nB,
-           km: km.act, kmAnt: km.ant,
-           tend: gB > 0 ? ((gA - gB) / gB) * 100 : null };
+  var km = _flKmMeses(a, m, aA, mA, diaHoy);
+  /* gastoAnt y nAnt son los del mes anterior HASTA EL MISMO DÍA. El mes
+     anterior completo queda aparte por si algún día hace falta. */
+  return { act: act, ant: anterior,
+           gasto: gA, gastoAnt: gBdia, gastoAntMes: gB,
+           n: nA, nAnt: nBdia, nAntMes: nB,
+           km: km.act, kmAnt: km.ant, dia: diaHoy,
+           tend: gBdia > 0 ? ((gA - gBdia) / gBdia) * 100 : null };
 }
 
 /* Los kilómetros recorridos de la flota en cada mes. No están guardados:
@@ -12840,7 +12855,7 @@ function _flCombMeses(){
    es un error de digitación y se descarta; un salto imposible también.
    Si no hay dos lecturas seguidas, devuelve 0 y el tablero dirá que no
    hay datos en vez de inventar un rendimiento. */
-function _flKmMeses(a, m, aA, mA){
+function _flKmMeses(a, m, aA, mA, diaCorte){
   var lista = (typeof dataCombustible !== 'undefined' ? dataCombustible : []) || [];
   var dela = _flSoloFlota();
   var porPlaca = {};
@@ -12861,8 +12876,9 @@ function _flKmMeses(a, m, aA, mA){
       var d = l[i].km - l[i - 1].km;
       if(d <= 0 || d > 5000) continue;          /* lectura mala: no se cuenta */
       var pz = l[i].iso.split('-'), aa = +pz[0], mm = +pz[1] - 1;
+      var dd = +l[i].iso.split('-')[2];
       if(aa === a && mm === m) tot.act += d;
-      else if(aa === aA && mm === mA) tot.ant += d;
+      else if(aa === aA && mm === mA && (!diaCorte || dd <= diaCorte)) tot.ant += d;
     }
   });
   return tot;
@@ -12999,17 +13015,30 @@ function renderVehCmpChart(){
 
   /* Las cifras de los dos meses y cuánto se movió: la gráfica dice la
      forma, pero el total hay que leerlo, no estimarlo del dibujo. */
-  var suma = function(a){ return a.reduce(function(x, y){ return x + y; }, 0); };
+  /* Si uno de los dos meses es el que está corriendo, los totales se
+     cortan el mismo día en los dos: 22 días contra 30 no es comparar.
+     Entre dos meses ya cerrados se suman completos. */
+  var esActual = function(y, mes){ return y === now.getFullYear() && mes === now.getMonth(); };
+  var corte = (esActual(yA, mA) || esActual(yB, mB)) ? now.getDate() : 0;
+  var suma = function(a){
+    return a.reduce(function(x, y, i){
+      /* keys[i] es el desplazamiento en días desde el 1 del mes. */
+      if(corte && (parseInt(keys[i], 10) + 1) > corte) return x;
+      return x + y;
+    }, 0);
+  };
+  var pieCorte = corte ? ' · al día ' + corte : '';
   var resumen = function(id, a, b, fmtFn, unidad, color){
     var caja = document.getElementById(id);
     if(!caja) return;
     caja.innerHTML =
       '<div class="cb-par">' +
         '<div><div class="cb-num">' + fmtFn(a) + '</div>' +
-          '<div class="cb-pie">' + unidad + '<br>' + lblA + '</div></div>' +
+          '<div class="cb-pie">' + unidad + '<br>' + lblA + pieCorte + '</div></div>' +
         '<div><div class="cb-num cb-num-ant">' + fmtFn(b) + '</div>' +
-          '<div class="cb-pie">' + unidad + '<br>' + lblB + '</div></div>' +
-        '<div class="cb-par-d">' + _cbDelta(_cbPct(a, b), false, '', 'vs. ' + lblB) + '</div>' +
+          '<div class="cb-pie">' + unidad + '<br>' + lblB + pieCorte + '</div></div>' +
+        '<div class="cb-par-d">' + _cbDelta(_cbPct(a, b), false, '',
+          'vs. ' + lblB + (corte ? ' · hasta el día ' + corte : '')) + '</div>' +
       '</div>' +
       '<div class="cb-via"><span class="' + color + '" style="width:' +
         ((a / Math.max(a, b, 1)) * 100).toFixed(1) + '%"></span></div>';
@@ -13100,7 +13129,7 @@ function _cbGrafico(act, ant){
 
 /* Una comparación de dos meses: el número grande, el del mes pasado al
    lado, la barra de proporción y una nota que dice qué significa. */
-function _cbComparativo(rot, ico, actual, anterior, fmtFn, unidad, subirEsMalo, color, nota){
+function _cbComparativo(rot, ico, actual, anterior, fmtFn, unidad, subirEsMalo, color, nota, corte){
   var pct = _cbPct(actual, anterior);
   var max = Math.max(actual, anterior, 1);
   return '<div class="cb-card">' +
@@ -13109,7 +13138,7 @@ function _cbComparativo(rot, ico, actual, anterior, fmtFn, unidad, subirEsMalo, 
       '<div><div class="cb-num">' + fmtFn(actual) + '</div>' +
         '<div class="cb-pie">' + _flEsc(unidad) + '<br>este mes</div></div>' +
       '<div><div class="cb-num cb-num-ant">' + fmtFn(anterior) + '</div>' +
-        '<div class="cb-pie">' + _flEsc(unidad) + '<br>mes anterior</div></div>' +
+        '<div class="cb-pie">' + _flEsc(unidad) + '<br>' + _flEsc(corte || 'mes anterior') + '</div></div>' +
     '</div>' +
     '<div class="cb-via"><span class="' + color + '" style="width:' +
       ((actual / max) * 100).toFixed(1) + '%"></span></div>' +
@@ -13140,10 +13169,13 @@ function _cbConclusion(d){
   if(d.pctGasto === null){
     f.push('Es el primer mes con tanqueos registrados, así que todavía no hay con qué compararlo.');
   } else {
+    f.push('Comparando los dos meses hasta el día ' + d.dia + ', para no medir ' + d.dia +
+           ' días contra un mes completo:');
     var sube = d.pctGasto > 0.5, baja = d.pctGasto < -0.5;
     f.push('El gasto de combustible ' +
       (sube ? 'subió' : baja ? 'bajó' : 'quedó igual') +
-      (sube || baja ? ' un ' + Math.abs(d.pctGasto).toFixed(1) + '%' : '') + ' frente al mes anterior.');
+      (sube || baja ? ' un ' + Math.abs(d.pctGasto).toFixed(1) + '%' : '') +
+      ' frente a los mismos días del mes pasado.');
     /* De dónde viene: lo que más se movió entre tanqueos, viajes y carga. */
     var causas = [];
     if(d.pctTanq !== null && Math.abs(d.pctTanq) >= 5){
@@ -13225,6 +13257,7 @@ function renderFlota(){
      Es la pregunta de la mañana, y con dos cosas el pastel se lee. */
   var conHoy = hoy.length;
   var sinHoy = Math.max(0, (_vehiculos || []).length - conHoy);
+  var estPre = _flEstadoPreopResumen();
 
   caja.innerHTML =
     '<div class="fl-kpis">' +
@@ -13252,11 +13285,28 @@ function renderFlota(){
         '<div class="fl-tit">Distribución de viajes</div>' +
         _flBarrasOps(topOps, maxOps, maxOpsKg, tonsF) +
       '</div>' +
-      '<div class="fl-card">' +
-        '<div class="fl-tit">Equipos con carga hoy</div>' +
-        _flPastel({ etiqueta:'Con movimiento', valor: conHoy, texto: conHoy + ' equipos' },
-                  { etiqueta:'Sin movimiento', valor: sinHoy, texto: sinHoy + ' equipos' },
-                  '#1c5636', '#dfe3de') +
+      '<div class="fl-col">' +
+        '<div class="fl-card">' +
+          '<div class="fl-tit">Equipos con carga hoy</div>' +
+          _flPastel({ etiqueta:'Con movimiento', valor: conHoy, texto: conHoy + ' equipos' },
+                    { etiqueta:'Sin movimiento', valor: sinHoy, texto: sinHoy + ' equipos' },
+                    '#1c5636', '#dfe3de') +
+        '</div>' +
+        '<div class="fl-card">' +
+          '<div class="fl-tit">Estado según el preoperacional</div>' +
+          ((estPre.conNov + estPre.alDia)
+            ? _flPastel({ etiqueta:'Con novedades', valor: estPre.conNov,
+                          texto: estPre.conNov + ' equipos' },
+                        { etiqueta:'Sin novedades', valor: estPre.alDia,
+                          texto: estPre.alDia + ' equipos' },
+                        '#b23b3b', '#1c5636')
+            : '<div class="fl-vacio">Ningún equipo de la flota tiene preoperacional registrado.</div>') +
+          (estPre.sinPreop
+            ? '<div class="fl-aparte">' + estPre.sinPreop +
+              (estPre.sinPreop === 1 ? ' equipo sin preoperacional registrado'
+                                     : ' equipos sin preoperacional registrado') + '</div>'
+            : '') +
+        '</div>' +
       '</div>' +
     '</div>' +
 
@@ -13322,6 +13372,23 @@ function _flPreopEstado(){
   });
 }
 
+/* Cómo está la flota según el último preoperacional de cada placa. Las
+   que no tienen preoperacional no son "equipos al día": van aparte, que
+   no es lo mismo no tener novedades que no haber revisado. */
+function _flEstadoPreopResumen(){
+  var dela = _flSoloFlota();
+  var r = { conNov: 0, alDia: 0, sinPreop: 0 };
+  Object.keys(dela).forEach(function(pl){
+    var lista = [];
+    try { lista = preopDeVehiculo(pl) || []; } catch(e){ lista = []; }
+    var u = lista[0];
+    if(!u) r.sinPreop++;
+    else if(u.malos || u.regulares) r.conNov++;
+    else r.alDia++;
+  });
+  return r;
+}
+
 function _flPreopTarjeta(x){
   var chips = x.detMalos.map(function(t){
       return '<span class="fp-chip malo">' + _flEsc(t) + '</span>';
@@ -13375,18 +13442,23 @@ function _flCombustibleHTML(cm, av, tonsF){
   var ahora = new Date();
   var nombreMes = MESES_CB[ahora.getMonth()] + ' ' + ahora.getFullYear();
 
-  var porTon    = av.kg       > 0 ? cm.gasto    / (av.kg / 1000)       : null;
-  var porTonAnt = av.kgAntTot > 0 ? cm.gastoAnt / (av.kgAntTot / 1000) : null;
-  var porViaje    = av.viajes       > 0 ? cm.gasto    / av.viajes       : null;
-  var porViajeAnt = av.viajesAntTot > 0 ? cm.gastoAnt / av.viajesAntTot : null;
+  /* Todo lo del mes anterior va cortado en el mismo día del mes: un mes
+     de 22 días no se compara contra uno de 30. */
+  var kgAnt     = av.kgAnt;
+  var viajesAnt = av.viajesAnt;
+  var porTon    = av.kg     > 0 ? cm.gasto    / (av.kg / 1000)   : null;
+  var porTonAnt = kgAnt     > 0 ? cm.gastoAnt / (kgAnt / 1000)   : null;
+  var porViaje    = av.viajes > 0 ? cm.gasto    / av.viajes      : null;
+  var porViajeAnt = viajesAnt > 0 ? cm.gastoAnt / viajesAnt      : null;
   var porKm    = cm.km    > 0 ? cm.gasto    / cm.km    : null;
   var porKmAnt = cm.kmAnt > 0 ? cm.gastoAnt / cm.kmAnt : null;
 
   var d = {
     pctGasto:  _cbPct(cm.gasto, cm.gastoAnt),
     pctTanq:   _cbPct(cm.n, cm.nAnt),
-    pctViajes: _cbPct(av.viajes, av.viajesAntTot),
-    pctTon:    _cbPct(av.kg, av.kgAntTot),
+    pctViajes: _cbPct(av.viajes, viajesAnt),
+    pctTon:    _cbPct(av.kg, kgAnt),
+    dia: cm.dia,
     porTon: porTon,
     porTonTexto: porTon !== null ? _fmtPesos(porTon) : '',
     pctPorTon: (porTon !== null && porTonAnt !== null) ? _cbPct(porTon, porTonAnt) : null,
@@ -13398,16 +13470,18 @@ function _flCombustibleHTML(cm, av, tonsF){
        : cm.n > cm.nAnt ? 'Más veces en la bomba que el mes pasado.'
        : 'Las mismas veces en la bomba.')
     : '';
-  var notaTon = av.kgAntTot > 0
-    ? (av.kg > av.kgAntTot ? 'Más carga movida, que es lo que explica el consumo.'
-       : av.kg < av.kgAntTot ? 'Menos carga movida este mes.'
+  var notaTon = kgAnt > 0
+    ? (av.kg > kgAnt ? 'Más carga movida, que es lo que explica el consumo.'
+       : av.kg < kgAnt ? 'Menos carga movida este mes.'
        : 'La misma carga que el mes pasado.')
     : '';
-  var notaViajes = av.viajesAntTot > 0
-    ? (av.viajes > av.viajesAntTot ? 'Más salidas: más recorrido y más consumo.'
-       : av.viajes < av.viajesAntTot ? 'Menos salidas que el mes pasado.'
+  var notaViajes = viajesAnt > 0
+    ? (av.viajes > viajesAnt ? 'Más salidas: más recorrido y más consumo.'
+       : av.viajes < viajesAnt ? 'Menos salidas que el mes pasado.'
        : 'Las mismas salidas.')
     : '';
+  /* Lo que se compara, dicho de una vez: los dos meses hasta el día N. */
+  var corte = 'mes anterior · hasta el día ' + cm.dia;
 
   return '<div class="cb">' +
     '<div class="cb-cab">' +
@@ -13442,11 +13516,11 @@ function _flCombustibleHTML(cm, av, tonsF){
 
     '<div class="cb-abajo">' +
       _cbComparativo('Tanqueos del mes', (ico.comb || ''), cm.n, cm.nAnt,
-        function(v){ return fmt(v); }, 'tanqueos', true, 'verde', notaTanq) +
-      _cbComparativo('Toneladas movidas', (ico.barras || ''), av.kg, av.kgAntTot,
-        tonsF, 'movidas', false, 'azul', notaTon) +
-      _cbComparativo('Viajes', (ico.ruta || ''), av.viajes, av.viajesAntTot,
-        function(v){ return fmt(v); }, 'viajes', false, 'morado', notaViajes) +
+        function(v){ return fmt(v); }, 'tanqueos', true, 'verde', notaTanq, corte) +
+      _cbComparativo('Toneladas movidas', (ico.barras || ''), av.kg, kgAnt,
+        tonsF, 'movidas', false, 'azul', notaTon, corte) +
+      _cbComparativo('Viajes', (ico.ruta || ''), av.viajes, viajesAnt,
+        function(v){ return fmt(v); }, 'viajes', false, 'morado', notaViajes, corte) +
       '<div class="cb-card">' +
         '<div class="cb-card-cab"><span class="cb-ico azul">' + (ico.barras || '') + '</span>Indicadores clave</div>' +
         _cbFila((ico.ruta || ''), 'Costo por viaje',
@@ -13457,10 +13531,6 @@ function _flCombustibleHTML(cm, av, tonsF){
           porKm !== null ? _fmtPesos(porKm) : null,
           (porKm !== null && porKmAnt !== null) ? _cbPct(porKm, porKmAnt) : null, true,
           'Hacen falta dos lecturas seguidas de kilometraje en los tanqueos') +
-        _cbFila((ico.km || ''), 'Kilómetros recorridos',
-          cm.km > 0 ? fmt(Math.round(cm.km)) + ' km' : null,
-          cm.kmAnt > 0 ? _cbPct(cm.km, cm.kmAnt) : null, false,
-          'Se calculan restando kilometrajes consecutivos: hacen falta al menos dos por placa') +
         _cbFila((ico.barras || ''), 'Costo por tonelada',
           porTon !== null ? _fmtPesos(porTon) : null, d.pctPorTon, true,
           'No hay toneladas registradas de estas placas este mes') +
