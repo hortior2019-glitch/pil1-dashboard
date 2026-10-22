@@ -18298,15 +18298,21 @@ async function verificarPinCorte() {
   if (!pin) { if (errEl) errEl.textContent = 'Ingresa el PIN'; return; }
   if (errEl) errEl.textContent = 'Verificando...';
 
+  /* Antes era UN solo intento: si Google tardaba al despertar el script o
+     devolvia una pagina suya en vez de datos, se decia "sin conexion" aunque
+     el servidor estuviera bien. Ahora se reintenta (2 veces mas) con un tope
+     de 30 s por intento, y solo se rinde si ninguno trae una respuesta valida. */
   let valido = false;
-  try {
-    const res = await fetch(CORTES_FAV_API + '?accion=verificarPin&pin=' + encodeURIComponent(pin), { redirect:'follow' });
-    const data = await res.json();
-    valido = !!data.valido;
-  } catch(e) {
-    if (errEl) errEl.textContent = 'No se pudo verificar la clave (sin conexión con el servidor). Intente de nuevo.';
+  const data = await fetchJSONTolerante(
+    CORTES_FAV_API + '?accion=verificarPin&pin=' + encodeURIComponent(pin) + '&t=' + Date.now(),
+    { redirect: 'follow', timeoutMs: 30000 }, 2);
+  if (!data || typeof data.valido === 'undefined') {
+    if (errEl) errEl.textContent = navigator.onLine
+      ? 'El servidor de cortes no respondió bien (se intentó 3 veces). Espere unos segundos e intente de nuevo; si sigue, recargue la página con Ctrl+F5.'
+      : 'Sin conexión a internet. Revise la red e intente de nuevo.';
     return;
   }
+  valido = !!data.valido;
 
   if (valido) {
     _cortePinOk = true;
@@ -20348,7 +20354,7 @@ function cargarInformesGuardados(forzar) {
     var seg = Math.round((Date.now() - _t0) / 1000);
     if (data && data.ok && Array.isArray(data.informes)) {
       _informesFallo = false;
-      _informesGuardados = data.informes;
+      _informesGuardados = _corteATexto(data.informes);
       _informesUltimaCarga = Date.now();
       console.log('listarInformes: ' + data.informes.length + ' informes en ' + seg + ' s');
       renderInformesGuardados();
@@ -20935,7 +20941,19 @@ function renderInformesGuardados() {
   _renderInformesGuardadosPendiente = true;
   requestAnimationFrame(() => {
     _renderInformesGuardadosPendiente = false;
-    _renderInformesGuardadosImpl();
+    /* Si un dato raro hace fallar el pintado, se DICE en la lista. Antes el
+       error se perdia dentro de este requestAnimationFrame y la lista quedaba
+       en "Consultando…" para siempre, sin ninguna pista. */
+    try { _renderInformesGuardadosImpl(); }
+    catch (e) {
+      console.error('renderInformesGuardados:', e);
+      const lista = document.getElementById('corte-resumen-lista');
+      const card = document.getElementById('corte-resumen-card');
+      if (card) card.style.display = '';
+      if (lista) lista.innerHTML = '<div style="padding:20px 8px;color:var(--ink-m);font-size:13px;line-height:1.55">' +
+        '<b style="color:var(--red)">Los cortes guardados llegaron, pero uno trae un dato que no se pudo mostrar.</b><br>' +
+        'Detalle técnico: ' + String(e && e.message || e).replace(/</g, '&lt;') + '</div>';
+    }
   });
 }
 function _renderInformesGuardadosImpl() {
@@ -21632,6 +21650,22 @@ ${rowsXml}
 // Cache local de favoritos cargados (se refresca al entrar al panel)
 let _cortesFavoritosCache = [];
 
+/* Google Sheets convierte a NUMERO un texto que parece numero: un corte
+   llamado "20261015" llega como 20261015 (number) y el .trim() del resto
+   del panel revienta, dejando la lista entera congelada en "Consultando…".
+   Por eso los campos de texto se pasan a texto apenas llegan. */
+const _CORTE_CAMPOS_TEXTO = ['nombre', 'prov', 'ini', 'cie', 'nombreCorte', 'operacion', 'periodo', 'material',
+  'numeroFactura', 'linkFactura', 'observaciones', 'fechaGuardado', 'editadoFecha', 'editadoPor', 'id'];
+function _corteATexto(lista) {
+  return (lista || []).map(function (o) {
+    if (!o || typeof o !== 'object') return o;
+    _CORTE_CAMPOS_TEXTO.forEach(function (k) {
+      if (o[k] != null && typeof o[k] !== 'string') o[k] = String(o[k]);
+    });
+    return o;
+  });
+}
+
 let _favUltimaCarga = 0;
 async function cargarCortesFavoritosRemoto(forzar) {
   // Si ya hay datos en memoria, pintar DE INMEDIATO (sin esperar la red) y
@@ -21648,7 +21682,7 @@ async function cargarCortesFavoritosRemoto(forzar) {
   const data = await fetchJSONTolerante(CORTES_FAV_API + '?accion=listar', { redirect: 'follow', timeoutMs: 120000 }, 0);
   _corteDiagFin('fav', !!(data && data.ok), data ? 'respondió sin la lista' : 'sin respuesta');
   if (data && data.ok) {
-    _cortesFavoritosCache = data.favoritos || [];
+    _cortesFavoritosCache = _corteATexto(data.favoritos);
     _favUltimaCarga = Date.now();
   }
   if (loadingEl) loadingEl.textContent = (!data && !tieneCache)
