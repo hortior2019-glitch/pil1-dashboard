@@ -10302,6 +10302,10 @@ async function loadAllData() {
     setStatus('No se pudieron cargar los datos. Verifique la conexion a internet y que los Sheets esten publicados publicamente.', 'error');
   }
 
+  /* La grilla de Operaciones tiene su propio servicio: el botón de arriba
+     no la tocaba y se quedaba con los tiquetes de cuando se entró. */
+  try { if (window.auditoriaRefrescar) window.auditoriaRefrescar(true); } catch(e){ console.warn('auditoriaRefrescar:', e); }
+
   btn.textContent = 'Actualizar datos';
   btn.classList.remove('loading');
 }
@@ -27568,6 +27572,7 @@ async function cargar(){
     S.orden    = null;
     S.sel = null; S.foco = null;
     S.cargado  = true;
+    _audUltimaCarga = Date.now();
 
     if(!S.anchos.length || S.anchos.length !== S.headers.length) definirAnchos();
     aplicarDisposicion();
@@ -31797,11 +31802,28 @@ pintarSwatches();
 refrescarPendientes();
 
 let _audIniciado = false;
+let _audUltimaCarga = 0;
+
+/* La grilla se cargaba una sola vez por sesión: quien dejaba la pestaña
+   abierta seguía viendo los tiquetes de cuando entró. Ahora se refresca
+   al volver a ella y con el botón "Actualizar datos" de arriba, salvo
+   que haya cambios sin guardar —recargar los perdería— o que acabe de
+   cargarse. */
+function _audRefrescar(forzar){
+  if(!_audIniciado) return false;
+  if((S.cola && S.cola.length) || S.enviandoN) return false;
+  if(!forzar && (Date.now() - _audUltimaCarga) < 20000) return false;
+  cargar();
+  return true;
+}
+window.auditoriaRefrescar = function(forzar){
+  try { return _audRefrescar(forzar); } catch(e){ console.warn('auditoriaRefrescar:', e); return false; }
+};
 window.abrirAuditoria = function(){
   const u = _audSesionIndex();
   if(u){ CFG.autor = u.usuario; CFG.nombre = u.nombre; }
   pintarSesion();
-  if(_audIniciado) return;
+  if(_audIniciado){ _audRefrescar(false); return; }
   _audIniciado = true;
   if(!CFG.url || CFG.url.indexOf('/exec') === -1){ $('veloConfig').classList.add('abierto'); return; }
   cargar();
