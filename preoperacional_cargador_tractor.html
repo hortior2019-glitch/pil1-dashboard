@@ -836,13 +836,6 @@
     </div>
     <div class="equipo-error" id="equipo-error"></div>
 
-    <!-- SELECTOR DE REFERENCIA (máquina). Se arma con renderReferencias()
-         a partir de la lista REFERENCIAS. Cada una muestra su foto, que se
-         sube al repositorio con el nombre de la referencia. -->
-    <div class="pin-form-subtitle" style="margin:4px 0 10px">Referencia del equipo</div>
-    <div class="equipo-selector" id="ref-selector"></div>
-    <div class="equipo-error" id="ref-error"></div>
-
     <div class="pin-title">PIN de Acceso</div>
     <div class="pin-dots">
       <div class="pin-dot" id="dot0"></div>
@@ -900,6 +893,17 @@
       <div class="card-title">Datos Generales de la Inspección</div>
     </div>
     <div class="card-body">
+      <!-- La referencia (máquina) se elige AQUÍ, ya adentro: la pantalla del
+           PIN solo pide si es cargador o tractor. Las opciones salen de la
+           lista REFERENCIAS (ver renderReferencias). -->
+      <div class="field-group">
+        <div class="field">
+          <label>Referencia del equipo <span>*</span></label>
+          <select id="ref-equipo" onchange="selectReferencia(this.value)">
+            <option value="">Seleccione la referencia…</option>
+          </select>
+        </div>
+      </div>
       <div class="field-group">
         <div class="field">
           <label>Fecha de Inspección <span>*</span></label>
@@ -1140,46 +1144,33 @@ const REFERENCIAS = [
 const REF_EXT = ['jpg', 'png', 'jpeg', 'webp', 'JPG', 'PNG'];
 let referenciaSeleccionada = null;
 
+/* La referencia se elige ADENTRO del formulario (seccion 1), en un
+   desplegable. La pantalla del PIN solo pide cargador o tractor. */
 function renderReferencias() {
-  const cont = document.getElementById('ref-selector');
-  if (!cont) return;
-  cont.innerHTML = REFERENCIAS.map(function (r) {
-    return '<div class="equipo-opt" id="ref-' + r.id + '" onclick="selectReferencia(\'' + r.id + '\')">' +
-      '<div class="ref-foto" data-ref-foto="' + (r.foto || r.id) + '">' +
-        '<img alt="' + r.marca + ' ' + r.id + '">' +
-        '<span class="ref-foto-ico">🚜</span>' +
-      '</div>' +
-      '<span style="line-height:1.25">' + r.marca +
-        '<br><small style="font-weight:600;letter-spacing:.03em;color:var(--text-muted)">' + r.id + '</small></span>' +
-    '</div>';
-  }).join('');
-  buscarFotosRef();
+  const sel = document.getElementById('ref-equipo');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Seleccione la referencia…</option>' +
+    REFERENCIAS.map(function (r) {
+      return '<option value="' + r.id + '">' + r.id + ' - ' + r.marca + '</option>';
+    }).join('');
+  if (referenciaSeleccionada) sel.value = referenciaSeleccionada;
 }
 
+/* Al elegirla: queda en el titulo y en el campo de combustible, para que
+   el tanqueo quede a nombre de la misma maquina. */
 function selectReferencia(id) {
-  referenciaSeleccionada = id;
-  REFERENCIAS.forEach(function (r) {
-    var el = document.getElementById('ref-' + r.id);
-    if (el) el.classList.toggle('selected', r.id === id);
-  });
-  var err = document.getElementById('ref-error');
-  if (err) err.textContent = '';
-}
-
-/* La foto de cada referencia: se prueba el nombre con varias extensiones
-   hasta que una cargue; si ninguna existe, queda el ícono. */
-function buscarFotosRef() {
-  document.querySelectorAll('.ref-foto[data-ref-foto]').forEach(function (caja) {
-    var base = caja.getAttribute('data-ref-foto');
-    var img = caja.querySelector('img');
-    var ico = caja.querySelector('.ref-foto-ico');
-    if (!base || !img || img.dataset.listo) return;
-    img.dataset.listo = '1';
-    var i = 0;
-    img.onload = function () { img.style.display = 'block'; if (ico) ico.style.display = 'none'; };
-    img.onerror = function () { i++; if (i < REF_EXT.length) img.src = base + '.' + REF_EXT[i]; };
-    img.src = base + '.' + REF_EXT[0];
-  });
+  referenciaSeleccionada = id || null;
+  const sel = document.getElementById('ref-equipo');
+  if (sel && sel.value !== (id || '')) sel.value = id || '';
+  if (sel && id) { try { limpiarError(sel); } catch (e) {} }
+  const r = REFERENCIAS.find(function (x) { return x.id === id; });
+  const titulo = document.getElementById('main-title');
+  if (titulo && equipoSeleccionado) {
+    titulo.textContent = 'Pre Operacional ' + (equipoSeleccionado === 'tractor' ? 'Tractor' : 'Cargador') +
+      (r ? ' · ' + r.marca + ' ' + r.id : '');
+  }
+  const comb = document.getElementById('comb-placa');
+  if (comb && id && !comb.value) comb.value = id;
 }
 
 // ── DATOS — key: nombre exacto de columna en Sheets | desc: texto visible ──
@@ -1277,7 +1268,7 @@ document.getElementById('fecha').valueAsDate = new Date();
 buildItems('luces-items',    inspeccionItems.luces);
 buildItems('cabina-items',   inspeccionItems.cabina);
 buildItems('llantas-items',  inspeccionItems.llantas);
-renderReferencias();   // tarjetas de referencia (máquina) en la pantalla de PIN
+renderReferencias();   // desplegable de referencia (máquina) en Datos Generales
 // Estado mecánico se construye después de elegir equipo en el PIN
 
 function buildMecanicoItems() {
@@ -1313,6 +1304,7 @@ function limpiarError(el) {
 
 async function submitForm() {
   const camposReq = [
+    { id: 'ref-equipo', nombre: 'Referencia del equipo' },
     { id: 'fecha',      nombre: 'Fecha de inspección' },
     { id: 'horometro',  nombre: 'Horómetro actual' },
     { id: 'operador',   nombre: 'Nombre del operador' },
@@ -1819,11 +1811,8 @@ async function pinSubmit() {
     return;
   }
 
-  // Validar que se eligió la referencia (máquina)
-  if (!referenciaSeleccionada) {
-    document.getElementById('ref-error').textContent = 'Por favor seleccione la referencia del equipo.';
-    return;
-  }
+  /* La referencia (maquina) ya NO se pide aca: se elige adentro, en
+     Datos Generales, y es obligatoria al guardar la inspeccion. */
 
   const btn = document.getElementById('pin-btn');
   btn.disabled = true;
@@ -1857,20 +1846,11 @@ async function pinSubmit() {
     if (json.ok) {
       document.getElementById('pin-overlay').classList.add('hidden');
       const label = equipoSeleccionado === 'tractor' ? 'Tractor' : 'Cargador';
-      const ref = REFERENCIAS.find(function (x) { return x.id === referenciaSeleccionada; }) || {};
-      const refTxt = ref.marca ? (ref.marca + ' ' + ref.id) : referenciaSeleccionada;
-      document.getElementById('main-title').textContent = 'Pre Operacional ' + label + ' · ' + refTxt;
+      document.getElementById('main-title').textContent = 'Pre Operacional ' + label;
       document.title = 'Pre Operacional ' + label;
       buildMecanicoItems();
-      // La placa del combustible se completa con la referencia elegida.
-      var selPl = document.getElementById('comb-placa');
-      if (selPl) {
-        if (selPl.tagName === 'SELECT') {
-          var existe = Array.prototype.some.call(selPl.options, function (o) { return o.value === referenciaSeleccionada; });
-          if (!existe) { var o = document.createElement('option'); o.value = referenciaSeleccionada; o.textContent = refTxt; selPl.appendChild(o); }
-        }
-        selPl.value = referenciaSeleccionada;
-      }
+      /* La referencia se elige adentro (Datos Generales); al elegirla,
+         selectReferencia la pone tambien en el titulo y en combustible. */
       if (json.nombre) {
         nombreUsuario = json.nombre;
         const op = document.getElementById('operador');
