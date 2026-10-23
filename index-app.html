@@ -1199,6 +1199,21 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
   font-style:normal;font-weight:700;letter-spacing:.8px;text-transform:uppercase;margin-top:3px}
 #panel-vehiculos .fp-n.malo{color:#b23b3b}
 #panel-vehiculos .fp-n.reg{color:#8b6914}
+/* Reporte de novedades (tabla ítem | foto) */
+.rn-tabla{width:100%;max-width:560px;border-collapse:collapse;margin-top:6px;font-family:'Source Sans 3',sans-serif;background:#fff}
+.rn-tabla th,.rn-tabla td{border:1.5px solid #222;padding:8px 10px}
+.rn-tabla thead th{background:#2e9e3e;color:#111;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;text-align:center}
+.rn-tabla .rn-item{width:55%;text-align:center;font-size:15px;color:#111}
+.rn-tabla .rn-foto{text-align:center;padding:6px}
+.rn-tabla .rn-foto .preop-fotos{justify-content:center;margin:0}
+.rn-tabla .rn-foto .preop-foto{border-width:1px;width:110px!important}
+.rn-tabla .rn-foto .preop-foto img{height:150px!important}
+.rn-est{display:block;width:max-content;margin:5px auto 0;font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:2px 8px;border-radius:10px;color:#fff}
+.rn-est.malo{background:var(--red)}
+.rn-est.reg{background:#d4a017}
+.rn-sin{font-size:11px;color:#888;font-style:italic}
+.rn-tabla tfoot td{text-align:center;font-size:13.5px;line-height:1.45;color:#111;padding:12px 14px}
+.rn-obs{margin-top:8px;padding-top:8px;border-top:1px dotted #999;white-space:pre-wrap;text-align:left;font-size:12.5px}
 /* Fotos de ítems malos/regulares del preoperacional */
 .preop-fotos{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .preop-foto{position:relative;padding:0;border:2px solid;border-radius:6px;overflow:hidden;background:var(--s2,#f2f2ee);cursor:zoom-in;flex-shrink:0;display:flex;flex-direction:column}
@@ -15906,6 +15921,39 @@ function htmlFotosPreop(fotos, lado) {
   }).join('') + '</div>';
 }
 
+/* Reporte de novedades en tabla, como el que arma el equipo de
+   mantenimiento a mano: una fila por ítem malo o regular con su foto al
+   lado, y al pie qué tan urgente es. Los ítems sin foto (inspecciones de
+   antes de que la foto fuera obligatoria) igual salen, con "sin foto". */
+function htmlReporteNovedades(u, nombreEquipo) {
+  const filas = [
+    ...u.detMalos.map(t => ({ t, tipo: 'malo' })),
+    ...u.detReg.map(t => ({ t, tipo: 'reg' }))
+  ];
+  if (!filas.length) return '';
+  const fotos = (u.fotos || []).slice();
+  const norm = t => (t || '').toString().toLowerCase().replace(/\s+/g, ' ').trim();
+  const filasHtml = filas.map(x => {
+    // Se empareja por nombre del ítem; cada foto se usa una sola vez.
+    const i = fotos.findIndex(fo => norm(fo.item) === norm(x.t));
+    const fo = i > -1 ? fotos.splice(i, 1)[0] : null;
+    const est = x.tipo === 'malo'
+      ? '<span class="rn-est malo">Mal estado</span>'
+      : '<span class="rn-est reg">Regular</span>';
+    return '<tr><td class="rn-item">' + _escFotoPreop(x.t) + est + '</td>' +
+      '<td class="rn-foto">' + (fo ? htmlFotosPreop([fo], 120).replace('<span style', '<span hidden style') : '<span class="rn-sin">sin foto</span>') + '</td></tr>';
+  }).join('');
+  const pie = u.malos > 0
+    ? '<b>Prioritario:</b> se requiere intervención urgente para mantener esta máquina en buenas condiciones.'
+    : '<b>Seguimiento:</b> ítems en estado regular; programar revisión antes de que pasen a mal estado.';
+  return '<table class="rn-tabla">' +
+    '<thead><tr><th colspan="2">Reporte de novedades ' + _escFotoPreop(nombreEquipo || '') + '</th></tr></thead>' +
+    '<tbody>' + filasHtml + '</tbody>' +
+    '<tfoot><tr><td colspan="2">' + pie +
+      (u.obs ? '<div class="rn-obs"><b>Observaciones del operador:</b> ' + _escFotoPreop(u.obs) + '</div>' : '') +
+    '</td></tr></tfoot></table>';
+}
+
 function preopDeVehiculo(placa) {
   const objetivo = _placaNorm(placa);
   if (!objetivo) return [];
@@ -15942,7 +15990,8 @@ function preopDeVehiculo(placa) {
         km: (r['Kilometraje'] || r['km'] || r['Horometro'] || r['horometro'] || '').toString().trim(),
         obs: (r['Observaciones'] || r['observaciones'] || '').toString().trim(),
         malos, regulares, buenos, detMalos, detReg,
-        fotos: fotosPreopDeFila(r)
+        fotos: fotosPreopDeFila(r),
+        marca: (r['Marca'] || r['marca'] || '').toString().trim()
       });
     });
   });
@@ -15995,7 +16044,7 @@ function bloquePreopVehiculo(placa) {
   ];
   const visibles = items.slice(0, VISIBLES).map(x => chip(x.t, x.tipo)).join(' ');
   const ocultos  = items.slice(VISIBLES).map(x => chip(x.t, x.tipo)).join(' ');
-  const hayMas   = items.length > VISIBLES || !!u.obs;
+  const hayMas   = !items.length && !!u.obs;   // con novedades, las observaciones van en la tabla
 
   // Este bloque arma su banda a mano en vez de usar _vsec() porque el
   // cuerpo es demasiado particular. Se mantiene igual al resto.
@@ -16044,8 +16093,7 @@ function bloquePreopVehiculo(placa) {
       </div>
     </div>
 
-    ${items.length ? `<div style="display:flex;gap:7px;flex-wrap:wrap">${visibles}</div>` : ''}
-    ${(u.fotos && u.fotos.length) ? `<div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin:12px 0 6px">Fotos tomadas en la inspección (${u.fotos.length})</div>${htmlFotosPreop(u.fotos, 92)}` : ''}
+    ${items.length ? htmlReporteNovedades(u, u.marca || placa) : ''}
 
     ${hayMas ? `
       <div id="preop-mas-${idp}" style="display:none;margin-top:7px">
