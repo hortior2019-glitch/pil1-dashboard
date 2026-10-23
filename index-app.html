@@ -1199,6 +1199,12 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
   font-style:normal;font-weight:700;letter-spacing:.8px;text-transform:uppercase;margin-top:3px}
 #panel-vehiculos .fp-n.malo{color:#b23b3b}
 #panel-vehiculos .fp-n.reg{color:#8b6914}
+/* Fotos de ítems malos/regulares del preoperacional */
+.preop-fotos{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.preop-foto{position:relative;padding:0;border:2px solid;border-radius:6px;overflow:hidden;background:var(--s2,#f2f2ee);cursor:zoom-in;flex-shrink:0;display:flex;flex-direction:column}
+.preop-foto img{width:100%;object-fit:cover;display:block}
+.preop-foto span{color:#fff;font-size:10px;font-weight:700;line-height:1.2;padding:3px 5px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+td .preop-fotos{margin-top:0;gap:4px;flex-wrap:nowrap}
 #panel-vehiculos .fp-chips{display:flex;flex-wrap:wrap;gap:6px}
 #panel-vehiculos .fp-chip{font-size:12.5px;font-weight:600;padding:4px 10px;border-radius:999px}
 #panel-vehiculos .fp-chip.malo{background:#fbeaea;color:#8b1a1a}
@@ -13368,7 +13374,7 @@ function _flPreopEstado(){
       : '';
     out.push({ placa: pl, fecha: iso, conductor: u.conductor || '',
                malos: u.malos, regulares: u.regulares,
-               detMalos: u.detMalos || [], detReg: u.detReg || [] });
+               detMalos: u.detMalos || [], detReg: u.detReg || [], fotos: u.fotos || [] });
   });
   return out.sort(function(a, b){
     return (b.malos - a.malos) || (b.regulares - a.regulares) ||
@@ -13410,6 +13416,7 @@ function _flPreopTarjeta(x){
       '</div>' +
     '</div>' +
     '<div class="fp-chips">' + chips + '</div>' +
+    htmlFotosPreop(x.fotos, 64) +
   '</div>';
 }
 
@@ -15853,6 +15860,52 @@ function _placaNorm(p) {
 
 // Devuelve las inspecciones de una placa, de la mas reciente a la mas antigua.
 // Une volquetas y equipo pesado, indicando de que formulario viene cada una.
+/* ── Fotos de los ítems en mal estado / regular del preoperacional ──
+   El formulario guarda todas las fotos de una inspección en UNA celda,
+   columna "Fotos mal estado", una línea por ítem:
+     "C4 - Freno de servicio [REGULAR]: https://drive.google.com/... (lat,lng)"
+   Las de antes del cambio no traen [ESTADO]; se toman como malas. */
+function fotosPreopDeFila(r) {
+  const txt = (r && (r['Fotos mal estado'] || r['fotos mal estado'] || '')).toString();
+  if (!txt.trim()) return [];
+  const out = [];
+  txt.split(/\r?\n/).forEach(lin => {
+    const m = lin.match(/^\s*(.*?)\s*(?:\[(REGULAR|MALO)\])?\s*:\s*(https?:\/\/\S+)/i);
+    if (!m) return;
+    out.push({
+      item:   m[1].replace(/^[A-Z]+\d+\s*-\s*/, ''),
+      estado: (m[2] || 'MALO').toUpperCase() === 'REGULAR' ? 'reg' : 'malo',
+      url:    m[3]
+    });
+  });
+  return out;
+}
+function _escFotoPreop(t) {
+  return (t == null ? '' : t.toString()).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+}
+/* Miniaturas clicables (abren el visor grande). "lado" es el tamaño del
+   recuadro; la miniatura se pide en 160 o 400 porque Drive no acepta
+   cualquier ancho (ver urlFotoDriveMini). */
+function htmlFotosPreop(fotos, lado) {
+  if (!fotos || !fotos.length) return '';
+  lado = lado || 92;
+  const ancho = lado > 100 ? 400 : 160;
+  return '<div class="preop-fotos">' + fotos.map(x => {
+    const col = x.estado === 'reg' ? '#d4a017' : 'var(--red)';
+    const tit = x.item + (x.estado === 'reg' ? ' · regular' : ' · mal estado');
+    return '<button type="button" class="preop-foto" title="' + _escFotoPreop(tit) + '"' +
+      ' data-url="' + _escFotoPreop(x.url) + '" data-tit="' + _escFotoPreop(tit) + '"' +
+      ' onclick="event.stopPropagation();abrirFotoBaucher(this.dataset.url,this.dataset.tit)"' +
+      ' style="width:' + lado + 'px;border-color:' + col + '">' +
+      '<img loading="lazy" src="' + _escFotoPreop(urlFotoDriveMini(x.url, ancho)) + '"' +
+      ' data-alt="' + _escFotoPreop(urlFotoDriveMiniAlt(x.url, ancho)) + '"' +
+      ' onerror="if(this.dataset.alt&&this.src!==this.dataset.alt){this.src=this.dataset.alt}else{this.style.visibility=\'hidden\'}"' +
+      ' style="height:' + lado + 'px">' +
+      (lado >= 70 ? '<span style="background:' + col + '">' + _escFotoPreop(x.item) + '</span>' : '') +
+    '</button>';
+  }).join('') + '</div>';
+}
+
 function preopDeVehiculo(placa) {
   const objetivo = _placaNorm(placa);
   if (!objetivo) return [];
@@ -15888,7 +15941,8 @@ function preopDeVehiculo(placa) {
         conductor: (r['Conductor'] || r['conductor'] || r['Operador'] || r['operador'] || '').toString().trim(),
         km: (r['Kilometraje'] || r['km'] || r['Horometro'] || r['horometro'] || '').toString().trim(),
         obs: (r['Observaciones'] || r['observaciones'] || '').toString().trim(),
-        malos, regulares, buenos, detMalos, detReg
+        malos, regulares, buenos, detMalos, detReg,
+        fotos: fotosPreopDeFila(r)
       });
     });
   });
@@ -15991,6 +16045,7 @@ function bloquePreopVehiculo(placa) {
     </div>
 
     ${items.length ? `<div style="display:flex;gap:7px;flex-wrap:wrap">${visibles}</div>` : ''}
+    ${(u.fotos && u.fotos.length) ? `<div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin:12px 0 6px">Fotos tomadas en la inspección (${u.fotos.length})</div>${htmlFotosPreop(u.fotos, 92)}` : ''}
 
     ${hayMas ? `
       <div id="preop-mas-${idp}" style="display:none;margin-top:7px">
@@ -17971,6 +18026,7 @@ function renderPreopUnificado(dataCar, dataTra, filter) {
         <td ${m>0?'style="color:var(--red);font-weight:700"':''}>${m}</td>
         <td ${reg>0?'style="color:#d4a017;font-weight:600"':''}>${reg}</td>
         <td>${b}</td>
+        <td>${htmlFotosPreop(fotosPreopDeFila(r), 40) || '—'}</td>
       </tr>`;
     }).join('');
 
@@ -18009,8 +18065,8 @@ function renderPreopUnificado(dataCar, dataTra, filter) {
         ${e.hallazgos.length > 0 ? `<div style="margin-bottom:12px"><div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--red);margin-bottom:8px">Hallazgos críticos</div>${hallHtml}</div>` : ''}
         <div style="overflow-x:auto">
           <table class="tbl" style="font-size:12px">
-            <thead><tr><th>Fecha</th><th>Operador</th><th class="num">M</th><th class="num">R</th><th class="num">B</th></tr></thead>
-            <tbody>${tablaRows || '<tr><td colspan="5" class="empty">Sin registros</td></tr>'}</tbody>
+            <thead><tr><th>Fecha</th><th>Operador</th><th class="num">M</th><th class="num">R</th><th class="num">B</th><th>Fotos</th></tr></thead>
+            <tbody>${tablaRows || '<tr><td colspan="6" class="empty">Sin registros</td></tr>'}</tbody>
           </table>
         </div>
       </div>
