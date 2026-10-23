@@ -703,6 +703,20 @@
      cámara adentro de la página — y hasta ese abre la cámara del
      teléfono, no la galería. */
   .file-input.oculto { display: none; }
+  /* Foto obligatoria de un ítem en mal estado */
+  .mal-foto { margin: -2px 0 10px; padding: 10px 12px; border: 1.5px dashed var(--bad); border-radius: 8px; background: #fff6f5; }
+  /* Lo que falta por llenar: parpadea en rojo para que se vea al llegar. */
+  .falta-item { animation: faltaPulso 0.8s ease-in-out 4; outline: 3px solid var(--bad) !important; outline-offset: 2px; border-radius: 8px; background: #ffecea !important; }
+  @keyframes faltaPulso { 0%,100% { box-shadow: 0 0 0 0 rgba(192,57,43,0); } 50% { box-shadow: 0 0 0 8px rgba(192,57,43,.35); } }
+  #aviso-falta { position: fixed; top: 10px; left: 10px; right: 10px; z-index: 20000; background: var(--bad); color: #fff;
+    padding: 14px 16px; border-radius: 10px; font-size: 16px; font-weight: 700; line-height: 1.35; text-align: center;
+    box-shadow: 0 6px 24px rgba(0,0,0,.35); display: none; }
+  #aviso-falta.visible { display: block; }
+  .mal-foto.reg { border-color: #c79100; background: #fffbea; }
+  .mal-foto.falta { outline: 2.5px solid var(--bad); background: #ffecea; }
+  .mal-foto-tit { font-size: 12.5px; font-weight: 700; color: var(--bad); margin-bottom: 8px; }
+  .mal-foto .foto-preview img { max-width: 220px; }
+
 
   /* Tipo de tanqueo: en bomba (pesos) o interno (pimpinas) */
   .tipo-tanqueo { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
@@ -1315,6 +1329,35 @@ function buildMecanicoItems() {
 }
 
 // ── ENVIAR ───────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════
+//  LLEVAR AL CAMPO QUE FALTA
+//  Los operadores no siempre leen un aviso suelto. Además el alert en el
+//  celular sale ANTES de que la pantalla se mueva y la deja donde estaba.
+//  Por eso la pantalla baja sola hasta lo que falta, eso parpadea en rojo
+//  y arriba queda un aviso grande que se quita solo (no hay que cerrarlo).
+// ════════════════════════════════════════════════════════════
+let _avisoFaltaTimer = null;
+function llevarAFalta(el, mensaje) {
+  if (!el) return;
+  document.querySelectorAll('.falta-item').forEach(x => x.classList.remove('falta-item'));
+  void el.offsetWidth;   // reinicia el parpadeo aunque sea el mismo campo de la vez pasada
+  el.classList.add('falta-item');
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  setTimeout(() => el.classList.remove('falta-item'), 6000);
+  let av = document.getElementById('aviso-falta');
+  if (!av) {
+    av = document.createElement('div');
+    av.id = 'aviso-falta';
+    av.onclick = () => av.classList.remove('visible');
+    document.body.appendChild(av);
+  }
+  av.textContent = '👇 ' + mensaje;
+  av.classList.add('visible');
+  clearTimeout(_avisoFaltaTimer);
+  _avisoFaltaTimer = setTimeout(() => av.classList.remove('visible'), 7000);
+  if (navigator.vibrate) { try { navigator.vibrate(200); } catch (e) {} }
+}
+
 function mostrarError(el, mensaje) {
   el.style.outline = '2.5px solid var(--bad)';
   el.style.background = '#fff0f0';
@@ -1326,8 +1369,9 @@ function mostrarError(el, mensaje) {
     el.parentNode.appendChild(msg);
   }
   msg.textContent = '⚠ ' + mensaje;
-  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  el.focus();
+  llevarAFalta(el, mensaje);
+  // Sin preventScroll el teclado del celular hace saltar la pantalla.
+  try { el.focus({ preventScroll: true }); } catch (e) {}
 }
 function limpiarError(el) {
   el.style.outline = '';
@@ -1371,15 +1415,13 @@ async function submitForm() {
   const primerSinRespuesta = Object.keys(groups).find(k => !groups[k]);
   if (primerSinRespuesta) {
     const elRadio = groupEl[primerSinRespuesta];
-    const label = elRadio.closest('.item-row, .check-item, tr, .row') || elRadio.parentNode;
-    label.style.outline = '2px solid var(--bad)';
-    label.style.borderRadius = '6px';
-    label.style.background = '#fff0f0';
-    setTimeout(() => { label.style.outline = ''; label.style.background = ''; }, 4000);
-    elRadio.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    alert(`⚠ Ítem sin responder: "${primerSinRespuesta}"\nPor favor selecciona una opción para continuar.`);
+    const fila = elRadio.closest('.inspect-item') || elRadio.parentNode;
+    llevarAFalta(fila, `Falta responder: "${primerSinRespuesta}". Toque B, R, M o N/A.`);
     return;
   }
+
+  /* Ítem en mal estado = foto obligatoria (solo cámara). */
+  if (!exigirFotosMalos()) return;
 
   const radioValues = {};
   document.querySelectorAll('#panel-preop input[type="radio"]:checked').forEach(r => {
@@ -1398,6 +1440,7 @@ async function submitForm() {
     placa:         referenciaSeleccionada || '',
     marca:         _ref.marca || '',
     ...radioValues,
+    fotos_malos: fotosDeMalos(),
   };
 
   const btn = document.querySelector('#panel-preop .btn-submit');
@@ -1412,7 +1455,7 @@ async function submitForm() {
     });
 
     // ── Limpiar formulario (mantener sesión activa) ─────────
-    document.querySelectorAll('input[type="radio"]').forEach(r => r.checked = false);
+    document.querySelectorAll('input[type="radio"]').forEach(r => r.checked = false); limpiarFotosMal();
     document.getElementById('horometro').value = '';
     document.getElementById('fecha').valueAsDate = new Date();
     const obsEl = document.getElementById('observaciones');
@@ -1429,7 +1472,7 @@ async function submitForm() {
 // ── LIMPIAR ──────────────────────────────────────────────────
 function resetForm() {
   if (!confirm('¿Desea limpiar todos los campos del formulario?')) return;
-  document.querySelectorAll('#panel-preop input[type="radio"]').forEach(r => r.checked = false);
+  document.querySelectorAll('#panel-preop input[type="radio"]').forEach(r => r.checked = false); limpiarFotosMal();
   document.querySelectorAll('#panel-preop input[type="text"]:not([readonly]), #panel-preop input[type="number"], #panel-preop textarea')
     .forEach(f => f.value = '');
   document.getElementById('fecha').valueAsDate = new Date();
@@ -1566,7 +1609,8 @@ async function abrirCamara(previewId, key) {
        es una opción acá. */
     toastMsg('No se pudo abrir la cámara acá. Se abrirá la cámara del teléfono.', true);
     const campo = document.getElementById(
-      key === 'combTablero' ? 'comb-tablero' : key === 'combRecibo' ? 'comb-recibo' : ''
+      key === 'combTablero' ? 'comb-tablero' : key === 'combRecibo' ? 'comb-recibo'
+      : (String(key).indexOf('mal_') === 0 ? 'malin-' + String(key).slice(4) : '')
     );
     if (campo) campo.click();
   }
@@ -1586,6 +1630,89 @@ function cerrarCamara() {
   if (_camStream) { _camStream.getTracks().forEach(tr => tr.stop()); _camStream = null; }
   const video = document.getElementById('cam-video'); if (video) video.srcObject = null;
   const modal = document.getElementById('cam-modal'); if (modal) modal.style.display = 'none';
+}
+
+// ════════════════════════════════════════════════════════════
+//  FOTO OBLIGATORIA DE LOS ÍTEMS EN MAL ESTADO
+//  Si un ítem se marca "M" (malo) o "R" (regular), debajo aparece "Tomar foto" y no se
+//  puede guardar la inspección sin esa foto. SOLO CÁMARA: se abre la
+//  cámara en vivo; si el navegador no la deja, el respaldo abre la
+//  cámara del teléfono (capture), nunca la galería ni un archivo.
+//  Si el ítem se cambia a otra opción, la foto se descarta.
+// ════════════════════════════════════════════════════════════
+function _malSid(name) { return name.replace(/[^a-zA-Z0-9]/g, '_'); }
+function _malKey(name) { return 'mal_' + _malSid(name); }
+/* Estados que exigen foto: malo y regular. */
+function _conFoto(v) { return v === 'malo' || v === 'regular'; }
+
+document.addEventListener('change', function (ev) {
+  const r = ev.target;
+  if (!r || r.type !== 'radio' || !r.closest || !r.closest('#panel-preop')) return;
+  actualizarFotoMal(r.name);
+});
+
+function actualizarFotoMal(name) {
+  const radios = Array.from(document.querySelectorAll('#panel-preop input[type="radio"]'))
+    .filter(x => x.name === name);
+  if (!radios.length) return;
+  const marcado = radios.find(x => x.checked);
+  const item = radios[0].closest('.inspect-item');
+  const sid = _malSid(name);
+  let slot = document.getElementById('malslot-' + sid);
+  if (!marcado || !_conFoto(marcado.value)) {
+    if (slot) slot.remove();
+    delete fotos[_malKey(name)];
+    return;
+  }
+  const esReg = marcado.value === 'regular';
+  if (slot && slot.dataset.estado === marcado.value) return;
+  if (slot) slot.remove();   // pasó de M a R o al revés: se cambia el texto, la foto se conserva
+  if (!item) return;
+  slot = document.createElement('div');
+  slot.className = 'mal-foto' + (esReg ? ' reg' : '');
+  slot.dataset.estado = marcado.value;
+  slot.id = 'malslot-' + sid;
+  slot.innerHTML =
+    '<div class="mal-foto-tit">📷 Ítem en ' + (esReg ? 'estado REGULAR' : 'MAL estado') + ': la foto es obligatoria (solo cámara)</div>' +
+    '<button type="button" class="btn-cam" onclick="abrirCamara(\'malprev-' + sid + '\',\'' + _malKey(name) + '\')">Tomar foto</button>' +
+    '<input type="file" id="malin-' + sid + '" accept="image/*" capture="environment" class="file-input oculto" ' +
+      'onchange="onFotoCombustible(this,\'malprev-' + sid + '\',\'' + _malKey(name) + '\')">' +
+    '<div id="malprev-' + sid + '" class="foto-preview"></div>';
+  item.insertAdjacentElement('afterend', slot);
+  // Si ya había foto (cambió de M a R), se vuelve a mostrar.
+  const f = fotos[_malKey(name)];
+  if (f && f.b64) { const pv = document.getElementById('malprev-' + sid);
+    if (pv) pv.innerHTML = '<img src="data:' + (f.mime || 'image/jpeg') + ';base64,' + f.b64 + '" style="max-width:100%;border-radius:6px">'; }
+}
+
+/* Los ítems en "malo" que todavía no tienen foto. */
+function malosSinFoto() {
+  return Array.from(document.querySelectorAll('#panel-preop input[type="radio"]:checked'))
+    .filter(r => _conFoto(r.value) && !fotos[_malKey(r.name)]);
+}
+/* Las fotos que se mandan con la inspección: una por ítem malo. */
+function fotosDeMalos() {
+  return Array.from(document.querySelectorAll('#panel-preop input[type="radio"]:checked'))
+    .filter(r => _conFoto(r.value) && fotos[_malKey(r.name)])
+    .map(r => { const f = fotos[_malKey(r.name)];
+      return { item: r.name, estado: r.value, b64: f.b64, mime: f.mime, lat: f.lat || '', lng: f.lng || '' }; });
+}
+function limpiarFotosMal() {
+  document.querySelectorAll('.mal-foto').forEach(s => s.remove());
+  Object.keys(fotos).forEach(k => { if (k.indexOf('mal_') === 0) delete fotos[k]; });
+}
+/* Si falta alguna foto, lleva al ítem y avisa. Devuelve true si se puede seguir. */
+function exigirFotosMalos() {
+  const faltan = malosSinFoto();
+  if (!faltan.length) return true;
+  const n = faltan[0].name;
+  actualizarFotoMal(n);
+  const slot = document.getElementById('malslot-' + _malSid(n));
+  const est = faltan[0].value === 'regular' ? 'REGULAR' : 'MAL estado';
+  llevarAFalta(slot || faltan[0].closest('.inspect-item'),
+    '"' + n + '" está en ' + est + ': toque "Tomar foto"' +
+    (faltan.length > 1 ? ' (faltan ' + faltan.length + ' fotos).' : '.'));
+  return false;
 }
 
 // ════════════════════════════════════════════════════════════
