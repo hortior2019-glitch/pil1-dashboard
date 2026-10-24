@@ -5958,6 +5958,10 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
            la seguridad; el servicio del inventario comprueba de quién es
            la sesión antes de tocar nada. -->
       <button type="button" id="stock-ajustar" style="display:none" onclick="abrirAjusteStock()">Ajustar</button>
+      <!-- También solo para Juan: pasa los ajustes del stock a Producción
+           para que producido − despachado dé el stock. No toca despachos. -->
+      <button type="button" id="stock-cuadrar" style="display:none" onclick="cuadrarProduccionStock()">Cuadrar producción</button>
+      <div id="stock-cuadrar-msg" class="stock-cuadrar-msg" role="status"></div>
     </div>
     <div class="kpi" style="--ac:var(--gold)">
       <div class="kpi-lbl">Producido en el periodo</div>
@@ -7040,6 +7044,17 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   text-transform:uppercase;border:1px solid var(--rule);background:var(--white);color:#2c5c42;
   cursor:pointer;border-radius:6px;font-family:'Source Sans 3',sans-serif}
 #stock-ajustar:hover{background:#f3f6f3}
+/* Los dos botones van seguidos y, si no caben, el segundo baja alineado a la izquierda */
+#stock-ajustar{margin-right:6px}
+#stock-cuadrar{margin:8px 0 0 0;min-height:36px;padding:8px 12px;font-size:12px;font-weight:700;letter-spacing:.4px;
+  white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;
+  text-transform:uppercase;border:1px solid var(--rule);background:var(--white);color:#2c5c42;
+  cursor:pointer;border-radius:6px;font-family:'Source Sans 3',sans-serif}
+#stock-cuadrar:hover{background:#f3f6f3}
+#stock-cuadrar:disabled{opacity:.6;cursor:wait}
+.stock-cuadrar-msg{font-size:12.5px;font-weight:600;color:#2c5c42;margin-top:6px;line-height:1.35}
+.stock-cuadrar-msg:empty{display:none}
+.stock-cuadrar-msg.error{color:#b23b3b}
 .aj-fondo{display:none;position:fixed;inset:0;background:rgba(20,28,22,.55);z-index:9500;
   align-items:center;justify-content:center;padding:16px}
 .aj-fondo.abierto{display:flex}
@@ -22342,8 +22357,49 @@ function puedeAjustarStock(){
   } catch(e){ return false; }
 }
 function mostrarBotonAjuste(){
+  const ver = puedeAjustarStock() ? 'inline-block' : 'none';
   const b = document.getElementById('stock-ajustar');
-  if (b) b.style.display = puedeAjustarStock() ? 'inline-block' : 'none';
+  if (b) b.style.display = ver;
+  const c = document.getElementById('stock-cuadrar');
+  if (c) c.style.display = ver;
+}
+
+/* Pasa los ajustes del stock a la cantidad de los registros de Producción
+   (x 50 kg), para que producido − despachado dé el stock. El stock no
+   cambia y los despachos no se tocan. */
+async function cuadrarProduccionStock(){
+  if (!puedeAjustarStock()) return;
+  const msg = document.getElementById('stock-cuadrar-msg');
+  const btn = document.getElementById('stock-cuadrar');
+  if (!confirm('Se corrige la cantidad de los registros de Producción para que ' +
+               'producido − despachado dé el stock actual. Los despachos no se tocan ' +
+               'y el stock queda igual. ¿Continuar?')) return;
+  msg.textContent = ''; msg.classList.remove('error');
+  const antes = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Cuadrando...';
+  try {
+    const res = await fetch(HUM_API, { method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ accion: 'cuadrarProduccion',
+                             token: (typeof _authToken !== 'undefined' && _authToken) || '' }) });
+    const d = await res.json();
+    if (!d.ok) { msg.textContent = d.error || 'No se pudo cuadrar.'; msg.classList.add('error'); return; }
+    msg.textContent = d.mensaje || 'Listo.';
+    if (d.sinCambios) return;
+    /* Se traen los registros ya corregidos (y los ajustes ya vacíos) y
+       recién ahí se repintan las tarjetas: si se borraran los ajustes antes
+       de que llegue la producción nueva, el stock bajaría por un momento. */
+    try {
+      await cargarHumusDetalle(true);
+      const filas = window._humFilasResumen || dataProduccionHumus;
+      if (filas) renderProduccionHumus(filas);
+    } catch (eR) { console.error('repintar tras cuadrar:', eR); }
+  } catch(e) {
+    console.error('cuadrarProduccion:', e);
+    msg.textContent = 'No hubo conexión con el inventario.'; msg.classList.add('error');
+  } finally {
+    btn.disabled = false; btn.textContent = antes;
+  }
 }
 function abrirAjusteStock(){
   if (!puedeAjustarStock()) return;
