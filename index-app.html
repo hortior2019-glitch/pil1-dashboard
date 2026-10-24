@@ -1093,6 +1093,12 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 
 /* Un cuadro de combustible por clase de equipo, uno debajo del otro */
 #panel-vehiculos .cb + .cb{margin-top:28px;padding-top:24px;border-top:1px solid #e5e7eb}
+#panel-vehiculos .cb-placas{display:grid;grid-template-columns:1fr 1fr;gap:0}
+#panel-vehiculos .cb-placas-col{min-width:0;padding:4px 22px 0 0}
+#panel-vehiculos .cb-placas-col + .cb-placas-col{padding:4px 0 0 22px;border-left:1px solid var(--rule-l)}
+@media(max-width:760px){ #panel-vehiculos .cb-placas{grid-template-columns:1fr}
+  #panel-vehiculos .cb-placas-col{padding:0}
+  #panel-vehiculos .cb-placas-col + .cb-placas-col{padding:18px 0 0;border-left:0;border-top:1px solid var(--rule-l)} }
 #panel-vehiculos .cb-placas-sub{margin-left:auto;font-size:12.5px;font-weight:600;color:#5b625e}
 #panel-vehiculos .cb-sincat{font-size:13px;color:#5b625e;background:#fffaf0;border:1px dashed #e2cf9e;
   border-radius:10px;padding:10px 14px;line-height:1.6}
@@ -13649,8 +13655,11 @@ function _flCombCajaHTML(){
 /* El color de cada placa. Sale de su lugar en la lista ordenada de toda
    la flota, así que la misma placa tiene el mismo color en todos los
    cuadros y entre una carga y otra. */
-var CB_COLORES_PLACA = ['#1c5636','#2f5f91','#b0662a','#6b4ea8','#b23b3b','#1f7f86',
-                        '#8b6914','#b4457a','#4d6b1f','#3d4f8f','#7a4b2a','#5b625e'];
+/* Tonos sobrios de la casa: el verde y el dorado de la marca primero, y
+   después pizarra, petróleo, bronce, oliva... apagados, para que se
+   distingan sin chocar con el rojo y el verde de las variaciones. */
+var CB_COLORES_PLACA = ['#1a5c35','#8b6914','#34506b','#4a6f72','#8a6440','#62703a',
+                        '#5c5470','#5b625e','#3f7a5a','#a4905a','#6e4a3e','#2f3f4f'];
 function _flColorPlaca(placa){
   var todas = (_vehiculos || []).map(function(v){ return (v.placa || '').toString().trim().toUpperCase(); })
     .filter(Boolean).sort();
@@ -13691,10 +13700,9 @@ function _cbBarrasPlaca(dela, diaCorte){
     .sort(function(x, y){ return (y.a - x.a) || (y.b - x.b); });
   if(!filas.length) return '<div class="cb-vacio">Ninguna placa de este grupo tanqueó este mes ni el anterior</div>';
 
-  var maxVal = Math.max.apply(null, filas.map(function(x){ return Math.max(x.a, x.b); }).concat([1]));
   var cortaA = MES3[m], cortaB = MES3[mA];
 
-  var barra = function(pct, color, valor, etiqueta, rayada){
+  var barra = function(pct, color, texto, etiqueta, rayada, ancho){
     return '<div style="display:flex;align-items:center;gap:8px">' +
       '<span style="font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:' + color +
         ';width:52px;flex-shrink:0;text-align:right;white-space:nowrap">' + etiqueta + '</span>' +
@@ -13704,43 +13712,57 @@ function _cbBarrasPlaca(dela, diaCorte){
                   : color) + '"></div>' +
       '</div>' +
       '<span style="font-family:\'Libre Baskerville\',serif;font-size:11px;font-weight:700;color:' + color +
-        ';width:92px;flex-shrink:0;font-variant-numeric:lining-nums tabular-nums;white-space:nowrap">' + _fmtPesos(valor) + '</span>' +
+        ';width:' + ancho + 'px;flex-shrink:0;font-variant-numeric:lining-nums tabular-nums;white-space:nowrap">' + texto + '</span>' +
     '</div>';
   };
 
-  return filas.map(function(x){
-    var color = _flColorPlaca(x.placa);
-    var hayAmbos = x.a > 0 && x.b > 0;
-    var diff = hayAmbos ? (Math.abs(x.a - x.b) / ((x.a + x.b) / 2) * 100) : null;
-    var subio = x.a >= x.b;
-    var diffTxt = '', diffColor = 'var(--ink-l)';
-    if(diff !== null){
-      diffTxt = (subio ? '↑ ' : '↓ ') + diff.toFixed(1) + '%';
-      /* En combustible gastar más es lo malo: rojo si subió. */
-      diffColor = subio ? 'var(--red)' : 'var(--green)';
-    } else if(x.a > 0 && x.b === 0){
-      diffTxt = 'solo en el periodo actual'; diffColor = 'var(--red)';
-    } else if(x.a === 0 && x.b > 0){
-      diffTxt = 'sin tanqueos en el periodo actual'; diffColor = 'var(--green)';
-    }
-    var tanq = function(n){ return n + (n === 1 ? ' tanqueo' : ' tanqueos'); };
-    return '<div style="margin-bottom:16px">' +
-      '<div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;font-weight:700;color:var(--ink-m);margin-bottom:6px;flex-wrap:wrap;gap:6px">' +
-        '<span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:' + color +
-          ';margin-right:6px;vertical-align:-1px"></i>' + _flEsc(x.placa) +
-          '<em style="font-style:normal;font-weight:600;color:var(--ink-l);margin-left:8px">' +
-          tanq(x.na) + ' · ' + tanq(x.nb) + ' antes</em></span>' +
-        (diffTxt ? '<span style="font-family:' + (diff === null ? 'inherit' : '\'Libre Baskerville\',serif') +
-          ';font-size:' + (diff === null ? '10.5px' : 'inherit') + ';font-style:' + (diff === null ? 'italic' : 'normal') +
-          ';color:' + diffColor + ';font-weight:' + (diff === null ? '600' : '800') +
-          ';font-variant-numeric:lining-nums tabular-nums">' + diffTxt + '</span>' : '') +
-      '</div>' +
-      '<div style="display:flex;flex-direction:column;gap:4px">' +
-        barra((x.a / maxVal * 100).toFixed(4), color, x.a, cortaA, false) +
-        barra((x.b / maxVal * 100).toFixed(4), color, x.b, cortaB, true) +
-      '</div>' +
+  /* Una columna: las mismas placas en el mismo orden, con lo que diga
+     'ka' (este mes) y 'kb' (mes anterior). Las dos columnas quedan a la
+     misma altura, placa frente a placa. */
+  var columna = function(titulo, ka, kb, fmtV, ancho){
+    var maxVal = Math.max.apply(null, filas.map(function(x){ return Math.max(x[ka], x[kb]); }).concat([1]));
+    return '<div class="cb-placas-col">' +
+      '<div style="font-size:15px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-m);margin-bottom:14px">' +
+        titulo + '</div>' +
+      filas.map(function(x){
+        var va = x[ka], vb = x[kb];
+        var color = _flColorPlaca(x.placa);
+        var hayAmbos = va > 0 && vb > 0;
+        var diff = hayAmbos ? (Math.abs(va - vb) / ((va + vb) / 2) * 100) : null;
+        var subio = va >= vb;
+        var diffTxt = '', diffColor = 'var(--ink-l)';
+        if(diff !== null){
+          diffTxt = (subio ? '↑ ' : '↓ ') + diff.toFixed(1) + '%';
+          /* En combustible gastar más es lo malo: rojo si subió. */
+          diffColor = subio ? 'var(--red)' : 'var(--green)';
+        } else if(va > 0 && vb === 0){
+          diffTxt = 'solo en el periodo actual'; diffColor = 'var(--red)';
+        } else if(va === 0 && vb > 0){
+          diffTxt = 'sin tanqueos en el periodo actual'; diffColor = 'var(--green)';
+        }
+        return '<div style="margin-bottom:16px">' +
+          '<div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;font-weight:700;color:var(--ink-m);margin-bottom:6px;flex-wrap:wrap;gap:6px">' +
+            '<span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:' + color +
+              ';margin-right:6px;vertical-align:-1px"></i>' + _flEsc(x.placa) + '</span>' +
+            (diffTxt ? '<span style="font-family:' + (diff === null ? 'inherit' : '\'Libre Baskerville\',serif') +
+              ';font-size:' + (diff === null ? '10.5px' : 'inherit') + ';font-style:' + (diff === null ? 'italic' : 'normal') +
+              ';color:' + diffColor + ';font-weight:' + (diff === null ? '600' : '800') +
+              ';font-variant-numeric:lining-nums tabular-nums">' + diffTxt + '</span>' : '') +
+          '</div>' +
+          '<div style="display:flex;flex-direction:column;gap:4px">' +
+            barra((va / maxVal * 100).toFixed(4), color, fmtV(va), cortaA, false, ancho) +
+            barra((vb / maxVal * 100).toFixed(4), color, fmtV(vb), cortaB, true, ancho) +
+          '</div>' +
+        '</div>';
+      }).join('') +
     '</div>';
-  }).join('');
+  };
+
+  /* A la izquierda la plata, a la derecha cuántas veces fue a la bomba. */
+  return '<div class="cb-placas">' +
+    columna('Valor de los tanqueos', 'a', 'b', _fmtPesos, 92) +
+    columna('Número de tanqueos', 'na', 'nb', function(n){ return fmt(n); }, 40) +
+  '</div>';
 }
 
 /* El bloque de combustible, armado con lo del mes y lo del mes anterior.
