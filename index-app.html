@@ -1118,6 +1118,21 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-vehiculos .cb-portom{margin-top:8px;font-size:13px;font-weight:600;color:#5b625e}
 #panel-vehiculos .cb-portom b{font-family:'Libre Baskerville',serif;font-size:15px;color:var(--ink)}
 #panel-vehiculos .cb-portom span{color:#6f7671}
+/* Las dos notas de debajo con la misma altura: las placas quedan alineadas */
+#panel-vehiculos .cb-portom{min-height:58px;display:flex;align-items:center}
+#panel-vehiculos .cb-pt{gap:12px;justify-content:space-between}
+#panel-vehiculos .cb-pt-txt{min-width:0;line-height:1.55}
+#panel-vehiculos .cb-pt-var{display:inline-flex;align-items:baseline;gap:6px;margin-left:10px;font-style:normal;
+  font-family:'Libre Baskerville',serif;font-size:16px;font-weight:800;white-space:nowrap}
+#panel-vehiculos .cb-pt-var i{font-family:'Source Sans 3',sans-serif;font-style:normal;font-size:12px;font-weight:700}
+#panel-vehiculos .cb-pt-var.mal{color:var(--red)}
+#panel-vehiculos .cb-pt-var.bien{color:var(--green)}
+#panel-vehiculos .cb-pt-var.eq{color:#5b625e}
+#panel-vehiculos .cb-pt-pastel{position:relative;display:flex;align-items:center;gap:8px;flex-shrink:0}
+#panel-vehiculos .cb-pt-pastel b{position:absolute;left:0;top:0;width:52px;height:52px;display:flex;
+  align-items:center;justify-content:center;font-family:'Source Sans 3',sans-serif;font-size:12.5px;
+  font-weight:800;color:var(--ink)}
+#panel-vehiculos .cb-pt-pastel span{font-size:11px;font-weight:700;line-height:1.25;color:#6f7671}
 #panel-vehiculos .cb-placas-sub{margin-left:auto;font-size:12.5px;font-weight:600;color:#5b625e}
 #panel-vehiculos .cb-sincat{font-size:13px;color:#5b625e;background:#fffaf0;border:1px dashed #e2cf9e;
   border-radius:10px;padding:10px 14px;line-height:1.6}
@@ -13716,7 +13731,9 @@ function _cbBarrasPlaca(dela, diaCorte){
   });
   /* Las toneladas que movió cada placa en los mismos dos periodos, de los
      tiquetes de ingreso: con eso se ve cuánto rindió lo que se tanqueó. */
-  Object.keys(por).forEach(function(pl){ por[pl].ta = 0; por[pl].tb = 0; });
+  /* tbt: todo el mes anterior, sin cortar, para el pastel de cuánto falta
+     para alcanzarlo. */
+  Object.keys(por).forEach(function(pl){ por[pl].ta = 0; por[pl].tb = 0; por[pl].tbt = 0; });
   ((typeof dataIngreso !== 'undefined' ? dataIngreso : []) || []).forEach(function(reg){
     var pl = getPlacaReg(reg);
     if(!pl || !por[pl]) return;
@@ -13725,7 +13742,10 @@ function _cbBarrasPlaca(dela, diaCorte){
     var pz = iso.split('-'), aa = +pz[0], mm = +pz[1] - 1, dd = +pz[2];
     var t = (getPesoNeto(reg) || 0) / 1000;
     if(aa === a && mm === m) por[pl].ta += t;
-    else if(aa === aA && mm === mA && dd <= diaCorte) por[pl].tb += t;
+    else if(aa === aA && mm === mA){
+      por[pl].tbt += t;
+      if(dd <= diaCorte) por[pl].tb += t;
+    }
   });
   var filas = Object.keys(por).map(function(k){ return por[k]; })
     .filter(function(x){ return x.a > 0 || x.b > 0 || x.ta > 0 || x.tb > 0; })
@@ -13824,8 +13844,38 @@ function _cbBarrasPlaca(dela, diaCorte){
     columna('Toneladas movidas', 'ta', 'tb', function(x, act){
       return tonF(act ? x.ta : x.tb);
     }, 120, false, ['solo en el periodo actual', 'sin carga en el periodo actual'], function(x){
-      return '<div class="cb-portom">Combustible por tonelada: <b>' + porT(x.a, x.ta) + '</b> ' + cortaA +
-        ' <span>· ' + porT(x.b, x.tb) + ' ' + cortaB + '</span></div>';
+      /* Lo que importa es ver de un vistazo si mover una tonelada sale más
+         caro o más barato: flecha y color. Subir es lo malo (rojo). Es la
+         variación de siempre, contra el mes anterior al mismo día. */
+      var cA = (x.ta > 0 && x.a > 0) ? x.a / x.ta : null;
+      var cB = (x.tb > 0 && x.b > 0) ? x.b / x.tb : null;
+      var varTxt = '';
+      if(cA !== null && cB !== null){
+        var pv = (cA - cB) / cB * 100;
+        var igual = Math.abs(pv) < 0.5;
+        varTxt = '<em class="cb-pt-var ' + (igual ? 'eq' : pv > 0 ? 'mal' : 'bien') + '">' +
+          (igual ? '&#9644; ' : pv > 0 ? '&#9650; ' : '&#9660; ') + Math.abs(pv).toFixed(1) + '%' +
+          '<i>' + (igual ? 'igual' : pv > 0 ? 'empeora' : 'mejora') + '</i></em>';
+      }
+      /* El pastel: lo que lleva movido este mes contra TODO el mes
+         anterior. Lleno, ya lo alcanzó. */
+      var pastel = '';
+      if(x.tbt > 0){
+        var pc = Math.min(x.ta / x.tbt, 1), R = 21, C = 2 * Math.PI * R;
+        var col = pc >= 1 ? 'var(--green)' : _flColorPlaca(x.placa);
+        pastel = '<div class="cb-pt-pastel" title="' + tonF(x.ta) + ' de ' + tonF(x.tbt) + ' movidas en ' + cortaB + '">' +
+          '<svg viewBox="0 0 52 52" width="52" height="52" aria-hidden="true">' +
+            '<circle cx="26" cy="26" r="' + R + '" fill="none" stroke="var(--rule-l)" stroke-width="7"/>' +
+            '<circle cx="26" cy="26" r="' + R + '" fill="none" stroke="' + col + '" stroke-width="7"' +
+              ' stroke-dasharray="' + (C * pc).toFixed(2) + ' ' + C.toFixed(2) + '" transform="rotate(-90 26 26)"/>' +
+          '</svg>' +
+          '<b>' + Math.round(x.ta / x.tbt * 100) + '%</b>' +
+          '<span>de ' + cortaB + '<br>completo</span></div>';
+      }
+      return '<div class="cb-portom cb-pt">' +
+        '<div class="cb-pt-txt">Combustible por tonelada: <b>' + porT(x.a, x.ta) + '</b> ' + cortaA +
+          ' <span>· ' + porT(x.b, x.tb) + ' ' + cortaB + '</span>' + varTxt + '</div>' +
+        pastel + '</div>';
     }) +
   '</div>';
 }
