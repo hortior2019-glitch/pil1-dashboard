@@ -16535,7 +16535,7 @@ function _drawerVeh(titulo, html) {
   /* Un fotograma antes de animar: si se pone la clase en el mismo, el
      navegador no ve el cambio y el cajón aparece de golpe. */
   requestAnimationFrame(() => { ov.classList.add('abierto'); dr.classList.add('abierto'); });
-  document.addEventListener('keydown', _escDrawerVeh);
+  document.addEventListener('keydown', _escDrawerVeh, true);   // captura: mira antes de que se cierre la foto
 }
 
 function _cerrarDrawerVeh() {
@@ -16543,10 +16543,11 @@ function _cerrarDrawerVeh() {
   const dr = document.getElementById('veh-drawer');
   if (ov) ov.remove();
   if (dr) dr.remove();
-  document.removeEventListener('keydown', _escDrawerVeh);
+  document.removeEventListener('keydown', _escDrawerVeh, true);
 }
 
-function _escDrawerVeh(e) { if (e.key === 'Escape') _cerrarDrawerVeh(); }
+/* Con una foto abierta, Escape cierra solo la foto y el menú queda. */
+function _escDrawerVeh(e) { if (e.key === 'Escape' && !document.getElementById('visor-baucher')) _cerrarDrawerVeh(); }
 
 /* Las inspecciones completas, bajo demanda. El resumen (buenos, regular,
    malo) y las novedades ya están en la ficha. */
@@ -19222,11 +19223,21 @@ function abrirFotoBaucher(url, titulo) {
   if (prev) prev.remove();
   const ov = document.createElement('div');
   ov.id = 'visor-baucher';
-  ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,20,18,.88);z-index:100000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;gap:12px';
+  /* Con el menú lateral de Vehículos abierto (historial, inspecciones...)
+     la foto se corre a la izquierda y ocupa solo lo que el menú deja
+     libre: antes quedaba debajo del menú y no se veían los dos. Si el menú
+     ocupa toda la pantalla (celular), la foto va encima como siempre. */
+  const menu = document.getElementById('veh-drawer');
+  let derecha = 0;
+  if (menu) {
+    const w = menu.getBoundingClientRect().width;
+    if (w && w < window.innerWidth - 240) derecha = Math.round(w);
+  }
+  ov.style.cssText = 'position:fixed;top:0;left:0;bottom:0;right:' + derecha + 'px;background:rgba(15,20,18,.88);z-index:100002;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;gap:12px;box-sizing:border-box';
   ov.onclick = e => { if (e.target === ov) ov.remove(); };
   ov.innerHTML = `
     <div style="color:#fff;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;text-align:center">${(titulo||'Baucher').replace(/</g,'&lt;')}</div>
-    <img src="${src}" data-alt="${urlFotoDriveAlt(url)}" alt="Baucher" style="max-width:92vw;max-height:74vh;object-fit:contain;background:#fff;border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.5)" onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src=this.dataset.alt;}else{this.style.display='none';document.getElementById('visor-baucher-err').style.display='block';}">
+    <img src="${src}" data-alt="${urlFotoDriveAlt(url)}" alt="Baucher" style="max-width:${derecha ? '100%' : '92vw'};max-height:74vh;object-fit:contain;background:#fff;border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.5)" onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src=this.dataset.alt;}else{this.style.display='none';document.getElementById('visor-baucher-err').style.display='block';}">
     <div id="visor-baucher-err" style="display:none;color:#fff;font-size:13px;background:rgba(139,26,26,.9);padding:10px 16px;border-radius:6px;max-width:520px;text-align:center">No se pudo cargar la imagen. Puede que el archivo de Drive no sea publico. Usa "Abrir en Drive" para verlo.</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
       <a href="${(url||'').replace(/"/g,'&quot;')}" target="_blank" rel="noopener" style="padding:8px 16px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--white);color:var(--ink);border-radius:4px;text-decoration:none;font-family:'Source Sans 3',sans-serif">Abrir en Drive</a>
