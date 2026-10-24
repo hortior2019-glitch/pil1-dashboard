@@ -6078,6 +6078,34 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
         <div class="kpi-period" id="x25-desp-p">—</div>
       </div>
     </div>
+    <!-- La misma dona del x 50 kg: superar el mes anterior, con la foto
+         de esta referencia al lado. La foto se sube al repositorio como
+         "HumusSolidox25"; si no está, el espacio no aparece. -->
+    <div class="obj-card x25-obj">
+      <div class="obj-nombre">Superar mes anterior · x 25 kg</div>
+      <div class="obj-dona">
+        <div class="dona-caja">
+          <svg viewBox="0 0 140 140" class="dona-svg" aria-hidden="true">
+            <circle class="dona-pista" cx="70" cy="70" r="56"></circle>
+            <circle class="dona-arco" id="x25o-arco" cx="70" cy="70" r="56"></circle>
+          </svg>
+          <div class="dona-centro">
+            <div class="dona-falta" id="x25o-falta">—</div>
+            <div class="dona-et">completado</div>
+          </div>
+        </div>
+        <div class="obj-lado">
+          <div class="obj-cifra"><b id="x25o-valor">—</b></div>
+          <div class="obj-unidad" id="x25o-unidad">bultos faltantes</div>
+        </div>
+        <figure class="obj-foto">
+          <img data-foto-ref="HumusSolidox25" alt="Humus Sólido · Bulto x 25 kg">
+          <figcaption>Humus Sólido<br>Bulto x 25 kg</figcaption>
+        </figure>
+      </div>
+      <div id="x25o-detalle" style="font-size:13px;color:var(--ink-m);margin-top:12px">—</div>
+      <div id="x25o-bar-detalle" style="font-size:12.5px;color:var(--ink-m);margin-top:3px">—</div>
+    </div>
   </div>
 
   <!-- Mejor mes histórico (banda compacta) -->
@@ -7255,6 +7283,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   color:var(--ink);line-height:.95;font-variant-numeric:lining-nums tabular-nums}
 #panel-ProduccionHumus .obj-unidad{font-size:13px;font-weight:700;letter-spacing:.3px;color:var(--ink-m);margin-top:5px}
 #panel-ProduccionHumus .obj-card.cumplido .obj-cifra b{color:#2e8b45}
+/* La dona del x 25 kg va dentro de su tarjeta, debajo de los KPIs */
+#panel-ProduccionHumus .x25-obj{margin-top:20px;padding:20px 4px 0;border-top:1px solid var(--rule-l)}
 
 /* Foco visible con teclado en los controles de la pestaña: el anillo
    verde de la casa, no el azul del navegador. */
@@ -22553,6 +22583,38 @@ function pintarBloqueX25(){
       d.style.fontWeight = '';
     }
   }
+
+  /* La dona de esta referencia: la misma cuenta que la del x 50 kg —
+     superar el mes anterior por al menos un bulto—. */
+  const card = document.getElementById('x25o-arco') && document.getElementById('x25o-arco').closest('.obj-card');
+  const barDet = document.getElementById('x25o-bar-detalle');
+  if (t.hayMesAnt && t.mesAnt > 0) {
+    const meta = t.mesAnt + 1;
+    const falta = meta - t.mes;
+    const hoyD = new Date();
+    const diasMes = new Date(hoyD.getFullYear(), hoyD.getMonth() + 1, 0).getDate();
+    const diasRestantes = Math.max(diasMes - hoyD.getDate() + 1, 1);
+    if (falta <= 0) {
+      setT('x25o-valor', '0');
+      setT('x25o-unidad', 'bultos · mes superado');
+      setT('x25o-detalle', 'Lleva ' + ent(t.mes) + ' contra ' + ent(t.mesAnt) + ' del mes anterior');
+      if (card) card.classList.add('cumplido');
+    } else {
+      setT('x25o-valor', ent(falta));
+      setT('x25o-unidad', 'bultos faltantes');
+      setT('x25o-detalle', ent(Math.ceil(falta / diasRestantes)) + ' bultos por día en los ' + diasRestantes + ' días que quedan');
+      if (card) card.classList.remove('cumplido');
+    }
+    pintarDonaObjetivo('x25o', Math.min(100, Math.max(0, (t.mes / meta) * 100)), 'var(--green)');
+    if (barDet) barDet.textContent = ent(t.mes) + ' / ' + ent(meta) + ' bultos del mes';
+  } else {
+    setT('x25o-valor', '—');
+    setT('x25o-unidad', 'bultos faltantes');
+    setT('x25o-detalle', 'No hay producción del mes anterior para comparar');
+    if (card) card.classList.remove('cumplido');
+    pintarDonaObjetivo('x25o', null, 'var(--green)');
+    if (barDet) barDet.textContent = 'Sin mes anterior para comparar';
+  }
 }
 
 /* ── LA PRODUCCIÓN DE HOY, SEGÚN LOS REGISTROS ──────────────────────
@@ -22588,6 +22650,9 @@ function produccionDeHoySegunRegistros(){
    se ve igual de bien. */
 const FOTO_REF_NOMBRE = 'HumusSolidox50';
 const FOTO_REF_EXT = ['png', 'jpg', 'jpeg', 'webp', 'svg', 'PNG', 'JPG'];
+/* Cada foto puede decir su archivo en data-foto-ref (la del x 25 kg es
+   "HumusSolidox25"); si no dice nada, es la del x 50 kg. */
+function nombreFotoRef(img){ return img.dataset.fotoRef || FOTO_REF_NOMBRE; }
 function siguienteFotoRef(img){
   const i = (Number(img.dataset.ext) || 0) + 1;
   if (i >= FOTO_REF_EXT.length) {       /* no está: se deja el espacio limpio */
@@ -22596,9 +22661,9 @@ function siguienteFotoRef(img){
     return;
   }
   img.dataset.ext = i;
-  img.src = FOTO_REF_NOMBRE + '.' + FOTO_REF_EXT[i];
+  img.src = nombreFotoRef(img) + '.' + FOTO_REF_EXT[i];
 }
-/* Puede haber más de una (una por objetivo): todas usan el mismo archivo. */
+/* Puede haber más de una (una por objetivo). */
 function buscarFotoRef(){
   document.querySelectorAll('img[data-foto-ref]').forEach(img => {
     if (img.dataset.listo) return;
@@ -22609,7 +22674,7 @@ function buscarFotoRef(){
       if (caja) caja.classList.add('hay');
     });
     img.addEventListener('error', () => siguienteFotoRef(img));
-    img.src = FOTO_REF_NOMBRE + '.' + FOTO_REF_EXT[0];
+    img.src = nombreFotoRef(img) + '.' + FOTO_REF_EXT[0];
   });
 }
 
