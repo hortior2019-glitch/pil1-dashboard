@@ -1091,6 +1091,14 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-vehiculos .cb-leyenda i.act{background:#1c5636}
 #panel-vehiculos .cb-leyenda i.ant{background:#c2cbc5;margin-left:8px}
 
+/* Un cuadro de combustible por clase de equipo, uno debajo del otro */
+#panel-vehiculos .cb + .cb{margin-top:28px;padding-top:24px;border-top:1px solid #e5e7eb}
+#panel-vehiculos .cb-sincat{font-size:13px;color:#5b625e;background:#fffaf0;border:1px dashed #e2cf9e;
+  border-radius:10px;padding:10px 14px;line-height:1.6}
+#panel-vehiculos .cb-sincat button{border:1px solid #d9c690;background:#fff;color:#6f530f;border-radius:6px;
+  padding:3px 9px;margin:2px 3px;font:700 12px 'Source Sans 3',sans-serif;cursor:pointer}
+#panel-vehiculos .cb-sincat button:hover{background:#6f530f;color:#fff}
+
 #panel-vehiculos .cb-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px 18px}
 #panel-vehiculos .cb-card-cab{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:700;
   color:var(--ink);margin-bottom:10px}
@@ -12937,10 +12945,11 @@ function _flUltimosTanqueos(n){
 
 /* El combustible de la flota día por día: un punto por fecha con lo que se
    tanqueó ese día, este mes y el anterior. Es la misma lectura que ya tiene
-   cada vehículo en su ficha, pero de toda la flota. */
-function _flCombMeses(){
+   cada vehículo en su ficha, pero de toda la flota. 'dela' recorta a un
+   grupo de placas (una categoría); sin él va toda la flota. */
+function _flCombMeses(dela){
   var lista = (typeof dataCombustible !== 'undefined' ? dataCombustible : []) || [];
-  var dela = _flSoloFlota();
+  dela = dela || _flSoloFlota();
   var hoy = new Date();
   var a = hoy.getFullYear(), m = hoy.getMonth();
   var ant = new Date(a, m - 1, 1), aA = ant.getFullYear(), mA = ant.getMonth();
@@ -12968,7 +12977,7 @@ function _flCombMeses(){
   var act = armar(porDiaA), anterior = armar(porDiaB);
   var sum = function(s){ return s.reduce(function(x, y){ return x + y.valor; }, 0); };
   var gA = sum(act), gB = sum(anterior);
-  var km = _flKmMeses(a, m, aA, mA, diaHoy);
+  var km = _flKmMeses(a, m, aA, mA, diaHoy, dela);
   /* gastoAnt y nAnt son los del mes anterior HASTA EL MISMO DÍA. El mes
      anterior completo queda aparte por si algún día hace falta. */
   return { act: act, ant: anterior,
@@ -12984,9 +12993,9 @@ function _flCombMeses(){
    es un error de digitación y se descarta; un salto imposible también.
    Si no hay dos lecturas seguidas, devuelve 0 y el tablero dirá que no
    hay datos en vez de inventar un rendimiento. */
-function _flKmMeses(a, m, aA, mA, diaCorte){
+function _flKmMeses(a, m, aA, mA, diaCorte, dela){
   var lista = (typeof dataCombustible !== 'undefined' ? dataCombustible : []) || [];
-  var dela = _flSoloFlota();
+  dela = dela || _flSoloFlota();
   var porPlaca = {};
   lista.forEach(function(r){
     var pl = (r['Placa / Equipo'] || r['Placa'] || r['PLACA'] || r['placa'] || '').toString().trim().toUpperCase();
@@ -13016,9 +13025,9 @@ function _flKmMeses(a, m, aA, mA, diaCorte){
 /* Cómo vamos en el mes: viajes y kilos de la flota, contra el mes
    pasado cortado el mismo día, que es la única comparación honesta a
    mitad de mes. No depende del filtro de arriba: el mes es el mes. */
-function _flAvanceMes(){
+function _flAvanceMes(dela){
   var regs = (typeof dataIngreso !== 'undefined' ? dataIngreso : []) || [];
-  var dela = _flSoloFlota();
+  dela = dela || _flSoloFlota();
   var hoy = new Date();
   var a = hoy.getFullYear(), m = hoy.getMonth() + 1, dia = hoy.getDate();
   var ant = new Date(a, m - 2, 1);
@@ -13329,7 +13338,9 @@ function _cbConclusion(d){
   } else if(d.porTon !== null){
     f.push('Mover una tonelada cuesta ' + d.porTonTexto + '.');
   }
-  if(d.km <= 0) f.push('El rendimiento por kilómetro no se puede calcular: los tanqueos no traen dos lecturas seguidas de kilometraje.');
+  if(d.km <= 0) f.push(d.horas
+    ? 'El costo por hora no se puede calcular: los tanqueos no traen dos lecturas seguidas de horómetro.'
+    : 'El rendimiento por kilómetro no se puede calcular: los tanqueos no traen dos lecturas seguidas de kilometraje.');
   return f.join(' ');
 }
 
@@ -13341,7 +13352,6 @@ function renderFlota(){
   var comb = _flotaCombustible();
   var ops  = _flotaPorOperacion();
   var av   = _flAvanceMes();
-  var cm   = _flCombMeses();
   var ultimos = _flUltimosTanqueos(15);
 
   var totKg = tons.reduce(function(x, y){ return x + y.kg; }, 0);
@@ -13444,7 +13454,7 @@ function renderFlota(){
     /* El comparativo va pegado encima de "Combustible · Resumen del mes". */
     _vehCmpHTML() +
 
-    _flCombustibleHTML(cm, av, tonsF) +
+    '<div id="veh-cb-caja">' + _flCombCajaHTML() + '</div>' +
 
     '<details class="fl-card fl-plegable">' +
       '<summary><span class="fl-tit">Últimos tanqueos</span>' +
@@ -13582,8 +13592,65 @@ function _flSeccion(titulo, pie){
     (pie ? '<em>' + _flEsc(pie) + '</em>' : '') + '</div>';
 }
 
-/* El bloque de combustible, armado con lo del mes y lo del mes anterior. */
-function _flCombustibleHTML(cm, av, tonsF){
+/* ── EL COMBUSTIBLE POR CLASE DE EQUIPO ─────────────────────────────
+   Volquetas y maquinaria iban sumadas en un mismo cuadro, y así ni el
+   costo por tonelada ni el de por kilómetro dicen nada: un cargador no
+   carga tiquetes ni recorre kilómetros. Ahora va un cuadro completo por
+   cada categoría que tenga equipos, uno debajo del otro; la que no tiene
+   ninguno no sale. Los que nadie ha clasificado van en su propio cuadro,
+   "Sin categoría", con el botón para clasificarlos. */
+function _flCatDe(v){
+  var c = (v && v.categoria || '').toString().trim();
+  return VEH_CATEGORIAS.some(function(x){ return x.k === c; }) ? c : '';
+}
+
+/* Las placas de una categoría; '__sin' son las que no tienen. */
+function _flPlacasCat(cat){
+  var set = {};
+  (_vehiculos || []).forEach(function(v){
+    var k = (v.placa || '').toString().trim().toUpperCase();
+    if(!k) return;
+    if(cat === '__sin' ? !_flCatDe(v) : _flCatDe(v) === cat) set[k] = true;
+  });
+  return set;
+}
+
+function _flCombCajaHTML(){
+  var cuenta = {}, sinCat = [];
+  (_vehiculos || []).forEach(function(v){
+    var c = _flCatDe(v);
+    if(c) cuenta[c] = (cuenta[c] || 0) + 1;
+    else if(v.placa) sinCat.push(v.placa.toString().trim().toUpperCase());
+  });
+  var tonsF = function(kg){ return fmt(Math.round(kg / 100) / 10) + ' T'; };
+  var cuadro = function(cat, nombre, horas, extra){
+    var dela = _flPlacasCat(cat);
+    return _flCombustibleHTML(_flCombMeses(dela), _flAvanceMes(dela), tonsF, nombre, horas, extra);
+  };
+
+  var html = VEH_CATEGORIAS.filter(function(x){ return cuenta[x.k]; }).map(function(x){
+    return cuadro(x.k, x.pl, x.horas, '');
+  }).join('');
+
+  /* Los que faltan por clasificar, con su botón: un clic abre la ficha
+     de edición con la lista de categorías. */
+  if(sinCat.length){
+    html += cuadro('__sin', 'Sin categoría', false,
+      '<div class="cb-sincat"><b>' + sinCat.length + (sinCat.length === 1 ? ' equipo sin categoría' : ' equipos sin categoría') +
+      '.</b> Clasifícalos para que su combustible pase al cuadro que les toca: ' +
+      sinCat.map(function(pl){
+        return '<button type="button" onclick="abrirFormVehiculo(\'' + _escAttrVeh(pl) + '\')">' + _flEsc(pl) + '</button>';
+      }).join('') + '</div>');
+  }
+  return html || '<div class="fl-card"><div class="fl-vacio">No hay vehículos registrados.</div></div>';
+}
+
+/* El bloque de combustible, armado con lo del mes y lo del mes anterior.
+   'grupo' es el nombre de la categoría del cuadro y 'horas' dice si esa
+   maquinaria se mide por horómetro y no por kilómetros. 'selector' es lo
+   que va debajo del título (el aviso de los que no tienen categoría). */
+function _flCombustibleHTML(cm, av, tonsF, grupo, horas, selector){
+  var uso = horas ? 'hora' : 'kilómetro';
   var ico = (typeof ICO_VF !== 'undefined') ? ICO_VF : {};
   var MESES_CB = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto',
                   'Septiembre','Octubre','Noviembre','Diciembre'];
@@ -13610,7 +13677,8 @@ function _flCombustibleHTML(cm, av, tonsF){
     porTon: porTon,
     porTonTexto: porTon !== null ? _fmtPesos(porTon) : '',
     pctPorTon: (porTon !== null && porTonAnt !== null) ? _cbPct(porTon, porTonAnt) : null,
-    km: cm.km
+    km: cm.km,
+    horas: !!horas
   };
 
   var notaTanq = cm.nAnt > 0
@@ -13634,10 +13702,11 @@ function _flCombustibleHTML(cm, av, tonsF){
   return '<div class="cb">' +
     '<div class="cb-cab">' +
       '<span class="cb-sello">' + (ico.comb || '') + '</span>' +
-      '<div><div class="cb-tit">Combustible</div><div class="cb-sub">Resumen del mes</div></div>' +
+      '<div><div class="cb-tit">Combustible' + (grupo ? ' · ' + _flEsc(grupo) : '') + '</div><div class="cb-sub">Resumen del mes</div></div>' +
       '<span class="cb-mes">' + _flEsc(nombreMes) + '</span>' +
       '<span class="cb-leyenda"><i class="act"></i>Este mes<i class="ant"></i>Mes anterior</span>' +
     '</div>' +
+    (selector || '') +
 
     '<div class="cb-top">' +
       '<div class="cb-card cb-tinte-verde">' +
@@ -13675,14 +13744,14 @@ function _flCombustibleHTML(cm, av, tonsF){
           porViaje !== null ? _fmtPesos(porViaje) : null,
           (porViaje !== null && porViajeAnt !== null) ? _cbPct(porViaje, porViajeAnt) : null, true,
           'No hay viajes registrados de estas placas este mes') +
-        _cbFila((ico.km || ''), 'Costo por kilómetro',
+        _cbFila((ico.km || ''), 'Costo por ' + uso,
           porKm !== null ? _fmtPesos(porKm) : null,
           (porKm !== null && porKmAnt !== null) ? _cbPct(porKm, porKmAnt) : null, true,
-          'Hacen falta dos lecturas seguidas de kilometraje en los tanqueos') +
+          'Hacen falta dos lecturas seguidas de ' + (horas ? 'horómetro' : 'kilometraje') + ' en los tanqueos') +
         _cbFila((ico.barras || ''), 'Costo por tonelada',
           porTon !== null ? _fmtPesos(porTon) : null, d.pctPorTon, true,
           'No hay toneladas registradas de estas placas este mes') +
-        _cbFila((ico.comb || ''), 'Rendimiento (km/galón)', null, null, false,
+        _cbFila((ico.comb || ''), horas ? 'Rendimiento (horas/galón)' : 'Rendimiento (km/galón)', null, null, false,
           'El formulario de tanqueo no registra los galones; sin eso no hay rendimiento que calcular') +
       '</div>' +
     '</div>' +
@@ -16302,6 +16371,21 @@ function verPreoperacionalesVehiculo(placa) {
 }
 
 // ── ALTA / EDICION DE VEHICULO ──────────────────────────────
+/* La clase de equipo. Con esto el combustible de la flota se separa:
+   una volqueta y un cargador no gastan igual ni se miden igual (la
+   volqueta por kilómetro, el cargador por hora de horómetro). */
+const VEH_CATEGORIAS = [
+  { k:'Volqueta',        pl:'Volquetas',        horas:false },
+  { k:'Camión',          pl:'Camiones',         horas:false },
+  { k:'Tractocamión',    pl:'Tractocamiones',   horas:false },
+  { k:'Cargador',        pl:'Cargadores',       horas:true  },
+  { k:'Retroexcavadora', pl:'Retroexcavadoras', horas:true  },
+  { k:'Excavadora',      pl:'Excavadoras',      horas:true  },
+  { k:'Minicargador',    pl:'Minicargadores',   horas:true  },
+  { k:'Tractor',         pl:'Tractores',        horas:true  },
+  { k:'Montacargas',     pl:'Montacargas',      horas:true  },
+  { k:'Otro',            pl:'Otros',            horas:false }
+];
 let _vehFotoTmp = '';
 function abrirFormVehiculo(placa) {
   const v = placa ? _vehiculos.find(x => (x.placa||'').toUpperCase() === placa.toUpperCase()) : null;
@@ -16313,6 +16397,13 @@ function abrirFormVehiculo(placa) {
       <div>
         <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Placa *</label>
         <input id="vf-placa" value="${v?(v.placa||''):''}" ${v?'readonly':''} maxlength="8" placeholder="ABC123" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:15px;border:1px solid var(--rule);border-radius:4px;text-transform:uppercase;font-family:'Source Sans 3',sans-serif;${v?'background:var(--s2);color:var(--ink-l)':''}">
+      </div>
+      <div>
+        <label for="vf-cat" style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Categoría *</label>
+        <select id="vf-cat" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:15px;border:1px solid var(--rule);border-radius:4px;background:var(--white);font-family:'Source Sans 3',sans-serif">
+          <option value="">Elige qué clase de equipo es…</option>
+          ${VEH_CATEGORIAS.map(c => `<option value="${c.k}" ${v && v.categoria === c.k ? 'selected' : ''}>${c.k}</option>`).join('')}
+        </select>
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <div style="flex:1;min-width:150px">
@@ -16401,15 +16492,17 @@ async function guardarVehiculo(esEdicion) {
   const soat  = (document.getElementById('vf-soat')||{}).value || '';
   const tecno = (document.getElementById('vf-tecno')||{}).value || '';
   const km    = parseInt((document.getElementById('vf-km')||{}).value, 10) || 0;
+  const categoria = (document.getElementById('vf-cat')||{}).value || '';
   const err   = document.getElementById('vf-error');
   const btn   = document.getElementById('vf-guardar');
   const _err  = msg => { if (err) { err.textContent = msg; err.style.display = 'block'; } };
 
   if (!placa) { _err('La placa es obligatoria.'); return; }
+  if (!categoria) { _err('Elige la categoría: con ella se separa el combustible por tipo de equipo.'); return; }
   if (!esEdicion && _vehiculos.some(v => (v.placa||'').toUpperCase() === placa)) { _err('Ya existe un vehículo con esa placa.'); return; }
 
   if (btn) { btn.disabled = true; btn.textContent = _vehFotoTmp ? 'Subiendo foto...' : 'Guardando...'; }
-  const payload = { accion:'guardarVehiculo', placa, soat, tecno, foto: _vehFotoTmp || '' };
+  const payload = { accion:'guardarVehiculo', placa, soat, tecno, categoria, foto: _vehFotoTmp || '' };
   if (!esEdicion) payload.km = km;
   const d = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
     body: JSON.stringify(payload) });
