@@ -8449,6 +8449,30 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   font-variant-numeric:lining-nums tabular-nums}
 #per-mover-modal .rt-acc-err{font-size:11.5px;color:#b23b3b;margin-top:8px;min-height:14px}
 @media (max-width:820px){ #per-mover-modal .rt-split{grid-template-columns:1fr} }
+/* Sin nada marcado en grupo, no hay lista de acciones: el cuadro ocupa
+   todo y las opciones salen al tocar la celda. */
+#per-mover-modal .rt-split.sin-acciones{grid-template-columns:minmax(0,1fr)}
+#per-mover-modal .rt-split.sin-acciones .rt-acciones{display:none}
+#per-mover-modal .rt-ok{background:#e8f4ec;color:#1c5636;border:1px solid #cfe5d8;border-radius:8px;
+  padding:8px 11px;font-size:13px;font-weight:700;margin-bottom:9px}
+/* Confirmación antes de guardar: cómo queda cada cambio. */
+#per-mover-modal .rt-conf{position:fixed;inset:0;z-index:9600;background:rgba(20,30,25,.5);
+  display:flex;align-items:center;justify-content:center;padding:16px}
+#per-mover-modal .rt-conf-caja{background:#fff;border-radius:12px;width:100%;max-width:680px;max-height:86vh;
+  overflow:auto;padding:18px 18px 14px;box-shadow:0 20px 50px -15px rgba(0,0,0,.5)}
+#per-mover-modal .rt-conf-tit{font-family:'Libre Baskerville',serif;font-size:18px;color:var(--ink);margin-bottom:4px}
+#per-mover-modal .rt-conf-sub{font-size:13px;color:var(--ink-m);margin-bottom:12px;line-height:1.45}
+#per-mover-modal .rt-conf table{width:100%;border-collapse:collapse;font-size:13px}
+#per-mover-modal .rt-conf th{text-align:left;font-size:10.5px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;
+  color:var(--ink-l);padding:6px 8px;border-bottom:1px solid var(--rule)}
+#per-mover-modal .rt-conf td{padding:8px;border-bottom:1px solid var(--rule-l);vertical-align:top}
+#per-mover-modal .rt-conf td.antes{color:#8a8f8b;text-decoration:line-through}
+#per-mover-modal .rt-conf td.queda{color:#1c5636;font-weight:700}
+#per-mover-modal .rt-conf .rt-conf-hs{margin-top:10px;font-size:12.5px;color:var(--ink-m);line-height:1.6}
+#per-mover-modal .rt-conf .rt-conf-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
+#per-mover-modal .rt-conf .rt-conf-btns button{padding:10px 16px;font-size:13px;font-weight:700;border-radius:8px;
+  cursor:pointer;font-family:'Source Sans 3',sans-serif;border:1px solid var(--rule);background:#fff;color:var(--ink-m)}
+#per-mover-modal .rt-conf .rt-conf-btns .si{background:#1c5636;border-color:#1c5636;color:#fff}
 
 #per-mover-modal .rt-pie{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:11px}
 #per-mover-modal .rt-cuenta{font-size:12.5px;color:var(--ink-m)}
@@ -40765,6 +40789,12 @@ var ROT = null;
    mes ya tiene cargado. */
 function turnosDeSemana(area, semana){
   var hasta = sumarDias(semana, 6);
+  /* Primero el cuadro que se está mirando: es el que se acaba de guardar.
+     Recorrer todos los guardados podía mezclar una copia vieja de otro
+     rango y mostrar en el editor algo distinto de lo que hay. */
+  var principal = (P.turnos[area + '|' + semanasDelCuadro(MES_VIENDO || semana)[0]] || [])
+    .filter(function(t){ return t.fecha >= semana && t.fecha <= hasta; });
+  if(principal.length) return principal;
   var salida = [];
   Object.keys(P.turnos || {}).forEach(function(k){
     if(k.indexOf(area + '|') !== 0) return;
@@ -40816,8 +40846,11 @@ function montarRotador(a, semana){
   /* 'destino' es el atajo que vale para todo lo marcado. 'propio' es lo
      que se eligió para UNA celda y le gana al atajo: es lo que permite
      decir "esta persona se cambia con esa otra, solo ese día". */
+  /* 'grupo' son las celdas marcadas con los atajos (nombre, día, toda la
+     semana): solo a esas les toca la acción de la lista. Lo elegido en el
+     menú de una celda va aparte, en 'propio', y la lista no lo pisa. */
   ROT = { area: a.nombre, semana: semana, turnos: turnos, gente: gente, celdas: porCelda,
-          sel: {}, propio: {}, destino: '1', accion: 'rotar-sig', param: {} };
+          sel: {}, propio: {}, grupo: {}, destino: '1', accion: 'rotar-sig', param: {} };
 
   var colores = coloresDe(dela);
   var fechas = [];
@@ -40875,9 +40908,11 @@ function montarRotador(a, semana){
   ];
 
   caja.innerHTML =
-    '<div class="rt-ayuda">Marque las celdas y elija una acción a la derecha para aplicarla a todo lo marcado. ' +
-      'El nombre marca toda la persona; el día, toda la columna. Los días con novedad se respetan.</div>' +
-    '<div class="rt-split">' +
+    '<div class="rt-ok" id="rt-ok" style="display:none"></div>' +
+    '<div class="rt-ayuda">Toque la celda que quiere cambiar y elija qué hacer. Para cambiar varias a la vez, ' +
+      'toque el nombre (toda la persona), el día (toda la columna) o los atajos de arriba. ' +
+      'Nada se guarda hasta que revise cómo queda y confirme.</div>' +
+    '<div class="rt-split sin-acciones">' +
       '<div class="rt-left">' +
         '<div class="rt-selbar">' +
           '<button type="button" class="rt-mini" data-rtsel="todo">Toda la semana</button>' +
@@ -40890,11 +40925,11 @@ function montarRotador(a, semana){
         '<div class="rt-scroll"><table class="rt-tabla"><thead>' + cab + '</thead><tbody>' + cuerpo + '</tbody></table></div>' +
         '<div class="rt-pie">' +
           '<div class="rt-cuenta" id="rt-cuenta">Ninguna celda marcada.</div>' +
-          '<button type="button" class="rt-aplicar" id="rt-aplicar" disabled>Aplicar</button>' +
+          '<button type="button" class="rt-aplicar" id="rt-aplicar" disabled>Revisar y guardar</button>' +
         '</div>' +
       '</div>' +
       '<div class="rt-acciones">' +
-        '<div class="rt-acc-tit">Acción a aplicar</div>' +
+        '<div class="rt-acc-tit" id="rt-acc-tit">Qué hacer con lo marcado</div>' +
         ACC.map(function(d){
           return '<button type="button" class="rt-acc-it' + (ROT.accion === d[0] ? ' on' : '') + '" data-rtacc="' + d[0] + '">' + d[1] + '</button>';
         }).join('') +
@@ -40903,8 +40938,12 @@ function montarRotador(a, semana){
       '</div>' +
     '</div>';
 
+  /* Tocar la celda (o su flecha) abre SUS opciones, junto a ella. */
   caja.querySelectorAll('[data-rt]').forEach(function(b){
-    b.onclick = function(){ rotMarcar(b.dataset.rt, !ROT.sel[b.dataset.rt]); rotPintar(); };
+    b.onclick = function(ev){ ev.stopPropagation(); rotMenu(b, b.dataset.rt); };
+  });
+  caja.querySelectorAll('[data-rtmenu]').forEach(function(b){
+    b.onclick = function(ev){ ev.stopPropagation(); rotMenu(b, b.dataset.rtmenu); };
   });
   caja.querySelectorAll('[data-rtfila]').forEach(function(b){
     b.onclick = function(){ rotFila(b.dataset.rtfila); };
@@ -41052,7 +41091,8 @@ function rotMaterializar(){
   if(!ROT) return;
   var acc = ROT.accion || 'rotar-sig';
   var pr = ROT.param || {};
-  var ids = Object.keys(ROT.sel);
+  /* Solo lo marcado en grupo: lo elegido celda por celda no se pisa. */
+  var ids = Object.keys(ROT.grupo || {});
 
   /* Atajos generales: toda la selección sigue el mismo rumbo, sin propio. */
   if(acc === 'rotar-sig' || acc === 'rotar-ant' || acc === 'turno'){
@@ -41119,18 +41159,22 @@ function rotDifMin(desde, hasta){ return ((rotHHMMaMin(hasta) - rotHHMMaMin(desd
 /* Aplica la acción elegida a lo marcado. La hora extra va por su camino. */
 function rotAplicarAccion(boton){
   var err = $p('rt-acc-err'); if(err) err.textContent = '';
-  if(!Object.keys(ROT.sel).length){ if(err) err.textContent = 'Marque al menos una celda.'; return; }
-  if((ROT.accion || '') === 'extra') return rotAplicarExtra(boton);
+  if(!Object.keys(ROT.sel).length){ if(err) err.textContent = 'Toque al menos una celda.'; return; }
+  /* La hora extra en grupo va por su camino; lo demás (incluido lo
+     elegido celda por celda) se revisa y se guarda junto. */
+  if((ROT.accion || '') === 'extra' && Object.keys(ROT.grupo).length) return rotAplicarExtra(boton);
   aplicarRotacion(boton);
 }
 
 /* Se marca lo que tiene horas (para rotar/editar) y también los días de
-   descanso (para asignarles turno). Las novedades no se tocan. */
-function rotMarcar(id, si){
+   descanso (para asignarles turno). Las novedades no se tocan. 'grupo'
+   dice si la marca viene de un atajo (nombre, día, semana). */
+function rotMarcar(id, si, grupo){
   var t = ROT.celdas[id];
   if(!t || (!t.inicio && !t.vacia)) return;
-  if(si){ ROT.sel[id] = 1; return; }
+  if(si){ ROT.sel[id] = 1; if(grupo) ROT.grupo[id] = 1; return; }
   delete ROT.sel[id];
+  delete ROT.grupo[id];
   /* Si estaba cambiada con alguien, la otra mitad del cambio se deshace
      también: media permuta deja a dos personas en el mismo turno. */
   var propio = ROT.propio[id];
@@ -41139,31 +41183,34 @@ function rotMarcar(id, si){
     var idOtra = propio.con + '|' + fecha;
     delete ROT.propio[idOtra];
     delete ROT.sel[idOtra];
+    delete ROT.grupo[idOtra];
   }
   delete ROT.propio[id];
 }
 
 function rotFila(clave){
-  var hay = Object.keys(ROT.sel).some(function(k){ return k.indexOf(clave + '|') === 0; });
-  for(var i = 0; i < 7; i++) rotMarcar(clave + '|' + sumarDias(ROT.semana, i), !hay);
+  var hay = Object.keys(ROT.grupo).some(function(k){ return k.indexOf(clave + '|') === 0; });
+  for(var i = 0; i < 7; i++) rotMarcar(clave + '|' + sumarDias(ROT.semana, i), !hay, true);
   rotPintar();
 }
 
 function rotColumna(i){
   var f = sumarDias(ROT.semana, i);
-  var hay = ROT.gente.some(function(p){ return ROT.sel[p.clave + '|' + f]; });
-  ROT.gente.forEach(function(p){ rotMarcar(p.clave + '|' + f, !hay); });
+  var hay = ROT.gente.some(function(p){ return ROT.grupo[p.clave + '|' + f]; });
+  ROT.gente.forEach(function(p){ rotMarcar(p.clave + '|' + f, !hay, true); });
   rotPintar();
 }
 
+/* Los atajos rehacen solo el grupo; lo elegido celda por celda se queda.
+   "Quitar marcas" sí lo borra todo. */
 function rotAtajo(cual){
-  ROT.sel = {}; ROT.propio = {};
-  if(cual !== 'nada'){
-    var dias = cual === 'lv' ? [0,1,2,3,4] : cual === 'finde' ? [5,6] : [0,1,2,3,4,5,6];
-    ROT.gente.forEach(function(p){
-      dias.forEach(function(i){ rotMarcar(p.clave + '|' + sumarDias(ROT.semana, i), true); });
-    });
-  }
+  if(cual === 'nada'){ ROT.sel = {}; ROT.propio = {}; ROT.grupo = {}; rotPintar(); return; }
+  Object.keys(ROT.grupo).forEach(function(id){ delete ROT.sel[id]; delete ROT.propio[id]; });
+  ROT.grupo = {};
+  var dias = cual === 'lv' ? [0,1,2,3,4] : cual === 'finde' ? [5,6] : [0,1,2,3,4,5,6];
+  ROT.gente.forEach(function(p){
+    dias.forEach(function(i){ rotMarcar(p.clave + '|' + sumarDias(ROT.semana, i), true, true); });
+  });
   rotPintar();
 }
 
@@ -41218,7 +41265,9 @@ function rotMenu(boton, id){
   m.className = 'rt-menu';
   m.id = 'rt-menu';
   m._ancla = boton;
-  document.body.appendChild(m);
+  /* Dentro del modal: ahí viven sus estilos. Colgado del body salía sin
+     formato. */
+  ($p('per-mover-modal') || document.body).appendChild(m);
   rotMenuPrincipal(m, id);
   setTimeout(function(){ document.addEventListener('click', rotCerrarMenu, { once:true }); }, 0);
 }
@@ -41259,7 +41308,7 @@ function rotMenuPrincipal(m, id){
   var html =
     '<div class="rt-menu-tit">' + esc(esVacia ? 'Descanso' : t.nombre) + ' · ' + esc(fechaCorta(fecha)) + '</div>' +
     '<button type="button" class="rt-menu-it' + (!ROT.propio[id] ? ' on' : '') + '" data-mdef="1">' +
-      (esVacia ? 'Dejar en descanso' : 'Usar lo de arriba') + '</button>' +
+      (esVacia ? 'Dejar en descanso' : 'Dejar como está') + '</button>' +
     '<div class="rt-menu-rot">' + (esVacia ? 'Trabajar en' : 'Pasarlo a') + '</div>' +
     ROT.turnos.map(function(x){
       if(!esVacia && x.nombre === t.turno) return '';
@@ -41290,15 +41339,16 @@ function rotMenuPrincipal(m, id){
   rotMenuPos(m);
 
   m.querySelectorAll('[data-mdef]').forEach(function(b){
+    /* Sin cambio: la celda deja de estar marcada. */
     b.onclick = function(){ rotSoltarPareja(id); delete ROT.propio[id];
-      if(t.vacia) delete ROT.sel[id];   /* descanso sin elección = sin cambio */
+      delete ROT.sel[id]; delete ROT.grupo[id];
       rotCerrarMenu(); rotPintar(); };
   });
   m.querySelectorAll('[data-mturno]').forEach(function(b){
     b.onclick = function(){
       rotSoltarPareja(id);
       ROT.propio[id] = { tipo:'turno', turno: b.dataset.mturno };
-      ROT.sel[id] = 1;
+      ROT.sel[id] = 1; delete ROT.grupo[id];
       rotCerrarMenu(); rotPintar();
     };
   });
@@ -41306,7 +41356,7 @@ function rotMenuPrincipal(m, id){
     b.onclick = function(){
       rotSoltarPareja(id);
       ROT.propio[id] = { tipo:'descanso' };
-      ROT.sel[id] = 1;
+      ROT.sel[id] = 1; delete ROT.grupo[id];
       rotCerrarMenu(); rotPintar();
     };
   });
@@ -41329,6 +41379,7 @@ function rotMenuPrincipal(m, id){
       ROT.propio[id] = { tipo:'swap', con: con };
       ROT.propio[idOtra] = { tipo:'swap', con: t.persona };
       ROT.sel[id] = 1; ROT.sel[idOtra] = 1;
+      delete ROT.grupo[id]; delete ROT.grupo[idOtra];
       rotCerrarMenu(); rotPintar();
     };
   });
@@ -41369,7 +41420,7 @@ function rotMenuHoras(m, id){
     if(!ini || !fin){ document.getElementById('rh-err').textContent = 'Ponga la hora de entrada y la de salida.'; return; }
     rotSoltarPareja(id);
     ROT.propio[id] = { tipo:'horas', turno: nom, inicio: ini, fin: fin, almuerzo: alm };
-    ROT.sel[id] = 1;
+    ROT.sel[id] = 1; delete ROT.grupo[id];
     rotCerrarMenu(); rotPintar();
   };
 }
@@ -41432,18 +41483,95 @@ function rotGuardarExtra(m, id, boton){
     if(!cuerpo.minutos){ err.textContent = 'Ponga cuántos minutos de hora extra.'; return; }
   }
   err.textContent = '';
-  boton.disabled = true; boton.textContent = 'Guardando…';
-  pedir(cuerpo, 120)
-    .then(function(d){
-      if(d && d.turnos && !fusionarSemana(ROT.area, ROT.semana, d.turnos, d.extras)){ P.turnos = {}; FRESCO = {}; }
-      rotCerrarMenu();
-      cerrarMover();
-      verMes(ROT.area, MES_VIENDO || ROT.semana, !(d && d.turnos));
+  var area = ROT.area, semana = ROT.semana;
+  rotCerrarMenu();
+  /* Antes de guardar se muestra cómo queda. */
+  rotConfirmar('¿Guardar esta hora extra?', 'Revise cómo queda antes de guardar.',
+    [{ quien: t.nombre, dia: t.fecha, antes: rotTxtTurno(t),
+       queda: rotTxtExtra(t, lado, cuerpo.minutos, cuerpo.inicio, cuerpo.fin) + ' · motivo: ' + motivo }],
+    '', 'Guardar hora extra')
+    .then(function(si){
+      if(!si) return;
+      rotAvisoGuardando('Guardando la hora extra…');
+      return pedir(cuerpo, 120).then(function(d){
+        rotTrasGuardar(area, semana, d, 'Hora extra guardada: ' + t.nombre + ', ' + fechaCorta(t.fecha) + '.');
+      });
     })
-    .catch(function(e){
-      err.textContent = e.message || 'No se pudo guardar la hora extra.';
-      boton.disabled = false; boton.textContent = 'Guardar hora extra';
+    .catch(function(e){ rotAvisoGuardando(''); alert(e.message || 'No se pudo guardar la hora extra.'); });
+}
+
+/* ── CONFIRMAR ANTES DE GUARDAR ────────────────────────────────────
+   Cada cambio con cómo está y cómo queda, y las horas de la semana de
+   cada persona antes y después. Devuelve una promesa: true si confirma. */
+function rotConfirmar(titulo, sub, filas, pie, textoOk){
+  return new Promise(function(resolve){
+    var cont = $p('per-mover-modal') || document.body;
+    var ov = document.createElement('div');
+    ov.className = 'rt-conf';
+    ov.innerHTML = '<div class="rt-conf-caja">' +
+      '<div class="rt-conf-tit">' + esc(titulo) + '</div>' +
+      (sub ? '<div class="rt-conf-sub">' + esc(sub) + '</div>' : '') +
+      '<table><thead><tr><th>Quién</th><th>Día</th><th>Ahora</th><th>Queda</th></tr></thead><tbody>' +
+        filas.map(function(f){
+          return '<tr><td>' + esc(f.quien) + '</td><td>' + esc(fechaCorta(f.dia)) + '</td>' +
+            '<td class="antes">' + esc(f.antes) + '</td><td class="queda">' + esc(f.queda) + '</td></tr>';
+        }).join('') +
+      '</tbody></table>' +
+      (pie ? '<div class="rt-conf-hs">' + pie + '</div>' : '') +
+      '<div class="rt-conf-btns"><button type="button" data-r="0">Volver a editar</button>' +
+        '<button type="button" class="si" data-r="1">' + esc(textoOk || 'Confirmar y guardar') + '</button></div>' +
+    '</div>';
+    ov.addEventListener('click', function(ev){
+      ev.stopPropagation();
+      var b = ev.target.closest('button[data-r]');
+      if(b){ ov.remove(); resolve(b.dataset.r === '1'); }
     });
+    cont.appendChild(ov);
+  });
+}
+function rotTxtTurno(t){
+  if(!t || !t.inicio) return 'descanso';
+  return (t.turno || 'Horario') + ' ' + t.inicio + '–' + t.fin;
+}
+function rotTxtExtra(t, lado, minutos, ini, fin){
+  if(lado === 'aparte') return 'hora extra aparte ' + ini + '–' + fin;
+  return 'hora extra ' + textoHoras((Number(minutos) || 0) / 60) + (lado === 'antes' ? ' antes' : ' después') +
+    (t.inicio ? ' (' + (lado === 'antes' ? rotSumarMin(t.inicio, -minutos) + '–' + t.fin
+                                         : t.inicio + '–' + rotSumarMin(t.fin, minutos)) + ')' : '');
+}
+/* Mientras se guarda, el botón del pie lo dice; el editor sigue a la vista. */
+function rotAvisoGuardando(txt){
+  var b = $p('rt-aplicar');
+  if(!b) return;
+  if(txt){ b.disabled = true; b.textContent = txt; }
+  else { b.disabled = !Object.keys((ROT && ROT.sel) || {}).length; b.textContent = 'Revisar y guardar'; }
+}
+
+/* ── DESPUÉS DE GUARDAR: SE QUEDA EN EL EDITOR ─────────────────────
+   Antes se cerraba el editor y, al cerrarlo, se borraba el área que se
+   estaba editando: el cuadro principal ya no se podía repintar y seguía
+   mostrando lo de antes. Ahora: lo guardado entra al cuadro principal
+   (sin mover la pantalla) y el editor se vuelve a armar con lo nuevo, en
+   la misma semana, con un aviso de qué se guardó. */
+function rotTrasGuardar(area, semana, d, mensaje){
+  var mes = MES_VIENDO || semana;
+  var clave = area + '|' + semanasDelCuadro(mes)[0];
+  if(d && d.turnos){
+    if(!fusionarSemana(area, semana, d.turnos, d.extras)){
+      P.turnos[clave] = d.turnos;
+      if(d.extras) EXTRAS[area] = d.extras;
+    }
+  }
+  var y = window.scrollY;
+  delete FRESCO[clave];
+  verMes(area, mes, true);
+  window.scrollTo(0, y);
+  var a = areaPorNombre(area);
+  if(a && $p('rt-panel') && $p('per-mover-modal').classList.contains('open')){
+    montarRotador(a, semana);
+    var ok = $p('rt-ok');
+    if(ok){ ok.textContent = '✓ ' + mensaje; ok.style.display = ''; }
+  }
 }
 
 function rotCerrarMenu(){
@@ -41524,7 +41652,13 @@ function rotPintar(){
   }
   /* El botón se habilita si hay algo marcado; si lo marcado no produce
      cambios reales, al aplicar se avisa. */
-  if(btn){ btn.disabled = !n; btn.textContent = cambios ? 'Aplicar (' + cambios + ')' : 'Aplicar'; }
+  if(btn){ btn.disabled = !n; btn.textContent = cambios ? 'Revisar y guardar (' + cambios + ')' : 'Revisar y guardar'; }
+  /* La lista de acciones solo aparece con algo marcado en grupo. */
+  var ng = Object.keys(ROT.grupo || {}).length;
+  var split = document.querySelector('#rt-panel .rt-split');
+  if(split) split.classList.toggle('sin-acciones', !ng);
+  var tit = $p('rt-acc-tit');
+  if(tit) tit.textContent = 'Qué hacer con ' + (ng === 1 ? 'la celda marcada' : 'las ' + ng + ' celdas marcadas');
 }
 
 function aplicarRotacion(boton){
@@ -41552,18 +41686,53 @@ function aplicarRotacion(boton){
     return;
   }
   err.textContent = '';
-  boton.disabled = true; boton.textContent = 'Aplicando…';
-  pedir({ accion:'perSemanaCuadro', area: ROT.area, semana: ROT.semana,
-          cambios: cambios, quien: quienSoy(),
-          nota: 'editado por ' + (quienSoy() || 'sin identificar') }, 120)
-    .then(function(d){
-      if(d && d.turnos && !fusionarSemana(ROT.area, ROT.semana, d.turnos, d.extras)){ P.turnos = {}; FRESCO = {}; }
-      cerrarMover();
-      rotRefrescarGeneral(ROT.area, MES_VIENDO || ROT.semana);
+  var area = ROT.area, semana = ROT.semana;
+
+  /* Cómo queda: cada cambio (ahora → queda) y las horas de la semana de
+     cada persona antes y después. */
+  var filas = [], horas = {};
+  var hsDe = function(x){ return x && x.inicio && x.fin ? horasTurno(x.inicio, x.fin, Number(x.almuerzo) || 0) : 0; };
+  Object.keys(ROT.celdas).forEach(function(id){
+    var t = ROT.celdas[id];
+    var h = horas[t.persona] || (horas[t.persona] = { nombre: t.nombre, antes: 0, despues: 0 });
+    h.antes += hsDe(t);
+  });
+  var cambiado = {};
+  cambios.forEach(function(c){
+    var t = ROT.celdas[c.persona + '|' + c.fecha];
+    cambiado[c.persona + '|' + c.fecha] = c;
+    filas.push({ quien: t.nombre, dia: c.fecha, antes: rotTxtTurno(t),
+                 queda: c.quitar ? 'descanso' : rotTxtTurno(c) + ' · ' + numeroHoras(hsDe(c)) });
+  });
+  Object.keys(ROT.celdas).forEach(function(id){
+    var t = ROT.celdas[id], c = cambiado[id];
+    horas[t.persona].despues += c ? (c.quitar ? 0 : hsDe(c)) : hsDe(t);
+  });
+  filas.sort(function(x, y){ return String(x.quien).localeCompare(String(y.quien), 'es') || (x.dia < y.dia ? -1 : 1); });
+  var pie = Object.keys(horas).filter(function(k){
+    return cambios.some(function(c){ return c.persona === k; });
+  }).map(function(k){
+    var h = horas[k];
+    return 'Horas de la semana de <b>' + esc(h.nombre) + '</b>: ' + numeroHoras(h.antes) + ' → <b>' + numeroHoras(h.despues) + '</b>';
+  }).join('<br>');
+
+  rotConfirmar(cambios.length === 1 ? '¿Guardar este cambio?' : '¿Guardar estos ' + cambios.length + ' cambios?',
+               'Así queda la semana del ' + fechaCorta(semana) + ' en ' + area + '.', filas, pie, 'Confirmar y guardar')
+    .then(function(si){
+      if(!si) return;
+      boton.disabled = true; boton.textContent = 'Guardando…';
+      return pedir({ accion:'perSemanaCuadro', area: area, semana: semana,
+                     cambios: cambios, quien: quienSoy(),
+                     nota: 'editado por ' + (quienSoy() || 'sin identificar') }, 120)
+        .then(function(d){
+          rotTrasGuardar(area, semana, d, cambios.length === 1 ? 'Se guardó 1 cambio.' : 'Se guardaron ' + cambios.length + ' cambios.');
+        });
     })
     .catch(function(e){
-      err.textContent = e.message || 'No se pudo aplicar.';
-      boton.disabled = false; boton.textContent = 'Aplicar';
+      var er = $p('rt-acc-err') || err;
+      if(er) er.textContent = e.message || 'No se pudo guardar.';
+      rotAvisoGuardando('');
+      alert(e.message || 'No se pudo guardar.');
     });
 }
 
@@ -41611,26 +41780,36 @@ function rotAplicarExtra(boton){
     return;
   }
 
-  boton.disabled = true; boton.textContent = 'Guardando…';
-  var i = 0, ultimo = null;
-  var siguiente = function(){
-    if(i >= trabajos.length){
-      if(ultimo && ultimo.turnos && !fusionarSemana(ROT.area, ROT.semana, ultimo.turnos, ultimo.extras)){ P.turnos = {}; FRESCO = {}; }
-      cerrarMover();
-      rotRefrescarGeneral(ROT.area, MES_VIENDO || ROT.semana);
-      return;
-    }
-    var w = trabajos[i++], t = w.t;
-    var cuerpo = { accion:'perExtraGuardar', area: ROT.area, fecha: t.fecha, persona: t.persona,
-                   turno: t.turno || '', lado: lado, motivo: motivo, quien: quienSoy() };
-    if(lado === 'aparte'){ cuerpo.inicio = ini; cuerpo.fin = fin; } else { cuerpo.minutos = w.min; }
-    pedir(cuerpo, 120).then(function(d){ ultimo = d; siguiente(); })
-      .catch(function(e){
-        if(err) err.textContent = (e.message || 'No se pudo guardar la hora extra.') + ' (se guardaron ' + (i - 1) + ')';
-        boton.disabled = false; boton.textContent = 'Aplicar';
-      });
-  };
-  siguiente();
+  var area = ROT.area, semana = ROT.semana;
+  var filas = trabajos.map(function(w){
+    return { quien: w.t.nombre, dia: w.t.fecha, antes: rotTxtTurno(w.t),
+             queda: rotTxtExtra(w.t, lado, w.min, ini, fin) };
+  });
+  rotConfirmar(trabajos.length === 1 ? '¿Guardar esta hora extra?' : '¿Guardar ' + trabajos.length + ' horas extra?',
+               'Motivo: ' + motivo + (omitidas ? ' · ' + omitidas + ' marcadas no quedan con hora extra y se omiten.' : ''),
+               filas, '', 'Confirmar y guardar')
+    .then(function(si){
+      if(!si) return;
+      boton.disabled = true; boton.textContent = 'Guardando…';
+      var i = 0, ultimo = null;
+      var siguiente = function(){
+        if(i >= trabajos.length){
+          rotTrasGuardar(area, semana, ultimo, trabajos.length === 1 ? 'Se guardó 1 hora extra.'
+                                                 : 'Se guardaron ' + trabajos.length + ' horas extra.');
+          return;
+        }
+        var w = trabajos[i++], t = w.t;
+        var cuerpo = { accion:'perExtraGuardar', area: area, fecha: t.fecha, persona: t.persona,
+                       turno: t.turno || '', lado: lado, motivo: motivo, quien: quienSoy() };
+        if(lado === 'aparte'){ cuerpo.inicio = ini; cuerpo.fin = fin; } else { cuerpo.minutos = w.min; }
+        pedir(cuerpo, 120).then(function(d){ ultimo = d; siguiente(); })
+          .catch(function(e){
+            if(err) err.textContent = (e.message || 'No se pudo guardar la hora extra.') + ' (se guardaron ' + (i - 1) + ')';
+            rotAvisoGuardando('');
+          });
+      };
+      siguiente();
+    });
 }
 
 function aplicarAjusteSemana(boton){
@@ -44192,7 +44371,11 @@ var EXTRAS = {};
    cada movimiento de horas extra. */
 function quienSoy(){
   try {
-    var u = window._usuarioActual;
+    /* El usuario conectado NO está en 'window' (es una variable suelta del
+       documento). Leerlo de window daba siempre vacío y las horas extra
+       quedaban "sin identificar" aunque hubiera sesión. */
+    var u = (typeof _usuarioActual !== 'undefined' && _usuarioActual) ? _usuarioActual
+          : (window._usuarioActual || null);
     return (u && (u.nombre || u.usuario)) || 'sin identificar';
   } catch(e){ return 'sin identificar'; }
 }
