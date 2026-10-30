@@ -40884,7 +40884,7 @@ function turnosDeSemana(area, semana){
 
 function montarRotador(a, semana){
   var turnos = (a.turnos || []).filter(function(t){ return t.nombre; });
-  var dela = turnosDeSemana(a.nombre, semana);
+  var dela = sinBajasEnteras(turnosDeSemana(a.nombre, semana));
   var caja = $p('rt-panel');
   if(!caja) return;
 
@@ -40934,7 +40934,8 @@ function montarRotador(a, semana){
      semana): solo a esas les toca la acción de la lista. Lo elegido en el
      menú de una celda va aparte, en 'propio', y la lista no lo pisa. */
   ROT = { area: a.nombre, semana: semana, turnos: turnos, gente: gente, celdas: porCelda,
-          sel: {}, propio: {}, grupo: {}, destino: '1', accion: 'rotar-sig', param: {} };
+          sel: {}, propio: {}, grupo: {}, destino: '1', accion: 'rotar-sig', param: {},
+          general: a.modo === 'general' ? a : null };
 
   var colores = coloresDe(dela);
   var fechas = [];
@@ -41389,6 +41390,27 @@ function rotMenuNoCerrar(m){
   m.addEventListener('click', function(ev){ ev.stopPropagation(); });
 }
 
+/* El horario del área general para una fecha: el del día con otro
+   horario si lo hay; si no, el de siempre en los días del área. */
+function rotHorarioArea(fecha){
+  var a = ROT && ROT.general;
+  if(!a || !a.horaInicio || !a.horaFin) return null;
+  var letra = DIAS_LETRA[(Math.round((new Date(fecha + 'T12:00:00') - new Date(ROT.semana + 'T12:00:00')) / 864e5) % 7 + 7) % 7];
+  var esp = null;
+  (a.especiales || []).forEach(function(e){
+    if(e.fecha === fecha) esp = e;
+    else if(!e.fecha && e.dia === letra && !esp) esp = e;
+  });
+  var almG = (a.almuerzoGeneral && Number(a.almuerzoGeneral.min)) || 0;
+  if(esp && esp.inicio && esp.fin){
+    var b0 = esp.bloques && esp.bloques[0];
+    return { inicio: hhmm(esp.inicio), fin: hhmm(esp.fin),
+             almuerzo: (b0 && b0.almuerzo != null) ? (Number(b0.almuerzo) || 0) : almG };
+  }
+  if(String(a.dias || '').split(',').indexOf(letra) < 0) return null;
+  return { inicio: hhmm(a.horaInicio), fin: hhmm(a.horaFin), almuerzo: almG };
+}
+
 function rotMenuPrincipal(m, id){
   var t = ROT.celdas[id];
   var fecha = t.fecha;
@@ -41396,18 +41418,27 @@ function rotMenuPrincipal(m, id){
   var esVacia = !!t.vacia;
 
   /* Con quién se puede cambiar: los que ese día tienen otro turno (solo
-     tiene sentido si esta celda tiene turno). */
+     tiene sentido si esta celda tiene turno). Otro turno es otras horas,
+     no otro nombre: "Mañana 06–18" y "Mañana 06–14" sí se cambian. */
   var otros = esVacia ? [] : ROT.gente.filter(function(p){
     if(p.clave === t.persona) return false;
     var o = ROT.celdas[p.clave + '|' + fecha];
-    return o && o.inicio && o.turno !== t.turno;
+    return o && o.inicio && (o.turno !== t.turno || o.inicio !== t.inicio || o.fin !== t.fin);
   });
 
+  /* El horario del área ese día (o el del día con otro horario): sin él,
+     un día en blanco del horario general solo se podía llenar a mano. */
+  var hzArea = rotHorarioArea(fecha);
+  var difArea = hzArea && (esVacia || t.inicio !== hzArea.inicio || t.fin !== hzArea.fin ||
+                           Number(t.almuerzo || 0) !== hzArea.almuerzo);
   var html =
     '<div class="rt-menu-tit">' + esc(esVacia ? 'Descanso' : t.nombre) + ' · ' + esc(fechaCorta(fecha)) + '</div>' +
     '<button type="button" class="rt-menu-it' + (!ROT.propio[id] ? ' on' : '') + '" data-mdef="1">' +
       (esVacia ? 'Dejar en descanso' : 'Dejar como está') + '</button>' +
     '<div class="rt-menu-rot">' + (esVacia ? 'Trabajar en' : 'Pasarlo a') + '</div>' +
+    (difArea ? '<button type="button" class="rt-menu-it' + (propio.tipo === 'horas' && propio.delArea ? ' on' : '') + '" data-marea="1">' +
+      'Horario del área<span>' + esc(hzArea.inicio) + '–' + esc(hzArea.fin) +
+      (hzArea.almuerzo ? ' · almuerzo ' + hzArea.almuerzo + ' min' : ' · sin almuerzo') + '</span></button>' : '') +
     ROT.turnos.map(function(x){
       if(!esVacia && x.nombre === t.turno) return '';
       return '<button type="button" class="rt-menu-it' + (propio.tipo === 'turno' && propio.turno === x.nombre ? ' on' : '') +
@@ -41456,6 +41487,15 @@ function rotMenuPrincipal(m, id){
     b.onclick = function(){
       rotSoltarPareja(id);
       ROT.propio[id] = { tipo:'turno', turno: b.dataset.mturno };
+      ROT.sel[id] = 1; delete ROT.grupo[id];
+      rotCerrarMenu(); rotPintar();
+    };
+  });
+  m.querySelectorAll('[data-marea]').forEach(function(b){
+    b.onclick = function(){
+      rotSoltarPareja(id);
+      ROT.propio[id] = { tipo:'horas', delArea: true, turno: 'Horario', inicio: hzArea.inicio, fin: hzArea.fin,
+                         almuerzo: hzArea.almuerzo };
       ROT.sel[id] = 1; delete ROT.grupo[id];
       rotCerrarMenu(); rotPintar();
     };
@@ -42910,8 +42950,8 @@ function abrirArea(a){
     nombre: a ? a.nombre : '',
     modo: a ? a.modo : 'general',
     dias: a ? String(a.dias || '').split(',').filter(Boolean) : ['L','M','X','J','V'],
-    horaInicio: (a && a.horaInicio) || '07:00',
-    horaFin: (a && a.horaFin) || '17:00',
+    horaInicio: hhmm((a && a.horaInicio) || '07:00'),
+    horaFin: hhmm((a && a.horaFin) || '17:00'),
     horarios: (a && a.horarios) ? JSON.parse(JSON.stringify(a.horarios)) : {},
     turnos: (a && a.turnos && a.turnos.length)
       ? a.turnos.map(function(t){ return { nombre:t.nombre, inicio:t.inicio, fin:t.fin, dias:t.dias || TODOS_LOS_DIAS,
@@ -44195,7 +44235,10 @@ function verCuadro(){
     area: { nombre: AREA_FORM.nombre || 'Área nueva', dias: AREA_FORM.dias.join(','),
             turnos: AREA_FORM.turnos, cobertura24: AREA_FORM.cobertura24,
             inicial: AREA_FORM.inicial },
-    personas: AREA_FORM.personas, semana: semana
+    personas: AREA_FORM.personas.filter(function(c){
+      var g = P.gente.filter(function(p){ return p.clave === c; })[0];
+      return !g || g.activo !== false;
+    }), semana: semana
   }).then(function(d){
     caja.innerHTML = cuadroChico(d.turnos || [], semana, d.faltoGente);
   }).catch(function(e){
@@ -44210,7 +44253,9 @@ function verCuadro(){
    Es exactamente lo que después queda guardado. */
 function cuadroDeHorarios(semana){
   var salida = [];
-  var marcados = P.gente.filter(function(p){ return AREA_FORM.personas.indexOf(p.clave) > -1; })
+  /* Quien está dado de baja no trabaja: el servidor le pone "Dado de
+     baja" con 0 h, así que el cuadro previo tampoco lo cuenta. */
+  var marcados = P.gente.filter(function(p){ return AREA_FORM.personas.indexOf(p.clave) > -1 && p.activo !== false; })
                         .sort(function(a, b){ return String(a.nombre).localeCompare(String(b.nombre), 'es'); });
   var general = AREA_FORM.modo !== 'personalizado';
   var diasArea = (AREA_FORM.dias || []).slice();
@@ -44247,13 +44292,15 @@ function cuadroDeHorarios(semana){
       if(!esp && dias.indexOf(letra) < 0) return;
       var ini = esp ? esp.inicio : hz.inicio;
       var fin = esp ? esp.fin : hz.fin;
+      var alm = (esp && esp.bloques && esp.bloques.length && esp.bloques[0].almuerzo != null)
+        ? (Number(esp.bloques[0].almuerzo) || 0) : (Number(hz.almuerzo) || 0);
       salida.push({ area: AREA_FORM.nombre || 'Área nueva', semana: semana, fecha: f,
                     dia: DIAS_NOMBRE[letra], turno: hz.nombre || 'Horario',
                     inicio: ini, fin: fin,
                     persona: p.clave, nombre: p.nombre,
-                    almuerzo: Number(hz.almuerzo) || 0,
+                    almuerzo: alm,
                     ajuste: esp ? 'otro horario ese día' : '',
-                    horas: horasTurno(ini, fin, hz.almuerzo) });
+                    horas: horasTurno(ini, fin, alm) });
     });
   });
   return salida;
@@ -44851,7 +44898,20 @@ function perEsNoche(inicio, fin){
   if(isNaN(i) || isNaN(f)) return false;
   return f < i || i >= 20 || f <= 6;
 }
+/* Quien está "Dado de baja" los siete días ya no es parte del área: no se
+   muestra. Si la baja cae a mitad de semana sí sale, para ver hasta
+   cuándo trabajó. */
+function sinBajasEnteras(turnos){
+  var trabaja = {};
+  (turnos || []).forEach(function(t){
+    var baja = !t.inicio && /dado de baja/i.test(String(t.turno || '') + ' ' + String(t.ajuste || ''));
+    if(!baja) trabaja[t.persona || t.nombre] = 1;
+  });
+  return (turnos || []).filter(function(t){ return trabaja[t.persona || t.nombre]; });
+}
+
 function tablaSemana(turnos, semana){
+  turnos = sinBajasEnteras(turnos);
   var fechas = [], vistas = {};
   turnos.forEach(function(t){ if(!vistas[t.fecha]){ vistas[t.fecha] = 1; fechas.push(t.fecha); } });
   fechas.sort();
