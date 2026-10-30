@@ -44414,6 +44414,7 @@ function verMes(area, fecha, forzar){
       ESTADO_TURNOS = '';
       if(!P.turnos[clave] || JSON.stringify(t) !== JSON.stringify(P.turnos[clave])) pintarlo(t);
       else { caja.innerHTML = cuadroMes(area, t); repintarDesglose(); engancharMes(); }
+      ponerAlDiaSiHaceFalta(area, t);
     })
     .catch(function(e){
       ESTADO_TURNOS = 'error:' + (e.message || 'no se pudo');
@@ -44649,6 +44650,33 @@ function planearSiFalta(area){
     });
 }
 
+/* Si el cuadro trae gente que ya salió del área (o le falta la que
+   entró), se rearma solo de hoy en adelante: quien sacó a alguien del
+   área ya decidió, no hay nada que preguntarle. Una vez por área y por
+   sesión, para que nunca quede dando vueltas. */
+var AL_DIA = {};
+function ponerAlDiaSiHaceFalta(area, turnos){
+  if(AL_DIA[area] || !desfaseDe(area, turnos)) return;
+  AL_DIA[area] = true;
+  ESTADO_TURNOS = 'aviso:Actualizando el cuadro con el personal actual del área…';
+  if(AREA_VIENDO === area){ $p('ar-turnos').innerHTML = cuadroMes(area, turnos); repintarDesglose(); engancharMes(); }
+  pedir({ accion:'perRearmar', area: area, quien: quienSoy() }, 90)
+    .then(function(d){
+      if(d.extras) EXTRAS[area] = d.extras;
+      Object.keys(P.turnos).forEach(function(k){ if(k.indexOf(area + '|') === 0) delete P.turnos[k]; });
+      FRESCO = {};
+      guardarLocal();
+      ESTADO_TURNOS = '';
+      if(AREA_VIENDO === area) verMes(area, MES_VIENDO, true);
+    })
+    .catch(function(e){
+      var msg = e.message || 'no se pudo';
+      if(/no reconocida/i.test(msg)) msg = 'falta publicar la versión nueva del código de Personal';
+      ESTADO_TURNOS = 'error:No se pudo actualizar el cuadro con el personal del área: ' + msg;
+      if(AREA_VIENDO === area){ $p('ar-turnos').innerHTML = cuadroMes(area, turnos); repintarDesglose(); engancharMes(); }
+    });
+}
+
 /* ¿Las semanas armadas tienen la gente que HOY tiene el área? Si alguien
    entró o salió después de armarlas, el cuadro seguía mostrando a los de
    antes sin decir nada. Solo se mira de hoy en adelante. */
@@ -44682,7 +44710,6 @@ function desfaseDe(area, turnos){
 function cuadroMes(area, turnos){
   var lunes = semanasDelCuadro(MES_VIENDO);
   var hoy = isoDe(new Date()), estaSemana = lunesDe(hoy);
-  var desfase = desfaseDe(area, turnos);
   var h = '<div class="tn-caja">' +
     '<div class="mes-barra">' +
       calendarioHtml(turnos) +
@@ -44699,15 +44726,6 @@ function cuadroMes(area, turnos){
         '</div>' +
       '</div>' +
     '</div>';
-  if(desfase){
-    var dif = [];
-    if(desfase.sobran.length) dif.push('aparece' + (desfase.sobran.length > 1 ? 'n' : '') + ' <b>' +
-      desfase.sobran.map(esc).join(', ') + '</b>, que ya no ' + (desfase.sobran.length > 1 ? 'son' : 'es') + ' del área');
-    if(desfase.faltan.length) dif.push('falta' + (desfase.faltan.length > 1 ? 'n' : '') + ' <b>' +
-      desfase.faltan.map(esc).join(', ') + '</b>');
-    h += '<div class="mes-desfase">De hoy en adelante el cuadro no coincide con el personal del área: ' +
-      dif.join('; ') + '.<button type="button" id="mes-rearmar">Poner al día</button></div>';
-  }
 
   var proxima = sumarDias(estaSemana, 7);
   /* Cada semana con su color: es lo que permite ubicarse sin leer. */
@@ -45462,28 +45480,6 @@ function engancharMes(){
     PLANEADAS[AREA_VIENDO] = false; ESTADO_TURNOS = ''; verMes(AREA_VIENDO, MES_VIENDO, true);
   };
   if(b('mes-rotar'))   b('mes-rotar').onclick   = function(){ abrirMover({ origen: AREA_VIENDO }); };
-  if(b('mes-rearmar')) b('mes-rearmar').onclick = function(){
-    var area = AREA_VIENDO, boton = this;
-    if(!confirm('Se vuelven a armar, con el personal que hoy tiene ' + area + ', los días de hoy en adelante ' +
-                'de las semanas ya armadas.\n\nLos días anteriores a hoy quedan como están. Las horas extra se ' +
-                'vuelven a poner; los cambios hechos a mano en esos días se pierden.\n\n¿Poner al día?')) return;
-    boton.disabled = true; boton.textContent = 'Poniendo al día…';
-    pedir({ accion:'perRearmar', area: area, quien: quienSoy() }, 60)
-      .then(function(d){
-        if(d.extras) EXTRAS[area] = d.extras;
-        Object.keys(P.turnos).forEach(function(k){ if(k.indexOf(area + '|') === 0) delete P.turnos[k]; });
-        FRESCO = {};
-        guardarLocal();
-        ESTADO_TURNOS = '';
-        if(AREA_VIENDO === area) verMes(area, MES_VIENDO, true);
-      })
-      .catch(function(e){
-        var msg = e.message || 'No se pudo poner al día.';
-        if(/no reconocida/i.test(msg)) msg = 'Falta publicar la versión nueva del código de Personal (Copiar codigo PERSONAL.bat → Nueva versión).';
-        alert(msg);
-        boton.disabled = false; boton.textContent = 'Poner al día';
-      });
-  };
   if(b('mes-hoy'))     b('mes-hoy').onclick     = function(){ CAL_MES = ''; verMes(AREA_VIENDO, isoDe(new Date())); };
   if(b('mes-cerrar'))  b('mes-cerrar').onclick  = function(){
     AREA_VIENDO = ''; DESGLOSE = null; $p('ar-turnos').innerHTML = ''; soloTurnos(false);
