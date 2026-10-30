@@ -8027,6 +8027,17 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #per-area-modal .ar-lista label{display:flex;align-items:center;gap:9px;padding:6px 0;margin:0;
   font-size:13px;font-weight:400;letter-spacing:0;text-transform:none;color:var(--ink);border-bottom:1px solid #f4f4f4;cursor:pointer}
 #per-area-modal .ar-lista input{width:17px;height:17px}
+/* Los días de cada persona en el área (personal que rota entre áreas) */
+#per-area-modal .ar-pers{border-bottom:1px solid var(--rule-l)}
+#per-area-modal .ar-pers:last-child{border-bottom:none}
+#per-area-modal .ar-pers > label{border-bottom:none !important}
+#per-area-modal .ar-dp{display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:0 0 8px 26px}
+#per-area-modal .ar-dp-lb{font-size:11px;color:var(--ink-l);margin-right:4px}
+#per-area-modal .ar-dp-d{width:26px;height:24px;border-radius:6px;border:1px solid var(--rule);background:#fff;
+  color:#9aa09c;font-size:11.5px;font-weight:800;cursor:pointer;padding:0;font-family:'Source Sans 3',sans-serif}
+#per-area-modal .ar-dp-d.on{background:#1c5636;border-color:#1c5636;color:#fff}
+#per-area-modal .ar-dp-otras{flex-basis:100%;font-size:11.5px;color:var(--ink-m);line-height:1.5;margin-top:3px}
+#per-area-modal .ar-dp-otras .choca{color:#9a5b00;font-weight:700}
 #per-area-modal .ar-lista small{color:var(--ink-l);font-size:11.5px}
 #per-area-modal .per-btns{display:flex;gap:10px;margin-top:20px}
 #per-area-modal .per-btns button{flex:1;padding:12px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:none;cursor:pointer;font-family:'Source Sans 3',sans-serif}
@@ -8453,6 +8464,10 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
    todo y las opciones salen al tocar la celda. */
 #per-mover-modal .rt-split.sin-acciones{grid-template-columns:minmax(0,1fr)}
 #per-mover-modal .rt-split.sin-acciones .rt-acciones{display:none}
+#per-mover-modal .mv-dias{display:flex;flex-wrap:wrap;gap:5px;margin-top:3px}
+#per-mover-modal .mv-dia{min-width:32px;height:30px;padding:0 9px;border-radius:7px;border:1px solid var(--rule);
+  background:#fff;color:var(--ink-m);font-size:12.5px;font-weight:700;cursor:pointer;font-family:'Source Sans 3',sans-serif}
+#per-mover-modal .mv-dia.on{background:#1c5636;border-color:#1c5636;color:#fff}
 #per-mover-modal .rt-ok{background:#e8f4ec;color:#1c5636;border:1px solid #cfe5d8;border-radius:8px;
   padding:8px 11px;font-size:13px;font-weight:700;margin-bottom:9px}
 /* Confirmación antes de guardar: cómo queda cada cambio. */
@@ -40525,7 +40540,7 @@ function abrirMover(opciones){
   /* Dos sentidos cuando se abre desde un área: traer gente a esta área o
      sacarla de ella. Antes solo se podía lo segundo. */
   MOVER = { origen: o.origen || '', destino: o.origen || '', elegidas: [], efectivo: hoy,
-            incluirSemana: true, sentido: o.origen ? 'traer' : 'sacar' };
+            incluirSemana: true, sentido: o.origen ? 'traer' : 'sacar', dias: [] };
   if(o.persona) MOVER.elegidas = [o.persona];
 
   var unaPersona = o.persona ? P.gente.filter(function(p){ return p.clave === o.persona; })[0] : null;
@@ -40549,6 +40564,17 @@ function abrirMover(opciones){
       '<div id="mv-turno-caja" style="display:none">' +
         '<label>¿Qué turno entra a cubrir?</label><select id="mv-turno"></select>' +
       '</div>' +
+      /* Personal que rota: solo unos días de la semana en el área nueva.
+         Sin días marcados, el traslado es completo. */
+      '<label>¿Qué días?</label>' +
+      '<div class="mv-dias" id="mv-dias">' +
+        '<button type="button" class="mv-dia todos on" data-mvd="">Todos (traslado completo)</button>' +
+        DIAS_LETRA.map(function(d){
+          return '<button type="button" class="mv-dia" data-mvd="' + d + '" title="' + esc(DIAS_NOMBRE[d] || d) + '">' + d + '</button>';
+        }).join('') +
+      '</div>' +
+      '<div class="ayuda" id="mv-dias-ayuda">La persona deja su área y pasa entera a la nueva.</div>' +
+      (o.persona ? '<div class="ayuda" id="mv-hoy"></div>' : '') +
 
       '<label>Desde cuándo</label>' +
       '<input type="date" id="mv-efectivo" value="' + esc(hoy) + '">' +
@@ -40574,9 +40600,11 @@ function abrirMover(opciones){
     if(o.persona) return;
     var lista = P.gente.filter(function(p){
       if(p.activo === false) return false;
-      var esta = miembrosDe(o.origen || '').some(function(m){ return m.persona === p.clave; });
+      var suya = miembrosDe(o.origen || '').filter(function(m){ return m.persona === p.clave; })[0];
       if(!o.origen) return true;
-      return MOVER.sentido === 'traer' ? !esta : esta;
+      /* Para traer también sale quien está aquí solo unos días: así se le
+         pueden sumar otros. */
+      return MOVER.sentido === 'traer' ? (!suya || !!suya.dias) : !!suya;
     }).sort(function(a, b){ return String(a.nombre).localeCompare(String(b.nombre), 'es'); });
 
     MOVER.elegidas = [];
@@ -40647,8 +40675,45 @@ function abrirMover(opciones){
     };
   });
 
+  /* Los días: "Todos" es el traslado completo; marcar días lo vuelve
+     parcial y la persona sigue en sus otras áreas los demás días. */
+  var pintarDias = function(){
+    $p('mv-dias').querySelectorAll('[data-mvd]').forEach(function(b){
+      var d = b.dataset.mvd;
+      b.classList.toggle('on', d ? MOVER.dias.indexOf(d) > -1 : !MOVER.dias.length);
+    });
+    var lista = MOVER.dias.join(', ');
+    var saca = MOVER.sentido === 'sacar' && o.origen;
+    $p('mv-dias-ayuda').textContent = !MOVER.dias.length
+      ? (MOVER.fuera || (saca && !MOVER.destino) ? 'Sale del área todos los días.'
+                     : 'La persona deja su área y pasa entera a la nueva.')
+      : (MOVER.destino
+          ? 'Solo ' + lista + ' trabaja en ' + MOVER.destino + '. Esos días se le quitan de donde estaba; los demás sigue igual.'
+          : 'Solo ' + lista + ' deja de estar en ' + (o.origen || 'su área') + '; los demás días sigue ahí.');
+  };
+  $p('mv-dias').querySelectorAll('[data-mvd]').forEach(function(b){
+    b.onclick = function(){
+      var d = b.dataset.mvd;
+      if(!d) MOVER.dias = [];
+      else {
+        var k = MOVER.dias.indexOf(d);
+        if(k > -1) MOVER.dias.splice(k, 1); else MOVER.dias.push(d);
+        MOVER.dias = DIAS_LETRA.filter(function(x){ return MOVER.dias.indexOf(x) > -1; });
+      }
+      pintarDias(); revisarMover();
+    };
+  });
+  MOVER._pintarDias = pintarDias;
+  if(o.persona && $p('mv-hoy')){
+    var dondeEsta = P.miembros.filter(function(m){ return m.persona === o.persona; });
+    $p('mv-hoy').innerHTML = dondeEsta.length
+      ? 'Hoy está en: ' + dondeEsta.map(function(m){ return '<b>' + esc(m.area) + '</b> (' + diasDeMiembro(m).join(',') + ')'; }).join(' · ')
+      : 'Hoy no está en ninguna área.';
+  }
+
   pintarDestino();
   pintarCandidatas();
+  pintarDias();
   if(o.origen) $p('mv-guardar').textContent = 'Agregar';
   $p('mv-efectivo').onchange = function(){ MOVER.efectivo = this.value; revisarMover(); };
   $p('mv-semana').onchange = function(){ MOVER.incluirSemana = this.checked; revisarMover(); };
@@ -40681,15 +40746,18 @@ function revisarMover(){
   }
   caja.className = 'mv-aviso';
   caja.textContent = 'Revisando qué habría que rearmar…';
+  if(MOVER._pintarDias) MOVER._pintarDias();
   pedir({ accion:'perMoverPrueba', personas: MOVER.elegidas, destino: MOVER.destino,
-          efectivo: MOVER.efectivo, incluirSemana: MOVER.incluirSemana })
+          efectivo: MOVER.efectivo, incluirSemana: MOVER.incluirSemana,
+          dias: MOVER.dias.join(','), origen: MOVER.origen })
     .then(function(d){
       var semanas = (d.detalle || []).reduce(function(t, x){ return t + (x.semanas || []).length; }, 0);
       var partes = [];
       var una = d.gente.length === 1;
       partes.push('<b>' + d.gente.length + (una ? ' persona' : ' personas') + '</b> ' +
         (MOVER.destino ? (una ? 'pasa' : 'pasan') + ' a <b>' + esc(MOVER.destino) + '</b>'
-                       : (una ? 'sale' : 'salen') + ' del área'));
+                       : (una ? 'sale' : 'salen') + ' del área') +
+        (MOVER.dias.length ? ' <b>solo ' + esc(MOVER.dias.join(', ')) + '</b>; los demás días sigue' + (una ? '' : 'n') + ' donde está' + (una ? '' : 'n') : ''));
       partes.push(semanas
         ? 'Se rearman <b>' + semanas + (semanas === 1 ? ' semana</b>' : ' semanas</b>') +
           ' de ' + (d.areas || []).map(esc).join(' y ') + '. Lo anterior queda como está.'
@@ -40714,6 +40782,7 @@ function hacerMover(boton){
   boton.textContent = MOVER.sentido === 'traer' ? 'Agregando…' : 'Moviendo…';
   pedir({ accion:'perMover', personas: MOVER.elegidas, destino: MOVER.destino,
           efectivo: MOVER.efectivo, incluirSemana: MOVER.incluirSemana,
+          dias: MOVER.dias.join(','), origen: MOVER.origen,
           inicial: ($p('mv-turno') && $p('mv-turno').value) || '',
           nota: ($p('mv-nota').value || '').trim(), quien: quienSoy() })
     .then(function(d){
@@ -40812,8 +40881,15 @@ function montarRotador(a, semana){
   if(!caja) return;
 
   if(!dela.length){
-    caja.innerHTML = '<div class="rt-vacio">Esta semana todavía no está armada. ' +
-      'Génerela desde el calendario y vuelva: la rotación trabaja sobre los turnos que ya existen.</div>';
+    /* Sin salida no: se ofrece generarla desde aquí mismo. */
+    caja.innerHTML = '<div class="rt-vacio">Esta semana todavía no está armada: la edición trabaja sobre ' +
+      'los turnos que ya existen. <button type="button" class="per-btn fuerte" id="rt-generar">Generar esta semana</button></div>';
+    $p('rt-generar').onclick = function(){
+      cerrarMover();
+      var b = document.querySelector('#ar-turnos [data-armar="' + semana + '"]');
+      if(b){ b.click(); try { b.scrollIntoView({ block:'center' }); } catch(e){} }
+      else verMes(a.nombre, semana, true);
+    };
     return;
   }
 
@@ -40872,7 +40948,8 @@ function montarRotador(a, semana){
         '<button type="button" class="rt-flecha" data-rtmenu="' + esc(p.clave) + '|' + f + '"' +
         ' title="Asignar turno u horas este día"></button></td>';
       /* Un día de novedad no tiene horas: no se rota, se respeta. */
-      if(!t || !t.inicio) return '<td class="rt-td"><span class="rt-nov">' + esc((t && t.turno) || 'novedad') + '</span></td>';
+      if(!t || !t.inicio) return '<td class="rt-td"><span class="rt-nov" title="Las novedades (incapacidad, permiso, vacaciones) ' +
+        'se cambian o se quitan en Colaboradores → Novedad de esta persona.">' + esc((t && t.turno) || 'novedad') + '</span></td>';
       var col = colores[claveColor(t.inicio, t.fin)] || '#e5e7eb';
       var cerrado = t.inicio && t.fin;
       var hpR = cerrado ? numeroHoras(t.horas || horasTurno(t.inicio, t.fin, t.almuerzo)) : '';
@@ -41024,7 +41101,8 @@ function rotRenderParams(acc){
           '<div><label>Entrada</label><input type="time" id="rtp-ini"></div>' +
           '<div><label>Salida</label><input type="time" id="rtp-fin"></div>' +
         '</div>' +
-        '<label>Motivo (obligatorio)</label><input type="text" id="rtp-motivo" placeholder="Escriba el motivo de la hora extra" maxlength="200">';
+        '<label>Motivo (obligatorio)</label><input type="text" id="rtp-motivo" placeholder="Escriba el motivo de la hora extra" maxlength="200">' +
+        '<label>Evidencia de la labor (foto, para aprobarla)</label><input type="file" id="rtp-foto" accept="image/*" capture="environment">';
   } else if(acc === 'descanso'){
     h = '<div class="rtp-nota">Los días marcados quedan en descanso (se les quita el turno).</div>';
   } else if(acc === 'swap'){
@@ -41071,6 +41149,17 @@ function rotRenderParams(acc){
   caja.querySelectorAll('input, select').forEach(function(el){
     el.oninput = guardar; el.onchange = guardar;
   });
+  /* La foto de evidencia de la hora extra en grupo: una para todo lo marcado. */
+  ROT.fotoEv = '';
+  if($p('rtp-foto')){
+    $p('rtp-foto').oninput = null;
+    $p('rtp-foto').onchange = function(){
+      var f = this.files && this.files[0];
+      if(!f){ ROT.fotoEv = ''; return; }
+      reducirFoto(f).then(function(u){ ROT.fotoEv = u; })
+        .catch(function(e){ var er = $p('rt-acc-err'); if(er) er.textContent = e.message || 'No se pudo leer la foto.'; });
+    };
+  }
   /* Botones "Poner / Quitar" del almuerzo: marcan la opción y actualizan el
      campo oculto que lee guardar(). */
   caja.querySelectorAll('[data-almacc]').forEach(function(b){
@@ -41447,6 +41536,8 @@ function rotMenuExtra(m, id){
     '</div>' +
     '<label class="rt-f2">Motivo (obligatorio)' +
       '<input type="text" id="rx-motivo" placeholder="Escriba el motivo de la hora extra" maxlength="200"></label>' +
+    '<label class="rt-f2">Evidencia de la labor (foto, para aprobarla)' +
+      '<input type="file" id="rx-foto" accept="image/*" capture="environment"></label>' +
     '<div class="rt-f2err" id="rx-err"></div>' +
     '<div class="rt-f2acc">' +
       '<button type="button" class="rt-f2cancel" data-rxcancel="1">Volver</button>' +
@@ -41461,6 +41552,13 @@ function rotMenuExtra(m, id){
     rotMenuPos(m);
   };
   m.querySelector('[data-rxcancel]').onclick = function(){ rotMenuPrincipal(m, id); };
+  m._foto = '';
+  document.getElementById('rx-foto').onchange = function(){
+    var f = this.files && this.files[0];
+    if(!f) return;
+    reducirFoto(f).then(function(u){ m._foto = u; })
+      .catch(function(e){ document.getElementById('rx-err').textContent = e.message || 'No se pudo leer la foto.'; });
+  };
   m.querySelector('[data-rxok]').onclick = function(b){ rotGuardarExtra(m, id, this); };
 }
 
@@ -41483,12 +41581,14 @@ function rotGuardarExtra(m, id, boton){
     if(!cuerpo.minutos){ err.textContent = 'Ponga cuántos minutos de hora extra.'; return; }
   }
   err.textContent = '';
+  if(m._foto) cuerpo.foto = m._foto;
   var area = ROT.area, semana = ROT.semana;
   rotCerrarMenu();
   /* Antes de guardar se muestra cómo queda. */
   rotConfirmar('¿Guardar esta hora extra?', 'Revise cómo queda antes de guardar.',
     [{ quien: t.nombre, dia: t.fecha, antes: rotTxtTurno(t),
-       queda: rotTxtExtra(t, lado, cuerpo.minutos, cuerpo.inicio, cuerpo.fin) + ' · motivo: ' + motivo }],
+       queda: rotTxtExtra(t, lado, cuerpo.minutos, cuerpo.inicio, cuerpo.fin) + ' · motivo: ' + motivo +
+              (cuerpo.foto ? ' · con foto de evidencia' : ' · sin foto (queda planeada)') }],
     '', 'Guardar hora extra')
     .then(function(si){
       if(!si) return;
@@ -41780,7 +41880,7 @@ function rotAplicarExtra(boton){
     return;
   }
 
-  var area = ROT.area, semana = ROT.semana;
+  var area = ROT.area, semana = ROT.semana, fotoEv = ROT.fotoEv || '';
   var filas = trabajos.map(function(w){
     return { quien: w.t.nombre, dia: w.t.fecha, antes: rotTxtTurno(w.t),
              queda: rotTxtExtra(w.t, lado, w.min, ini, fin) };
@@ -41802,6 +41902,7 @@ function rotAplicarExtra(boton){
         var cuerpo = { accion:'perExtraGuardar', area: area, fecha: t.fecha, persona: t.persona,
                        turno: t.turno || '', lado: lado, motivo: motivo, quien: quienSoy() };
         if(lado === 'aparte'){ cuerpo.inicio = ini; cuerpo.fin = fin; } else { cuerpo.minutos = w.min; }
+        if(fotoEv) cuerpo.foto = fotoEv;
         pedir(cuerpo, 120).then(function(d){ ultimo = d; siguiente(); })
           .catch(function(e){
             if(err) err.textContent = (e.message || 'No se pudo guardar la hora extra.') + ' (se guardaron ' + (i - 1) + ')';
@@ -42782,7 +42883,16 @@ function abrirArea(a){
       ? a.almuerzoGeneral.turnos.map(function(x){ return { ini: x.ini }; }) : [],
     almDe: (a && a.almuerzoGeneral && a.almuerzoGeneral.de)
       ? JSON.parse(JSON.stringify(a.almuerzoGeneral.de)) : {},
-    personas: a ? miembrosDe(a.nombre).map(function(m){ return m.persona; }) : []
+    personas: a ? miembrosDe(a.nombre).map(function(m){ return m.persona; }) : [],
+    /* Los días de cada quien en esta área. Sin entrada = todos los días
+       del área. Es lo que permite al personal que rota entre áreas. */
+    diasPersona: (function(){
+      var o = {};
+      if(a) miembrosDe(a.nombre).forEach(function(m){
+        if(m.dias) o[m.persona] = String(m.dias).split(',').filter(Boolean);
+      });
+      return o;
+    })()
   };
   /* Los horarios quedan numerados y la gente amarrada a su número antes
      de pintar nada: las áreas guardadas antes se amarran por nombre esta
@@ -43884,6 +43994,43 @@ function pintarTurnos(){
     });
   });
 }
+/* ── PERSONAL QUE ROTA ENTRE ÁREAS ─────────────────────────────────
+   Debajo de cada persona marcada, los días del área: los que tiene en
+   verde. Se tocan para quitar o poner. Al lado dice dónde más está y qué
+   días, y si alguno choca con estos (al guardar, esos días se le quitan
+   de la otra área: nadie queda en dos partes el mismo día). */
+function diasDeMiembro(m){
+  var a = areaPorNombre(m.area);
+  return String(m.dias || (a && a.dias) || '').split(',').filter(Boolean);
+}
+function choquesDe(clave){
+  var mios = AREA_FORM.diasPersona[clave] || AREA_FORM.dias;
+  var actual = AREA_EDIT ? AREA_EDIT.nombre : '';
+  return P.miembros.filter(function(m){
+    return m.persona === clave && m.area !== actual && m.area !== AREA_FORM.nombre;
+  }).map(function(m){
+    var suyos = diasDeMiembro(m);
+    return { area: m.area, dias: suyos,
+             choca: suyos.filter(function(d){ return mios.indexOf(d) > -1; }) };
+  });
+}
+function diasPersonaHtml(clave){
+  var delArea = AREA_FORM.dias;
+  var suyos = AREA_FORM.diasPersona[clave] || delArea;
+  var otras = choquesDe(clave);
+  return '<div class="ar-dp">' +
+    '<span class="ar-dp-lb">' + (AREA_FORM.diasPersona[clave] ? 'Aquí solo:' : 'Aquí todos los días:') + '</span>' +
+    delArea.map(function(d){
+      return '<button type="button" class="ar-dp-d' + (suyos.indexOf(d) > -1 ? ' on' : '') + '" data-dp="' + esc(clave) +
+        '" data-dl="' + d + '" title="' + esc(DIAS_NOMBRE[d] || d) + '">' + d + '</button>';
+    }).join('') +
+    (otras.length ? '<div class="ar-dp-otras">' + otras.map(function(o){
+      return 'También en <b>' + esc(o.area) + '</b> (' + o.dias.join(',') + ')' +
+        (o.choca.length ? ' · <span class="choca">al guardar deja ' + esc(o.area) + ' el ' + o.choca.join(',') + '</span>' : '');
+    }).join('<br>') + '</div>' : '') +
+  '</div>';
+}
+
 function pintarGenteArea(){
   var q = ($p('ar-f-buscar').value || '').trim().toLowerCase();
   var lista = P.gente.filter(function(p){
@@ -43893,20 +44040,36 @@ function pintarGenteArea(){
   }).sort(function(a,b){ return String(a.nombre).localeCompare(String(b.nombre), 'es'); });
 
   $p('ar-f-gente').innerHTML = lista.length ? lista.map(function(p){
-    return '<label><input type="checkbox" value="' + esc(p.clave) + '"' +
-      (AREA_FORM.personas.indexOf(p.clave) > -1 ? ' checked' : '') + '>' +
+    var marcada = AREA_FORM.personas.indexOf(p.clave) > -1;
+    return '<div class="ar-pers">' +
+      '<label><input type="checkbox" value="' + esc(p.clave) + '"' + (marcada ? ' checked' : '') + '>' +
       caritaPersona(p) +
-      '<span>' + esc(p.nombre) + (p.cargo ? ' <small>' + esc(p.cargo) + '</small>' : '') + '</span></label>';
+      '<span>' + esc(p.nombre) + (p.cargo ? ' <small>' + esc(p.cargo) + '</small>' : '') + '</span></label>' +
+      (marcada ? diasPersonaHtml(p.clave) : '') + '</div>';
   }).join('') : '<div class="ayuda" style="padding:8px 0">Sin resultados.</div>';
 
-  $p('ar-f-gente').querySelectorAll('input').forEach(function(c){
+  $p('ar-f-gente').querySelectorAll('input[type=checkbox]').forEach(function(c){
     c.onchange = function(){
       var k = AREA_FORM.personas.indexOf(c.value);
       if(c.checked && k < 0) AREA_FORM.personas.push(c.value);
-      if(!c.checked && k > -1) AREA_FORM.personas.splice(k, 1);
-      contarGenteArea();
-      pintarInicial();
+      if(!c.checked && k > -1){ AREA_FORM.personas.splice(k, 1); delete AREA_FORM.diasPersona[c.value]; }
+      pintarGenteArea();
       pintarPropios();
+    };
+  });
+  /* Los días de cada quien en esta área: tocar un día lo quita o lo pone. */
+  $p('ar-f-gente').querySelectorAll('[data-dp]').forEach(function(b){
+    b.onclick = function(){
+      var clave = b.dataset.dp, letra = b.dataset.dl;
+      var delArea = AREA_FORM.dias.slice();
+      var suyos = (AREA_FORM.diasPersona[clave] || delArea).slice();
+      var k = suyos.indexOf(letra);
+      if(k > -1) suyos.splice(k, 1); else suyos.push(letra);
+      suyos = DIAS_LETRA.filter(function(x){ return suyos.indexOf(x) > -1 && delArea.indexOf(x) > -1; });
+      if(!suyos.length){ alert('Debe quedar al menos un día. Para sacarla del área, desmárquela.'); return; }
+      if(suyos.length === delArea.length) delete AREA_FORM.diasPersona[clave];
+      else AREA_FORM.diasPersona[clave] = suyos;
+      pintarGenteArea();
     };
   });
   contarGenteArea();
@@ -44077,6 +44240,24 @@ function guardarArea(){
   if(AREA_FORM.modo === 'rotativo' && !AREA_FORM.turnos.length){ err.textContent = 'Un área por turnos necesita al menos un turno.'; return; }
   if(!AREA_FORM.personas.length){ err.textContent = 'Falta marcar quién trabaja en el área.'; return; }
 
+  /* Días de cada quien: solo los que el área trabaja. Y antes de guardar
+     se avisa a quién se le quitan días de otra área. */
+  var diasPersona = {};
+  AREA_FORM.personas.forEach(function(c){
+    var d = (AREA_FORM.diasPersona[c] || []).filter(function(x){ return AREA_FORM.dias.indexOf(x) > -1; });
+    if(d.length && d.length < AREA_FORM.dias.length) diasPersona[c] = d.join(',');
+  });
+  var avisos = [];
+  AREA_FORM.personas.forEach(function(c){
+    var p = window.personalPorClave && window.personalPorClave(c);
+    choquesDe(c).forEach(function(o){
+      if(o.choca.length) avisos.push('· ' + (p ? p.nombre : c) + ' deja ' + o.area + ' el ' + o.choca.join(',') +
+        (o.choca.length === o.dias.length ? ' (sale de esa área)' : ''));
+    });
+  });
+  if(avisos.length && !confirm('Nadie puede estar en dos áreas el mismo día. Al guardar:\n\n' + avisos.join('\n') +
+       '\n\nEsas áreas se rearman desde la semana siguiente. ¿Guardar?')) return;
+
   var b = $p('ar-f-guardar'); b.disabled = true; b.textContent = 'Guardando…';
   err.textContent = '';
   var cuerpo = { accion:'perAreaGuardar',
@@ -44094,7 +44275,7 @@ function guardarArea(){
                        porTurnos: !!AREA_FORM.almPorTurnos,
                        turnos: AREA_FORM.almPorTurnos ? AREA_FORM.almTurnos : [],
                        de: AREA_FORM.almPorTurnos ? AREA_FORM.almDe : {} },
-    personas: AREA_FORM.personas };
+    personas: AREA_FORM.personas, diasPersona: diasPersona };
   if(FOTO_AREA) cuerpo.foto = FOTO_AREA;
   var nombre = AREA_FORM.nombre, modo = AREA_FORM.modo, cuantas = AREA_FORM.semanas;
   pedir(cuerpo).then(function(d){
@@ -44637,7 +44818,8 @@ function tablaSemana(turnos, semana){
           var anot = extraDe(f, clave, lado);
           var apro = anot && anot.estado === 'APROBADA';
           var quienes = anot ? ((anot.planeo ? 'planeó ' + anot.planeo : '') + (anot.aprobo ? ' · aprobó ' + anot.aprobo : '')) : '';
-          var motivo = anot && anot.motivo ? ' · motivo: ' + anot.motivo : '';
+          var motivo = (anot && anot.motivo ? ' · motivo: ' + anot.motivo : '') +
+                       (anot ? (anot.evidencia ? ' · con foto de evidencia' : ' · sin foto de evidencia') : '');
           return '<span class="esq ' + (lado === 'antes' ? 'izq' : 'der') + (apro ? '' : ' plan') +
             '" style="border-top-color:' + aclarar(pinta) + '" title="' +
             (lado === 'antes' ? 'Entra ' : 'Sale ') + textoHoras(min / 60) + (lado === 'antes' ? ' antes' : ' más tarde') +
@@ -44858,6 +45040,13 @@ function menuExtra(celda, donde){
         return '<button type="button" data-mot="' + esc(m) + '">' + esc(m) + '</button>';
       }).join('') +
     '</div>' +
+    /* La evidencia de la labor: una foto. Para planear no hace falta;
+       para aprobar sí (la que ya tenga o una nueva). */
+    '<label class="ex-lb">Evidencia de la labor (foto)' + (anot && anot.evidencia ? '' : ' · obligatoria para aprobar') + '</label>' +
+    (anot && anot.evidencia ? '<div class="pie" style="margin:0 0 6px">Ya tiene evidencia: ' +
+        '<a href="' + esc(anot.evidencia) + '" target="_blank" rel="noopener">ver foto</a>. Puede cambiarla.</div>' : '') +
+    '<input type="file" id="ex-foto" accept="image/*" capture="environment" style="font-size:12px;width:100%">' +
+    '<div class="pie" id="ex-foto-prev" style="margin-top:4px"></div>' +
     '<div class="pie">El turno está definido de ' + esc(base.inicio) + ' a ' + esc(base.fin) + '. ' +
       'Queda registrada a nombre de <b>' + esc(quienSoy()) + '</b>.</div>' +
     '<div class="acc">' +
@@ -44870,6 +45059,16 @@ function menuExtra(celda, donde){
   if(!div) return;
 
   var cuanto = elegido;
+  var fotoEv = '';
+  $p('ex-foto').onchange = function(){
+    var f = this.files && this.files[0];
+    if(!f) return;
+    $p('ex-foto-prev').textContent = 'Preparando la foto…';
+    reducirFoto(f).then(function(u){
+      fotoEv = u;
+      $p('ex-foto-prev').innerHTML = '<img src="' + u + '" alt="" style="max-width:100%;max-height:120px;border-radius:6px">';
+    }).catch(function(e){ $p('ex-foto-prev').textContent = e.message || 'No se pudo leer la foto.'; });
+  };
   $p('ex-cancelar').onclick = cerrarMenuTurno;
   div.querySelectorAll('[data-mot]').forEach(function(b){
     b.onclick = function(){
@@ -44893,9 +45092,15 @@ function menuExtra(celda, donde){
       alert('Falta el motivo de la hora extra.');
       return;
     }
-    mandarCambio({ accion:'perExtraGuardar', area: AREA_VIENDO, fecha: fecha, persona: persona,
-                   turno: turno, lado: donde, minutos: cuanto, estado: estado,
-                   motivo: motivo, quien: quienSoy() }, boton);
+    if(estado === 'APROBADA' && !fotoEv && !(anot && anot.evidencia)){
+      alert('Para aprobar hace falta la foto de evidencia de la labor. Adjúntela, o déjela planeada y apruébela después.');
+      return;
+    }
+    var cuerpoEx = { accion:'perExtraGuardar', area: AREA_VIENDO, fecha: fecha, persona: persona,
+                     turno: turno, lado: donde, minutos: cuanto, estado: estado,
+                     motivo: motivo, quien: quienSoy() };
+    if(fotoEv) cuerpoEx.foto = fotoEv;
+    mandarCambio(cuerpoEx, boton);
   };
   $p('ex-planear').onclick = function(){ mandar('PLANEADA', this); };
   $p('ex-aprobar').onclick = function(){ mandar('APROBADA', this); };
