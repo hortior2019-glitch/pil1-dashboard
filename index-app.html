@@ -8233,6 +8233,41 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   border-top:1px dashed rgba(255,255,255,.45);border-bottom:1px dashed rgba(255,255,255,.45);
 }
 #panel-personal .tn-vert .cel .ex:hover{background:rgba(255,255,255,.34);color:#fff}
+/* ── TONO SUAVE ────────────────────────────────────────────────────
+   Antes cada turno era un bloque macizo de color oscuro con letra
+   blanca: la semana entera se veía como una pared roja, café y azul.
+   Ahora el fondo es el color del horario muy claro, con una barra de
+   ese color a la izquierda; la letra es oscura. */
+#panel-personal .tn-personas .cel.pinta,#per-area-modal .tn-personas .cel.pinta,
+#panel-personal .tn-vert .cel.pinta{color:var(--ink);border-left:4px solid var(--tc,#2d8a4e)}
+#panel-personal .tn-personas .cel,#per-area-modal .tn-personas .cel,
+#panel-personal .tn-vert .cel{border-bottom:1px solid #fff}
+#panel-personal .tn-personas .cel.pinta .nt,#per-area-modal .tn-personas .cel.pinta .nt,
+#panel-personal .tn-vert .cel.pinta .nt{color:var(--tc,#2d8a4e);opacity:1}
+#panel-personal .tn-personas .cel.pinta .tn-hp,#per-area-modal .tn-personas .cel.pinta .tn-hp{
+  color:var(--ink-m);background:rgba(0,0,0,.05)}
+#panel-personal .tn-personas .cel.pinta .tn-alm,#per-area-modal .tn-personas .cel.pinta .tn-alm{color:var(--ink-l)}
+#panel-personal .tn-personas .cel:hover,#per-area-modal .tn-personas .cel:hover,
+#panel-personal .tn-vert .cel:hover{filter:brightness(.97)}
+#panel-personal .tn-personas .cel.dom,#per-area-modal .tn-personas .cel.dom{box-shadow:inset 0 -2px 0 rgba(139,26,26,.25)}
+#panel-personal .tn-vert .cel .ex{background:rgba(0,0,0,.03);color:var(--ink-l);
+  border-top-color:rgba(0,0,0,.12);border-bottom-color:rgba(0,0,0,.12)}
+#panel-personal .tn-vert .cel .ex:hover{background:rgba(0,0,0,.07);color:var(--ink)}
+/* La barra de cada semana: blanca, con su color solo en el borde y en
+   el número del día. */
+#panel-personal .mes-sem > summary{background:var(--white,#fff);color:var(--ink)}
+#panel-personal .mes-sem > summary .num{color:var(--c,#1c5636)}
+#panel-personal .mes-sem > summary .mes{color:var(--ink-m)}
+#panel-personal .mes-sem > summary .hs{color:var(--ink-l)}
+#panel-personal .mes-sem > summary .et{background:var(--s2,#f1f1ee);color:var(--ink-m)}
+#panel-personal .mes-sem.esta{box-shadow:0 0 0 1px rgba(28,86,54,.25)}
+/* El cuadro quedó con gente de antes: se dice y se ofrece ponerlo al día */
+#panel-personal .mes-desfase{margin:0 0 12px;padding:10px 13px;font-size:12.5px;line-height:1.5;
+  color:#6b4f12;background:#fbf7ec;border-left:3px solid #c9a227}
+#panel-personal .mes-desfase button{margin-left:8px;padding:5px 11px;font-size:11px;font-weight:700;
+  border:1px solid #c9a227;background:#fff;color:#6b4f12;cursor:pointer;font-family:'Source Sans 3',sans-serif}
+#panel-personal .mes-desfase button:hover{background:#c9a227;color:#fff}
+#panel-personal .mes-desfase button:disabled{opacity:.6;cursor:default}
 #panel-personal .tn-vert .cel .ex.on{background:var(--gold,#b8891f);color:#fff;border-color:transparent}
 #panel-personal .tn-vert tr.suma td{background:var(--bg);font-weight:700;padding:12px 14px;font-size:14px}
 #panel-personal .tn-vert tr.suma td.dia{font-size:12.5px;font-weight:700}
@@ -42703,6 +42738,16 @@ function aclarar(hex){
   var sube = function(x){ return Math.round(x + (255 - x) * 0.62); };
   return 'rgb(' + sube(r) + ',' + sube(g) + ',' + sube(b) + ')';
 }
+/* El mismo color, casi blanco: fondo de la celda. El color fuerte queda
+   solo en la barra de la izquierda y en el nombre del turno. */
+function tinte(hex){
+  var m = String(hex || '').match(/^#?([0-9a-f]{6})$/i);
+  if(!m) return '#f4f6f4';
+  var n = parseInt(m[1], 16);
+  var r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  var sube = function(x){ return Math.round(x + (255 - x) * 0.87); };
+  return 'rgb(' + sube(r) + ',' + sube(g) + ',' + sube(b) + ')';
+}
 function textoHoras(n){
   var h = Math.floor(n), m = Math.round((n - h) * 60);
   if(!h) return m + ' min';
@@ -44642,9 +44687,40 @@ function planearSiFalta(area){
     });
 }
 
+/* ¿Las semanas armadas tienen la gente que HOY tiene el área? Si alguien
+   entró o salió después de armarlas, el cuadro seguía mostrando a los de
+   antes sin decir nada. Solo se mira de hoy en adelante. */
+function desfaseDe(area, turnos){
+  var hoy = isoDe(new Date());
+  var vigentes = turnos.filter(function(t){ return t.fecha >= hoy; });
+  if(!vigentes.length) return null;
+  var miembros = miembrosDe(area).filter(function(m){
+    var p = window.personalPorClave && window.personalPorClave(m.persona);
+    return !p || p.activo !== false;
+  });
+  var son = {};
+  miembros.forEach(function(m){ son[m.persona] = 1; });
+  var estan = {};
+  vigentes.forEach(function(t){ if(t.persona) estan[t.persona] = t.nombre; });
+  var sobran = Object.keys(estan).filter(function(c){ return !son[c]; })
+                     .map(function(c){ return estan[c]; });
+  /* Falta quien es del área y tiene algún día suyo en lo armado que viene. */
+  var fechas = {};
+  vigentes.forEach(function(t){ fechas[t.fecha] = 1; });
+  var faltan = miembros.filter(function(m){
+    if(estan[m.persona]) return false;
+    var dias = diasDeMiembro(m);
+    return Object.keys(fechas).some(function(f){
+      return dias.indexOf(DIAS_LETRA[(new Date(f + 'T00:00:00').getDay() + 6) % 7]) > -1;
+    });
+  }).map(function(m){ return m.nombre; });
+  return (sobran.length || faltan.length) ? { sobran: sobran, faltan: faltan } : null;
+}
+
 function cuadroMes(area, turnos){
   var lunes = semanasDelCuadro(MES_VIENDO);
   var hoy = isoDe(new Date()), estaSemana = lunesDe(hoy);
+  var desfase = desfaseDe(area, turnos);
   var h = '<div class="tn-caja">' +
     '<div class="mes-barra">' +
       calendarioHtml(turnos) +
@@ -44661,6 +44737,15 @@ function cuadroMes(area, turnos){
         '</div>' +
       '</div>' +
     '</div>';
+  if(desfase){
+    var dif = [];
+    if(desfase.sobran.length) dif.push('aparece' + (desfase.sobran.length > 1 ? 'n' : '') + ' <b>' +
+      desfase.sobran.map(esc).join(', ') + '</b>, que ya no ' + (desfase.sobran.length > 1 ? 'son' : 'es') + ' del área');
+    if(desfase.faltan.length) dif.push('falta' + (desfase.faltan.length > 1 ? 'n' : '') + ' <b>' +
+      desfase.faltan.map(esc).join(', ') + '</b>');
+    h += '<div class="mes-desfase">De hoy en adelante el cuadro no coincide con el personal del área: ' +
+      dif.join('; ') + '.<button type="button" id="mes-rearmar">Poner al día</button></div>';
+  }
 
   var proxima = sumarDias(estaSemana, 7);
   /* Cada semana con su color: es lo que permite ubicarse sin leer. */
@@ -44821,7 +44906,7 @@ function tablaSemana(turnos, semana){
           var motivo = (anot && anot.motivo ? ' · motivo: ' + anot.motivo : '') +
                        (anot ? (anot.evidencia ? ' · con foto de evidencia' : ' · sin foto de evidencia') : '');
           return '<span class="esq ' + (lado === 'antes' ? 'izq' : 'der') + (apro ? '' : ' plan') +
-            '" style="border-top-color:' + aclarar(pinta) + '" title="' +
+            '" style="border-top-color:' + pinta + '" title="' +
             (lado === 'antes' ? 'Entra ' : 'Sale ') + textoHoras(min / 60) + (lado === 'antes' ? ' antes' : ' más tarde') +
             ' · ' + (apro ? 'aprobada' : 'planeada') + (quienes ? ' · ' + esc(quienes) : '') + esc(motivo) + '"></span>';
         };
@@ -44830,7 +44915,7 @@ function tablaSemana(turnos, semana){
       }
       h += '<td class="cel ' + (pinta ? 'pinta' : (esNov ? 'novedad' : 'libre')) + (esDom ? ' dom' : '') +
         (tocado ? ' tocado' : '') + (t0 && t0.previa ? ' previa' : '') + '"' +
-        (pinta ? ' style="background:' + pinta + '"' : '') + datos +
+        (pinta ? ' style="--tc:' + pinta + ';background:' + tinte(pinta) + '"' : '') + datos +
         (t0 ? ' title="' + esc(t0.turno) + (t0.ajuste ? ' · ' + esc(t0.ajuste) : '') + '"' : '') + '>' + esquinas +
         (hoy.length
           ? hoy.map(function(t){
@@ -44925,7 +45010,7 @@ function desglosePersona(clave, nombre, semana, turnos){
         }
       }
       return '<div class="c cel pinta' + (esExtra ? ' extra' : '') + (vf ? ' vf' : '') + '"' +
-        ' style="background:' + (esExtra || vf ? 'var(--gold,#b8891f)' : col) + '"' +
+        ' style="--tc:' + (esExtra || vf ? '#b8891f' : col) + ';background:' + tinte(esExtra || vf ? '#b8891f' : col) + '"' +
         ' data-cel="1" data-persona="' + esc(clave) + '" data-fecha="' + f + '" data-quien="' + esc(nombre) + '">' +
         (esExtra || vf ? '' : tiraExtra('antes', exA, t)) +
         '<div class="tu">' +
@@ -45415,6 +45500,28 @@ function engancharMes(){
     PLANEADAS[AREA_VIENDO] = false; ESTADO_TURNOS = ''; verMes(AREA_VIENDO, MES_VIENDO, true);
   };
   if(b('mes-rotar'))   b('mes-rotar').onclick   = function(){ abrirMover({ origen: AREA_VIENDO }); };
+  if(b('mes-rearmar')) b('mes-rearmar').onclick = function(){
+    var area = AREA_VIENDO, boton = this;
+    if(!confirm('Se vuelven a armar, con el personal que hoy tiene ' + area + ', los días de hoy en adelante ' +
+                'de las semanas ya armadas.\n\nLos días anteriores a hoy quedan como están. Las horas extra se ' +
+                'vuelven a poner; los cambios hechos a mano en esos días se pierden.\n\n¿Poner al día?')) return;
+    boton.disabled = true; boton.textContent = 'Poniendo al día…';
+    pedir({ accion:'perRearmar', area: area, quien: quienSoy() }, 60)
+      .then(function(d){
+        if(d.extras) EXTRAS[area] = d.extras;
+        Object.keys(P.turnos).forEach(function(k){ if(k.indexOf(area + '|') === 0) delete P.turnos[k]; });
+        FRESCO = {};
+        guardarLocal();
+        ESTADO_TURNOS = '';
+        if(AREA_VIENDO === area) verMes(area, MES_VIENDO, true);
+      })
+      .catch(function(e){
+        var msg = e.message || 'No se pudo poner al día.';
+        if(/no reconocida/i.test(msg)) msg = 'Falta publicar la versión nueva del código de Personal (Copiar codigo PERSONAL.bat → Nueva versión).';
+        alert(msg);
+        boton.disabled = false; boton.textContent = 'Poner al día';
+      });
+  };
   if(b('mes-hoy'))     b('mes-hoy').onclick     = function(){ CAL_MES = ''; verMes(AREA_VIENDO, isoDe(new Date())); };
   if(b('mes-cerrar'))  b('mes-cerrar').onclick  = function(){
     AREA_VIENDO = ''; DESGLOSE = null; $p('ar-turnos').innerHTML = ''; soloTurnos(false);
