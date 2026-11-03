@@ -12848,6 +12848,43 @@ function _flotaCombustible(){
     .sort(function(a, b){ return b.valor - a.valor; });
 }
 
+/* ── EL MES QUE VA, POR VEHÍCULO ───────────────────────────────────
+   Lo gastado en combustible y en mantenimientos por placa, del primero
+   del mes a hoy. No sigue el periodo elegido arriba: es el mes en curso,
+   siempre, para ver cómo va. */
+function _flMesEnCurso(){
+  var h = new Date();
+  return h.getFullYear() + '-' + String(h.getMonth() + 1).padStart(2, '0');
+}
+function _flCombustibleMes(){
+  var lista = (typeof dataCombustible !== 'undefined' ? dataCombustible : []) || [];
+  var dela = _flSoloFlota(), mes = _flMesEnCurso(), porPlaca = {};
+  lista.forEach(function(r){
+    var f = _fechaComb(r);
+    if(!f || f.slice(0, 7) !== mes) return;
+    var pl = (r['Placa / Equipo'] || r['Placa'] || r['PLACA'] || r['placa'] || '').toString().trim().toUpperCase();
+    if(!pl || !dela[pl]) return;
+    if(!porPlaca[pl]) porPlaca[pl] = { placa: pl, valor: 0, n: 0 };
+    porPlaca[pl].valor += _numComb(r['Valor tanqueado']);
+    porPlaca[pl].n++;
+  });
+  return Object.keys(porPlaca).map(function(k){ return porPlaca[k]; })
+    .sort(function(a, b){ return b.valor - a.valor; });
+}
+function _flMantenimientoMes(){
+  var dela = _flSoloFlota(), mes = _flMesEnCurso(), porPlaca = {};
+  (_mantenimientos || []).forEach(function(m){
+    if(String(m.fecha || '').slice(0, 7) !== mes) return;
+    var pl = (m.placa || '').toString().trim().toUpperCase();
+    if(!pl || !dela[pl]) return;
+    if(!porPlaca[pl]) porPlaca[pl] = { placa: pl, valor: 0, n: 0 };
+    porPlaca[pl].valor += Number(m.valor) || 0;
+    porPlaca[pl].n++;
+  });
+  return Object.keys(porPlaca).map(function(k){ return porPlaca[k]; })
+    .sort(function(a, b){ return b.valor - a.valor || b.n - a.n; });
+}
+
 /* ── QUIÉN LO ESTÁ MANEJANDO ────────────────────────────────────────
    El preoperacional lo firma el conductor que recibe el equipo ese día,
    así que de ahí sale quién lo maneja. Se busca el más reciente dentro
@@ -13504,6 +13541,16 @@ function renderFlota(){
     });
   var maxViajes = topViajes.length ? topViajes[0].valor : 0;
 
+  /* Combustible y mantenimientos del mes en curso, en plata. */
+  var combMes = _flCombustibleMes().slice(0, 10).map(function(x){
+    return { etiqueta: x.placa, valor: x.valor, foto: true, conductor: _flConductorDe(x.placa) };
+  });
+  var maxCombMes = combMes.length ? combMes[0].valor : 0;
+  var mantMes = _flMantenimientoMes().slice(0, 10).map(function(x){
+    return { etiqueta: x.placa, valor: x.valor, foto: true, conductor: _flConductorDe(x.placa) };
+  });
+  var maxMantMes = mantMes.reduce(function(a, x){ return Math.max(a, x.valor); }, 0);
+
   /* Cada operación con las placas que la mueven, por nombre: saber que son
      "2 placas" no sirve de nada, lo que se pregunta es cuáles. */
   var topOps = ops.slice(0, 8).map(function(x){
@@ -13539,6 +13586,19 @@ function renderFlota(){
       '<div class="fl-card">' +
         '<div class="fl-tit">Viajes por vehículo</div>' +
         _flBarrasCli(topViajes, maxViajes, 'var(--blue)', viajesF) +
+      '</div>' +
+    '</div>' +
+
+    '<div class="fl-g2">' +
+      '<div class="fl-card">' +
+        '<div class="fl-tit">Combustible por vehículo · ' + mesActual + '</div>' +
+        (combMes.length ? _flBarrasCli(combMes, maxCombMes, 'var(--gold)', _fmtPesos)
+                        : '<div class="fl-vacio">Sin tanqueos en lo que va del mes.</div>') +
+      '</div>' +
+      '<div class="fl-card">' +
+        '<div class="fl-tit">Mantenimientos por vehículo · ' + mesActual + '</div>' +
+        (mantMes.length ? _flBarrasCli(mantMes, maxMantMes, '#b23b3b', _fmtPesos)
+                        : '<div class="fl-vacio">Sin mantenimientos en lo que va del mes.</div>') +
       '</div>' +
     '</div>' +
 
@@ -40910,8 +40970,13 @@ function montarRotador(a, semana){
   });
   gente.sort(function(x, y){ return String(x.nombre).localeCompare(String(y.nombre), 'es'); });
 
+  /* Si el día tiene turno y además un bloque suelto de horas extra, la
+     celda es el turno: antes quedaba la hora extra y el turno no se veía. */
   var porCelda = {};
-  dela.forEach(function(t){ porCelda[t.persona + '|' + t.fecha] = t; });
+  dela.forEach(function(t){
+    var id = t.persona + '|' + t.fecha;
+    if(!porCelda[id] || porCelda[id].turno === 'Hora extra') porCelda[id] = t;
+  });
 
   /* Las celdas en blanco (descanso) también se registran, vacías, para que
      se les pueda asignar un turno u horas ("trabajar en día de descanso").
