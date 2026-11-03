@@ -7741,6 +7741,22 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-personal .tn-personas .cel.novedad .nt,#panel-personal .tn-dia .c.novedad .nt{
   opacity:1;font-weight:700;letter-spacing:.6px;
 }
+/* FESTIVOS. Sin turno: rojo pálido, no viene pero la jornada se paga.
+   Con turno: rojo fuerte, sí trabajó y esas horas son HE de festivo. */
+#panel-personal .tn-personas th.fest,#per-area-modal .tn-personas th.fest{color:#b3261e}
+#panel-personal .tn-personas th.fest .tn-fest,#per-area-modal .tn-personas th.fest .tn-fest{
+  font-size:9.5px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:#b3261e}
+#panel-personal .tn-personas .cel.festivo,#per-area-modal .tn-personas .cel.festivo,
+#panel-personal .tn-dia .c.festivo{background:#f6d5d5;color:#8b1a1a}
+#panel-personal .tn-personas .cel.festivo .nt,#per-area-modal .tn-personas .cel.festivo .nt,
+#panel-personal .tn-dia .c.festivo .nt{opacity:1;font-weight:800;letter-spacing:.8px}
+#panel-personal .tn-personas .cel .fest-sub,#per-area-modal .tn-personas .cel .fest-sub,
+#panel-personal .tn-dia .c .fest-sub{display:block;font-size:9.5px;font-weight:600;opacity:.85;margin-top:2px}
+#panel-personal .tn-personas .cel.fest-trab,#per-area-modal .tn-personas .cel.fest-trab,
+#panel-personal .tn-dia .c.fest-trab{background:#d32f2f !important;color:#fff}
+#panel-personal .tn-personas .cel .he-fest,#per-area-modal .tn-personas .cel .he-fest,
+#panel-personal .tn-dia .c .he-fest{display:inline-block;margin-top:3px;padding:1px 6px;font-size:9.5px;
+  font-weight:800;letter-spacing:.6px;background:#fff;color:#b3261e;border-radius:3px}
 /* La marca de las horas extra, en la esquina del día */
 #panel-personal .tn-personas .cel{position:relative}
 #panel-personal .tn-personas .cel .esq{position:absolute;top:0;width:0;height:0;border-style:solid;pointer-events:none}
@@ -10566,6 +10582,9 @@ async function loadAllData() {
       try { if (typeof renderVehiculos === 'function' && _vehiculosCargados) renderVehiculos(); } catch(eV) {}
     }
   } catch(e) { console.error('Combustible (no bloqueante):', e); }
+  /* La lista de vehículos se pide ya, en segundo plano, para que al abrir
+     la pestaña no haya que esperarla (el servicio tarda unos 5 s). */
+  try { cargarVehiculos(); } catch(eP) { console.error('precarga vehículos:', eP); }
 
   try {
     await cargarAccesos();
@@ -12645,11 +12664,26 @@ function _vehTieneAlerta(v) {
   return (a !== null && a <= VEH_DIAS_ALERTA) || (b !== null && b <= VEH_DIAS_ALERTA);
 }
 
+/* Si la lista ya se está pidiendo (precarga al iniciar), abrir la pestaña
+   no la vuelve a pedir: espera la misma respuesta. */
+let _vehCargaEnCurso = null;
 async function cargarVehiculos(forzar) {
   if (typeof VEHICULOS_API !== 'string' || VEHICULOS_API.indexOf('PEGAR') !== -1) return;
   if (_vehiculosCargados && !forzar) { renderVehiculos(); return; }
+  if (_vehCargaEnCurso && !forzar) {
+    if (VEH_VISTA === 'flota') renderFlotaSeguro();
+    return _vehCargaEnCurso;
+  }
+  _vehCargaEnCurso = _cargarVehiculosImpl(forzar);
+  try { return await _vehCargaEnCurso; } finally { _vehCargaEnCurso = null; }
+}
+async function _cargarVehiculosImpl(forzar) {
   const cont = document.getElementById('veh-lista');
   if (cont && !_vehiculos.length) cont.innerHTML = '<div class="empty" style="padding:30px">Cargando vehículos...</div>';
+  /* LA FLOTA NO QUEDA EN BLANCO. El servicio tarda unos 5 s y la vista
+     quedaba vacía hasta tocar "Por vehículo" y volver: ahora dice que
+     está cargando y se pinta sola cuando llega. */
+  if (VEH_VISTA === 'flota') renderFlotaSeguro();
   /* Los viajes internos alimentan un KPI de la ficha, pero se traen de OTRO
      Apps Script: se cargan en segundo plano y NO deben frenar la lista de
      vehículos. Si ese endpoint tarda o falla, la pestaña igual carga; cuando
@@ -12669,6 +12703,9 @@ async function cargarVehiculos(forzar) {
     _vehiculosCargados = true;
   } else if (cont) {
     cont.innerHTML = '<div class="empty" style="padding:30px;color:var(--red)">No se pudo cargar la lista. Verifica que el Apps Script tenga la acción "listarVehiculos" y vuelve a intentar.</div>';
+    const cajaF = document.getElementById('veh-flota');
+    if (cajaF) cajaF.innerHTML = '<div class="fl-card"><div class="fl-vacio" style="padding:30px;text-align:center;color:var(--red)">' +
+      'No se pudo cargar la lista de vehículos. Toca «Actualizar» para reintentar.</div></div>';
     return;
   }
   renderVehiculos();
@@ -12767,6 +12804,14 @@ function verVistaVeh(cual){
    blanco: la lista y la ficha de cada vehículo tienen que seguir
    sirviendo. El error se dice en pantalla y queda en la consola. */
 function renderFlotaSeguro(){
+  /* Sin la lista de vehículos las cifras salen en cero (se cuentan por
+     placa de la flota): se dice que está cargando, no se muestran ceros. */
+  if (!_vehiculosCargados) {
+    var cajaC = document.getElementById('veh-flota');
+    if (cajaC) cajaC.innerHTML = '<div class="fl-card"><div class="fl-vacio" style="padding:30px;text-align:center">' +
+      '<span class="spinner"></span> Cargando la flota…</div></div>';
+    return;
+  }
   try { renderFlota(); }
   catch(e){
     console.error('Tablero de flota:', e);
@@ -20568,6 +20613,22 @@ let _informeMateriales = []; // materiales disponibles del corte actual (para "d
    conservan. */
 let _informeClave = '';
 let _informeSucio = false;
+/* El informe guardado de este corte (si hay). */
+let _informeBase = null;
+
+/* SIN TARIFA, EL VALOR DEL SISTEMA NO SE PISA CON CERO. Los cortes viejos
+   (p. ej. Softys) no guardaron su tarifa: al reabrirlos el valor salía $0
+   y "Guardar informe" lo dejaba en $0 en la hoja. Si el corte no tiene
+   ninguna tarifa puesta y el informe guardado sí tiene valor, se conserva
+   ese valor (para todos los materiales o el mismo material guardado). */
+function _valorSistemaConservado(c, calculado, matSel) {
+  if (calculado > 0 || !c || !_informeBase) return { valor: calculado, conservado: false };
+  const conTarifa = (c.tarifaTipo && c.tarifaValor > 0) || c.precioPorMaterialOn || (c.cobrarTransporte && c.transporteValor > 0);
+  const guardado = parseFloat(_informeBase.valorSistema) || 0;
+  const mismoMaterial = !matSel || matSel === '__todos__' || matSel === (_informeBase.material || '');
+  if (!conTarifa && guardado > 0 && mismoMaterial) return { valor: guardado, conservado: true };
+  return { valor: calculado, conservado: false };
+}
 
 function renderInformeCorte() {
   const cont = document.getElementById('corte-informe');
@@ -20711,10 +20772,17 @@ function renderInformeCorte() {
   }
 
   // Inicializar las facturas: desde el informe guardado si existe, si no una vacía
+  /* El informe de ESTE corte: por nombre si lo tiene; si no, por su periodo.
+     Antes un corte sin nombre tomaba las facturas de cualquier otro corte
+     sin nombre del mismo proveedor (agosto salía con las de septiembre). */
+  const _opLow = (c.prov||'').trim().toLowerCase();
+  const _nomLow = (nombreSugerido||'').trim().toLowerCase();
   const infGuardado = (_informesGuardados||[]).find(inf =>
-    (inf.nombreCorte||'').trim().toLowerCase() === (nombreSugerido||'').trim().toLowerCase() &&
-    (inf.operacion||'').trim().toLowerCase() === (c.prov||'').trim().toLowerCase()
-  );
+      _nomLow && (inf.nombreCorte||'').trim().toLowerCase() === _nomLow &&
+      (inf.operacion||'').trim().toLowerCase() === _opLow) ||
+    (_informesGuardados||[]).find(inf =>
+      (inf.operacion||'').trim().toLowerCase() === _opLow &&
+      (inf.periodo||'').trim().toLowerCase() === periodo.trim().toLowerCase());
   _informeFacturas = [];
   if (infGuardado && infGuardado.facturasJson) {
     try {
@@ -20733,6 +20801,7 @@ function renderInformeCorte() {
     _informeFacturas = [{ material:'', numero:infGuardado.numeroFactura||'', link:infGuardado.linkFactura||'', valor:(parseFloat(infGuardado.valorRealFacturado)||''), archivoNombre:'', nombre:'' }];
   }
   if (_informeFacturas.length === 0) _informeFacturas = [{ material:'', numero:'', link:'', valor:'', archivoNombre:'', nombre:'' }];
+  _informeBase = infGuardado || null;
 
   renderFacturasInforme();
 
@@ -20762,11 +20831,15 @@ function recalcInforme() {
 
   // Valor del sistema = MISMO cálculo del corte (material + transporte), filtrado por material.
   // Fuente única: la tarifa definida en el Paso 2 (no hay campos de precio propios en el informe).
-  const valorSistema = registros.reduce((s,r) => s + _valorFilaCorte(c, r), 0);
+  const _vs = _valorSistemaConservado(c, registros.reduce((s,r) => s + _valorFilaCorte(c, r), 0), matSel);
+  const valorSistema = _vs.valor;
 
   // Mostrar la tarifa del corte en el resumen de solo lectura
   const tTexto = document.getElementById('inf-tarifa-texto');
-  if (tTexto) {
+  if (tTexto && _vs.conservado) {
+    tTexto.textContent = 'Este corte no tiene tarifa guardada: se conserva el valor del sistema que ya estaba guardado (' +
+      fmtPesoInf(valorSistema) + '). Para recalcularlo, pon la tarifa en el Paso 2.';
+  } else if (tTexto) {
     const partes = [];
     if (c.precioPorMaterialOn) partes.push('Precio por material (ver tabla del corte)');
     else if (c.tarifaTipo && c.tarifaValor > 0) partes.push('$' + Math.round(c.tarifaValor).toLocaleString('es-CO') + ' por ' + (c.tarifaTipo === 'viaje' ? 'viaje' : 'kg'));
@@ -20961,7 +21034,8 @@ function _buscarInformeExistente(operacion, periodo, nombreCorte) {
   const perLow = (periodo||'').trim().toLowerCase();
   return _informesGuardados.find(inf => {
     const opInf = (inf.operacion||'').trim().toLowerCase();
-    const matchNombre = (inf.nombreCorte||'').trim().toLowerCase() === nomLow && opInf === opLow;
+    // Sin nombre no hay match por nombre: "" contra "" juntaba cortes distintos del mismo proveedor
+    const matchNombre = !!nomLow && (inf.nombreCorte||'').trim().toLowerCase() === nomLow && opInf === opLow;
     const matchPeriodo = !!perLow && opInf === opLow && (inf.periodo||'').trim().toLowerCase() === perLow;
     return matchNombre || matchPeriodo;
   }) || null;
@@ -20985,7 +21059,8 @@ function guardarInformeCorte() {
   const viajes = registros.length;
   const kg = registros.reduce((s,r) => s + pesoNetoAjustado(r), 0);
   // Valor del sistema = mismo cálculo del corte (material + transporte). Fuente única: Paso 2.
-  const valorSistema = registros.reduce((s,r) => s + _valorFilaCorte(c, r), 0);
+  // Sin tarifa en el corte, se conserva el valor guardado (no se pisa con $0).
+  const valorSistema = _valorSistemaConservado(c, registros.reduce((s,r) => s + _valorFilaCorte(c, r), 0), matSel).valor;
   // Precio de referencia para guardar (informativo): la tarifa del corte
   const precioDisp = (c.tarifaTipo === 'kg' && c.tarifaValor > 0) ? c.tarifaValor : 0;
   const precioViaje = (c.tarifaTipo === 'viaje' && c.tarifaValor > 0) ? c.tarifaValor : 0;
@@ -21002,7 +21077,17 @@ function guardarInformeCorte() {
   const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
   const fmtF = s => { const d = new Date(s+'T00:00:00'); return d.getDate()+' '+MESES[d.getMonth()]+' '+d.getFullYear(); };
   const periodoStr = fmtF(c.ini) + ' — ' + fmtF(c.cie);
-  const nombreCorteVal = (document.getElementById('inf-nombre')||{}).value || '';
+  /* SIN NOMBRE NO SE GUARDABAN LAS COLUMNAS. La configuración del corte
+     (columnas, tarifa, opciones) se guarda con su nombre, y un corte sin
+     nombre se la saltaba callado: se cambiaban las columnas, se guardaba
+     y al volver estaban las de antes. Ahora, si no tiene nombre, se le
+     pone uno: el del proveedor con su periodo. */
+  let nombreCorteVal = ((document.getElementById('inf-nombre')||{}).value || '').trim();
+  if (!nombreCorteVal) {
+    nombreCorteVal = nombreProveedorInforme(c.prov) + ' · ' + periodoStr;
+    const nEl = document.getElementById('inf-nombre'); if (nEl) nEl.value = nombreCorteVal;
+    const fEl = document.getElementById('corte-fav-nombre'); if (fEl) fEl.value = nombreCorteVal;
+  }
 
   // Buscar si este corte YA tiene un informe guardado (por nombre+operación u operación+periodo)
   // para actualizar esa misma fila en vez de crear una nueva (evita duplicados).
@@ -21886,6 +21971,11 @@ function _renderInformesGuardadosImpl() {
   // Se deduplica por id, por nombre+operación Y por operación+periodo (mismo corte aunque cambie el nombre).
   const claveItem = it => ((it.nombreCorte||'').trim().toLowerCase() + '||' + (it.operacion||'').trim().toLowerCase());
   const clavesYaMostradas = new Set(items.map(claveItem));
+  /* El informe de un corte que se eliminó (favorito inactivo) no vuelve a
+     aparecer suelto: antes "Eliminar" lo ocultaba y reaparecía igual. */
+  favs.forEach(f => {
+    if (f.activo === false && (f.nombre||'').trim()) clavesYaMostradas.add(((f.nombre||'').trim().toLowerCase()) + '||' + (f.prov||'').trim().toLowerCase());
+  });
   const clavesPeriodoYaMostradas = new Set(items.map(_claveOperPeriodo));
   _informesGuardados.forEach(inf => {
     const yaPorId = items.find(it => it.id === inf.id);
@@ -42328,6 +42418,7 @@ function escribirExcelQuincena(d){
       'Estado extra': ex ? ex.estados.join(' / ') : '',
       'Motivo extra': ex ? ex.motivos.join(' · ') : '',
       'Novedad': novDia[k] || '',
+      'Festivo': perEsFestivoCO(t.fecha) ? 'SI' : '',
       'Ajuste': t.ajuste || ''
     };
   });
@@ -42362,12 +42453,21 @@ function escribirExcelQuincena(d){
   });
 
   /* ── LA HOJA ORGANIZADA ───────────────────────────────────────────
-     Un bloque por área; dentro, un bloque por semana con sus días; y al
-     cierre de cada uno, su suma. Las horas de cada día ya incluyen la
-     hora extra aprobada —el turno quedó alargado—, así que no hay una
-     columna aparte: sumarla otra vez sería contarla dos veces. */
+     Un bloque por área; dentro, un bloque por semana de lunes a domingo,
+     como el cuadro; y al cierre de cada uno, su suma. Las horas de cada
+     día ya incluyen la hora extra aprobada —el turno quedó alargado—.
+
+     FESTIVOS, igual que en el cuadro:
+       · festivo sin turno  -> rojo pálido, "Festivo": no viene, pero la
+         jornada se paga (cuenta en "Festivos pagados").
+       · festivo con turno  -> rojo fuerte: sí trabajó; esas horas van
+         aparte como "Horas en festivo (HE)".
+     A la derecha de cada fila va todo desglosado. */
   var DIAS3 = ['dom','lun','mar','mié','jue','vie','sáb'];
-  var COLS = 2 + 7 + 2;                  /* persona, cargo, 7 días, días y horas */
+  var DESGLOSE = ['Días trab.', 'Horas total', 'Horas ordinarias', 'Horas extra',
+                  'Festivos pagados (no trabajó)', 'Festivos trabajados', 'Horas en festivo (HE)'];
+  var COLS = 2 + 7 + DESGLOSE.length;    /* persona, cargo, 7 días y el desglose */
+  var ROJO_PALIDO = 'F6D5D5', ROJO_FESTIVO = 'D32F2F';
 
   /* Las semanas que toca la quincena, cada una con sus días dentro del
      periodo: la primera y la última pueden venir cortadas. */
@@ -42379,25 +42479,51 @@ function escribirExcelQuincena(d){
     sm.dias.push(f);
   }
 
-  /* Lo de cada persona, día por día, dentro de cada área. */
+  /* Lo de cada persona, día por día, dentro de cada área. Un día puede
+     tener más de una fila (el turno y un bloque de hora extra aparte):
+     se guardan todas y se suman, como en el cuadro. */
   var areas = {};
   (d.turnos || []).forEach(function(t){
     var A = areas[t.area] || (areas[t.area] = { nombre: t.area, gente: {}, turnos: {} });
     var p = A.gente[t.persona] || (A.gente[t.persona] = { nombre: t.nombre, cargo: t.cargo || '', dias: {} });
-    p.dias[t.fecha] = t;
-    A.turnos[claveColor(t.inicio, t.fin)] = { inicio: t.inicio, fin: t.fin, nombre: t.turno };
+    (p.dias[t.fecha] = p.dias[t.fecha] || []).push(t);
+    if(t.turno !== 'Hora extra') A.turnos[claveColor(t.inicio, t.fin)] = { inicio: t.inicio, fin: t.fin, nombre: t.turno };
   });
+  var turnoPrincipal = function(lista){
+    return lista.filter(function(t){ return t.turno !== 'Hora extra'; })[0] || lista[0];
+  };
+
+  /* Un festivo pagado se cuenta una sola vez por persona, aunque esa
+     semana haya estado en dos áreas. */
+  var festivoYaContado = {};
+
+  var cero = function(){ return { dias:0, horas:0, extra:0, festPag:0, festTrab:0, horasFest:0 }; };
+  var sumarA = function(a, b){ Object.keys(a).forEach(function(k){ a[k] += b[k]; }); };
+  var r2 = function(x){ return Math.round(x * 100) / 100; };
+  var celdasDesglose = function(s){
+    return [s.dias, r2(s.horas), r2(s.horas - s.extra - s.horasFest), r2(s.extra),
+            s.festPag, s.festTrab, r2(s.horasFest)];
+  };
 
   var filas = [];      /* la hoja, fila por fila */
   var pintar = [];     /* { r, c, e } para colorear después */
   var poner = function(fila){ while(fila.length < COLS) fila.push(''); filas.push(fila); return filas.length - 1; };
   var vacia = function(){ poner([]); };
+  var filaTotal = function(etq, s, color){
+    var fl = [etq, ''];
+    while(fl.length < 2 + 7) fl.push('');
+    var r = poner(fl.concat(celdasDesglose(s)));
+    for(var c = 0; c < COLS; c++) pintar.push({ r: r, c: c, e: relleno(color, 'FFFFFF', true) });
+    return r;
+  };
 
   var rTit = poner(['QUINCENA DEL ' + fechaCorta(d.desde) + ' AL ' + fechaCorta(d.hasta)]);
   pintar.push({ r: rTit, c: 0, e: { font: { bold:true, sz:14, name:'Calibri' } } });
+  var rLey = poner(['Colores: rojo pálido = festivo, no trabajó (se paga) · rojo = trabajó en festivo (HE) · gris = novedad']);
+  pintar.push({ r: rLey, c: 0, e: { font: { italic:true, sz:9, color:{ rgb:'777777' }, name:'Calibri' } } });
   vacia();
 
-  var totalQ = { dias:0, horas:0 };
+  var totalQ = cero();
   Object.keys(areas).sort().forEach(function(nombreArea, iArea){
     var A = areas[nombreArea];
     var colorArea = COLORES_TURNO[iArea % COLORES_TURNO.length];
@@ -42411,7 +42537,7 @@ function escribirExcelQuincena(d){
     var rA = poner([nombreArea.toUpperCase()]);
     for(var c = 0; c < COLS; c++) pintar.push({ r: rA, c: c, e: relleno(colorArea, 'FFFFFF', true) });
 
-    var subArea = { dias:0, horas:0 };
+    var subArea = cero();
     var gente = Object.keys(A.gente).sort(function(x, y){
       return String(A.gente[x].nombre).localeCompare(String(A.gente[y].nombre), 'es');
     });
@@ -42423,68 +42549,98 @@ function escribirExcelQuincena(d){
       });
       if(!hayAlgo) return;
 
-      var rS = poner(['Semana del ' + fechaCorta(sm.dias[0]) + ' al ' + fechaCorta(sm.dias[sm.dias.length - 1])]);
+      /* IGUAL QUE EL CUADRO. Cada día va en la columna de su día de la
+         semana (lun a dom) y la semana se titula de lunes a domingo, como
+         en el tablero. Los días que quedan fuera del periodo se ven, en
+         gris, pero no suman. */
+      var semCompleta = [0,1,2,3,4,5,6].map(function(i){ return sumarDias(sm.lunes, i); });
+      var cortada = sm.dias.length < 7;
+      var rS = poner(['Semana del ' + fechaCorta(semCompleta[0]) + ' al ' + fechaCorta(semCompleta[6]) +
+        (cortada ? '  ·  en este archivo solo del ' + fechaCorta(sm.dias[0]) + ' al ' + fechaCorta(sm.dias[sm.dias.length - 1]) : '')]);
       for(var c1 = 0; c1 < COLS; c1++) pintar.push({ r: rS, c: c1, e: relleno('EFEDE6', '1A1A1A', true) });
 
-      var cab = ['Persona', 'Cargo'].concat(sm.dias.map(function(f){
+      var cab = ['Persona', 'Cargo'].concat(semCompleta.map(function(f){
         var dd = new Date(f + 'T00:00:00');
-        return DIAS3[dd.getDay()] + ' ' + dd.getDate();
-      }));
-      while(cab.length < 2 + 7) cab.push('');
-      cab = cab.concat(['Días', 'Horas']);
+        return DIAS3[dd.getDay()] + ' ' + dd.getDate() + (perEsFestivoCO(f) ? ' (festivo)' : '');
+      })).concat(DESGLOSE);
       var rC = poner(cab);
       cab.forEach(function(x, c2){
-        var esDia = c2 >= 2 && c2 < 2 + sm.dias.length;
-        var esDom = esDia && new Date(sm.dias[c2 - 2] + 'T00:00:00').getDay() === 0;
-        pintar.push({ r: rC, c: c2, e: relleno(esDom ? '8B1A1A' : '444444', 'FFFFFF', true) });
+        var esDia = c2 >= 2 && c2 < 2 + 7;
+        var fd = esDia ? semCompleta[c2 - 2] : '';
+        var fuera = esDia && sm.dias.indexOf(fd) < 0;
+        var esDom = esDia && c2 - 2 === 6;
+        var fondo = fuera ? 'BFBFBF' : (esDia && perEsFestivoCO(fd)) ? ROJO_FESTIVO : (esDom ? '8B1A1A' : '444444');
+        var e = relleno(fondo, 'FFFFFF', true);
+        if(!esDia && c2 >= 2) e.alignment = { horizontal:'center', vertical:'center', wrapText:true };
+        pintar.push({ r: rC, c: c2, e: e });
       });
 
-      var subSem = { dias:0, horas:0 };
+      var subSem = cero();
       gente.forEach(function(claveP){
         var p = A.gente[claveP];
         var fila = [p.nombre, p.cargo];
-        var nDias = 0, nHoras = 0;
+        var s = cero();
         var pintaCeldas = [];
-        sm.dias.forEach(function(f, i){
-          var t = p.dias[f];
+        /* ¿Esta persona estuvo en el área esa semana? Solo a ella se le
+           cuenta el festivo pagado de esa semana. */
+        var estaEnSemana = semCompleta.some(function(f){
+          return (p.dias[f] || []).some(function(x){ return x.inicio && Number(x.horas) > 0; });
+        });
+        semCompleta.forEach(function(f, i){
+          var lista = p.dias[f] || [];
+          var t = lista.length ? turnoPrincipal(lista) : null;
+          var hDia = lista.reduce(function(a, x){ return a + (Number(x.horas) || 0); }, 0);
           var nov = novDia[claveP + '|' + f];
-          if(nov){
-            fila.push(nov);
-            pintaCeldas.push({ c: 2 + i, e: relleno('D9D9D9', '555555', false) });
-          } else if(t && t.horas){
-            fila.push(t.horas);
-            nDias++; nHoras += t.horas;
-            pintaCeldas.push({ c: 2 + i, e: relleno(colorTurno[claveColor(t.inicio, t.fin)] || colorArea, 'FFFFFF', true) });
-          } else {
+          var fest = perEsFestivoCO(f);
+          if(sm.dias.indexOf(f) < 0){
+            /* Fuera del periodo pedido: no se pinta ni se suma. */
             fila.push('');
-            pintaCeldas.push({ c: 2 + i, e: { fill:{ patternType:'solid', fgColor:{ rgb:'F5F5F3' } }, border: bordeFino() } });
+            pintaCeldas.push({ c: 2 + i, e: { fill:{ patternType:'solid', fgColor:{ rgb:'E7E7E7' } }, border: bordeFino() } });
+          } else if(nov || (t && !hDia && !t.inicio)){
+            /* Novedad (incapacidad, vacaciones, dado de baja…): gris y dice
+               qué pasó, como en el cuadro. No suma ni cobra festivo. */
+            fila.push(nov || t.turno);
+            pintaCeldas.push({ c: 2 + i, e: relleno('D9D9D9', '555555', false) });
+          } else if(t && hDia){
+            fila.push(r2(hDia));
+            var ex = porDia[claveP + '|' + f];
+            var hEx = ex ? ex.minutos / 60 : 0;
+            s.dias++; s.horas += hDia;
+            if(fest){ s.festTrab++; s.horasFest += hDia; }
+            else s.extra += hEx;
+            pintaCeldas.push({ c: 2 + i, e: fest
+              ? relleno(ROJO_FESTIVO, 'FFFFFF', true)
+              : relleno(colorTurno[claveColor(t.inicio, t.fin)] || colorArea, 'FFFFFF', true) });
+          } else if(fest){
+            /* Festivo sin turno: no viene, pero la jornada se paga. */
+            fila.push('Festivo');
+            var kF = claveP + '|' + f;
+            if(estaEnSemana && !festivoYaContado[kF]){ festivoYaContado[kF] = true; s.festPag++; }
+            pintaCeldas.push({ c: 2 + i, e: relleno(ROJO_PALIDO, '8B1A1A', true) });
+          } else {
+            /* Sin turno ese día: el cuadro dice DESCANSO, el Excel también. */
+            fila.push('Descanso');
+            pintaCeldas.push({ c: 2 + i, e: { fill:{ patternType:'solid', fgColor:{ rgb:'F5F5F3' } },
+              font:{ color:{ rgb:'888888' }, sz:8, name:'Calibri' },
+              alignment:{ horizontal:'center', vertical:'center' }, border: bordeFino() } });
           }
         });
-        while(fila.length < 2 + 7) fila.push('');
-        fila.push(nDias, Math.round(nHoras * 100) / 100);
-        var r = poner(fila);
+        var r = poner(fila.concat(celdasDesglose(s)));
         pintaCeldas.forEach(function(x){ pintar.push({ r: r, c: x.c, e: x.e }); });
         pintar.push({ r: r, c: 0, e: { font:{ bold:true, sz:10, name:'Calibri' }, border: bordeFino() } });
-        pintar.push({ r: r, c: COLS - 2, e: relleno('EFEDE6', '1A1A1A', false) });
-        pintar.push({ r: r, c: COLS - 1, e: relleno('EFEDE6', '1A1A1A', true) });
-        subSem.dias += nDias; subSem.horas += nHoras;
+        DESGLOSE.forEach(function(nn, j){
+          var esFest = j >= 4;
+          pintar.push({ r: r, c: 2 + 7 + j, e: relleno(esFest ? 'FBEAEA' : 'EFEDE6', esFest ? '8B1A1A' : '1A1A1A', j === 1) });
+        });
+        sumarA(subSem, s);
       });
 
-      var fSem = ['Total de la semana', ''];
-      while(fSem.length < 2 + 7) fSem.push('');
-      fSem.push(subSem.dias, Math.round(subSem.horas * 100) / 100);
-      var rTS = poner(fSem);
-      for(var c3 = 0; c3 < COLS; c3++) pintar.push({ r: rTS, c: c3, e: relleno('777777', 'FFFFFF', true) });
-
-      subArea.dias += subSem.dias; subArea.horas += subSem.horas;
+      filaTotal('Total de la semana', subSem, '777777');
+      sumarA(subArea, subSem);
       vacia();
     });
 
-    var fArea = ['Total de ' + nombreArea, ''];
-    while(fArea.length < 2 + 7) fArea.push('');
-    fArea.push(subArea.dias, Math.round(subArea.horas * 100) / 100);
-    var rSA = poner(fArea);
-    for(var c4 = 0; c4 < COLS; c4++) pintar.push({ r: rSA, c: c4, e: relleno(colorArea, 'FFFFFF', true) });
+    filaTotal('Total de ' + nombreArea, subArea, colorArea);
 
     /* Qué significa cada color, para que la hoja se lea sola. */
     var leyenda = ['Turnos:'].concat(claves.map(function(kk){
@@ -42496,19 +42652,42 @@ function escribirExcelQuincena(d){
     });
     pintar.push({ r: rL, c: 0, e: { font:{ italic:true, sz:9, color:{ rgb:'777777' } } } });
 
-    totalQ.dias += subArea.dias; totalQ.horas += subArea.horas;
+    sumarA(totalQ, subArea);
     vacia();
   });
 
-  var fTot = ['TOTAL DE LA QUINCENA', ''];
-  while(fTot.length < 2 + 7) fTot.push('');
-  fTot.push(totalQ.dias, Math.round(totalQ.horas * 100) / 100);
-  var rT = poner(fTot);
-  for(var c5 = 0; c5 < COLS; c5++) pintar.push({ r: rT, c: c5, e: relleno('1A1A1A', 'FFFFFF', true) });
+  filaTotal('TOTAL DE LA QUINCENA', totalQ, '1A1A1A');
+
+  /* Las mismas cuentas de festivos en el resumen por persona. */
+  var festPorPersona = {};
+  Object.keys(areas).forEach(function(nA){
+    Object.keys(areas[nA].gente).forEach(function(cl){
+      var p = areas[nA].gente[cl];
+      var fp = festPorPersona[p.nombre] || (festPorPersona[p.nombre] = { trab:0, horas:0 });
+      Object.keys(p.dias).forEach(function(f){
+        if(f < d.desde || f > d.hasta || !perEsFestivoCO(f) || novDia[cl + '|' + f]) return;
+        var h = p.dias[f].reduce(function(a, x){ return a + (Number(x.horas) || 0); }, 0);
+        if(h){ fp.trab++; fp.horas += h; }
+      });
+    });
+  });
+  var pagPorPersona = {};
+  Object.keys(festivoYaContado).forEach(function(k){ var cl = k.split('|')[0]; pagPorPersona[cl] = (pagPorPersona[cl] || 0) + 1; });
+  var nombrePorClave = {};
+  (d.turnos || []).forEach(function(t){ nombrePorClave[t.persona] = t.nombre; });
+  var pagPorNombre = {};
+  Object.keys(pagPorPersona).forEach(function(cl){ pagPorNombre[nombrePorClave[cl]] = pagPorPersona[cl]; });
+  resumen.forEach(function(p){
+    var fp = festPorPersona[p['Nombre']] || { trab:0, horas:0 };
+    p['Festivos pagados (no trabajó)'] = pagPorNombre[p['Nombre']] || 0;
+    p['Festivos trabajados'] = fp.trab;
+    p['Horas en festivo (HE)'] = r2(fp.horas);
+  });
 
   var wb = XLSX.utils.book_new();
   var wsQ = XLSX.utils.aoa_to_sheet(filas);
-  wsQ['!cols'] = [{wch:26},{wch:16},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:7},{wch:9}];
+  wsQ['!cols'] = [{wch:26},{wch:16},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},
+                  {wch:7},{wch:8},{wch:10},{wch:8},{wch:12},{wch:11},{wch:11}];
   pintar.forEach(function(x){
     estiloCelda(wsQ, XLSX.utils.encode_cell({ r: x.r, c: x.c }), x.e);
   });
@@ -44984,6 +45163,15 @@ function cuadroMes(area, turnos){
    más temprano al que arranca más tarde—, así que el de la mañana sigue
    saliendo verde, el de la tarde dorado y el de la noche azul, pero un
    cuarto turno ya tiene el suyo propio. */
+/* ¿Esa fecha (aaaa-mm-dd) es festivo en Colombia? El mismo cálculo del
+   servicio (perEsFestivo_), que es el que deja esos días sin programar. */
+function perEsFestivoCO(f){
+  try {
+    f = String(f || '').slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(f) && typeof getFestivosColombia === 'function' &&
+           getFestivosColombia(Number(f.slice(0, 4))).has(f);
+  } catch(e){ return false; }
+}
 var COLORES_TURNO = ['#2d8a4e', '#b5891c', '#2f4a86', '#8b1a1a', '#5b3b8b',
                      '#7a3d00', '#1a5c35', '#243b6b', '#8b6914', '#3f6d8a'];
 function minutosDe(hora){
@@ -45076,8 +45264,10 @@ function tablaSemana(turnos, semana){
   h += '<div style="overflow-x:auto"><table class="tbl tn-personas"><thead><tr><th>Quién</th>' +
     fechas.map(function(f){
       var d = new Date(f + 'T00:00:00');
-      return '<th' + (d.getDay() === 0 ? ' class="dom"' : '') + '>' +
-        d.toLocaleDateString('es-CO', { weekday:'short' }) + '<div class="tn-hora">' + fechaCorta(f) + '</div></th>';
+      var fe = perEsFestivoCO(f);
+      return '<th' + (fe ? ' class="fest"' : (d.getDay() === 0 ? ' class="dom"' : '')) + '>' +
+        d.toLocaleDateString('es-CO', { weekday:'short' }) + '<div class="tn-hora">' + fechaCorta(f) + '</div>' +
+        (fe ? '<div class="tn-fest">festivo</div>' : '') + '</th>';
     }).join('') + '<th class="tot">Horas</th></tr></thead><tbody>';
 
   personas.forEach(function(p){
@@ -45120,10 +45310,17 @@ function tablaSemana(turnos, semana){
         if(exA) esquinas += marcaExtra('antes', exA);
         if(exD) esquinas += marcaExtra('despues', exD);
       }
-      h += '<td class="cel ' + (pinta ? 'pinta' : (esNov ? 'novedad' : 'libre')) + (esDom ? ' dom' : '') +
+      /* Festivo: sin turno se paga sin venir (rojo pálido); con turno
+         trabajó en festivo (rojo fuerte, HE). */
+      var esFest = perEsFestivoCO(f);
+      var festTrab = esFest && !!pinta;
+      var festLibre = esFest && !hoy.length;
+      h += '<td class="cel ' + (pinta ? 'pinta' : (esNov ? 'novedad' : (festLibre ? 'festivo' : 'libre'))) + (esDom ? ' dom' : '') +
+        (festTrab ? ' fest-trab' : '') +
         (tocado ? ' tocado' : '') + (t0 && t0.previa ? ' previa' : '') + '"' +
-        (pinta ? ' style="background:' + pinta + '"' : '') + datos +
-        (t0 ? ' title="' + esc(t0.turno) + (t0.ajuste ? ' · ' + esc(t0.ajuste) : '') + '"' : '') + '>' + esquinas +
+        (pinta ? ' style="background:' + (festTrab ? '#d32f2f' : pinta) + '"' : '') + datos +
+        (t0 ? ' title="' + esc(t0.turno) + (t0.ajuste ? ' · ' + esc(t0.ajuste) : '') + (festTrab ? ' · trabajó en festivo (HE)' : '') + '"'
+            : (festLibre ? ' title="Festivo: no viene, la jornada se paga"' : '')) + '>' + esquinas +
         (hoy.length
           ? hoy.map(function(t){
               /* Horas proyectadas de ese turno (ya descontando el almuerzo).
@@ -45149,8 +45346,9 @@ function tablaSemana(turnos, semana){
                 : '';
               return (htxt ? '<span class="hs" data-turno="' + esc(t.turno) + '">' + htxt + '</span>' : '') +
                      '<span class="nt">' + esc(t.turno) + '</span>' + pie;
-            }).join('')
-          : '<span class="nt">descanso</span>') + '</td>';
+            }).join('') + (festTrab ? '<span class="he-fest">HE · festivo</span>' : '')
+          : (festLibre ? '<span class="nt">festivo</span><span class="fest-sub">jornada pagada</span>'
+                       : '<span class="nt">descanso</span>')) + '</td>';
     });
     h += '<td class="tot">' + numeroHoras(horasDe(suyos)) + '</td></tr>';
   });
@@ -45227,14 +45425,24 @@ function desglosePersona(clave, nombre, semana, turnos){
         (esExtra || vf ? '' : tiraExtra('despues', exD, t)) +
       '</div>';
     };
+    var esFestD = perEsFestivoCO(f);
+    var cajasHtml = (t0 && !esNov)
+      ? hoy.filter(function(t){ return t.inicio || (!t.inicio && /valor fijo/i.test(String(t.nota || ''))); }).map(caja).join('')
+      : '';
+    /* Trabajó en festivo: las cajas van en rojo fuerte y dicen HE. */
+    if(esFestD && cajasHtml){
+      cajasHtml = cajasHtml.replace(/class="c cel pinta/g, 'class="c cel pinta fest-trab')
+                           .replace(/<\/div>(\s*)$/, '<span class="he-fest">HE · festivo</span></div>$1');
+    }
     h += '<div class="tn-dia' + (esDom ? ' dom' : '') + '">' +
       '<div class="f"><b>' + d.toLocaleDateString('es-CO', { weekday:'long' }) + '</b>' +
-        '<span>' + fechaCorta(f) + '</span></div>' +
+        '<span>' + fechaCorta(f) + (esFestD ? ' · festivo' : '') + '</span></div>' +
       (t0 && !esNov
-        ? '<div class="cajas">' + hoy.filter(function(t){ return t.inicio || (!t.inicio && /valor fijo/i.test(String(t.nota || ''))); }).map(caja).join('') + '</div>'
-        : '<div class="c cel ' + (esNov ? 'novedad' : 'libre') +
+        ? '<div class="cajas">' + cajasHtml + '</div>'
+        : '<div class="c cel ' + (esNov ? 'novedad' : (esFestD ? 'festivo' : 'libre')) +
           '" data-cel="1" data-persona="' + esc(clave) + '" data-fecha="' + f + '" data-quien="' + esc(nombre) + '">' +
-          '<div class="tu"><span class="nt">' + esc(esNov ? t0.turno : 'descanso') + '</span></div></div>') +
+          '<div class="tu"><span class="nt">' + esc(esNov ? t0.turno : (esFestD ? 'festivo' : 'descanso')) + '</span>' +
+          (!esNov && esFestD ? '<span class="fest-sub">jornada pagada</span>' : '') + '</div></div>') +
       '<div class="h">' + (horasDia ? numeroHoras(horasDia) : '—') + '</div>' +
     '</div>';
   });
