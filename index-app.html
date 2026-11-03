@@ -20560,6 +20560,14 @@ function fmtPesoInf(n) { return '$ ' + Math.round(n).toLocaleString('es-CO'); }
 // Estado: lista de facturas del informe actual. Cada una: {material, numero, link, valor, archivoNombre, subiendo}
 let _informeFacturas = [];
 let _informeMateriales = []; // materiales disponibles del corte actual (para "dividir por material")
+/* LO QUE SE ESTÁ CORRIGIENDO NO SE PIERDE. El corte se vuelve a dibujar
+   solo (al llegar los auditados y los vouchers, al tocar una opción del
+   corte) y cada vez las facturas se recargaban de lo guardado: lo que se
+   había corregido se perdía y "Guardar informe" mandaba las viejas. Con
+   esto, mientras sea el mismo corte y haya cambios sin guardar, se
+   conservan. */
+let _informeClave = '';
+let _informeSucio = false;
 
 function renderInformeCorte() {
   const cont = document.getElementById('corte-informe');
@@ -20574,6 +20582,13 @@ function renderInformeCorte() {
 
   // Nombre del corte sugerido (del campo de guardar favorito, si lo escribió)
   const nombreSugerido = (document.getElementById('corte-fav-nombre')||{}).value || '';
+
+  // ¿Es el mismo corte con cambios sin guardar? Entonces se conservan.
+  const claveInf = (c.prov||'') + '|' + (c.ini||'') + '|' + (c.cie||'');
+  const conservar = _informeSucio && claveInf === _informeClave;
+  const obsPrev = conservar ? ((document.getElementById('inf-observaciones')||{}).value || '') : '';
+  const matPrev = conservar ? ((document.getElementById('inf-material')||{}).value || '') : '';
+  if (!conservar) { _informeClave = claveInf; _informeSucio = false; }
 
   const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
   const fmtF = s => { const d = new Date(s+'T00:00:00'); return d.getDate()+' '+MESES[d.getMonth()]+' '+d.getFullYear(); };
@@ -20671,7 +20686,7 @@ function renderInformeCorte() {
         <!-- Observaciones -->
         <div class="inf-field" style="margin-bottom:20px">
           <label class="inf-lbl">Observaciones</label>
-          <textarea id="inf-observaciones" rows="3" placeholder="Notas, aclaraciones, acuerdos..." class="inf-input" style="resize:vertical;font-family:'Source Sans 3',sans-serif"></textarea>
+          <textarea id="inf-observaciones" oninput="_informeSucio = true" rows="3" placeholder="Notas, aclaraciones, acuerdos..." class="inf-input" style="resize:vertical;font-family:'Source Sans 3',sans-serif"></textarea>
         </div>
 
         <!-- Acciones -->
@@ -20684,6 +20699,16 @@ function renderInformeCorte() {
 
   // Materiales disponibles del corte (para "dividir por material")
   _informeMateriales = materiales.slice();
+
+  if (conservar) {
+    renderFacturasInforme();
+    const obs = document.getElementById('inf-observaciones');
+    if (obs) obs.value = obsPrev;
+    const mat = document.getElementById('inf-material');
+    if (mat && matPrev && [...mat.options].some(o => o.value === matPrev)) mat.value = matPrev;
+    recalcInforme();
+    return;
+  }
 
   // Inicializar las facturas: desde el informe guardado si existe, si no una vacía
   const infGuardado = (_informesGuardados||[]).find(inf =>
@@ -20854,11 +20879,13 @@ function renderFacturasInforme() {
 function onFacturaCampo(idx, campo, valor) {
   if (!_informeFacturas[idx]) return;
   _informeFacturas[idx][campo] = valor;
+  _informeSucio = true;
   recalcInforme();
 }
 
 // Agrega una factura/división vacía
 function agregarFacturaInforme() {
+  _informeSucio = true;
   _informeFacturas.push({ material:'', numero:'', link:'', valor:'', archivoNombre:'', nombre:'' });
   renderFacturasInforme();
   recalcInforme();
@@ -20866,6 +20893,7 @@ function agregarFacturaInforme() {
 
 // Quita una factura
 function quitarFacturaInforme(idx) {
+  _informeSucio = true;
   _informeFacturas.splice(idx, 1);
   if (_informeFacturas.length === 0) _informeFacturas = [{ material:'', numero:'', link:'', valor:'', archivoNombre:'', nombre:'' }];
   renderFacturasInforme();
@@ -20878,6 +20906,7 @@ function dividirFacturasPorMaterial() {
   if (_informeFacturas.some(f => f.numero || f.valor || f.link)) {
     if (!confirm('Esto reemplazará las facturas actuales por una por cada material. ¿Continuar?')) return;
   }
+  _informeSucio = true;
   _informeFacturas = _informeMateriales.map(m => ({ material:m, numero:'', link:'', valor:'', archivoNombre:'', nombre:'' }));
   renderFacturasInforme();
   recalcInforme();
@@ -20887,7 +20916,11 @@ function dividirFacturasPorMaterial() {
 function subirFacturaInformeIdx(idx, input) {
   const file = input.files && input.files[0];
   if (!file || !_informeFacturas[idx]) return;
-  _informeFacturas[idx].subiendo = true;
+  _informeSucio = true;
+  /* Se guarda la factura misma, no su posición: si la lista se redibuja
+     mientras sube, el enlace igual llega a la factura correcta. */
+  const fac = _informeFacturas[idx];
+  fac.subiendo = true;
   renderFacturasInforme();
   const reader = new FileReader();
   reader.onload = function() {
@@ -20898,10 +20931,10 @@ function subirFacturaInformeIdx(idx, input) {
     })
       .then(r => r.json())
       .then(data => {
-        _informeFacturas[idx].subiendo = false;
+        fac.subiendo = false;
         if (data.ok && data.link) {
-          _informeFacturas[idx].link = data.link;
-          _informeFacturas[idx].archivoNombre = file.name;
+          fac.link = data.link;
+          fac.archivoNombre = file.name;
         } else {
           alert('Error al subir el archivo: ' + (data.error||'desconocido'));
         }
@@ -20909,7 +20942,7 @@ function subirFacturaInformeIdx(idx, input) {
       })
       .catch(e => {
         console.error('Error subiendo factura:', e);
-        _informeFacturas[idx].subiendo = false;
+        fac.subiendo = false;
         renderFacturasInforme();
         alert('Error de conexión al subir el archivo.');
       });
@@ -20938,6 +20971,11 @@ function guardarInformeCorte() {
   const c = window._corteActual;
   if (!c) return;
   const estado = document.getElementById('inf-guardar-estado');
+  /* Guardar con un archivo subiendo mandaba el enlace viejo. */
+  if ((_informeFacturas || []).some(f => f.subiendo)) {
+    if (estado) { estado.style.color = 'var(--gold)'; estado.textContent = 'Espera a que termine de subir la factura y vuelve a guardar.'; }
+    return;
+  }
   const matSel = (document.getElementById('inf-material')||{}).value || '';
   const registros = filtrarRegistrosCorte(c.prov, c.ini, c.cie)
     .filter(r => {
@@ -21070,6 +21108,7 @@ function guardarInformeCorte() {
         return;
       }
 
+      _informeSucio = false;   // ya quedó guardado: lo de la hoja es lo vigente
       // Marcar los viajes de este corte como "incluidos en corte" (columna AF del sheet)
       try { marcarViajesEnCorte(); } catch(eM) { console.warn('marcarViajesEnCorte:', eM); }
 
@@ -21369,6 +21408,7 @@ function limpiarSeleccionPaso2() {
 
 // Cancela la selección/edición actual SIN guardar y vuelve al menú default (lista de cortes)
 function cancelarSeleccionCorte() {  _corteEnfocado = null;
+  _informeSucio = false;   // cancelar descarta lo que no se guardó
 
   // Ocultar y limpiar todo el bloque operativo
   const paso2 = document.getElementById('corte-paso2');
