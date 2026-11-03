@@ -1541,6 +1541,32 @@ td .preop-fotos{margin-top:0;gap:4px;flex-wrap:nowrap}
 .fl-mes-btn.pasado{border-color:var(--navy);color:var(--navy)}
 .fl-mes-btn.pasado:hover{background:var(--navy);color:#fff}
 .fl-mes-et{font-size:12.5px;font-weight:600;color:var(--navy)}
+/* ── Cortes a proveedor: la tarjeta comprimida ── */
+.ct-card{position:relative;overflow:hidden;border-radius:14px;padding:14px 16px 12px;color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.ct-burbuja{position:absolute;right:-40px;top:-40px;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.07);pointer-events:none}
+.ct-fila{display:flex;align-items:center;gap:12px;position:relative}
+.ct-logo{background:#fff;border-radius:10px;padding:6px;width:52px;height:52px;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,.12)}
+.ct-logo img{max-width:100%;max-height:100%;object-fit:contain}
+.ct-nom{flex:1;min-width:0}
+.ct-tit{font-family:'Playfair Display',serif;font-size:17px;font-weight:700;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ct-sub{font-size:11.5px;color:rgba(255,255,255,.82);font-weight:500}
+.ct-per{font-size:12px;font-weight:700;margin-top:2px}
+.ct-per em{font-style:normal;font-weight:500;color:rgba(255,255,255,.75)}
+.ct-est{font-size:10px;font-weight:800;letter-spacing:.8px;padding:5px 11px;border-radius:20px;flex-shrink:0}
+.ct-cifras{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px;position:relative}
+.ct-cifra{background:rgba(255,255,255,.14);border-radius:8px;padding:5px 10px;display:flex;flex-direction:column;min-width:0}
+.ct-cifra span{font-size:9px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;opacity:.85}
+.ct-cifra b{font-size:14px;font-weight:800;white-space:nowrap}
+.ct-notas{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:9px;font-size:11.5px;position:relative}
+.ct-notas a{color:#fff;font-weight:700;text-decoration:underline}
+.ct-rs{background:rgba(255,255,255,.14);border-radius:6px;padding:2px 8px}
+.ct-ed{background:#fef9e7;color:#8a6d1f;border-radius:6px;padding:2px 8px;font-weight:600}
+.ct-acc{display:flex;gap:8px;align-items:center;margin-left:auto;position:relative}
+.ct-acc button{font-family:'Source Sans 3',sans-serif;font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;padding:7px 14px;border-radius:8px;cursor:pointer}
+.ct-usar{background:#fff;color:var(--navy);border:none}
+.ct-usar:hover{opacity:.9}
+.ct-borrar{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.55)}
+.ct-borrar:hover{background:#fde8e8;color:#b91c1c;border-color:#fde8e8}
 /* ── Comparativo del mes (combustible por fecha + barras mes vs mes) ── */
 #panel-vehiculos .vf-comp-fuel{border:1px solid var(--vg);border-radius:11px;padding:13px 15px;background:#fcfcfb;margin-bottom:12px}
 #panel-vehiculos .vf-comp-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
@@ -21921,108 +21947,54 @@ function _renderInformesGuardadosImpl() {
       }
     }
 
-    return `<div style="border:1px solid var(--rule-l);border-radius:14px;overflow:hidden;background:var(--white);box-shadow:0 1px 3px rgba(0,0,0,.04)">
-      <!-- Header con logo y color del proveedor -->
-      <div style="background:linear-gradient(135deg,${color} 0%,${hexToRgba(color,.8)} 100%);padding:18px 22px;display:flex;align-items:center;gap:16px;position:relative;overflow:hidden">
-        <div style="position:absolute;right:-40px;top:-40px;width:160px;height:160px;border-radius:50%;background:rgba(255,255,255,.07);pointer-events:none"></div>
-        ${logo ? `<div style="background:#fff;border-radius:14px;padding:11px;width:86px;height:86px;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.12);position:relative;z-index:1"><img src="${logo}" style="max-width:100%;max-height:100%;object-fit:contain" onerror="this.parentElement.style.display='none'"></div>` : ''}
-        <div style="flex:1;min-width:0;color:#fff;position:relative;z-index:1">
-          <div style="font-family:'Playfair Display',serif;font-size:19px;font-weight:700;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${inf.nombreCorte || nombreProveedorInforme(inf.operacion)}</div>
-          <div style="font-size:12px;color:rgba(255,255,255,.82);margin-top:2px;font-weight:500">${nombreProveedorInforme(inf.operacion)}${inf.material && inf.material!=='Todos' ? ' · '+inf.material : ''}</div>
+    /* LA TARJETA COMPRIMIDA: todo el corte cabe en la franja del color del
+       proveedor. Antes era una tarjeta alta (cifras grandes, recuadros de
+       facturado y pendiente, botones a lo ancho) y unos pocos cortes ya
+       llenaban la pantalla. Es la misma información, en menos espacio. */
+    let divisiones = [];
+    try { divisiones = JSON.parse(inf.facturasJson || '[]'); } catch(e) {}
+    const nombradas = (divisiones||[]).filter(d => (d.nombre||'').trim() && parseFloat(d.valor) > 0);
+    const cfg = inf.favorito ? [((inf.favorito.colsSel||[]).length + ' columnas'),
+                                inf.favorito.sepMaterial ? 'por material' : '',
+                                inf.favorito.diaIni ? 'día ' + inf.favorito.diaIni + ' al ' + inf.favorito.diaCie : '',
+                                inf.favorito.tarifaTipo ? '$' + Math.round(inf.favorito.tarifaValor).toLocaleString('es-CO') + '/' + (inf.favorito.tarifaTipo === 'viaje' ? 'viaje' : 'kg') : '']
+                               .filter(Boolean).join(' · ') : '';
+    const cifra = (et, val, extra) => `<div class="ct-cifra"${extra||''}><span>${et}</span><b>${val}</b></div>`;
+    const usar = inf.favIndex >= 0 ? `aplicarCorteFavorito(${inf.favIndex})` : `aplicarInformeOrfano('${inf.id}')`;
+    const borrar = inf.favIndex >= 0 ? `ocultarCorteFavorito('${inf.favorito ? inf.favorito.id : ''}')` : `eliminarTarjetaInforme('${inf.id}')`;
+
+    return `<div class="ct-card" style="background:linear-gradient(135deg,${color} 0%,${hexToRgba(color,.82)} 100%)">
+      <div class="ct-burbuja"></div>
+      <div class="ct-fila">
+        ${logo ? `<div class="ct-logo"><img src="${logo}" alt="" onerror="this.parentElement.style.display='none'"></div>` : ''}
+        <div class="ct-nom">
+          <div class="ct-tit">${inf.nombreCorte || nombreProveedorInforme(inf.operacion)}</div>
+          <div class="ct-sub">${nombreProveedorInforme(inf.operacion)}${inf.material && inf.material!=='Todos' ? ' · '+inf.material : ''}</div>
+          <div class="ct-per">${inf.periodo || '—'}${cfg ? ` <em>· ${cfg}</em>` : ''}</div>
         </div>
-        <div style="background:${estadoBg};color:${estadoColor};font-size:10px;font-weight:800;letter-spacing:.8px;padding:6px 13px;border-radius:20px;flex-shrink:0;position:relative;z-index:1">${estadoTexto}</div>
+        <div class="ct-est" style="background:${estadoBg};color:${estadoColor}">${estadoTexto}</div>
       </div>
 
-      <!-- Franja de métricas clave (grandes) -->
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);background:var(--s2);border-bottom:1px solid var(--rule-l)">
-        <div style="padding:16px 18px;text-align:center;border-right:1px solid var(--rule-l)">
-          <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:5px">Viajes</div>
-          <div style="font-family:'Libre Baskerville',serif;font-size:26px;font-weight:800;color:var(--navy);line-height:1">${fmt(inf.viajes||0)}</div>
-        </div>
-        <div style="padding:16px 18px;text-align:center;border-right:1px solid var(--rule-l)">
-          <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:5px">Kilos netos</div>
-          <div style="font-family:'Libre Baskerville',serif;font-size:26px;font-weight:800;color:var(--navy);line-height:1">${fmt(inf.kgNeto||0)}</div>
-        </div>
-        <div style="padding:16px 18px;text-align:center">
-          <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:5px">Valor sistema</div>
-          <div style="font-family:'Libre Baskerville',serif;font-size:22px;font-weight:800;color:var(--gold);line-height:1">${fmtPesoInf(valorSistema)}</div>
+      <div class="ct-cifras">
+        ${cifra('Viajes', fmt(inf.viajes||0))}
+        ${cifra('Kilos netos', fmt(inf.kgNeto||0))}
+        ${cifra('Valor sistema', fmtPesoInf(valorSistema))}
+        ${cifra('Facturado', tieneReal ? fmtPesoInf(valorReal) : 'Sin facturar')}
+        ${(!tieneReal || pendienteLabel !== 'Total facturado')
+          ? cifra(pendienteLabel, pendienteTexto, ` style="background:${estadoBg};color:${estadoColor}"`) : ''}
+        <div class="ct-acc">
+          <button type="button" class="ct-usar" onclick="${usar}" title="Abre este corte para revisarlo y facturarlo">Usar / Editar</button>
+          <button type="button" class="ct-borrar" onclick="${borrar}" title="Eliminar">Eliminar</button>
         </div>
       </div>
 
-      <div style="padding:20px 22px">
-        <!-- Periodo (destacado) y config -->
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--rule-l)">
-          <div>
-            <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">Periodo</div>
-            <div style="font-family:'Libre Baskerville',serif;font-size:18px;font-weight:800;color:var(--navy);line-height:1.1">${inf.periodo || '—'}</div>
-          </div>
-          ${inf.favorito ? `<div style="font-size:11px;color:var(--ink-l);text-align:right">${(inf.favorito.colsSel||[]).length} columnas${inf.favorito.sepMaterial?' · por material':''}${inf.favorito.diaIni?' · día '+inf.favorito.diaIni+' al '+inf.favorito.diaCie:''}${inf.favorito.tarifaTipo?' · $'+Math.round(inf.favorito.tarifaValor).toLocaleString('es-CO')+'/'+(inf.favorito.tarifaTipo==='viaje'?'viaje':'kg'):''}</div>` : ''}
-        </div>
-
-        <!-- Desglose por razón social / nombre, si el corte se dividió en 2+ entidades -->
-        ${(() => {
-          let divisiones = [];
-          try { divisiones = JSON.parse(inf.facturasJson || '[]'); } catch(e) {}
-          const nombradas = (divisiones||[]).filter(d => (d.nombre||'').trim() && parseFloat(d.valor) > 0);
-          if (nombradas.length < 2) return '';
-          return `<div style="margin-bottom:14px">
-            <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:8px">Dividido por razón social</div>
-            <div style="display:flex;flex-direction:column;gap:6px">
-              ${nombradas.map(d => `
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 14px;background:var(--s2);border-radius:8px">
-                  <span style="font-size:12px;font-weight:700;color:var(--ink)">${d.nombre}</span>
-                  <span style="font-size:13px;font-weight:700;color:#1a7f37">${fmtPesoInf(parseFloat(d.valor)||0)}</span>
-                </div>`).join('')}
-            </div>
-          </div>`;
-        })()}
-
-        <!-- Lo facturado (solo lectura) -->
-        ${tieneReal ? `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 18px;background:#e6f4ea;border-radius:10px;margin-bottom:18px;flex-wrap:wrap;gap:10px">
-          <div>
-            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#1a7f37">Facturado</div>
-            ${inf.numeroFactura ? `<div style="font-size:11px;color:#1a7f37;opacity:.75;margin-top:2px">Factura ${inf.numeroFactura}</div>` : ''}
-          </div>
-          <div style="display:flex;align-items:center;gap:12px">
-            ${inf.linkFactura ? `<a href="${inf.linkFactura}" target="_blank" style="font-size:11px;color:${color};font-weight:700;text-decoration:none">ver soporte</a>` : ''}
-            <span style="font-family:'Libre Baskerville',serif;font-size:24px;font-weight:800;color:#1a7f37;line-height:1">${fmtPesoInf(valorReal)}</span>
-          </div>
-        </div>` : `
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px">
-          <span style="font-size:12px;color:var(--ink-l)">Facturado</span>
-          <span style="font-size:12px;font-weight:700;color:#b91c1c;background:#fde8e8;padding:4px 12px;border-radius:20px">Sin facturar</span>
-        </div>`}
-
-        <!-- Pendiente (solo si falta algo por facturar o hay diferencia; si ya quedó completo, el recuadro verde de arriba ya lo muestra) -->
-        ${(!tieneReal || pendienteLabel !== 'Total facturado') ? `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 18px;background:${estadoBg};border-radius:10px;margin-bottom:18px">
-          <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${estadoColor}">${pendienteLabel}</span>
-          <span style="font-family:'Libre Baskerville',serif;font-size:24px;font-weight:800;color:${estadoColor};line-height:1">${pendienteTexto}</span>
-        </div>` : ''}
-
-        <!-- Aviso: editado después de haber sido facturado -->
-        ${inf.editadoPor ? `
-        <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#fef9e7;border:1px solid #f5e2a3;border-radius:8px;margin-bottom:18px">
-          <span style="font-size:14px">⚠</span>
-          <span style="font-size:12px;color:#8a6d1f;font-weight:600">Editado${inf.editadoFecha ? ' el '+inf.editadoFecha : ''}${inf.editadoPor ? ' por '+inf.editadoPor : ''} — después de facturado</span>
-        </div>` : ''}
-
-        <!-- Acciones: entrar a editar (Usar) o eliminar -->
-        ${inf.favIndex >= 0 ? `
-        <div style="margin-bottom:8px">
-          <button onclick="aplicarCorteFavorito(${inf.favIndex})" style="width:100%;padding:12px;font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:8px;cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:opacity .15s" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'" title="Abre este corte para revisarlo y facturarlo">Usar / Editar</button>
-        </div>
-        <div style="display:flex;justify-content:flex-end">
-          <button onclick="ocultarCorteFavorito('${inf.favorito ? inf.favorito.id : ''}')" style="padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:transparent;color:var(--ink-l);border:1px solid var(--rule);border-radius:8px;cursor:pointer;transition:all .15s" onmouseover="this.style.color='var(--red)';this.style.borderColor='var(--red)'" onmouseout="this.style.color='var(--ink-l)';this.style.borderColor='var(--rule)'" title="Eliminar">Eliminar</button>
-        </div>` : `
-        <div style="margin-bottom:8px">
-          <button onclick="aplicarInformeOrfano('${inf.id}')" style="width:100%;padding:12px;font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;background:var(--navy);color:white;border:none;border-radius:8px;cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:opacity .15s" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'" title="Reabre este corte para editarlo (las columnas se preseleccionan, puedes ajustarlas)">Usar / Editar</button>
-        </div>
-        <div style="display:flex;justify-content:flex-end">
-          <button onclick="eliminarTarjetaInforme('${inf.id}')" style="padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:transparent;color:var(--ink-l);border:1px solid var(--rule);border-radius:8px;cursor:pointer;transition:all .15s" onmouseover="this.style.color='var(--red)';this.style.borderColor='var(--red)'" onmouseout="this.style.color='var(--ink-l)';this.style.borderColor='var(--rule)'" title="Eliminar informe">Eliminar</button>
-        </div>`}
-      </div>
+      ${(tieneReal && (inf.numeroFactura || inf.linkFactura)) || nombradas.length >= 2 || inf.editadoPor ? `
+      <div class="ct-notas">
+        ${tieneReal && inf.numeroFactura ? `<span>Factura ${inf.numeroFactura}</span>` : ''}
+        ${tieneReal && inf.linkFactura ? `<a href="${inf.linkFactura}" target="_blank" rel="noopener">ver soporte</a>` : ''}
+        ${nombradas.length >= 2 ? nombradas.map(d => `<span class="ct-rs">${d.nombre} <b>${fmtPesoInf(parseFloat(d.valor)||0)}</b></span>`).join('') : ''}
+        ${inf.editadoPor ? `<span class="ct-ed">⚠ Editado${inf.editadoFecha ? ' el '+inf.editadoFecha : ''} por ${inf.editadoPor} — después de facturado</span>` : ''}
+      </div>` : ''}
     </div>`;
   }).join('');
 }
