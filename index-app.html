@@ -1533,6 +1533,14 @@ td .preop-fotos{margin-top:0;gap:4px;flex-wrap:nowrap}
 #panel-vehiculos .vf-prog{height:7px;border-radius:999px;background:var(--vg2);overflow:hidden;margin-top:13px}
 #panel-vehiculos .vf-prog span{display:block;height:100%;border-radius:999px;transition:width .3s}
 
+/* Botón "Ver el mes pasado" encima de las barras de combustible y mantenimiento */
+.fl-mes-barra{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 0 10px}
+.fl-mes-btn{font:inherit;font-size:13px;font-weight:700;padding:8px 14px;border-radius:8px;cursor:pointer;
+  border:1.5px solid var(--gold);background:transparent;color:var(--gold)}
+.fl-mes-btn:hover{background:var(--gold);color:#fff}
+.fl-mes-btn.pasado{border-color:var(--navy);color:var(--navy)}
+.fl-mes-btn.pasado:hover{background:var(--navy);color:#fff}
+.fl-mes-et{font-size:12.5px;font-weight:600;color:var(--navy)}
 /* ── Comparativo del mes (combustible por fecha + barras mes vs mes) ── */
 #panel-vehiculos .vf-comp-fuel{border:1px solid var(--vg);border-radius:11px;padding:13px 15px;background:#fcfcfb;margin-bottom:12px}
 #panel-vehiculos .vf-comp-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
@@ -12852,9 +12860,18 @@ function _flotaCombustible(){
    Lo gastado en combustible y en mantenimientos por placa, del primero
    del mes a hoy. No sigue el periodo elegido arriba: es el mes en curso,
    siempre, para ver cómo va. */
+/* 0 = este mes, -1 = el mes pasado (el botón de encima de las barras). */
+var _flMesDesfase = 0;
 function _flMesEnCurso(){
   var h = new Date();
+  h = new Date(h.getFullYear(), h.getMonth() + _flMesDesfase, 1);
   return h.getFullYear() + '-' + String(h.getMonth() + 1).padStart(2, '0');
+}
+function _flCambiarMes(){
+  _flMesDesfase = _flMesDesfase ? 0 : -1;
+  renderFlota();
+  var b = document.getElementById('fl-mes-btn');
+  if(b) b.scrollIntoView({ block:'nearest' });
 }
 function _flCombustibleMes(){
   var lista = (typeof dataCombustible !== 'undefined' ? dataCombustible : []) || [];
@@ -13541,7 +13558,13 @@ function renderFlota(){
     });
   var maxViajes = topViajes.length ? topViajes[0].valor : 0;
 
-  /* Combustible y mantenimientos del mes en curso, en plata. */
+  /* Combustible y mantenimientos del mes en curso, en plata. El mes
+     pasado se pinta de otro color para no confundirlos. */
+  var mesPasado = _flMesDesfase !== 0;
+  var _hm = new Date(); _hm = new Date(_hm.getFullYear(), _hm.getMonth() + _flMesDesfase, 1);
+  var mesBarras = MESES_KPI[_hm.getMonth()] + ' ' + _hm.getFullYear();
+  var colComb = mesPasado ? 'var(--navy)' : 'var(--gold)';
+  var colMant = mesPasado ? '#6b4c9a' : '#b23b3b';
   var combMes = _flCombustibleMes().slice(0, 10).map(function(x){
     return { etiqueta: x.placa, valor: x.valor, foto: true, conductor: _flConductorDe(x.placa) };
   });
@@ -13589,16 +13612,21 @@ function renderFlota(){
       '</div>' +
     '</div>' +
 
+    '<div class="fl-mes-barra">' +
+      '<button type="button" id="fl-mes-btn" class="fl-mes-btn' + (mesPasado ? ' pasado' : '') + '" onclick="_flCambiarMes()">' +
+        (mesPasado ? '&larr; Volver a este mes' : 'Ver el mes pasado') + '</button>' +
+      (mesPasado ? '<span class="fl-mes-et">Viendo ' + mesBarras + ' completo</span>' : '') +
+    '</div>' +
     '<div class="fl-g2">' +
       '<div class="fl-card">' +
-        '<div class="fl-tit">Combustible por vehículo · ' + mesActual + '</div>' +
-        (combMes.length ? _flBarrasCli(combMes, maxCombMes, 'var(--gold)', _fmtPesos)
-                        : '<div class="fl-vacio">Sin tanqueos en lo que va del mes.</div>') +
+        '<div class="fl-tit">Combustible por vehículo · ' + mesBarras + '</div>' +
+        (combMes.length ? _flBarrasCli(combMes, maxCombMes, colComb, _fmtPesos)
+                        : '<div class="fl-vacio">' + (mesPasado ? 'Sin tanqueos ese mes.' : 'Sin tanqueos en lo que va del mes.') + '</div>') +
       '</div>' +
       '<div class="fl-card">' +
-        '<div class="fl-tit">Mantenimientos por vehículo · ' + mesActual + '</div>' +
-        (mantMes.length ? _flBarrasCli(mantMes, maxMantMes, '#b23b3b', _fmtPesos)
-                        : '<div class="fl-vacio">Sin mantenimientos en lo que va del mes.</div>') +
+        '<div class="fl-tit">Mantenimientos por vehículo · ' + mesBarras + '</div>' +
+        (mantMes.length ? _flBarrasCli(mantMes, maxMantMes, colMant, _fmtPesos)
+                        : '<div class="fl-vacio">' + (mesPasado ? 'Sin mantenimientos ese mes.' : 'Sin mantenimientos en lo que va del mes.') + '</div>') +
       '</div>' +
     '</div>' +
 
