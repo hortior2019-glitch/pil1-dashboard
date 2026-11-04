@@ -47388,6 +47388,112 @@ else engancharPantalla();
     svgs.slice(0, 6).forEach(graficar);
     cifras.forEach(subirCifra);
     if(filas.length) cascada(filas);
+    /* Lo que llegó pero quedó más abajo se anima cuando se baje a verlo. */
+    alScroll(panel);
+  }
+
+  /* ── 6. En el celular: cada bloque se anima cuando llega a la pantalla ──
+     En la pantalla chica casi todo queda debajo del primer vistazo, y lo
+     que no se veía al abrir la pestaña aparecía ya quieto. Ahora cada
+     tarjeta, indicador, gráfica o tabla espera a que se baje hasta ella y
+     ahí llega, con sus barras, columnas y cifras. Personal no entra: tiene
+     su propio movimiento. Nada se esconde de antemano: si esto falla, la
+     pestaña se ve igual que siempre. */
+  var mqCel = window.matchMedia ? matchMedia('(max-width: 760px), (pointer: coarse)') : { matches:false };
+  var SIN_SCROLL = { 'panel-personal': 1 };
+  var esperando = new WeakMap(), animados = new WeakSet();
+  var io = ('IntersectionObserver' in window) ? new IntersectionObserver(function(entradas){
+    entradas.forEach(function(e){
+      if(!e.isIntersecting) return;
+      var fn = esperando.get(e.target);
+      io.unobserve(e.target);
+      esperando.delete(e.target);
+      var panel = e.target.closest('[id^="panel-"]');
+      if(fn && panel && visible(panel)) fn();
+    });
+  }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 }) : null;
+
+  function esBloque(el){
+    if(!el.classList) return false;
+    for(var i = 0; i < el.classList.length; i++){
+      var c = el.classList[i];
+      if(c === 'card' || c === 'kpi' || /-card$/.test(c)) return true;
+    }
+    return false;
+  }
+  function revelarBloque(b){
+    animados.add(b);
+    mover(b, [{ opacity: 0, transform: 'translateY(' + px(26) + ')' }, { opacity: 1, transform: 'none' }],
+          { duration: 720 });
+    /* Lo de adentro sigue a la tarjeta: barras, gráficas, cifras, filas. */
+    var barras = Array.prototype.filter.call(b.querySelectorAll('div,span,i'), esBarra);
+    if(barras.length) llenar(barras);
+    Array.prototype.filter.call(b.querySelectorAll('svg'), function(s){ return !s.closest('button'); })
+      .slice(0, 4).forEach(graficar);
+    Array.prototype.forEach.call(b.querySelectorAll('.kpi-val'), subirCifra);
+    if(b.classList.contains('kpi-val')) subirCifra(b);
+    var filas = b.querySelectorAll('tbody > tr');
+    if(filas.length) cascada(Array.prototype.slice.call(filas));
+  }
+  function esperar(el, fn){
+    if(animados.has(el) || esperando.has(el)) return;
+    esperando.set(el, fn);
+    io.observe(el);
+  }
+  var alScrollT = {};
+  function alScroll(panel){
+    if(!io || !mqCel.matches || SIN_SCROLL[panel.id] || !visible(panel)) return;
+    clearTimeout(alScrollT[panel.id]);
+    alScrollT[panel.id] = setTimeout(function(){
+      var lejos = function(el){
+        return el.offsetParent !== null && !dentroDeDialogo(el) && !enPantalla(el) &&
+               !el.closest('input,textarea,select,[contenteditable],.mov-sin');
+      };
+      /* Las tarjetas e indicadores, sin repetir la de adentro si la de
+         afuera ya se anima. */
+      var bloques = Array.prototype.filter.call(panel.querySelectorAll('*'), function(el){
+        return esBloque(el) && lejos(el);
+      });
+      bloques = bloques.filter(function(b){
+        var p = b.parentElement;
+        while(p && p !== panel){ if(bloques.indexOf(p) > -1) return false; p = p.parentElement; }
+        return true;
+      });
+      bloques.forEach(function(b){ esperar(b, function(){ revelarBloque(b); }); });
+      var dentroDeBloque = function(el){
+        var p = el.parentElement;
+        while(p && p !== panel){ if(esBloque(p)) return true; p = p.parentElement; }
+        return false;
+      };
+      /* Lo que no vive en ninguna tarjeta: gráficas, tablas, barras y
+         los bloques grandes de la pestaña. */
+      Array.prototype.forEach.call(panel.querySelectorAll('svg'), function(s){
+        if(!s.closest('button') && lejos(s) && !dentroDeBloque(s) && s.getBoundingClientRect().width >= 60)
+          esperar(s, function(){ animados.add(s); graficar(s); });
+      });
+      Array.prototype.forEach.call(panel.querySelectorAll('tbody'), function(tb){
+        if(lejos(tb) && !dentroDeBloque(tb))
+          esperar(tb, function(){ animados.add(tb); cascada(Array.prototype.slice.call(tb.children)); });
+      });
+      Array.prototype.forEach.call(panel.querySelectorAll('div,span,i'), function(e){
+        if(esBarra(e) && lejos(e) && !dentroDeBloque(e))
+          esperar(e, function(){ animados.add(e); llenar([e]); });
+      });
+      Array.prototype.forEach.call(panel.children, function(h){
+        if(lejos(h) && h.offsetHeight > 0 && h.offsetHeight < (window.innerHeight || 800) * 1.5 &&
+           !h.querySelector('.card,.kpi,[class*="-card"]'))
+          esperar(h, function(){ animados.add(h);
+            mover(h, [{ opacity: 0, transform: 'translateY(' + px(28) + ')' }, { opacity: 1, transform: 'none' }],
+                  { duration: 760 }); });
+      });
+    }, 140);
+  }
+  /* Al volver a la pestaña, lo de abajo vuelve a esperar su turno. */
+  function reiniciarScroll(){
+    if(!io) return;
+    io.disconnect();
+    esperando = new WeakMap();
+    animados = new WeakSet();
   }
 
   function vigilar(panel){
@@ -47435,6 +47541,8 @@ else engancharPantalla();
           Array.prototype.filter.call(panel.querySelectorAll('svg'), function(s){
             return !s.closest('button') && !dentroDeDialogo(s) && enPantalla(s);
           }).slice(0, 6).forEach(graficar);
+          reiniciarScroll();
+          alScroll(panel);
         });
     }
   }
