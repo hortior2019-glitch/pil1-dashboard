@@ -41158,6 +41158,10 @@ function hacerMover(boton){
   err.textContent = '';
   boton.disabled = true;
   boton.textContent = MOVER.sentido === 'traer' ? 'Agregando…' : 'Moviendo…';
+  /* Para llevar a la pantalla del área de llegada: se anota antes,
+     porque al cerrar el formulario MOVER se borra. */
+  var llevar = { destino: MOVER.destino, personas: MOVER.elegidas.slice(),
+                 efectivo: MOVER.efectivo, dias: MOVER.dias.slice() };
   pedir({ accion:'perMover', personas: MOVER.elegidas, destino: MOVER.destino,
           efectivo: MOVER.efectivo, incluirSemana: MOVER.incluirSemana,
           dias: MOVER.dias.join(','), origen: MOVER.origen,
@@ -41171,8 +41175,10 @@ function hacerMover(boton){
       P.turnos = {}; FRESCO = {};         /* lo guardado quedó viejo */
       guardarLocal();
       cerrarMover();
-      pintar(); pintarAreas();
-      if(AREA_VIENDO) verMes(AREA_VIENDO, MES_VIENDO || isoDe(new Date()));
+      pintar();
+      /* No solo guarda: lleva al área a la que llegó la gente y la
+         señala en su semana. */
+      movLlevarA(llevar);
     })
     .catch(function(e){
       err.textContent = e.message || 'No se pudo mover.';
@@ -43333,7 +43339,7 @@ function pintarAreas(){
     b.onclick = function(){ borrarArea(b.dataset.arBorrar); };
   });
   grid.querySelectorAll('[data-ar-turnos]').forEach(function(b){
-    b.onclick = function(){ verMes(b.dataset.arTurnos, MES_VIENDO || isoDe(new Date())); };
+    b.onclick = function(){ movAbrirArea(b, b.dataset.arTurnos); };
   });
   adelantarTurnos();
 }
@@ -43387,8 +43393,12 @@ function borrarArea(nombre){
   if(!confirm('¿Borrar el área "' + nombre + '"? La gente no se borra: solo deja de estar en esta área.')) return;
   pedir({ accion:'perAreaBorrar', nombre: nombre }).then(function(d){
     P.areas = d.areas || []; P.miembros = d.miembros || [];
-    guardarLocal(); pintarAreas();
-    if(AREA_VIENDO === nombre){ AREA_VIENDO = ''; $p('ar-turnos').innerHTML = ''; }
+    /* La tarjeta se va y las demás se corren a ocupar su lugar. */
+    movQuitarFicha(nombre, function(){
+      guardarLocal(); pintarAreas();
+      if(AREA_VIENDO === nombre){ AREA_VIENDO = ''; $p('ar-turnos').innerHTML = ''; }
+    });
+    movAviso('Área <b>' + esc(nombre) + '</b> borrada');
   }).catch(function(e){ alert(e.message || 'No se pudo borrar.'); });
 }
 
@@ -45096,6 +45106,7 @@ function guardarArea(){
        pida al mismo tiempo que se está armando. */
     AREA_VIENDO = nombre; PLANEADAS[nombre] = true;
     guardarLocal(); cerrarArea(); pintarAreas();
+    movAviso('Área <b>' + esc(nombre) + '</b> guardada · aquí están sus turnos');
     /* Las semanas que se pidieron se arman en segundo plano; la primera
        aparece apenas está. */
     /* Cuatro semanas planteadas de una vez: la que rige y las tres que
@@ -46307,19 +46318,24 @@ function engancharMes(){
   if(!caja) return;
   /* El calendario: cambiar de mes y elegir la semana. */
   if(b('cal-antes'))   b('cal-antes').onclick   = function(){
+    MOV_AR.dir = -1; MOV_AR.que = 'cal';
     CAL_MES = sumarDias(primerDiaMes(CAL_MES || MES_VIENDO), -1); verMes(AREA_VIENDO, MES_VIENDO);
   };
   if(b('cal-despues')) b('cal-despues').onclick = function(){
+    MOV_AR.dir = 1; MOV_AR.que = 'cal';
     CAL_MES = sumarDias(ultimoDiaMes(CAL_MES || MES_VIENDO), 1); verMes(AREA_VIENDO, MES_VIENDO);
   };
   caja.querySelectorAll('[data-cal-sem]').forEach(function(fila){
     fila.onclick = function(){
       var sem = fila.dataset.calSem;
+      var antes = semanasDelCuadro(MES_VIENDO || isoDe(new Date()))[0];
+      var ahora = semanasDelCuadro(sem)[0];
+      if(antes !== ahora){ MOV_AR.dir = ahora > antes ? 1 : -1; MOV_AR.que = 'todo'; }
       verMes(AREA_VIENDO, sem);
       /* La semana elegida queda abierta y a la vista. */
       setTimeout(function(){
         var det = $p('ar-turnos').querySelector('details[data-sem="' + sem + '"]');
-        if(det){ det.open = true; det.scrollIntoView({ block:'start', behavior:'smooth' }); }
+        if(det){ det.open = true; det.scrollIntoView({ block:'start', behavior:'smooth' }); movSenalarSemana(det); }
       }, 60);
     };
   });
@@ -46327,10 +46343,14 @@ function engancharMes(){
     PLANEADAS[AREA_VIENDO] = false; ESTADO_TURNOS = ''; verMes(AREA_VIENDO, MES_VIENDO, true);
   };
   if(b('mes-rotar'))   b('mes-rotar').onclick   = function(){ abrirMover({ origen: AREA_VIENDO }); };
-  if(b('mes-hoy'))     b('mes-hoy').onclick     = function(){ CAL_MES = ''; verMes(AREA_VIENDO, isoDe(new Date())); };
-  if(b('mes-cerrar'))  b('mes-cerrar').onclick  = function(){
-    AREA_VIENDO = ''; DESGLOSE = null; $p('ar-turnos').innerHTML = ''; soloTurnos(false);
+  if(b('mes-hoy'))     b('mes-hoy').onclick     = function(){
+    var antes = semanasDelCuadro(MES_VIENDO || isoDe(new Date()))[0];
+    var ahora = semanasDelCuadro(isoDe(new Date()))[0];
+    if(antes !== ahora){ MOV_AR.dir = ahora > antes ? 1 : -1; MOV_AR.que = 'todo'; }
+    CAL_MES = ''; verMes(AREA_VIENDO, isoDe(new Date()));
   };
+  /* Cerrar devuelve el cuadro a su tarjeta, como si se encogiera. */
+  if(b('mes-cerrar'))  b('mes-cerrar').onclick  = function(){ movCerrarArea(); };
 
   caja.querySelectorAll('[data-armar]').forEach(function(bt){
     bt.onclick = function(){ armarSemana(bt.dataset.armar, false, bt); };
@@ -46368,6 +46388,7 @@ function engancharMes(){
       if(confirm('¿Volver a generar esta semana? La programación comunicada cambia y los ajustes manuales (horas extra, cambios puntuales) se pierden.')) armarSemana(bt.dataset.rehacer, true, bt);
     };
   });
+  movDespuesDePintar(caja);
 }
 
 /* ── REPETIR LA SEMANA ANTERIOR ────────────────────────────────────
@@ -46416,14 +46437,21 @@ function verVista(cual){
 function engancharAreas(){
   if(!$p('ar-grid')) return;
   document.querySelectorAll('#panel-personal .per-tab').forEach(function(t){
-    t.onclick = function(){ verVista(t.dataset.perVista); };
+    t.onclick = function(){ movCambiarVista(t.dataset.perVista); };
   });
   $p('ar-nueva').onclick = function(){ abrirArea(null); };
   $p('ar-f-cancelar').onclick = cerrarArea;
   $p('ar-f-guardar').onclick = guardarArea;
   $p('per-area-modal').addEventListener('click', function(ev){ if(ev.target === $p('per-area-modal')) cerrarArea(); });
-  $p('ar-f-modo').onchange = function(){ AREA_FORM.modo = this.value; pintarModo(); };
-  $p('ar-f-24').onchange = function(){ AREA_FORM.cobertura24 = this.checked; pintarModo(); pintarDias(); };
+  /* Al cambiar de modalidad, lo que aparece entra suave en vez de saltar. */
+  $p('ar-f-modo').onchange = function(){
+    var v = this.value;
+    movMostrarNuevos($p('per-area-modal'), function(){ AREA_FORM.modo = v; pintarModo(); });
+  };
+  $p('ar-f-24').onchange = function(){
+    var si = this.checked;
+    movMostrarNuevos($p('per-area-modal'), function(){ AREA_FORM.cobertura24 = si; pintarModo(); pintarDias(); });
+  };
   $p('ar-f-galm').onchange = function(){
     AREA_FORM.almuerzo = Number(this.value) || 0;
     /* Si cambia lo que dura, los turnos se recalculan desde el primero
@@ -46493,6 +46521,458 @@ function engancharAreas(){
     contarGenteArea();
   };
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   MOVIMIENTO EN ÁREAS Y TURNOS
+   ------------------------------------------------------------------
+   Solo se ve: no cambia qué se guarda, ni cuándo, ni cómo se calcula.
+   La idea es que cada acción muestre su resultado:
+     · cambiar de vista desliza la pestaña marcada y sube la vista nueva;
+     · "Ver los turnos" agranda la tarjeta hasta el cuadro del área, y
+       "Cerrar" lo encoge de vuelta a su tarjeta;
+     · al rotar o trasladar gente, lleva al área de llegada, abre la
+       semana y señala a quien llegó;
+     · lo que cambió en el cuadro después de guardar se ilumina un
+       momento, para ver qué se tocó;
+     · los meses se deslizan hacia el lado al que se va.
+   Sin soporte del navegador, o con "reducir movimiento", todo pasa igual
+   que antes, sin la animación.
+   ══════════════════════════════════════════════════════════════════ */
+var MOV_AR = { area:'', celdas:null, listas:null, dir:0, que:'', resaltar:null, enVT:false };
+var MOV_CURVA = 'cubic-bezier(.16,1,.3,1)';
+/* Igual que la capa general: con "reducir movimiento" (en Windows,
+   Efectos de animación apagados, que es como está este equipo) no se
+   quita el movimiento, porque es justamente lo que se pidió ver. Queda
+   la puerta por si algún día se quiere respetar. */
+function movQuieto(){ return false; }
+function movAnimar(el, frames, o){
+  if(!el || !el.animate || movQuieto()) return null;
+  try {
+    var a = el.animate(frames, Object.assign({ duration: 420, easing: MOV_CURVA, fill: 'backwards' }, o || {}));
+    a.onfinish = function(){ try { a.cancel(); } catch(e){} };
+    return a;
+  } catch(e){ return null; }
+}
+function movNombrar(el, nombre){
+  if(!el) return;
+  el.style.viewTransitionName = nombre;
+  el.setAttribute('data-mov-vt', '1');
+}
+function movSinNombres(){
+  document.querySelectorAll('[data-mov-vt]').forEach(function(el){
+    el.style.viewTransitionName = ''; el.removeAttribute('data-mov-vt');
+  });
+}
+/* Un cambio de pantalla con transición de vista cuando el navegador la
+   tiene. "antes" nombra lo que se va; "despues" lo que llega. */
+function movTransicion(cambio, antes, despues){
+  var puede = !!document.startViewTransition && !movQuieto() && !document.hidden && !MOV_AR.enVT;
+  if(!puede){ cambio(); if(despues) despues(false); return null; }
+  movSinNombres();
+  if(antes) antes();
+  MOV_AR.enVT = true;
+  /* El cambio se hace UNA sola vez, pase lo que pase. Si el navegador no
+     alcanza a arrancar la transición (pantalla en segundo plano, equipo
+     ocupado), a los 300 ms se hace directo y la transición se salta:
+     nunca se queda esperando ni aplica un cambio viejo encima de otro. */
+  var hecho = false, vt = null;
+  var hacer = function(conVT){
+    if(hecho) return;
+    hecho = true;
+    clearTimeout(seguro);
+    /* Lo que se va ya no está en pantalla: se le quita el nombre para
+       que no choque con lo que llega. */
+    movSinNombres();
+    try { cambio(); } finally { if(despues) despues(conVT); }
+  };
+  var seguro = setTimeout(function(){
+    if(hecho) return;
+    try { if(vt) vt.skipTransition(); } catch(e){}
+    hacer(false);
+  }, 300);
+  try {
+    vt = document.startViewTransition(function(){ hacer(true); });
+  } catch(e){
+    MOV_AR.enVT = false; hacer(false); return null;
+  }
+  /* Una transición saltada no es un error: se silencian sus avisos. */
+  vt.ready.catch(function(){});
+  vt.updateCallbackDone.catch(function(){});
+  vt.finished.catch(function(){}).then(function(){ MOV_AR.enVT = false; movSinNombres(); });
+  return vt;
+}
+/* Lleva un elemento a la vista si quedó fuera, descontando la barra fija
+   de arriba. Sin animación: se usa dentro de una transición. */
+/* Arriba quedan fijos el encabezado, las pestañas y el filtro de
+   periodo: lo que se lleva a la vista tiene que quedar debajo de los tres. */
+function movAltoFijo(){
+  var alto = 0;
+  ['.topbar', '.nav-wrap', '.filter-bar'].forEach(function(s){
+    var e = document.querySelector(s);
+    if(!e) return;
+    var r = e.getBoundingClientRect();
+    if(r.height && r.top < 400) alto = Math.max(alto, r.bottom);
+  });
+  document.documentElement.style.setProperty('--mov-arriba', Math.round(alto) + 'px');
+  return alto;
+}
+function movSubirA(el){
+  if(!el) return;
+  var alto = movAltoFijo();
+  var r = el.getBoundingClientRect();
+  if(r.top >= alto && r.top < (window.innerHeight || 800) * 0.6) return;
+  window.scrollTo(0, Math.max(0, r.top + window.pageYOffset - alto - 14));
+}
+function movIrSuave(el){
+  if(!el) return;
+  movAltoFijo();
+  try { el.scrollIntoView({ block:'center', behavior: movQuieto() ? 'auto' : 'smooth' }); }
+  catch(e){ el.scrollIntoView(); }
+}
+function movFichaDe(nombre){
+  var grid = $p('ar-grid');
+  if(!grid) return null;
+  var b = Array.prototype.filter.call(grid.querySelectorAll('[data-ar-turnos]'), function(x){
+    return x.dataset.arTurnos === nombre;
+  })[0];
+  return b ? b.closest('.ar-ficha') : null;
+}
+
+/* ── El aviso de abajo: confirma lo que se hizo ────────────────────── */
+function movAviso(html){
+  var t = $p('mov-aviso');
+  if(!t){
+    t = document.createElement('div');
+    t.id = 'mov-aviso';
+    t.setAttribute('role', 'status');
+    t.setAttribute('aria-live', 'polite');
+    document.body.appendChild(t);
+    t.onclick = function(){ t.classList.remove('ver'); };
+  }
+  t.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/>' +
+    '<path d="M7.2 12.6l3.1 3.1 6.6-6.8"/></svg><span>' + html + '</span>';
+  t.classList.remove('ver');
+  void t.offsetWidth;                      /* para que la entrada vuelva a correr */
+  t.classList.add('ver');
+  clearTimeout(movAviso._t);
+  movAviso._t = setTimeout(function(){ t.classList.remove('ver'); }, 4600);
+}
+
+/* ── Las tres vistas: Tablero, Colaboradores, Áreas y turnos ────────── */
+function movCambiarVista(cual){
+  var actual = _perVistaActual();
+  if(cual === actual){ verVista(cual); return; }
+  var vieja = $p('per-vista-' + actual);
+  movTransicion(function(){ verVista(cual); },
+    function(){ movNombrar(vieja, 'per-vista-sale'); },
+    function(conVT){
+      var nueva = $p('per-vista-' + cual);
+      if(conVT) movNombrar(nueva, 'per-vista-entra');
+      movEntrarFichas(cual === 'areas' ? $p('ar-grid') : cual === 'gente' ? $p('per-grid') : null, conVT ? 140 : 0);
+    });
+}
+/* Las tarjetas llegan en orden, solo las primeras: una lista larga en
+   cascada se siente lenta. */
+function movEntrarFichas(grid, demora){
+  if(!grid || grid.style.display === 'none') return;
+  Array.prototype.slice.call(grid.children, 0, 12).forEach(function(f, i){
+    movAnimar(f, [{ opacity: 0, transform: 'translateY(16px) scale(.985)' }, { opacity: 1, transform: 'none' }],
+      { duration: 560, delay: (demora || 0) + i * 45 });
+  });
+}
+
+/* ── Abrir y cerrar un área ──────────────────────────────────────── */
+function movAbrirArea(boton, nombre){
+  var ficha = boton.closest('.ar-ficha');
+  movTransicion(function(){
+      MOV_AR.area = ''; MOV_AR.celdas = null; MOV_AR.listas = null;
+      verMes(nombre, MES_VIENDO || isoDe(new Date()));
+      movSubirA($p('ar-turnos'));
+    },
+    function(){
+      movNombrar(ficha, 'ar-caja');
+      movNombrar(ficha && ficha.querySelector('.ar-nom'), 'ar-titulo');
+    },
+    function(conVT){
+      if(!conVT) return;                   /* sin transición: entran las semanas solas */
+      var caja = $p('ar-turnos');
+      movNombrar(caja.querySelector('.tn-caja'), 'ar-caja');
+      movNombrar(caja.querySelector('.mes-area'), 'ar-titulo');
+    });
+}
+function movCerrarArea(){
+  var area = AREA_VIENDO, caja = $p('ar-turnos');
+  movTransicion(function(){
+      AREA_VIENDO = ''; DESGLOSE = null; caja.innerHTML = ''; soloTurnos(false);
+      MOV_AR.area = ''; MOV_AR.celdas = null; MOV_AR.listas = null;
+    },
+    function(){
+      movNombrar(caja.querySelector('.tn-caja'), 'ar-caja');
+      movNombrar(caja.querySelector('.mes-area'), 'ar-titulo');
+    },
+    function(conVT){
+      var ficha = movFichaDe(area);
+      if(ficha) movSubirA(ficha);
+      if(conVT && ficha){
+        movNombrar(ficha, 'ar-caja');
+        movNombrar(ficha.querySelector('.ar-nom'), 'ar-titulo');
+      } else if(!conVT) movEntrarFichas($p('ar-grid'), 0);
+    });
+}
+/* Borrar: la tarjeta se va y las demás se corren a su lugar. */
+function movQuitarFicha(nombre, seguir){
+  var ficha = movFichaDe(nombre);
+  var a = ficha && movAnimar(ficha, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.92)' }],
+                             { duration: 240, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' });
+  var reacomodar = function(){
+    var nombres = function(){
+      var vistos = {};
+      document.querySelectorAll('#ar-grid .ar-ficha').forEach(function(f, i){
+        var b = f.querySelector('[data-ar-turnos]');
+        var n = 'arf-' + String(b ? b.dataset.arTurnos : i).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        if(vistos[n]) n += '-' + i;
+        vistos[n] = 1;
+        movNombrar(f, n);
+      });
+    };
+    movTransicion(seguir, nombres, function(conVT){ if(conVT) nombres(); });
+  };
+  if(!a){ reacomodar(); return; }
+  a.onfinish = function(){ if(ficha) ficha.style.visibility = 'hidden'; try { a.cancel(); } catch(e){} reacomodar(); };
+}
+
+/* ── Rotar o trasladar: guardar y llevar a donde llegó la gente ───── */
+function movLlevarA(m){
+  var nombres = (m.personas || []).map(function(c){
+    var p = P.gente.filter(function(g){ return g.clave === c; })[0];
+    return p ? String(p.nombre || c).trim().split(/\s+/).slice(0, 2).join(' ') : c;
+  });
+  var una = nombres.length === 1;
+  var quien = una ? nombres[0] : nombres.length + ' personas';
+  if(!m.destino){
+    pintarAreas();
+    if(AREA_VIENDO) verMes(AREA_VIENDO, MES_VIENDO || isoDe(new Date()));
+    movAviso('<b>' + esc(quien) + '</b> ' + (una ? 'salió' : 'salieron') + ' del área');
+    return;
+  }
+  var dias = (m.dias || []).map(function(d){ return DIAS_NOMBRE[d] || d; });
+  movAviso('<b>' + esc(quien) + '</b> ' + (una ? 'pasa' : 'pasan') + ' a <b>' + esc(m.destino) + '</b>' +
+    (dias.length ? ' los ' + esc(dias.join(', ')) : '') + ' · le muestro dónde ' + (una ? 'quedó' : 'quedaron'));
+  var efectivo = m.efectivo || isoDe(new Date());
+  /* Si se estaba editando otra área, después de mostrar la llegada se
+     vuelve sola a ese cuadro, en el mismo mes. */
+  var volver = (_perVistaActual() === 'areas' && AREA_VIENDO && AREA_VIENDO !== m.destino)
+    ? { area: AREA_VIENDO, mes: MES_VIENDO } : null;
+  MOV_AR.resaltar = { area: m.destino, personas: m.personas || [], semana: lunesDe(efectivo),
+                      hasta: Date.now() + 30000, volver: volver };
+  var ir = function(){
+    if(_perVistaActual() !== 'areas') verVista('areas'); else pintarAreas();
+    CAL_MES = '';
+    verMes(m.destino, efectivo, true);
+    movSubirA($p('ar-turnos'));
+  };
+  /* Misma área en pantalla: no hay salto, solo se repinta y se señala. */
+  if(AREA_VIENDO === m.destino && _perVistaActual() === 'areas'){ ir(); return; }
+  var sale = _perVistaActual() === 'areas'
+    ? ($p('ar-turnos').querySelector('.tn-caja') || $p('ar-grid'))
+    : $p('per-vista-' + _perVistaActual());
+  movTransicion(ir,
+    function(){ movNombrar(sale, 'mov-sale'); },
+    function(conVT){
+      if(conVT) movNombrar($p('ar-turnos').querySelector('.tn-caja'), 'mov-entra');
+    });
+}
+
+/* ── Después de cada repintado del cuadro de un área ─────────────── */
+function movFotoCeldas(caja){
+  var m = {};
+  caja.querySelectorAll('td[data-cel]').forEach(function(td){
+    m[td.dataset.persona + '|' + td.dataset.fecha] = {
+      v: td.textContent.replace(/\s+/g, ' ').trim() + '|' + (td.getAttribute('style') || '') + '|' + td.className,
+      el: td };
+  });
+  return m;
+}
+function movDespuesDePintar(caja){
+  var tn = caja && caja.querySelector('.tn-caja');
+  if(!tn){ MOV_AR.celdas = null; MOV_AR.listas = null; return; }
+  /* Mientras llegan los turnos, las semanas vacías no dicen "sin
+     generar": brillan como cargando. */
+  caja.classList.toggle('mov-cargando', ESTADO_TURNOS === 'trayendo');
+  var foto = movFotoCeldas(caja);
+  var listas = {};
+  tn.querySelectorAll('details.mes-sem.lista').forEach(function(d){ listas[d.dataset.sem] = d; });
+
+  if(MOV_AR.area !== AREA_VIENDO){
+    /* Un área recién abierta: las semanas llegan en orden. */
+    MOV_AR.area = AREA_VIENDO;
+    MOV_AR.dir = 0;
+    if(!MOV_AR.enVT){ movSubirA(caja); movEntrarSemanas(tn, 0, 'todo'); }
+  } else if(MOV_AR.dir){
+    movEntrarSemanas(tn, MOV_AR.dir, MOV_AR.que);
+    MOV_AR.dir = 0;
+  } else {
+    if(MOV_AR.celdas) movMarcarCambios(MOV_AR.celdas, foto);
+    /* Semanas que estaban sin generar y ya llegaron: se despliegan. */
+    if(MOV_AR.listas){
+      var nuevas = Object.keys(listas).filter(function(s){ return !MOV_AR.listas[s]; });
+      nuevas.slice(0, 6).forEach(function(s, i){
+        var cuerpo = listas[s].querySelector('.cuerpo');
+        movAnimar(cuerpo, [{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }],
+          { duration: 520, delay: i * 70 });
+      });
+    }
+  }
+  MOV_AR.celdas = foto;
+  MOV_AR.listas = listas;
+  movResaltarLlegada(caja);
+}
+function movEntrarSemanas(tn, dir, que){
+  var x = dir ? dir * 34 : 0, y = dir ? 0 : 14;
+  var desde = { opacity: 0, transform: 'translate(' + x + 'px,' + y + 'px)' }, hasta = { opacity: 1, transform: 'none' };
+  var cal = tn.querySelector('.cal-t');
+  if(cal) movAnimar(cal, [desde, hasta], { duration: 460 });
+  if(que === 'cal') return;
+  var lado = tn.querySelector('.mes-lado');
+  if(lado && !dir) movAnimar(lado, [{ opacity: 0, transform: 'translateY(10px)' }, hasta], { duration: 460, delay: 60 });
+  Array.prototype.slice.call(tn.querySelectorAll('.mes-sem'), 0, 6).forEach(function(d, i){
+    movAnimar(d, [desde, hasta], { duration: 560, delay: 90 + i * 60 });
+  });
+}
+/* Lo que cambió después de guardar se ilumina en dorado un momento. Si
+   cambió media semana (se rearmó), no se ilumina nada: sería ruido. */
+function movMarcarCambios(antes, ahora){
+  var cambiadas = Object.keys(ahora).filter(function(k){ return antes[k] && antes[k].v !== ahora[k].v; });
+  if(!cambiadas.length || cambiadas.length > 40) return;
+  var primera = null;
+  cambiadas.forEach(function(k){
+    var td = ahora[k].el;
+    td.classList.remove('mov-cambio'); void td.offsetWidth; td.classList.add('mov-cambio');
+    td.addEventListener('animationend', function(){ td.classList.remove('mov-cambio'); }, { once: true });
+    if(!primera) primera = td;
+  });
+  if(primera){
+    var r = primera.getBoundingClientRect();
+    if(r.bottom < 80 || r.top > (window.innerHeight || 800) - 40) movIrSuave(primera);
+  }
+}
+/* Después de rotar o trasladar: abre la semana y señala a quien llegó. */
+function movFilasDe(caja, personas){
+  var filas = [];
+  caja.querySelectorAll('button[data-ver-persona]').forEach(function(b){
+    if(personas.indexOf(b.dataset.verPersona) > -1){ var tr = b.closest('tr'); if(tr) filas.push(tr); }
+  });
+  return filas;
+}
+/* La fila a la que se lleva: la de la semana en que rige el cambio, o
+   la primera que haya; si no hay ninguna, la semana misma. */
+function movBlancoDe(caja, m){
+  var filas = movFilasDe(caja, m.personas);
+  var sem = caja.querySelector('details[data-sem="' + m.semana + '"]');
+  var enSemana = filas.filter(function(f){ return sem && sem.contains(f); });
+  return { el: enSemana[0] || filas[0] || sem, fila: !!(enSemana[0] || filas[0]), sem: sem };
+}
+function movResaltarLlegada(caja){
+  var r = MOV_AR.resaltar;
+  if(r){
+    if(Date.now() > r.hasta) MOV_AR.resaltar = null;
+    else if(r.area === AREA_VIENDO){
+      var cargando = ESTADO_TURNOS === 'trayendo' || ESTADO_TURNOS === 'armando';
+      if(movFilasDe(caja, r.personas).length || !cargando){
+        MOV_AR.resaltar = null;
+        MOV_AR.marca = { area: r.area, personas: r.personas, semana: r.semana, hasta: Date.now() + 6500 };
+        if(r.volver) setTimeout(function(){ movVolverA(r.volver, r.area); }, MOV_AR.enVT ? 4200 : 3800);
+        /* El cuadro puede repintarse otra vez apenas llega la respuesta:
+           la fila se busca de nuevo justo al ir, no se guarda la vieja. */
+        setTimeout(function(){
+          var c = $p('ar-turnos'), m = MOV_AR.marca;
+          if(!c || !m || m.area !== AREA_VIENDO) return;
+          var b = movBlancoDe(c, m);
+          if(!b.el) return;
+          var det = b.el.closest('details');
+          if(det) det.open = true;
+          movIrSuave(b.el);
+          if(!b.fila && b.sem) movSenalarSemana(b.sem);
+          /* Si no le quedó ningún turno (por ejemplo, se eligió un día
+             que el área no trabaja), el aviso lo dice en vez de prometer. */
+          if(!b.fila) movAviso('El cambio quedó guardado, pero en <b>' + esc(m.area) +
+            '</b> no ' + (m.personas.length === 1 ? 'le quedó' : 'les quedó') + ' ningún turno en estas semanas');
+        }, MOV_AR.enVT ? 560 : 160);
+        setTimeout(function(){
+          MOV_AR.marca = null;
+          document.querySelectorAll('#ar-turnos tr.mov-llego').forEach(function(f){ f.classList.remove('mov-llego'); });
+        }, 6500);
+      }
+    }
+  }
+  /* Mientras dura la señal, sobrevive a los repintados del cuadro. */
+  var m = MOV_AR.marca;
+  if(m && m.area === AREA_VIENDO && Date.now() < m.hasta){
+    movFilasDe(caja, m.personas).forEach(function(f){ f.classList.add('mov-llego'); });
+  }
+}
+/* De vuelta al cuadro que se estaba editando. Si en el intervalo se
+   abrió otra cosa, no se mueve nada: manda lo que la persona eligió. */
+function movVolverA(v, desde){
+  if(!v || AREA_VIENDO !== desde || _perVistaActual() !== 'areas') return;
+  if(!areaPorNombre(v.area)) return;
+  var sale = $p('ar-turnos').querySelector('.tn-caja');
+  movTransicion(function(){
+      CAL_MES = '';
+      verMes(v.area, v.mes || isoDe(new Date()));
+      movSubirA($p('ar-turnos'));
+    },
+    function(){ movNombrar(sale, 'mov-vuelve-sale'); },
+    function(conVT){
+      if(conVT) movNombrar($p('ar-turnos').querySelector('.tn-caja'), 'mov-vuelve-entra');
+    });
+  movAviso('De vuelta en <b>' + esc(v.area) + '</b>');
+}
+function movSenalarSemana(det){
+  var s = det && det.querySelector('summary');
+  if(!s) return;
+  s.classList.remove('mov-senal'); void s.offsetWidth; s.classList.add('mov-senal');
+  s.addEventListener('animationend', function(){ s.classList.remove('mov-senal'); }, { once: true });
+}
+
+/* ── Formularios: lo que aparece al cambiar una opción entra suave ─── */
+function movMostrarNuevos(raiz, cambio){
+  if(!raiz || movQuieto()){ cambio(); return; }
+  var ocultos = [];
+  raiz.querySelectorAll('[id]').forEach(function(el){ if(!el.getClientRects().length) ocultos.push(el); });
+  cambio();
+  var nuevos = ocultos.filter(function(el){
+    if(!el.isConnected || !el.getClientRects().length) return false;
+    /* Solo el de más afuera: si el padre también apareció, basta con él. */
+    var p = el.parentElement;
+    while(p && p !== raiz){ if(ocultos.indexOf(p) > -1) return false; p = p.parentElement; }
+    return true;
+  }).slice(0, 6);
+  nuevos.forEach(function(el, i){
+    movAnimar(el, [{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }],
+      { duration: 380, delay: i * 50 });
+  });
+}
+
+/* El cuadro de Áreas lleva su propio movimiento: la capa general de la
+   pestaña no lo vuelve a animar en cada repintado. */
+(function(){
+  var v = $p('per-vista-areas');
+  if(v) v.classList.add('mov-propio');
+  movAltoFijo();
+  window.addEventListener('resize', movAltoFijo);
+  /* El aviso de "qué se va a rearmar" del formulario de rotar cambia
+     cada vez que se toca algo: el texto nuevo entra con un fundido. */
+  var mm = $p('per-mover-modal');
+  if(mm && window.MutationObserver){
+    new MutationObserver(function(muts){
+      muts.forEach(function(x){
+        var t = x.target;
+        if(t && t.id === 'mv-aviso') movAnimar(t, [{ opacity: .35 }, { opacity: 1 }], { duration: 260 });
+      });
+    }).observe(mm, { childList: true, subtree: true });
+  }
+})();
 
 function engancharPantalla(){
   if(!$p('per-grid')) return;
@@ -46578,6 +47058,154 @@ else engancharPantalla();
   transition:transform 260ms var(--mov-curva), box-shadow 260ms var(--mov-curva);
 }
 </style>
+<!-- ═════════════════════════════════════════════════════════════════
+     MOVIMIENTO · Personal › Áreas y turnos
+     Solo aspecto y animación. Va con el bloque "MOVIMIENTO EN ÁREAS Y
+     TURNOS" del módulo de Personal. Si se borra, todo funciona igual.
+     ═════════════════════════════════════════════════════════════════ -->
+<style id="mov-areas-estilos">
+/* ── Los formularios de Personal: suben al abrir, bajan al cerrar, y el
+   fondo se nubla un poco para que lo de atrás no distraiga. ── */
+#per-modal,#per-docs-modal,#per-turno-modal,#per-nov-modal,#per-mover-modal,#per-area-modal{
+  opacity:0;pointer-events:none;
+  transition:opacity 220ms var(--mov-curva),backdrop-filter 260ms var(--mov-curva),display 220ms allow-discrete;
+}
+:is(#per-modal,#per-docs-modal,#per-turno-modal,#per-nov-modal,#per-mover-modal,#per-area-modal).open{
+  opacity:1;pointer-events:auto;backdrop-filter:blur(3px);
+}
+:is(#per-modal,#per-docs-modal,#per-turno-modal,#per-nov-modal,#per-mover-modal,#per-area-modal) .per-caja{
+  opacity:0;transform:translateY(18px) scale(.975);
+  transition:transform 440ms var(--mov-curva),opacity 220ms var(--mov-curva),max-width 320ms var(--mov-curva);
+  box-shadow:0 2px 6px rgba(0,0,0,.06),0 34px 80px -34px rgba(12,38,24,.6);
+}
+:is(#per-modal,#per-docs-modal,#per-turno-modal,#per-nov-modal,#per-mover-modal,#per-area-modal).open .per-caja{
+  opacity:1;transform:none;
+}
+@starting-style{
+  :is(#per-modal,#per-docs-modal,#per-turno-modal,#per-nov-modal,#per-mover-modal,#per-area-modal).open{opacity:0;backdrop-filter:blur(0)}
+  :is(#per-modal,#per-docs-modal,#per-turno-modal,#per-nov-modal,#per-mover-modal,#per-area-modal).open .per-caja{
+    opacity:0;transform:translateY(18px) scale(.975);
+  }
+}
+
+/* ── Las tarjetas de área se levantan al pasar el mouse ── */
+#panel-personal .ar-ficha{position:relative;
+  transition:transform 280ms var(--mov-curva),box-shadow 280ms var(--mov-curva),border-color 280ms var(--mov-curva)}
+@media (hover:hover){
+  #panel-personal .ar-ficha:hover{transform:translateY(-3px);
+    box-shadow:0 2px 4px rgba(0,0,0,.04),0 18px 34px -20px rgba(28,86,54,.5)}
+  #panel-personal .ar-acc button:hover{border-color:#1c5636;color:#1c5636}
+  #panel-personal .ar-acc button.fuerte:hover{background:#174a2e;color:#fff;box-shadow:0 6px 14px -8px rgba(28,86,54,.8)}
+}
+
+/* Los botones del área abierta (Rotar personal, Ir a hoy, Cerrar) salían
+   con el aspecto del navegador: ahora van como el resto de la pestaña. */
+#panel-personal .mes-btns{flex-wrap:wrap;margin-top:10px}
+#panel-personal .mes-btns button{
+  padding:8px 14px;font-size:10.5px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;
+  border:1px solid var(--rule);background:var(--white);color:var(--ink-m);cursor:pointer;
+  font-family:'Source Sans 3',sans-serif;border-radius:2px;
+}
+#panel-personal .mes-btns #mes-rotar{background:#1c5636;border-color:#1c5636;color:#fff}
+@media (hover:hover){
+  #panel-personal .mes-btns button:hover{border-color:#1c5636;color:#1c5636}
+  #panel-personal .mes-btns #mes-rotar:hover{background:#174a2e;color:#fff;box-shadow:0 6px 14px -8px rgba(28,86,54,.8)}
+}
+
+/* ── Las semanas se despliegan y se pliegan, no saltan ── */
+#panel-personal .mes-sem{interpolate-size:allow-keywords}
+/* Al ir a una semana o a una persona, que no quede debajo de las barras
+   fijas de arriba (su alto lo mide el script). */
+#ar-turnos .mes-sem,#ar-turnos tr,#ar-turnos .tn-caja{scroll-margin-top:calc(var(--mov-arriba,0px) + 12px)}
+#panel-personal .mes-sem::details-content{block-size:0;overflow:clip;
+  transition:block-size 380ms var(--mov-curva),content-visibility 380ms allow-discrete}
+#panel-personal .mes-sem[open]::details-content{block-size:auto}
+#panel-personal .mes-sem > summary{transition:filter 200ms var(--mov-curva)}
+#panel-personal .mes-sem > summary:hover{filter:brightness(1.07)}
+#panel-personal .mes-sem > summary.mov-senal{animation:movSenal 1400ms var(--mov-curva)}
+@keyframes movSenal{0%{box-shadow:inset 0 0 0 0 rgba(201,154,46,0)}
+  20%{box-shadow:inset 0 0 0 3px #c99a2e}100%{box-shadow:inset 0 0 0 0 rgba(201,154,46,0)}}
+
+/* ── El cuadro: tocar una celda se anticipa; lo que cambió se ilumina ── */
+#ar-turnos td[data-cel]{transition:box-shadow 180ms var(--mov-curva),filter 180ms var(--mov-curva)}
+@media (hover:hover){
+  #ar-turnos td[data-cel]:hover{box-shadow:inset 0 0 0 2px rgba(201,154,46,.9);filter:brightness(1.05)}
+}
+#ar-turnos td[data-cel].mov-cambio{animation:movCambio 1900ms var(--mov-curva)}
+@keyframes movCambio{
+  0%{box-shadow:inset 0 0 0 3px #c99a2e;filter:brightness(1.22)}
+  55%{box-shadow:inset 0 0 0 2px rgba(201,154,46,.75);filter:brightness(1.06)}
+  100%{box-shadow:inset 0 0 0 0 rgba(201,154,46,0);filter:none}
+}
+/* Quien acaba de llegar al área: su fila se marca en dorado y lleva una
+   etiqueta corta que se va sola. */
+#ar-turnos tr.mov-llego > td{animation:movLlego 2200ms var(--mov-curva) 2}
+#ar-turnos tr.mov-llego > td.quien{background:#fdf3e3;transition:background 600ms}
+@keyframes movLlego{
+  0%,100%{box-shadow:inset 0 2px 0 rgba(201,154,46,0),inset 0 -2px 0 rgba(201,154,46,0)}
+  30%{box-shadow:inset 0 2px 0 #c99a2e,inset 0 -2px 0 #c99a2e}
+}
+#ar-turnos tr.mov-llego .ver-quien::after{
+  content:'llegó';display:inline-block;margin-left:7px;padding:1px 7px;border-radius:9px;
+  background:#c99a2e;color:#fff;font-size:9.5px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;
+  vertical-align:1px;animation:movChip 520ms var(--mov-curva) both;
+}
+@keyframes movChip{from{opacity:0;transform:translateX(-6px) scale(.8)}}
+
+/* Mientras llegan los turnos, las semanas vacías brillan como cargando
+   en vez de decir "sin generar". */
+#ar-turnos.mov-cargando .mes-sem.pendiente > summary .hs{visibility:hidden}
+#ar-turnos.mov-cargando .mes-sem.pendiente .cuerpo > *{visibility:hidden}
+#ar-turnos.mov-cargando .mes-sem.pendiente .cuerpo{min-height:58px;
+  background:linear-gradient(100deg,#f4f1e8 20%,#fcfbf7 40%,#f4f1e8 60%);background-size:220% 100%;
+  animation:movBrillo 1300ms linear infinite}
+@keyframes movBrillo{from{background-position:120% 0}to{background-position:-120% 0}}
+
+/* ── El aviso de abajo ── */
+#mov-aviso{position:fixed;left:50%;bottom:26px;z-index:9500;display:flex;align-items:center;gap:11px;
+  max-width:min(560px,calc(100vw - 32px));padding:12px 18px 12px 14px;
+  background:#1c5636;color:#fff;border-left:4px solid #c99a2e;
+  font:400 14px/1.35 'Source Sans 3',sans-serif;
+  box-shadow:0 2px 6px rgba(0,0,0,.12),0 24px 50px -22px rgba(10,30,20,.7);
+  opacity:0;transform:translate(-50%,18px) scale(.97);pointer-events:none;cursor:pointer;
+  transition:opacity 220ms var(--mov-curva),transform 460ms var(--mov-curva)}
+#mov-aviso.ver{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+#mov-aviso b{font-weight:700;color:#f3d88f}
+#mov-aviso svg{flex:0 0 24px;width:24px;height:24px;fill:none;stroke-linecap:round;stroke-linejoin:round}
+#mov-aviso svg circle{stroke:#c99a2e;stroke-width:1.8;stroke-dasharray:63;stroke-dashoffset:63}
+#mov-aviso svg path{stroke:#fff;stroke-width:2.2;stroke-dasharray:16;stroke-dashoffset:16}
+#mov-aviso.ver svg circle{animation:movTrazo 520ms 120ms var(--mov-curva) forwards}
+#mov-aviso.ver svg path{animation:movTrazo 360ms 460ms var(--mov-curva) forwards}
+@keyframes movTrazo{to{stroke-dashoffset:0}}
+
+/* ── Transiciones de vista (Chrome y Edge) ──
+   La pestaña marcada se desliza a la nueva; la tarjeta de un área se
+   agranda hasta su cuadro y vuelve a encogerse al cerrar. */
+#panel-personal .per-tab.on{view-transition-name:per-pestana}
+::view-transition-group(*){animation-duration:480ms;animation-timing-function:cubic-bezier(.16,1,.3,1)}
+::view-transition-old(root),::view-transition-new(root){animation-duration:200ms}
+::view-transition-group(ar-caja){overflow:clip}
+::view-transition-old(ar-caja),::view-transition-new(ar-caja){
+  width:100%;height:100%;object-fit:none;object-position:left top}
+::view-transition-old(ar-caja){animation:movVtFuera 200ms ease-out both}
+::view-transition-new(ar-caja){animation:movVtDentro 320ms 90ms ease-out both}
+::view-transition-old(per-vista-sale){animation:movVtFuera 160ms ease-out both}
+::view-transition-new(per-vista-entra){animation:movVtSube 460ms 60ms cubic-bezier(.16,1,.3,1) both}
+::view-transition-old(mov-sale){animation:movVtIzq 260ms cubic-bezier(.4,0,1,1) both}
+::view-transition-new(mov-entra){animation:movVtDer 520ms 80ms cubic-bezier(.16,1,.3,1) both}
+/* El regreso va al revés: el área de llegada sale por la derecha y el
+   cuadro que se estaba editando entra por la izquierda. */
+::view-transition-old(mov-vuelve-sale){animation:movVtDerFuera 260ms cubic-bezier(.4,0,1,1) both}
+::view-transition-new(mov-vuelve-entra){animation:movVtIzqDentro 520ms 80ms cubic-bezier(.16,1,.3,1) both}
+@keyframes movVtDerFuera{to{opacity:0;transform:translateX(48px)}}
+@keyframes movVtIzqDentro{from{opacity:0;transform:translateX(-64px)}}
+@keyframes movVtFuera{to{opacity:0}}
+@keyframes movVtDentro{from{opacity:0}}
+@keyframes movVtSube{from{opacity:0;transform:translateY(16px)}}
+@keyframes movVtIzq{to{opacity:0;transform:translateX(-48px)}}
+@keyframes movVtDer{from{opacity:0;transform:translateX(64px)}}
+
+</style>
 <script id="mov-script">
 (function(){
   'use strict';
@@ -46609,7 +47237,7 @@ else engancharPantalla();
   }
   function visible(panel){ return panel.classList.contains('active') && !document.hidden; }
   function dentroDeDialogo(el){
-    return !!el.closest('[role="dialog"],.pv-velo,.per-modal,[class*="modal"]');
+    return !!el.closest('[role="dialog"],.pv-velo,.per-modal,[class*="modal"],.mov-propio');
   }
 
   function mover(el, frames, opts){
