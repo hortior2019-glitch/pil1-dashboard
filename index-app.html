@@ -8126,6 +8126,10 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   padding:5px 6px;font-size:11.5px;border:1px solid var(--rule);background:var(--white);
   font-family:'Source Sans 3',sans-serif;color:var(--ink);border-radius:6px;
 }
+#per-area-modal .cuadro td.g-toca{cursor:pointer}
+#per-area-modal .cuadro td.g-toca:hover{outline:2px solid var(--gold,#b8891f);outline-offset:-2px}
+#per-area-modal .cuadro td.g-desc{background:#fdf8ee !important;outline:1px dashed var(--gold,#b8891f);outline-offset:-3px}
+#per-area-modal .cuadro td.g-desc .nt{color:#8a6410;font-weight:700}
 #per-area-modal .esp-tarjeta .hs{font-size:11px;font-weight:700;color:#8a6410}
 #per-area-modal .esp-tarjeta .esp-x{width:22px;height:22px;border:none;background:none;
   color:#b23b3b;cursor:pointer;font-size:15px;line-height:1;margin-left:auto}
@@ -43301,7 +43305,10 @@ function abrirArea(a, modificar){
     dias: a ? String(a.dias || '').split(',').filter(Boolean) : ['L','M','X','J','V'],
     horaInicio: hhmm((a && a.horaInicio) || '07:00'),
     horaFin: hhmm((a && a.horaFin) || '17:00'),
-    horarios: (a && a.horarios) ? JSON.parse(JSON.stringify(a.horarios)) : {},
+    /* En el horario general la columna de horarios solo guarda los
+       descansos de una fecha de cada quien (ver descansosGeneral). */
+    horarios: (a && a.horarios && a.modo !== 'general') ? JSON.parse(JSON.stringify(a.horarios)) : {},
+    descansosGeneral: descansosGeneralDe(a),
     turnos: (a && a.turnos && a.turnos.length)
       ? a.turnos.map(function(t){ return { nombre:t.nombre, inicio:t.inicio, fin:t.fin, dias:t.dias || TODOS_LOS_DIAS,
                                            fijo:!!t.fijo, almuerzo:Number(t.almuerzo) || 0,
@@ -43316,7 +43323,7 @@ function abrirArea(a, modificar){
     inicial: (a && a.inicial) ? JSON.parse(JSON.stringify(a.inicial)) : {},
     /* El almuerzo del horario general: cuánto dura, si se reparte en
        turnos y quién almuerza en cada uno. */
-    especialesGeneral: (a && a.especiales) ? a.especiales.slice() : [],
+    especialesGeneral: (a && a.especiales) ? a.especiales.map(espGeneralSuelto) : [],
     almuerzo: (a && a.almuerzoGeneral) ? (Number(a.almuerzoGeneral.min) || 0) : 0,
     almPorTurnos: !!(a && a.almuerzoGeneral && a.almuerzoGeneral.porTurnos),
     almTurnos: (a && a.almuerzoGeneral && a.almuerzoGeneral.turnos)
@@ -43364,6 +43371,36 @@ function cerrarArea(){ $p('per-area-modal').classList.remove('open'); AREA_EDIT 
    día con otro horario: no trabaja → horario normal → otro horario.
    En los otros modos cada turno lleva su propia tira y esta se esconde:
    tener dos mandando sobre lo mismo confundía. */
+/* El día distinto del horario general se edita con entrada, salida y
+   almuerzo propios. El servicio lo devuelve con 'bloques'; acá se deja
+   plano para que al cambiar la hora no quede un bloque viejo mandando. */
+function espGeneralSuelto(e){
+  var x = JSON.parse(JSON.stringify(e || {}));
+  var b0 = (x.bloques && x.bloques[0]) || null;
+  if(b0){
+    if(!x.inicio) x.inicio = b0.inicio || '';
+    if(!x.fin) x.fin = b0.fin || '';
+    if(x.almuerzo == null && b0.almuerzo != null) x.almuerzo = Number(b0.almuerzo) || 0;
+  }
+  delete x.bloques;
+  return x;
+}
+/* El almuerzo de ese día: el suyo si se dijo; si no, el del área. */
+function almEspGeneral(e){
+  return (e && e.almuerzo != null && e.almuerzo !== '') ? (Number(e.almuerzo) || 0) : (Number(AREA_FORM.almuerzo) || 0);
+}
+/* Descansos de UNA fecha en el horario general: {persona: [fechas]}.
+   El horario es el mismo para todos, así que lo que es de cada quien
+   (no viene este lunes) va aparte y no cambia el horario del área. */
+function descansosGeneralDe(a){
+  var out = {};
+  if(!a || a.modo !== 'general' || !a.horarios) return out;
+  Object.keys(a.horarios).forEach(function(c){
+    var l = (a.horarios[c] && a.horarios[c].descansos) || [];
+    if(l.length) out[c] = l.slice();
+  });
+  return out;
+}
 function espGeneralDelDia(letra){
   var lista = AREA_FORM.especialesGeneral || [];
   for(var k = 0; k < lista.length; k++){
@@ -43393,7 +43430,8 @@ function pintarDias(){
         AREA_FORM.especialesGeneral.splice(esp, 1);
         if(k > -1) AREA_FORM.dias.splice(k, 1);
       } else if(k > -1){
-        AREA_FORM.especialesGeneral.push({ dia:d, fecha:'', inicio:AREA_FORM.horaInicio, fin:AREA_FORM.horaFin });
+        AREA_FORM.especialesGeneral.push({ dia:d, fecha:'', inicio:AREA_FORM.horaInicio, fin:AREA_FORM.horaFin,
+                                           almuerzo: Number(AREA_FORM.almuerzo) || 0 });
       } else {
         AREA_FORM.dias.push(d);
       }
@@ -43417,7 +43455,12 @@ function pintarDiasEspeciales(general){
       '<input type="time" data-gini="' + k + '" value="' + esc(e.inicio) + '">' +
       '<span>a</span>' +
       '<input type="time" data-gfin="' + k + '" value="' + esc(e.fin) + '">' +
-      '<span class="hs">' + numeroHoras(horasTurno(e.inicio, e.fin, AREA_FORM.almuerzo)) + '</span>' +
+      /* Ese día puede ir con o sin almuerzo, distinto del resto. */
+      '<select data-galm="' + k + '" title="Almuerzo de ese día">' + ALMUERZOS.map(function(o){
+        return '<option value="' + o[0] + '"' + (almEspGeneral(e) === o[0] ? ' selected' : '') + '>' +
+          (o[0] ? 'Almuerzo ' + o[1] : 'Sin almuerzo') + '</option>';
+      }).join('') + '</select>' +
+      '<span class="hs">' + numeroHoras(horasTurno(e.inicio, e.fin, almEspGeneral(e))) + '</span>' +
       '<button type="button" class="esp-x" data-gx="' + k + '" title="' +
         (e.fecha ? 'Quitar esta fecha' : 'Volver al horario del área') + '">×</button>' +
     '</div>';
@@ -43426,10 +43469,13 @@ function pintarDiasEspeciales(general){
       'title="Para una fecha suelta: el 12 de octubre, un inventario…">+ Una fecha puntual</button>';
 
   caja.querySelectorAll('[data-gini]').forEach(function(i){
-    i.onchange = function(){ lista[+i.dataset.gini].inicio = i.value; pintarDias(); };
+    i.onchange = function(){ var e = lista[+i.dataset.gini]; e.inicio = i.value; delete e.bloques; pintarDias(); };
   });
   caja.querySelectorAll('[data-gfin]').forEach(function(i){
-    i.onchange = function(){ lista[+i.dataset.gfin].fin = i.value; pintarDias(); };
+    i.onchange = function(){ var e = lista[+i.dataset.gfin]; e.fin = i.value; delete e.bloques; pintarDias(); };
+  });
+  caja.querySelectorAll('[data-galm]').forEach(function(i){
+    i.onchange = function(){ var e = lista[+i.dataset.galm]; e.almuerzo = Number(i.value) || 0; delete e.bloques; pintarDias(); };
   });
   caja.querySelectorAll('[data-gfecha]').forEach(function(i){
     i.onchange = function(){ lista[+i.dataset.gfecha].fecha = i.value; pintarDias(); };
@@ -43449,7 +43495,8 @@ function pintarDiasEspeciales(general){
   });
   var mas = caja.querySelector('#ar-f-gmas');
   if(mas) mas.onclick = function(){
-    lista.push({ dia:'', fecha:isoDe(new Date()), inicio:AREA_FORM.horaInicio, fin:AREA_FORM.horaFin });
+    lista.push({ dia:'', fecha:isoDe(new Date()), inicio:AREA_FORM.horaInicio, fin:AREA_FORM.horaFin,
+                 almuerzo: Number(AREA_FORM.almuerzo) || 0 });
     pintarDias();
   };
 }
@@ -44674,6 +44721,7 @@ function verCuadro(){
       : '<div class="cuadro">' + (AREA_FORM.modo === 'personalizado'
           ? 'Falta asignarle el horario a alguien.'
           : 'Falta el horario o los días del área.') + '</div>';
+    if(AREA_FORM.modo === 'general' && propios.length) engancharDescansosGeneral(caja);
     return;
   }
 
@@ -44691,6 +44739,46 @@ function verCuadro(){
     caja.innerHTML = cuadroChico(d.turnos || [], semana, d.faltoGente);
   }).catch(function(e){
     caja.innerHTML = '<div class="cuadro">No se pudo armar el cuadro: ' + esc(e.message) + '</div>';
+  });
+}
+
+/* En el horario general, tocar una celda del cuadro deja a ESA persona
+   en descanso SOLO ESA fecha; tocarla otra vez le devuelve el turno. El
+   horario del área no cambia: la semana siguiente sigue igual. */
+function engancharDescansosGeneral(caja){
+  var tabla = caja.querySelector('.cuadro');
+  if(!tabla) return;
+  var nota = document.createElement('div');
+  nota.className = 'ayuda';
+  nota.innerHTML = 'Toque una celda para que esa persona <b>descanse solo ese día</b>; tóquela otra vez para devolverle el turno. ' +
+    'El horario del área no cambia.';
+  tabla.insertBefore(nota, tabla.querySelector('.tn-gente') || tabla.firstChild);
+  var desc = AREA_FORM.descansosGeneral = AREA_FORM.descansosGeneral || {};
+  var diasArea = AREA_FORM.dias || [];
+  tabla.querySelectorAll('[data-cel]').forEach(function(td){
+    var clave = td.dataset.persona, f = td.dataset.fecha;
+    var letra = DIAS_LETRA[(new Date(f + 'T00:00:00').getDay() + 6) % 7];
+    var esDesc = (desc[clave] || []).indexOf(f) > -1;
+    /* Solo se tocan los días que se trabajan (o el que descansa por lo
+       que se tocó acá): los de descanso del área no tienen turno que quitar. */
+    var tieneEsp = (AREA_FORM.especialesGeneral || []).some(function(e){
+      return e.fecha === f || (!e.fecha && e.dia === letra);
+    });
+    if(!esDesc && diasArea.indexOf(letra) < 0 && !tieneEsp) return;
+    td.classList.add('g-toca');
+    if(esDesc){
+      td.classList.add('g-desc');
+      var nt = td.querySelector('.nt');
+      if(nt) nt.textContent = 'descansa solo hoy';
+    }
+    td.title = esDesc ? 'Descansa solo este día · toque para devolverle el turno'
+                      : 'Toque para que descanse solo este día';
+    td.onclick = function(){
+      var l = (desc[clave] || []).slice(), k = l.indexOf(f);
+      if(k > -1) l.splice(k, 1); else l.push(f);
+      if(l.length) desc[clave] = l; else delete desc[clave];
+      verCuadro();
+    };
   });
 }
 
@@ -44767,10 +44855,12 @@ function cuadroDeHorarios(semana){
       /* Una fecha puntual hace trabajar ese día aunque no sea de los
          suyos; si no hay nada especial, manda su calendario. */
       if(!esp && dias.indexOf(letra) < 0) return;
+      /* Descanso de esa fecha para esta persona (tocado en el cuadro):
+         ese día no va y la semana siguiente sigue igual. */
+      if(general && ((AREA_FORM.descansosGeneral || {})[p.clave] || []).indexOf(f) > -1) return;
       var ini = esp ? esp.inicio : hz.inicio;
       var fin = esp ? esp.fin : hz.fin;
-      var alm = (esp && esp.bloques && esp.bloques.length && esp.bloques[0].almuerzo != null)
-        ? (Number(esp.bloques[0].almuerzo) || 0) : (Number(hz.almuerzo) || 0);
+      var alm = esp ? almEspGeneral(esp) : (Number(hz.almuerzo) || 0);
       salida.push({ area: AREA_FORM.nombre || 'Área nueva', semana: semana, fecha: f,
                     dia: DIAS_NOMBRE[letra], turno: hz.nombre || 'Horario',
                     inicio: ini, fin: fin,
@@ -44857,7 +44947,20 @@ function guardarArea(){
     rearmarDesde: AREA_FORM.modificar ? sumarDias(lunesDe(''), 7)
       : (AREA_IMPACTO && $p('ar-f-rearmar') && $p('ar-f-rearmar').checked)
       ? AREA_IMPACTO.desdeSemana : '',
-    especiales: AREA_FORM.modo === 'general' ? (AREA_FORM.especialesGeneral || []) : [],
+    especiales: AREA_FORM.modo === 'general' ? (AREA_FORM.especialesGeneral || []).map(function(e){
+      /* Cada día distinto va con su almuerzo dicho: sin esto el servicio
+         lo dejaba sin almuerzo aunque el cuadro lo descontara. */
+      var x = espGeneralSuelto(e); x.almuerzo = almEspGeneral(x); return x;
+    }) : [],
+    descansosGeneral: AREA_FORM.modo === 'general' ? (function(){
+      var out = {}, lunesHoy = lunesDe('');
+      Object.keys(AREA_FORM.descansosGeneral || {}).forEach(function(c){
+        if(AREA_FORM.personas.indexOf(c) < 0) return;
+        var l = AREA_FORM.descansosGeneral[c].filter(function(f){ return f >= lunesHoy; });
+        if(l.length) out[c] = l;
+      });
+      return out;
+    })() : {},
     almuerzoGeneral: { min: Number(AREA_FORM.almuerzo) || 0,
                        porTurnos: !!AREA_FORM.almPorTurnos,
                        turnos: AREA_FORM.almPorTurnos ? AREA_FORM.almTurnos : [],
