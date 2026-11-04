@@ -46534,5 +46534,291 @@ if(document.readyState === 'loading') document.addEventListener('DOMContentLoade
 else engancharPantalla();
 })();
 </script>
+<!-- ══════════════════════════════════════════════════════════════════
+     MOVIMIENTO · capa visual de 5 pestañas
+     (Ingreso por Cliente, Ingreso de Material, Producción Humus,
+      Vehículos Carga, Personal)
+     ------------------------------------------------------------------
+     Solo animación: no lee ni cambia datos, cálculos, guardados ni el
+     aspecto de los indicadores (colores, letras, tamaños quedan igual).
+     Si este bloque se borra entero, todo sigue funcionando igual.
+
+     Una sola idea de movimiento para las cinco: "la carga entra".
+       · Al abrir la pestaña, sus bloques llegan en orden (título,
+         indicadores, tarjetas), rápido y sin hacer esperar.
+       · Las barras se llenan desde la izquierda, como una volqueta
+         que se carga; las columnas de las gráficas suben desde el piso.
+       · Los números grandes suben a su lugar cuando cambian.
+       · Las filas de las tablas aparecen en cascada corta.
+     Todo con transform y opacity, una misma curva (salida suave), y
+     con "reducir movimiento" se queda solo un fundido breve.
+     El contenido está visible por defecto: si el script falla, la
+     pestaña se ve como siempre.
+     ══════════════════════════════════════════════════════════════════ -->
+<style id="mov-estilos">
+:root{
+  --mov-curva:cubic-bezier(.16,1,.3,1);
+  --mov-rapido:140ms;
+  --mov-normal:220ms;
+}
+/* Respuesta al tocar: los botones se hunden un poco y vuelven. */
+:is(#panel-clientes,#panel-ingreso,#panel-ProduccionHumus,#panel-vehiculos,#panel-personal)
+  :is(button,.fbtn,.per-btn,.per-tab,.veh-vt,.cmp-wk-btn,.ing-toggle-btn,[role="button"]){
+  transition-property:transform,background-color,border-color,color,box-shadow,opacity;
+  transition-duration:var(--mov-normal);
+  transition-timing-function:var(--mov-curva);
+}
+:is(#panel-clientes,#panel-ingreso,#panel-ProduccionHumus,#panel-vehiculos,#panel-personal)
+  :is(button,.fbtn,.per-btn,.per-tab,.veh-vt,.cmp-wk-btn,.ing-toggle-btn,[role="button"]):not(:disabled):active{
+  transform:scale(.97);
+  transition-duration:var(--mov-rapido);
+}
+/* El indicador ya se levantaba al pasar el mouse; ahora con la misma curva. */
+:is(#panel-clientes,#panel-ingreso,#panel-ProduccionHumus,#panel-vehiculos,#panel-personal) .kpi{
+  transition:transform 260ms var(--mov-curva), box-shadow 260ms var(--mov-curva);
+}
+@media (prefers-reduced-motion:reduce){
+  :is(#panel-clientes,#panel-ingreso,#panel-ProduccionHumus,#panel-vehiculos,#panel-personal)
+    :is(button,.fbtn,.per-btn,.per-tab,.veh-vt,.cmp-wk-btn,.ing-toggle-btn,[role="button"]):active{
+    transform:none;
+  }
+}
+</style>
+<script id="mov-script">
+(function(){
+  'use strict';
+  if(!('animate' in Element.prototype) || !window.MutationObserver) return;
+
+  var PANELES = ['clientes','ingreso','ProduccionHumus','vehiculos','personal'];
+  var CURVA = 'cubic-bezier(.16,1,.3,1)';
+  var mqReducir = window.matchMedia ? matchMedia('(prefers-reduced-motion: reduce)') : { matches:false };
+  function reducir(){ return !!mqReducir.matches; }
+
+  /* Lo que se animó hace muy poco no se vuelve a animar: buscar o
+     filtrar repinta las listas en cada tecla, y el movimiento
+     repetido se siente como lentitud. */
+  var recientes = new WeakMap();
+  function yaSeMovio(el, ms){
+    var t = recientes.get(el), ahora = performance.now();
+    if(t && ahora - t < ms) return true;
+    recientes.set(el, ahora);
+    return false;
+  }
+
+  function enPantalla(el){
+    var r = el.getBoundingClientRect();
+    return r.bottom > 0 && r.top < (window.innerHeight || 800) && r.width > 0 && r.height > 0;
+  }
+  function visible(panel){ return panel.classList.contains('active') && !document.hidden; }
+  function dentroDeDialogo(el){
+    return !!el.closest('[role="dialog"],.pv-velo,.per-modal,[class*="modal"]');
+  }
+
+  function mover(el, frames, opts){
+    try{
+      var a = el.animate(frames, Object.assign({ easing: CURVA, fill: 'backwards' }, opts));
+      a.onfinish = a.oncancel = function(){ try{ a.cancel(); }catch(e){} };
+      return a;
+    }catch(e){ return null; }
+  }
+  function fundido(el, ms, demora){
+    return mover(el, [{ opacity: 0 }, { opacity: 1 }], { duration: ms || 160, delay: demora || 0 });
+  }
+
+  /* ── 1. Al abrir la pestaña: los bloques llegan en orden ────────── */
+  function entradaPanel(panel){
+    var hijos = Array.prototype.filter.call(panel.children, function(h){
+      return h.offsetParent !== null && h.offsetHeight > 0 && !dentroDeDialogo(h) && enPantalla(h);
+    }).slice(0, 7);
+    hijos.forEach(function(h, i){
+      if(reducir()) { fundido(h, 160); return; }
+      mover(h, [
+        { opacity: 0, transform: 'translateY(14px)' },
+        { opacity: 1, transform: 'none' }
+      ], { duration: 460, delay: i * 55 });
+    });
+  }
+
+  /* ── 2. Barras que se llenan desde la izquierda ─────────────────── */
+  var RE_ANCHO = /(^|;)\s*width\s*:\s*[\d.]+%/i;
+  function esBarra(el){
+    if(!el.style || !RE_ANCHO.test(el.getAttribute('style') || '')) return false;
+    var alto = el.offsetHeight, ancho = el.offsetWidth;
+    if(!ancho || alto > 40) return false;
+    if((el.textContent || '').trim().length > 6) return false;      // no es barra, es texto
+    var fondo = getComputedStyle(el).backgroundColor;
+    if(!fondo || fondo === 'transparent' || fondo === 'rgba(0, 0, 0, 0)') {
+      if(!/background/i.test(el.getAttribute('style') || '')) return false;
+    }
+    var padre = el.parentElement;
+    return !!padre && padre.offsetHeight <= 44 && el.children.length <= 2;
+  }
+  function llenar(barras){
+    barras.slice(0, 24).forEach(function(b, i){
+      if(reducir()) { fundido(b, 160); return; }
+      b.style.transformOrigin = 'left center';
+      mover(b, [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }],
+            { duration: 620, delay: Math.min(i, 10) * 40 });
+    });
+  }
+
+  /* ── 3. Gráficas SVG: columnas desde el piso, líneas que se trazan ─ */
+  function graficar(svg){
+    if(svg.closest('.mov-sin') || svg.getBoundingClientRect().width < 60) return;
+    if(reducir()) { fundido(svg, 180); return; }
+    var rects = Array.prototype.filter.call(svg.querySelectorAll('rect'), function(r){
+      var w = +r.getAttribute('width') || 0, h = +r.getAttribute('height') || 0;
+      return w > 0 && h > 0 && w < 200;
+    });
+    var esFondo = function(r){
+      var bb; try{ bb = r.getBBox(); }catch(e){ return true; }
+      var s; try{ s = svg.getBBox(); }catch(e){ return false; }
+      return bb.width >= s.width * 0.9 && bb.height >= s.height * 0.9;
+    };
+    var cols = rects.filter(function(r){ return !esFondo(r); }).slice(0, 60);
+    cols.forEach(function(r, i){
+      r.style.transformBox = 'fill-box';
+      r.style.transformOrigin = 'center bottom';
+      mover(r, [{ transform: 'scaleY(0)' }, { transform: 'scaleY(1)' }],
+            { duration: 560, delay: Math.min(i, 14) * 22 });
+    });
+    var lineas = Array.prototype.filter.call(svg.querySelectorAll('path,polyline'), function(p){
+      var f = (p.getAttribute('fill') || getComputedStyle(p).fill || '').toLowerCase();
+      return (f === 'none' || f === 'transparent') && !p.getAttribute('stroke-dasharray');
+    }).slice(0, 8);
+    lineas.forEach(function(p){
+      var L = 0; try{ L = p.getTotalLength(); }catch(e){}
+      if(!L || L > 6000) return;
+      mover(p, [
+        { strokeDasharray: L + ' ' + L, strokeDashoffset: L },
+        { strokeDasharray: L + ' ' + L, strokeDashoffset: 0 }
+      ], { duration: 820, delay: 80 });
+    });
+    if(!cols.length && !lineas.length){
+      mover(svg, [{ opacity: 0, transform: 'scale(.97)' }, { opacity: 1, transform: 'none' }],
+            { duration: 420 });
+    }
+  }
+
+  /* ── 4. Cifras grandes que suben a su lugar ─────────────────────── */
+  function subirCifra(el){
+    if(yaSeMovio(el, 900)) return;
+    if(reducir()) { fundido(el, 160); return; }
+    mover(el, [
+      { opacity: 0, transform: 'translateY(.35em)', clipPath: 'inset(0 0 100% 0)' },
+      { opacity: 1, transform: 'none', clipPath: 'inset(0 0 0 0)' }
+    ], { duration: 520 });
+  }
+
+  /* ── 5. Filas de tabla en cascada corta ─────────────────────────── */
+  function cascada(filas){
+    filas.slice(0, 14).forEach(function(tr, i){
+      if(reducir()) { fundido(tr, 140); return; }
+      mover(tr, [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }],
+            { duration: 320, delay: i * 18 });
+    });
+  }
+
+  /* Bloques nuevos (tarjetas e indicadores) que llegan después de
+     abrir la pestaña, cuando terminan de bajar los datos. */
+  function llegarBloques(bloques){
+    bloques.slice(0, 10).forEach(function(b, i){
+      if(reducir()) { fundido(b, 160); return; }
+      mover(b, [{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }],
+            { duration: 380, delay: Math.min(i, 6) * 45 });
+    });
+  }
+
+  /* ── Observador: mira lo que los renders ya existentes ponen en la
+     pantalla y le da movimiento. No toca el contenido. ───────────── */
+  function procesar(panel, nodos){
+    if(!visible(panel)) return;
+    var barras = [], svgs = [], cifras = [], filas = [], bloques = [];
+    var vistos = new Set(), contLote = new Map();
+    nodos.forEach(function(n){
+      if(n.nodeType !== 1 || !n.isConnected || dentroDeDialogo(n)) return;
+      if(n.closest('input,textarea,select,[contenteditable]')) return;
+      /* Repintado inmediato del mismo contenedor: sin viaje. Se decide
+         una vez por contenedor y por lote, no por cada hijo. */
+      var cont = n.parentElement || n;
+      if(!contLote.has(cont)) contLote.set(cont, yaSeMovio(cont, 700));
+      if(contLote.get(cont)) return;
+      var todos = [n].concat(Array.prototype.slice.call(n.querySelectorAll('*'), 0, 1500));
+      todos.forEach(function(e){
+        if(vistos.has(e)) return; vistos.add(e);
+        var tag = e.tagName;
+        if(tag === 'svg' && !e.closest('button')){ if(enPantalla(e)) svgs.push(e); return; }
+        if(e.ownerSVGElement) return;
+        if(e.classList.contains('kpi-val')){ if(enPantalla(e)) cifras.push(e); return; }
+        if(tag === 'TR' && e.parentElement && e.parentElement.tagName === 'TBODY'){
+          if(enPantalla(e)) filas.push(e); return;
+        }
+        if((e.classList.contains('kpi') || e.classList.contains('card')) && enPantalla(e)) bloques.push(e);
+        if(esBarra(e) && enPantalla(e)) barras.push(e);
+      });
+    });
+    if(bloques.length) llegarBloques(bloques);
+    if(barras.length) llenar(barras);
+    svgs.slice(0, 6).forEach(graficar);
+    cifras.forEach(subirCifra);
+    if(filas.length) cascada(filas);
+  }
+
+  function vigilar(panel){
+    var pendientes = [], programado = false;
+    var mo = new MutationObserver(function(muts){
+      if(!visible(panel)) return;
+      muts.forEach(function(m){
+        if(m.type === 'childList') {
+          m.addedNodes.forEach(function(n){ if(n.nodeType === 1) pendientes.push(n); });
+          /* Un número que cambió dentro de su caja también sube. */
+          var t = m.target;
+          if(t.nodeType === 1 && t.classList && t.classList.contains('kpi-val')) pendientes.push(t);
+        }
+      });
+      if(programado || !pendientes.length) return;
+      programado = true;
+      requestAnimationFrame(function(){
+        programado = false;
+        var lote = pendientes; pendientes = [];
+        procesar(panel, lote);
+      });
+    });
+    mo.observe(panel, { childList: true, subtree: true });
+
+    /* Al pasar de oculta a visible, la entrada en orden. */
+    var antes = panel.classList.contains('active');
+    new MutationObserver(function(){
+      var ahora = panel.classList.contains('active');
+      if(ahora && !antes){
+        recientes = new WeakMap();
+        requestAnimationFrame(function(){
+          entradaPanel(panel);
+          var barras = Array.prototype.filter.call(panel.querySelectorAll('div,span,i'), function(e){
+            return !dentroDeDialogo(e) && esBarra(e) && enPantalla(e);
+          });
+          llenar(barras);
+          Array.prototype.forEach.call(panel.querySelectorAll('.kpi-val'), function(c){
+            if(enPantalla(c)) subirCifra(c);
+          });
+          Array.prototype.filter.call(panel.querySelectorAll('svg'), function(s){
+            return !s.closest('button') && !dentroDeDialogo(s) && enPantalla(s);
+          }).slice(0, 6).forEach(graficar);
+        });
+      }
+      antes = ahora;
+    }).observe(panel, { attributes: true, attributeFilter: ['class'] });
+  }
+
+  function arrancar(){
+    PANELES.forEach(function(id){
+      var p = document.getElementById('panel-' + id);
+      if(p) vigilar(p);
+    });
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arrancar);
+  else arrancar();
+})();
+</script>
 </body>
 </html>
