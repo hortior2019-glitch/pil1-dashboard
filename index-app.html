@@ -46551,7 +46551,7 @@ else engancharPantalla();
        · Los números grandes suben a su lugar cuando cambian.
        · Las filas de las tablas aparecen en cascada corta.
      Todo con transform y opacity, una misma curva (salida suave), y
-     con "reducir movimiento" se queda solo un fundido breve.
+     con "reducir movimiento" el recorrido es la mitad, no se quita.
      El contenido está visible por defecto: si el script falla, la
      pestaña se ve como siempre.
      ══════════════════════════════════════════════════════════════════ -->
@@ -46577,12 +46577,6 @@ else engancharPantalla();
 :is(#panel-clientes,#panel-ingreso,#panel-ProduccionHumus,#panel-vehiculos,#panel-personal) .kpi{
   transition:transform 260ms var(--mov-curva), box-shadow 260ms var(--mov-curva);
 }
-@media (prefers-reduced-motion:reduce){
-  :is(#panel-clientes,#panel-ingreso,#panel-ProduccionHumus,#panel-vehiculos,#panel-personal)
-    :is(button,.fbtn,.per-btn,.per-tab,.veh-vt,.cmp-wk-btn,.ing-toggle-btn,[role="button"]):active{
-    transform:none;
-  }
-}
 </style>
 <script id="mov-script">
 (function(){
@@ -46591,8 +46585,12 @@ else engancharPantalla();
 
   var PANELES = ['clientes','ingreso','ProduccionHumus','vehiculos','personal'];
   var CURVA = 'cubic-bezier(.16,1,.3,1)';
+  /* Con "reducir movimiento" (en Windows: Efectos de animación
+     apagados) no se quita la animación: se hace más corta de recorrido.
+     Las barras y columnas siguen llenándose porque cuentan el dato. */
   var mqReducir = window.matchMedia ? matchMedia('(prefers-reduced-motion: reduce)') : { matches:false };
-  function reducir(){ return !!mqReducir.matches; }
+  function reducir(){ return false; }
+  function px(n){ return (mqReducir.matches ? Math.round(n / 2) : n) + 'px'; }
 
   /* Lo que se animó hace muy poco no se vuelve a animar: buscar o
      filtrar repinta las listas en cada tecla, y el movimiento
@@ -46629,13 +46627,13 @@ else engancharPantalla();
   function entradaPanel(panel){
     var hijos = Array.prototype.filter.call(panel.children, function(h){
       return h.offsetParent !== null && h.offsetHeight > 0 && !dentroDeDialogo(h) && enPantalla(h);
-    }).slice(0, 7);
+    }).slice(0, 8);
     hijos.forEach(function(h, i){
       if(reducir()) { fundido(h, 160); return; }
       mover(h, [
-        { opacity: 0, transform: 'translateY(14px)' },
+        { opacity: 0, transform: 'translateY(' + px(28) + ')' },
         { opacity: 1, transform: 'none' }
-      ], { duration: 460, delay: i * 55 });
+      ], { duration: 800, delay: i * 110 });
     });
   }
 
@@ -46658,7 +46656,7 @@ else engancharPantalla();
       if(reducir()) { fundido(b, 160); return; }
       b.style.transformOrigin = 'left center';
       mover(b, [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }],
-            { duration: 620, delay: Math.min(i, 10) * 40 });
+            { duration: 1200, delay: 250 + Math.min(i, 10) * 80 });
     });
   }
 
@@ -46680,7 +46678,7 @@ else engancharPantalla();
       r.style.transformBox = 'fill-box';
       r.style.transformOrigin = 'center bottom';
       mover(r, [{ transform: 'scaleY(0)' }, { transform: 'scaleY(1)' }],
-            { duration: 560, delay: Math.min(i, 14) * 22 });
+            { duration: 950, delay: 250 + Math.min(i, 14) * 45 });
     });
     var lineas = Array.prototype.filter.call(svg.querySelectorAll('path,polyline'), function(p){
       var f = (p.getAttribute('fill') || getComputedStyle(p).fill || '').toLowerCase();
@@ -46692,11 +46690,11 @@ else engancharPantalla();
       mover(p, [
         { strokeDasharray: L + ' ' + L, strokeDashoffset: L },
         { strokeDasharray: L + ' ' + L, strokeDashoffset: 0 }
-      ], { duration: 820, delay: 80 });
+      ], { duration: 1500, delay: 400 });
     });
     if(!cols.length && !lineas.length){
-      mover(svg, [{ opacity: 0, transform: 'scale(.97)' }, { opacity: 1, transform: 'none' }],
-            { duration: 420 });
+      mover(svg, [{ opacity: 0, transform: 'scale(.94)' }, { opacity: 1, transform: 'none' }],
+            { duration: 750, delay: 200 });
     }
   }
 
@@ -46705,17 +46703,17 @@ else engancharPantalla();
     if(yaSeMovio(el, 900)) return;
     if(reducir()) { fundido(el, 160); return; }
     mover(el, [
-      { opacity: 0, transform: 'translateY(.35em)', clipPath: 'inset(0 0 100% 0)' },
+      { opacity: 0, transform: 'translateY(.6em)', clipPath: 'inset(0 0 100% 0)' },
       { opacity: 1, transform: 'none', clipPath: 'inset(0 0 0 0)' }
-    ], { duration: 520 });
+    ], { duration: 900, delay: 200 });
   }
 
   /* ── 5. Filas de tabla en cascada corta ─────────────────────────── */
   function cascada(filas){
     filas.slice(0, 14).forEach(function(tr, i){
       if(reducir()) { fundido(tr, 140); return; }
-      mover(tr, [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }],
-            { duration: 320, delay: i * 18 });
+      mover(tr, [{ opacity: 0, transform: 'translateY(' + px(12) + ')' }, { opacity: 1, transform: 'none' }],
+            { duration: 550, delay: 200 + i * 45 });
     });
   }
 
@@ -46724,8 +46722,8 @@ else engancharPantalla();
   function llegarBloques(bloques){
     bloques.slice(0, 10).forEach(function(b, i){
       if(reducir()) { fundido(b, 160); return; }
-      mover(b, [{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }],
-            { duration: 380, delay: Math.min(i, 6) * 45 });
+      mover(b, [{ opacity: 0, transform: 'translateY(' + px(22) + ')' }, { opacity: 1, transform: 'none' }],
+            { duration: 700, delay: Math.min(i, 6) * 90 });
     });
   }
 
@@ -46790,7 +46788,12 @@ else engancharPantalla();
     var antes = panel.classList.contains('active');
     new MutationObserver(function(){
       var ahora = panel.classList.contains('active');
-      if(ahora && !antes){
+      if(ahora && !antes) llegada();
+      antes = ahora;
+    }).observe(panel, { attributes: true, attributeFilter: ['class'] });
+    repetir[panel.id.replace('panel-', '')] = llegada;
+
+    function llegada(){
         recientes = new WeakMap();
         requestAnimationFrame(function(){
           entradaPanel(panel);
@@ -46805,16 +46808,27 @@ else engancharPantalla();
             return !s.closest('button') && !dentroDeDialogo(s) && enPantalla(s);
           }).slice(0, 6).forEach(graficar);
         });
-      }
-      antes = ahora;
-    }).observe(panel, { attributes: true, attributeFilter: ['class'] });
+    }
   }
 
+  /* Repetir la llegada de la pestaña abierta: se usa al cerrar el
+     inicio de sesión, que hasta ese momento tapaba la pantalla. */
+  var repetir = {};
   function arrancar(){
     PANELES.forEach(function(id){
       var p = document.getElementById('panel-' + id);
       if(p) vigilar(p);
     });
+    var velo = document.getElementById('dash-login');
+    if(velo){
+      new MutationObserver(function(){
+        if(getComputedStyle(velo).display !== 'none') return;
+        PANELES.forEach(function(id){
+          var p = document.getElementById('panel-' + id);
+          if(p && p.classList.contains('active') && repetir[id]) setTimeout(function(){ repetir[id](); }, 120);
+        });
+      }).observe(velo, { attributes: true, attributeFilter: ['style', 'class'] });
+    }
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arrancar);
   else arrancar();
