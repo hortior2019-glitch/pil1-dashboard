@@ -28188,22 +28188,198 @@ async function vozNarrarPorTramos(r, plan, etapas){
   return textoCompleto;
 }
 
+/* ══════════════════════════════════════════════════════════════
+   MODO ASESOR (Gestión Contable, Liliana, Gerencia, Juan)
+   Para estos usuarios el asistente no espera: al entrar da la
+   bienvenida y arranca solo con el informe del mes contra el mes
+   pasado a la misma fecha, con personalidad de asesor financiero
+   picante y curioso. Las instrucciones viajan dentro del contexto,
+   así que el proxy de voz no cambia.
+   ══════════════════════════════════════════════════════════════ */
+const VOZ_ASESOR_USUARIOS = ['gestion contable','gestioncontable','liliana','gerencia','juan'];
+let _vozMemoria = [];          // últimas idas y vueltas, para que pueda seguir la charla
+let _vozEscuchaAuto = false;   // la escucha la abrió el asistente, no la persona
+
+function vozUsuarioAsesor(){
+  try {
+    const u = (typeof _usuarioActual !== 'undefined') ? _usuarioActual : null;
+    if (!u) return null;
+    const cand = [u.usuario, u.nombre].map(function(x){ return vozNorm(String(x||'')).trim(); });
+    for (let i = 0; i < cand.length; i++){
+      if (!cand[i]) continue;
+      if (VOZ_ASESOR_USUARIOS.indexOf(cand[i]) !== -1 ||
+          VOZ_ASESOR_USUARIOS.indexOf(cand[i].split(/\s+/)[0]) !== -1) {
+        return { usuario: u.usuario, nombre: (u.nombre || u.usuario || '').trim() };
+      }
+    }
+  } catch(e){}
+  return null;
+}
+
+/* Comparativo ya calculado: así el modelo no tiene que restar fechas y
+   cada número coincide con el dashboard (mismo peso neto, mismos clientes). */
+function vozComparativo(){
+  const f = VOZ_FUENTES.ingreso;
+  const rows = f ? f.obtener() : [];
+  if (!rows.length) return '';
+  const hoyD = new Date(); hoyD.setHours(0,0,0,0);
+  const Y = hoyD.getFullYear(), M = hoyD.getMonth(), d = hoyD.getDate();
+  const diasMes = new Date(Y, M+1, 0).getDate();
+  const diasAnt = new Date(Y, M, 0).getDate();
+  const dAnt = Math.min(d, diasAnt);
+  const menos = function(n){ const x = new Date(hoyD); x.setDate(x.getDate()-n); return vozYMD(x); };
+  const dow = hoyD.getDay(), offLun = dow === 0 ? 6 : dow - 1;
+  const R = {
+    mes:      [vozYMD(new Date(Y,M,1)),   vozYMD(hoyD)],
+    mesAnt:   [vozYMD(new Date(Y,M-1,1)), vozYMD(new Date(Y,M-1,dAnt))],
+    mesAntTot:[vozYMD(new Date(Y,M-1,1)), vozYMD(new Date(Y,M,0))],
+    anioAnt:  [vozYMD(new Date(Y-1,M,1)), vozYMD(new Date(Y-1,M,Math.min(d,new Date(Y-1,M+1,0).getDate())))],
+    semana:   [menos(offLun), vozYMD(hoyD)],
+    semAnt:   [menos(offLun+7), menos(7)],
+    hoy:      [vozYMD(hoyD), vozYMD(hoyD)],
+    hoySem:   [menos(7), menos(7)],
+    ayer:     [menos(1), menos(1)]
+  };
+  const T = {}; Object.keys(R).forEach(function(k){ T[k] = { n:0, kg:0, op:{} }; });
+  rows.forEach(function(r){
+    const y = vozAYMD(f.fecha(r));
+    if (!y) return;
+    let p = 0, op = null;
+    for (const k in R){
+      if (y < R[k][0] || y > R[k][1]) continue;
+      if (op === null){ try { p = getPesoNeto(r) || 0; } catch(e){} op = vozOp(r) || 'Sin dato'; }
+      T[k].n++; T[k].kg += p;
+      if (k === 'mes' || k === 'mesAnt') vozAcum(T[k].op, op, p);
+    }
+  });
+  const ton = function(kg){ return (kg/1000).toFixed(1) + ' t (' + Math.round(kg) + ' kg)'; };
+  const pct = function(a, b){ if (!b) return a ? 'sin base de comparación' : 'igual'; const v = (a-b)/b*100; return (v >= 0 ? '+' : '') + v.toFixed(1) + '%'; };
+  const linea = function(nom, a, b, nomB){
+    return nom + ': ' + a.n + ' viajes, ' + ton(a.kg) + ' · ' + nomB + ': ' + b.n + ' viajes, ' + ton(b.kg) +
+           ' · diferencia ' + ((a.kg-b.kg) >= 0 ? '+' : '') + ((a.kg-b.kg)/1000).toFixed(1) + ' t (' + pct(a.kg, b.kg) + ')\n';
+  };
+  let out = '=== COMPARATIVO YA CALCULADO (peso neto de Ingreso de Material) ===\n';
+  out += linea('Este mes (1 al ' + d + ')', T.mes, T.mesAnt, 'Mes pasado a la misma fecha (1 al ' + dAnt + ')');
+  out += 'Mes pasado completo: ' + T.mesAntTot.n + ' viajes, ' + ton(T.mesAntTot.kg) + '\n';
+  const proy = T.mes.kg / d * diasMes;
+  out += 'Proyección de cierre de este mes al ritmo actual (' + ton(T.mes.kg / d) + ' por día): ' + ton(proy) +
+         ' · contra el mes pasado completo ' + pct(proy, T.mesAntTot.kg) + '\n';
+  if (T.anioAnt.n) out += linea('Este mes', T.mes, T.anioAnt, 'Mismo mes del año pasado a la misma fecha');
+  out += linea('Esta semana (desde el lunes)', T.semana, T.semAnt, 'Semana pasada a la misma altura');
+  out += linea('Hoy', T.hoy, T.hoySem, 'Mismo día de la semana pasada');
+  out += 'Ayer: ' + T.ayer.n + ' viajes, ' + ton(T.ayer.kg) + '\n';
+  // Clientes que más se movieron, mes contra mes a la misma fecha
+  const nombres = {};
+  Object.keys(T.mes.op).concat(Object.keys(T.mesAnt.op)).forEach(function(k){ nombres[k] = 1; });
+  const dif = Object.keys(nombres).map(function(k){
+    const a = T.mes.op[k] || { n:0, kg:0 }, b = T.mesAnt.op[k] || { n:0, kg:0 };
+    return { k:k, a:a, b:b, d:a.kg - b.kg };
+  });
+  const fila = function(x){ return '  - ' + x.k + ': ' + ton(x.a.kg) + ' ahora vs ' + ton(x.b.kg) + ' (' + pct(x.a.kg, x.b.kg) + ')'; };
+  const bajan = dif.filter(function(x){ return x.d < 0; }).sort(function(p,q){ return p.d - q.d; }).slice(0, 6);
+  const suben = dif.filter(function(x){ return x.d > 0; }).sort(function(p,q){ return q.d - p.d; }).slice(0, 6);
+  const perdidos = dif.filter(function(x){ return !x.a.n && x.b.n; }).sort(function(p,q){ return q.b.kg - p.b.kg; }).slice(0, 6);
+  if (bajan.length)    out += 'CLIENTES QUE MÁS BAJARON (este mes vs mes pasado a la misma fecha):\n' + bajan.map(fila).join('\n') + '\n';
+  if (suben.length)    out += 'CLIENTES QUE MÁS SUBIERON:\n' + suben.map(fila).join('\n') + '\n';
+  if (perdidos.length) out += 'CLIENTES QUE A ESTA FECHA DEL MES PASADO YA HABÍAN TRAÍDO MATERIAL Y ESTE MES NO HAN TRAÍDO NADA:\n' +
+                              perdidos.map(function(x){ return '  - ' + x.k + ': ' + ton(x.b.kg) + ' el mes pasado'; }).join('\n') + '\n';
+  return out + '\n';
+}
+
+function vozInstruccionAsesor(a){
+  const h = new Date().getHours();
+  const saludo = h < 12 ? 'buenos días' : (h < 19 ? 'buenas tardes' : 'buenas noches');
+  return '=== INSTRUCCIONES DE PERSONALIDAD PARA ESTE USUARIO (tienen prioridad sobre el estilo neutro) ===\n' +
+    'Le hablas a ' + a.nombre + ' (área de dirección o contabilidad). Si su nombre es un cargo, como Gerencia o Gestión Contable, nómbralo con naturalidad por el cargo. Hora local: ' +
+    new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',hour12:false}) + ' (' + saludo + ').\n' +
+    'Eres su asesor financiero de cabecera: agudo, observador, con carácter y un toque de humor, siempre cordial y respetuoso. Háblale de tú, en español de Colombia.\n' +
+    'No esperas a que te pregunten: das datos. Cada kilo que entra a planta es facturación, y así lo lees.\n' +
+    'Compara siempre contra el periodo equivalente anterior usando el COMPARATIVO YA CALCULADO (mes pasado a la misma fecha, semana pasada, mismo día de la semana pasada) y menciona la proyección de cierre cuando venga al caso.\n' +
+    'Tu trabajo es dejar en evidencia lo que está pasando, con los números claros y sin maquillarlos, pero con cortesía: informas, no regañas. ' +
+    'Nunca le reclames a la persona, no la culpes, no le exijas explicaciones ni le preguntes cómo lo va a recuperar o compensar. ' +
+    'Si algo va por debajo, dilo con claridad y su impacto en la facturación, por ejemplo: este mes vamos 100 toneladas y el mes pasado a esta fecha íbamos 120, son 20 toneladas por debajo, vale la pena revisarlo.\n' +
+    'Si un cliente bajó o dejó de traer material, nómbralo y señálalo como algo para tener en el radar. Si algo subió, reconócelo en media frase.\n' +
+    'Eres curioso: puedes cerrar con UNA pregunta amable y útil sobre el dato más llamativo, como quien ofrece ayuda (por ejemplo, si quiere que revises a ese cliente o que compares con otro periodo).\n' +
+    'Nunca inventes tarifas, precios ni valores en pesos: el impacto en facturación lo expresas en toneladas, viajes y porcentajes.\n\n';
+}
+
+function vozMemoriaTexto(){
+  if (!_vozMemoria.length) return '';
+  return '=== CONVERSACIÓN PREVIA CON ESTE USUARIO (lo nuevo que dice puede ser la respuesta a tu última pregunta) ===\n' +
+    _vozMemoria.map(function(m){ return (m.pregunta ? 'Usuario: ' + m.pregunta + '\n' : '') + 'Tú: ' + m.respuesta; }).join('\n') + '\n\n';
+}
+
+/* Si el asistente terminó con una pregunta, abre el micrófono solo para
+   que la persona conteste, siempre que ya haya dado permiso antes (así no
+   salta ningún aviso del navegador). */
+async function vozEscucharRespuesta(){
+  if (!vozRec || vozEscuchando || !window.isSecureContext) return;
+  if (!vozOverlay.classList.contains('voz-abierto')) return;
+  try {
+    if (!navigator.permissions) return;
+    const st = await navigator.permissions.query({ name:'microphone' });
+    if (st.state !== 'granted') return;
+  } catch(e){ return; }
+  try { vozRec.lang = vozIdiomaActual().lang; } catch(e){}
+  _vozEscuchaAuto = true;
+  try { vozRec.start(); } catch(e){ _vozEscuchaAuto = false; }
+}
+
+/* Bienvenida: una vez por sesión de cada usuario asesor, apenas están los
+   datos de ingreso. Si la sesión se recuperó sin que la persona tocara
+   nada, se espera su primer clic o tecla: el navegador no deja hablar
+   antes de eso. */
+let _vozBienvenidaHecha = false;
+function vozBienvenidaClave(a){ return 'hortiVozBienvenida|' + vozNorm(a.usuario || a.nombre) + '|' + vozHoy(); }
+async function vozBienvenida(){
+  const a = vozUsuarioAsesor();
+  if (!a || _vozBienvenidaHecha) return;
+  if (vozFab.classList.contains('voz-oculto')) return;   // sin permiso de asistente
+  try { if (sessionStorage.getItem(vozBienvenidaClave(a))) { _vozBienvenidaHecha = true; return; } } catch(e){}
+  _vozBienvenidaHecha = true;
+
+  // Datos de ingreso: se espera a la carga normal del tablero (hasta 60 s)
+  const ing = VOZ_FUENTES.ingreso;
+  for (let i = 0; i < 120 && !ing.obtener().length; i++) await vozEsperar(500);
+
+  if (navigator.userActivation && !navigator.userActivation.hasBeenActive){
+    await new Promise(function(ok){
+      const ya = function(){ document.removeEventListener('pointerdown', ya, true); document.removeEventListener('keydown', ya, true); ok(); };
+      document.addEventListener('pointerdown', ya, true);
+      document.addEventListener('keydown', ya, true);
+    });
+    await vozEsperar(300);
+  }
+  if (!vozUsuarioAsesor()) return;   // cerró sesión mientras tanto
+  try { sessionStorage.setItem(vozBienvenidaClave(a), '1'); } catch(e){}
+
+  const hoy = vozHoy(), d = new Date();
+  const plan = { fuentes:['ingreso'], panel:'clientes', desde: vozYMD(new Date(d.getFullYear(), d.getMonth(), 1)),
+                 hasta: hoy, etiqueta:'este mes' };
+  if (!vozOverlay.classList.contains('voz-abierto')) vozAbrir();
+  vozConsultar('Acabo de entrar al sistema. Dame la bienvenida por mi nombre con una frase cordial y con chispa y, sin esperar a que te pregunte, arranca con el informe: ' +
+               'cómo vamos este mes contra el mes pasado a la misma fecha, la proyección de cierre, los clientes que más cayeron o dejaron de venir, los que crecieron, y cómo va la semana. ' +
+               'Puedes cerrar con una pregunta amable sobre lo más llamativo.', { plan: plan, silenciosa: true });
+}
+
 /* ── Ciclo principal: pregunta → plan → ejecución → respuesta ── */
-async function vozConsultar(pregunta){
+async function vozConsultar(pregunta, opts){
+  opts = opts || {};
   pregunta = (pregunta||'').trim();
   if (!pregunta) return;
+  const asesor = vozUsuarioAsesor();
 
   vozPanel.innerHTML = '';       // sin histórico: solo la consulta actual
   vozLimpiarAcciones();
   vozQuitarFocos();              // corta un recorrido anterior si seguía activo
   _vozFuentesFallidas = {};      // cada consulta vuelve a intentar lo que falló
-  vozBurbuja('user', pregunta);
-  vozSetEstado('thinking','Entendiendo la consulta…');
+  if (!opts.silenciosa) vozBurbuja('user', pregunta);
+  vozSetEstado('thinking', opts.silenciosa ? 'Preparando tu informe…' : 'Entendiendo la consulta…');
   vozInput.disabled = true; vozSend.disabled = true; vozMicBtn.disabled = true;
 
   try {
     // 1. La IA arma el plan (qué datos, qué fecha, qué pestaña)
-    const plan = await vozPedirPlan(pregunta);
+    const plan = opts.plan || await vozPedirPlan(pregunta);
     const etiqueta = vozEtiquetaRango(plan.desde, plan.hasta, plan.etiqueta);
 
     /* ── FASE 1: UBICAR, SIN MOVER EL DASHBOARD ──
@@ -28226,8 +28402,12 @@ async function vozConsultar(pregunta){
     });
     vozAccion('🔎', 'Ya sé dónde está: ' + nombres.join(' y '), true);
 
-    const contexto = vozConstruirContexto(plan.fuentes, plan.desde, plan.hasta, etiqueta,
+    let contexto = vozConstruirContexto(plan.fuentes, plan.desde, plan.hasta, etiqueta,
                                           pregunta, plan.extras);
+    if (asesor){
+      if (plan.fuentes.indexOf('ingreso') === -1) await vozAsegurarDatos(['ingreso']);
+      contexto = vozInstruccionAsesor(asesor) + vozMemoriaTexto() + vozComparativo() + contexto;
+    }
 
     /* ── FASE 2: NARRAR MOSTRANDO ──
        Se pide la respuesta partida en tramos. Cada tramo se muestra y se
@@ -28240,7 +28420,12 @@ async function vozConsultar(pregunta){
                                narrado: true, panelPorDefecto: plan.panel });
 
     vozOverlay.classList.add('voz-compacto');   // deja ver el dashboard detrás
-    await vozNarrarPorTramos(r, plan, etapas);
+    const dicho = await vozNarrarPorTramos(r, plan, etapas);
+    if (asesor){
+      _vozMemoria.push({ pregunta: opts.silenciosa ? '' : pregunta, respuesta: dicho });
+      _vozMemoria = _vozMemoria.slice(-3);
+      if (/\?\s*$/.test(dicho)) setTimeout(vozEscucharRespuesta, 350);
+    }
   } catch(err){
     vozBurbuja('assistant', 'No pude completar la consulta: ' + err.message);
     vozSetEstado('','Preguntame por cualquier fecha o pestaña');
@@ -28335,7 +28520,7 @@ if (VozSR){
   vozRec.onresult = function(ev){
     let t = '';
     for (let i=0;i<ev.results.length;i++) t += ev.results[i][0].transcript;
-    if (ev.results[ev.results.length-1].isFinal){ vozRec.stop(); vozConsultar(t); }
+    if (ev.results[ev.results.length-1].isFinal){ _vozEscuchaAuto = false; vozRec.stop(); vozConsultar(t); }
     else vozStatus.textContent = t;
   };
   /* Antes todo error decía "No te escuché bien", incluso cuando el
@@ -28357,6 +28542,12 @@ if (VozSR){
     const cod = (ev && ev.error) || '';
     console.info('Asistente de voz · error del reconocimiento:', cod, ev && ev.message);
     vozEscuchando = false; vozMicBtn.classList.remove('voz-on');
+    /* Si la escucha la abrió el asistente y nadie habló, no es un error */
+    if (_vozEscuchaAuto && (cod === 'no-speech' || cod === 'aborted')){
+      _vozEscuchaAuto = false;
+      vozSetEstado('','Te escucho cuando quieras: toca el micrófono o escribe');
+      return;
+    }
     if ((cod === 'network' || cod === 'aborted') && vozReintento < 1){
       vozReintento++;
       setTimeout(function(){ try { vozRec.start(); } catch(e){} }, 400);
@@ -28372,6 +28563,7 @@ if (VozSR){
   vozRec.onend   = function(){ vozEscuchando = false; vozMicBtn.classList.remove('voz-on');
     if (vozOrbWrap.className.indexOf('voz-listening') !== -1) vozSetEstado('','Preguntame por cualquier fecha o pestaña'); };
   vozMicBtn.addEventListener('click', function(){
+    _vozEscuchaAuto = false;
     if (vozEscuchando){ vozRec.stop(); return; }
     try { window.speechSynthesis.cancel(); } catch(e){}
     // El micrófono escucha en el mismo idioma en que responde el asistente
@@ -28401,6 +28593,19 @@ if (VozSR){
     return;
   }
   setTimeout(vozEsperarLogin, 700);
+})();
+
+/* Bienvenida del modo asesor: se mira cada 2 s si entró uno de esos
+   usuarios (también si cerró sesión y entró otro). */
+(function vozVigilarAsesor(){
+  let ultimo = '';
+  setInterval(function(){
+    const a = vozUsuarioAsesor();
+    const clave = a ? vozNorm(a.usuario || a.nombre) : '';
+    if (clave !== ultimo){ ultimo = clave; _vozBienvenidaHecha = false; _vozMemoria = []; }
+    const app = document.getElementById('dash-app');
+    if (a && !_vozBienvenidaHecha && app && getComputedStyle(app).display !== 'none') vozBienvenida();
+  }, 2000);
 })();
 
 })();
