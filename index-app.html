@@ -273,6 +273,36 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 .g-lbl{font-size:10px;text-anchor:middle;fill:var(--ink-l);letter-spacing:.5px;font-family:'Source Sans 3',sans-serif}
 .gauge-sub{font-size:10px;color:var(--ink-l);margin-top:6px;text-align:center}
 
+/* CARGA POR PESTAÑA: el contenido borroso detrás y un aviso sobrio al centro. */
+#carga-tab{position:fixed;left:0;right:0;bottom:0;top:0;z-index:900;display:flex;align-items:flex-start;justify-content:center;padding:clamp(24px,9vh,110px) 16px 16px;
+  background:rgba(244,247,245,.55);-webkit-backdrop-filter:blur(10px) saturate(.85);backdrop-filter:blur(10px) saturate(.85);
+  opacity:0;visibility:hidden;pointer-events:none;transition:opacity .28s ease,visibility 0s linear .28s}
+#carga-tab.visible{opacity:1;visibility:visible;pointer-events:auto;transition:opacity .22s ease,visibility 0s}
+#carga-tab .ct-tarjeta{background:#fff;border:1px solid rgba(26,92,53,.12);border-radius:14px;padding:30px 34px 24px;width:100%;max-width:360px;
+  text-align:center;box-shadow:0 24px 60px -20px rgba(16,48,29,.35),0 2px 6px rgba(16,48,29,.06);
+  transform:translateY(8px) scale(.98);transition:transform .32s cubic-bezier(.2,.8,.2,1)}
+#carga-tab.visible .ct-tarjeta{transform:none}
+#carga-tab .ct-anillo{position:relative;width:54px;height:54px;margin:0 auto 18px}
+#carga-tab .ct-anillo i{position:absolute;inset:0;border-radius:50%;border:3px solid transparent}
+#carga-tab .ct-anillo i:nth-child(1){border-color:rgba(26,92,53,.12)}
+#carga-tab .ct-anillo i:nth-child(2){border-top-color:var(--navy,#1a5c35);animation:ct-giro 1s cubic-bezier(.55,.15,.45,.85) infinite}
+#carga-tab .ct-anillo i:nth-child(3){inset:9px;border-bottom-color:#2d8a4e;animation:ct-giro 1.4s linear infinite reverse}
+#carga-tab .ct-tit{font-size:15px;color:#1f2a24;letter-spacing:.2px}
+#carga-tab .ct-tit b{color:var(--navy,#1a5c35);font-weight:700}
+#carga-tab .ct-sub{font-size:12.5px;color:#66756c;margin-top:4px}
+#carga-tab .ct-barra{position:relative;height:3px;border-radius:3px;background:rgba(26,92,53,.1);overflow:hidden;margin-top:18px}
+#carga-tab .ct-barra span{position:absolute;top:0;bottom:0;left:0;width:38%;border-radius:3px;background:linear-gradient(90deg,#1a5c35,#2d8a4e);
+  animation:ct-barra 1.25s cubic-bezier(.45,0,.25,1) infinite}
+#carga-tab .ct-saltar{display:none;margin:16px auto 0;padding:7px 14px;font-size:12px;font-weight:600;color:var(--navy,#1a5c35);
+  background:transparent;border:1px solid rgba(26,92,53,.3);border-radius:6px;cursor:pointer}
+#carga-tab.ct-con-boton .ct-saltar{display:block}
+@keyframes ct-giro{to{transform:rotate(360deg)}}
+@keyframes ct-barra{0%{transform:translateX(-100%)}100%{transform:translateX(265%)}}
+@media (prefers-reduced-motion:reduce){
+  #carga-tab .ct-anillo i:nth-child(2),#carga-tab .ct-anillo i:nth-child(3){animation-duration:3s}
+  #carga-tab .ct-barra span{animation:none;width:100%;opacity:.5}
+  #carga-tab,#carga-tab .ct-tarjeta{transition:none}
+}
 /* SPINNER */
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:6px}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -10577,7 +10607,134 @@ function filterOps(q) {
       2. Agregar fetchCSV + render aquí
   ═══════════════════════════════════════════════════════════
 */
+/* ── CARGA POR PESTAÑA ─────────────────────────────────────────────
+   Después de iniciar sesión el servidor tarda en traer los datos. La
+   primera vez que se mira cada pestaña, mientras sus datos llegan, el
+   contenido queda borroso detrás de un aviso de carga. Solo es pantalla:
+   no cambia qué se pide ni cuándo.
+   · Las pestañas que llena loadAllData() se sueltan cuando llega su
+     parte (CARGA_DEPENDE).
+   · Las que tienen su propio servicio se sueltan cuando terminan las
+     peticiones que hicieron al abrirse (tope de 20 s). */
+var CARGA_DEPENDE = {
+  clientes:'ingreso', ingreso:'ingreso', operaciones:'ingreso', cortes:'ingreso',
+  ProduccionHumus:'humus', accesos:'accesos', preopequipo:'preop'
+};
+var CARGA = { activo:false, pasos:{}, listas:{}, panel:'', pend:[], desde:0, quieto:null, tope:null, boton:null };
+(function(){
+  /* Se cuentan las peticiones en curso. Las hojas publicadas (y sus
+     proxies) son de loadAllData: esas no frenan a las otras pestañas. */
+  var fetchOrig = window.fetch.bind(window);
+  var DE_LOADALL = /docs\.google\.com|codetabs\.com|corsproxy\.io|allorigins\.win/;
+  window.fetch = function(url, opts){
+    var u = String(url && url.url || url || '');
+    var reg = { t: Date.now(), ok: false, todas: DE_LOADALL.test(u) };
+    CARGA.pend.push(reg);
+    var fin = function(){ reg.ok = true; cargaRevisar(); };
+    var p = fetchOrig(url, opts);
+    p.then(fin, fin);
+    return p;
+  };
+})();
+function cargaNombre(id){
+  var t = document.querySelector('.nav-tab[data-panel="' + id + '"] .nav-lbl');
+  return t ? t.textContent.trim() : 'la pestaña';
+}
+function cargaCaja(){
+  var c = document.getElementById('carga-tab');
+  if(c) return c;
+  c = document.createElement('div');
+  c.id = 'carga-tab';
+  c.setAttribute('role', 'status');
+  c.setAttribute('aria-live', 'polite');
+  c.innerHTML =
+    '<div class="ct-tarjeta">' +
+      '<div class="ct-anillo" aria-hidden="true"><i></i><i></i><i></i></div>' +
+      '<div class="ct-tit">Cargando <b data-ct-nom></b></div>' +
+      '<div class="ct-sub">Trayendo los datos del servidor…</div>' +
+      '<div class="ct-barra" aria-hidden="true"><span></span></div>' +
+      '<button type="button" class="ct-saltar" data-ct-saltar>Ver sin esperar</button>' +
+    '</div>';
+  document.body.appendChild(c);
+  c.querySelector('[data-ct-saltar]').onclick = function(){ cargaSoltar(CARGA.panel); };
+  return c;
+}
+function cargaMostrar(id){
+  var c = cargaCaja();
+  c.querySelector('[data-ct-nom]').textContent = cargaNombre(id);
+  cargaUbicar();
+  requestAnimationFrame(cargaUbicar);
+  c.classList.remove('ct-con-boton');
+  clearTimeout(CARGA.boton);
+  CARGA.boton = setTimeout(function(){ c.classList.add('ct-con-boton'); }, 8000);
+  c.classList.add('visible');
+}
+/* Tapa desde debajo de la cabecera fija (título, pestañas, filtros y
+   barra de estado): las pestañas y los filtros siguen a mano. */
+function cargaUbicar(){
+  var c = document.getElementById('carga-tab');
+  if(!c) return;
+  var abajo = 0;
+  document.querySelectorAll('.topbar, .nav-wrap, .filter-bar, .status-bar').forEach(function(e){
+    var r = e.getBoundingClientRect();
+    if(r.height && r.top < 600) abajo = Math.max(abajo, r.bottom);
+  });
+  c.style.top = Math.round(abajo) + 'px';
+}
+window.addEventListener('resize', function(){ if(CARGA.panel) cargaUbicar(); });
+function cargaOcultar(){
+  var c = document.getElementById('carga-tab');
+  if(c) c.classList.remove('visible');
+  clearTimeout(CARGA.quieto); clearTimeout(CARGA.tope); clearTimeout(CARGA.boton);
+}
+function cargaSoltar(id){
+  if(id) CARGA.listas[id] = true;
+  if(CARGA.panel === id){ CARGA.panel = ''; cargaOcultar(); }
+}
+/* loadAllData avisa: arrancó / llegó una parte. */
+function cargaInicio(){
+  if(CARGA.activo) return;
+  CARGA.activo = true;
+  var act = document.querySelector('.panel.active');
+  if(act) cargaMirar(act.id.replace(/^panel-/, ''));
+}
+function cargaPaso(paso){
+  CARGA.pasos[paso] = true;
+  Object.keys(CARGA_DEPENDE).forEach(function(id){ if(CARGA_DEPENDE[id] === paso) cargaSoltar(id); });
+}
+/* Se llama al abrir una pestaña. */
+function cargaMirar(id){
+  if(CARGA.panel && CARGA.panel !== id){ CARGA.panel = ''; cargaOcultar(); }
+  if(!CARGA.activo || CARGA.listas[id]) return;
+  var dep = CARGA_DEPENDE[id];
+  if(dep && CARGA.pasos[dep]){ CARGA.listas[id] = true; return; }
+  CARGA.panel = id; CARGA.desde = Date.now();
+  /* Si en un instante no hay nada que esperar, ni se muestra. */
+  setTimeout(function(){
+    if(CARGA.panel !== id) return;
+    if(dep || cargaPendientes() > 0){ cargaMostrar(id); cargaRevisar(); }
+    else cargaSoltar(id);
+  }, 120);
+  clearTimeout(CARGA.tope);
+  CARGA.tope = setTimeout(function(){ cargaSoltar(id); }, dep ? 45000 : 20000);
+}
+function cargaPendientes(){
+  CARGA.pend = CARGA.pend.filter(function(r){ return !r.ok; });
+  return CARGA.pend.filter(function(r){ return !r.todas && r.t >= CARGA.desde - 50; }).length;
+}
+function cargaRevisar(){
+  var id = CARGA.panel;
+  if(!id || CARGA_DEPENDE[id]) return;      /* esas las suelta cargaPaso */
+  clearTimeout(CARGA.quieto);
+  if(cargaPendientes() > 0) return;
+  /* Unos instantes sin peticiones: los datos ya llegaron y se pintaron. */
+  CARGA.quieto = setTimeout(function(){
+    if(CARGA.panel === id && cargaPendientes() === 0) cargaSoltar(id);
+  }, 400);
+}
+
 async function loadAllData() {
+  try { cargaInicio(); } catch(eC) {}
   const btn = document.getElementById('refresh-btn');
   btn.innerHTML = '<span class="spinner"></span>Actualizando...';
   btn.classList.add('loading');
@@ -10612,6 +10769,7 @@ async function loadAllData() {
     const _fi2 = document.getElementById('footer-ingreso'); if (_fi2) _fi2.textContent = 'Ingreso: '+fmt(dataIngreso.length)+' registros';
     ok++;
   } catch(e) { errors.push('Ingreso Material'); console.error('Ingreso fetch error:', e); }
+  try { cargaPaso('ingreso'); } catch(eC) {}
 
   try {
     dataSolicitudes = await fetchCSV(SHEETS.solicitudes);
@@ -10640,6 +10798,7 @@ async function loadAllData() {
     renderPreopUnificado(dataCargador, dataTractor, currentFilter);
     ok++;
   } catch(e) { errors.push('Preop Cargador/Tractor'); console.error('PreopCar:', e); }
+  try { cargaPaso('preop'); } catch(eC) {}
 
   // Combustible. No suma a 'errors' ni corta la carga: es un modulo opcional y
   // mientras el gid no este configurado la URL responde con error.
@@ -10656,12 +10815,14 @@ async function loadAllData() {
   try {
     await cargarAccesos();
   } catch(e) { console.error('Accesos:', e); }
+  try { cargaPaso('accesos'); } catch(eC) {}
 
   try {
     dataProduccionHumus = await fetchCSV(SHEETS.ProduccionHumus);
     renderProduccionHumus(dataProduccionHumus);
     ok++;
   } catch(e) { errors.push('Producción Humus'); console.error('Producción Humus:', e); }
+  try { cargaPaso('humus'); } catch(eC) {}
 
   // Precarga silenciosa del detalle por referencia (Apps Script de planta):
   // arranca aqui sin bloquear, para que la pestaña ya este lista al abrirla.
@@ -10871,6 +11032,7 @@ function showPanel(id, el) {
   document.getElementById('panel-'+id).classList.add('active');
   el.classList.add('active');
   mostrarPestanaActiva(el);
+  try { cargaMirar(id); } catch(eC) {}
   // Pestañas "Cadena de Abastecimiento": integradas directamente (sin iframe),
   // se activan/renderizan bajo demanda la primera vez que se abre cada una.
   const CSC_TAB_MAP = {
