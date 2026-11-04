@@ -8021,6 +8021,12 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #per-area-modal .pp-cel .pp-d{font-size:11.5px;color:#b7bdb8;font-weight:600}
 #per-area-modal .pp-cel .pp-op{display:block;font-size:10px;color:var(--ink-l);margin-top:2px;line-height:1.2;white-space:normal}
 #per-area-modal .pp-cel.fijo{background:#eef4f0}
+/* Cambio de una sola fecha: borde punteado dorado y la etiqueta abajo. */
+#per-area-modal .pp-cel.punt{border:1.5px dashed var(--gold,#b8891f)}
+#per-area-modal .pp-cel.punt.sel{border-style:solid;border-color:#1c5636}
+#per-area-modal .pp-cel .pp-punt{display:block;font-size:9.5px;font-weight:700;color:#8a6410;letter-spacing:.2px;margin-top:2px}
+#per-area-modal .pp-alcance .pp-seg-b{padding:8px 6px;font-size:12px}
+#per-area-modal .ar-modaviso{background:#fbf1dd;border:1px solid var(--gold,#b8891f);border-left-width:4px;padding:10px 12px;margin:8px 0 4px;font-size:13px;color:#5d4508;line-height:1.45}
 #per-area-modal .pp-cel.fijo .pp-op{color:#1c5636}
 #per-area-modal .pp-cel .pp-fijo{font-size:11px;font-weight:700;color:#1c5636}
 #per-area-modal .pp-tot{text-align:center;font-weight:800;font-size:12.5px;color:#1c5636;padding:6px 8px !important}
@@ -8811,7 +8817,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
       <div id="ar-f-propios"></div>
       <div class="ayuda">El cuadro se arma en vivo. Toque el <b>nombre</b> de una persona para su horario y días;
         toque una <b>celda</b> para un día distinto, un servicio de valor fijo, o <b>ponerla en descanso</b>.
-        No hay rotación: la semana se repite igual y se puede ajustar cuando se requiera.</div>
+        El cambio de una celda es <b>solo de esa fecha</b> (la semana siguiente sigue igual), salvo que elija
+        “Todas las semanas”. No hay rotación: la semana base se repite igual.</div>
     </div>
 
     <!-- Los turnos van a todo el ancho: así se aprecia el turno completo
@@ -43153,12 +43160,16 @@ function pintarAreas(){
           '<button type="button" class="fuerte" data-ar-turnos="' + esc(a.nombre) + '">Ver los turnos</button>' +
           '<button type="button" data-ar-mover="' + esc(a.nombre) + '">Rotar personal</button>' +
           '<button type="button" data-ar-editar="' + esc(a.nombre) + '">Editar</button>' +
+          '<button type="button" data-ar-modificar="' + esc(a.nombre) + '" title="Cambia el cuadro base de la próxima semana en adelante; lo ya armado no se toca">Modificar área</button>' +
           '<button type="button" data-ar-borrar="' + esc(a.nombre) + '">Borrar</button>' +
         '</div></div>';
     }).join('');
 
   grid.querySelectorAll('[data-ar-editar]').forEach(function(b){
     b.onclick = function(){ abrirArea(areaPorNombre(b.dataset.arEditar)); };
+  });
+  grid.querySelectorAll('[data-ar-modificar]').forEach(function(b){
+    b.onclick = function(){ abrirArea(areaPorNombre(b.dataset.arModificar), true); };
   });
   grid.querySelectorAll('[data-ar-mover]').forEach(function(b){
     b.onclick = function(){ abrirMover({ origen: b.dataset.arMover }); };
@@ -43246,9 +43257,14 @@ function horariosDeLaGente(horarios){
 }
 
 /* ── EL FORMULARIO DEL ÁREA ── */
-function abrirArea(a){
+/* 'modificar': el área ya existe y se le cambia el cuadro BASE de la
+   próxima semana en adelante. El historial y la semana que corre quedan
+   como están; las semanas ya armadas de ahí en adelante se rearman con
+   el cuadro nuevo. */
+function abrirArea(a, modificar){
   AREA_EDIT = a || null;
   AREA_FORM = {
+    modificar: !!(a && modificar),
     nombre: a ? a.nombre : '',
     modo: a ? a.modo : 'general',
     dias: a ? String(a.dias || '').split(',').filter(Boolean) : ['L','M','X','J','V'],
@@ -43293,7 +43309,7 @@ function abrirArea(a){
   ponerNumeros(AREA_FORM.turnos);
   nombresSinRepetir();
   amarrarPorNombre();
-  $p('ar-f-tit').textContent = a ? a.nombre : 'Nueva área';
+  $p('ar-f-tit').textContent = a ? (AREA_FORM.modificar ? 'Modificar área · ' + a.nombre : a.nombre) : 'Nueva área';
   $p('ar-f-nombre').value = AREA_FORM.nombre;
   $p('ar-f-modo').value = AREA_FORM.modo;
   $p('ar-f-ini').value = AREA_FORM.horaInicio;
@@ -43628,6 +43644,21 @@ function ppDiasDe(hz){ return String(hz.dias || '').split(',').filter(Boolean); 
 function ppEspecialDe(hz, letra){
   return (hz.especiales || []).filter(function(e){ return !e.fecha && e.dia === letra; })[0] || null;
 }
+/* ── CAMBIOS DE UNA SOLA SEMANA ────────────────────────────────────
+   Tocar una celda del cuadro cambiaba la esencia del área: poner un
+   lunes en descanso le quitaba TODOS los lunes. Ahora, por defecto, el
+   cambio es solo de esa fecha (no entra este lunes, la semana siguiente
+   sí) y se guarda como fecha puntual. "Todas las semanas" sigue siendo
+   posible, y ese sí cambia el horario base. */
+/* El lunes de la semana que muestra el cuadro: la actual al crear, la
+   próxima al modificar (que es desde cuando rige el cambio). */
+function ppLunes(){
+  return (AREA_FORM && AREA_FORM.modificar) ? sumarDias(lunesDe(''), 7) : lunesDe('');
+}
+function ppFecha(letra){ return sumarDias(ppLunes(), DIAS_LETRA.indexOf(letra)); }
+function ppPuntualDe(hz, fecha){
+  return (hz.especiales || []).filter(function(e){ return e.fecha && e.fecha === fecha; })[0] || null;
+}
 
 /* Normaliza lo que el usuario ESCRIBE a "HH:MM". Acepta "6", "6:30", "630",
    "0630", "6.30"… Límite: hora 0–24 (24 solo como fin de jornada = 24:00),
@@ -43674,8 +43705,20 @@ function ppBloqueTexto(b){
 }
 
 /* Qué hace una persona un día: trabaja (con qué bloques) o descansa. */
-function ppCeldaDe(hz, letra){
+/* 'fecha': la de la columna (por defecto, la de la semana que se ve).
+   Con fecha null se mira solo el horario base, sin cambios puntuales. */
+function ppCeldaDe(hz, letra, fecha){
   var base = Number(hz.almuerzo) || 0;
+  if(fecha === undefined) fecha = ppFecha(letra);
+  var pu = fecha ? ppPuntualDe(hz, fecha) : null;
+  if(pu){
+    if(pu.descanso) return { trabaja:false, puntual:true };
+    if(pu.fijo) return { trabaja:true, fijo:true, op:(pu.op || hz.op || ''), almuerzo:0, especial:true, puntual:true, bloques:null };
+    var blp = ppBloquesDeEsp(pu, base);
+    var q0 = (blp && blp[0]) || { inicio:'', fin:'', almuerzo:base };
+    return { trabaja:true, op:(pu.op || hz.op || ''), especial:true, puntual:true, bloques:blp,
+             inicio:q0.inicio, fin:q0.fin, almuerzo:q0.almuerzo };
+  }
   var esp = ppEspecialDe(hz, letra);
   if(esp){
     if(esp.fijo) return { trabaja:true, fijo:true, op:(esp.op || hz.op || ''), almuerzo:0, especial:true, bloques:null };
@@ -43786,7 +43829,7 @@ function pintarPropios(){
 
   /* El personalizado aplica a la semana ACTUAL: se muestran sus fechas
      (lun 12, mar 13…) para que se lea como el cuadro real. */
-  var ppLun = lunesDe(isoDe(new Date()));
+  var ppLun = ppLunes();
   var cab = '<tr><th class="pp-th-q">Colaborador</th>' + DIAS_LETRA.map(function(d, i){
     var fch = sumarDias(ppLun, i);
     var dnum = new Date(fch + 'T00:00:00').getDate();
@@ -43803,12 +43846,13 @@ function pintarPropios(){
       var bloquesTxt = (c.bloques || []).filter(function(b){ return b.inicio || b.fin; })
         .map(function(b){ return '<span class="pp-h">' + ppBloqueTexto(b) + '</span>'; }).join('');
       var cont = !c.trabaja
-        ? '<span class="pp-d">descansa</span>'
+        ? '<span class="pp-d">descansa</span>' + (c.puntual ? '<span class="pp-punt">solo esta semana</span>' : '')
         : (c.fijo
             ? '<span class="pp-fijo">valor fijo</span>' + (c.op ? '<span class="pp-op">' + esc(c.op) + '</span>' : '')
-            : (bloquesTxt || '<span class="pp-h">' + esc(c.inicio) + '–' + esc(c.fin) + '</span>') + (c.op ? '<span class="pp-op">' + esc(c.op) + '</span>' : ''));
+            : (bloquesTxt || '<span class="pp-h">' + esc(c.inicio) + '–' + esc(c.fin) + '</span>') + (c.op ? '<span class="pp-op">' + esc(c.op) + '</span>' : ''))
+          + (c.puntual ? '<span class="pp-punt">solo esta semana</span>' : '');
       return '<td class="pp-td"><button type="button" class="pp-cel' + (c.trabaja ? '' : ' descansa') +
-        (c.especial ? ' esp' : '') + (c.fijo ? ' fijo' : '') + (sel ? ' sel' : '') + '" data-ppcel="' + esc(p.clave) + '|' + letra + '">' +
+        (c.puntual ? ' punt' : '') + (c.especial ? ' esp' : '') + (c.fijo ? ' fijo' : '') + (sel ? ' sel' : '') + '" data-ppcel="' + esc(p.clave) + '|' + letra + '">' +
         cont + '</button></td>';
     }).join('');
     var selP = PP_SEL && PP_SEL.persona === p.clave && !PP_SEL.dia;
@@ -43896,9 +43940,18 @@ function ppPanel(){
     });
   } else {
     var letra = PP_SEL.dia;
+    /* A qué aplica lo que se toque: por defecto SOLO a esa fecha (la
+       esencia del área no cambia); "todas las semanas" cambia la base. */
+    var soloSemana = PP_SEL.alcance !== 'todas';
+    var fechaDia = ppFecha(letra);
     var c = ppCeldaDe(hz, letra);
+    var cBase = ppCeldaDe(hz, letra, null);        /* lo de siempre, sin cambios puntuales */
     var esp = ppEspecialDe(hz, letra);
     var opVal = c.op || '';
+    /* Quita el cambio puntual de esa fecha (si lo hay). */
+    var quitarPuntual = function(){
+      hz.especiales = (hz.especiales || []).filter(function(e){ return e.fecha !== fechaDia; });
+    };
     /* Los bloques del día. Un horario normal tiene uno; el partido, varios.
        Si el día está en base (sin especial) se parte del horario base. */
     var bloques = (c.trabaja && !c.fijo && c.bloques && c.bloques.length)
@@ -43912,8 +43965,18 @@ function ppPanel(){
         (quitable ? '<button type="button" class="pp-bquitar" data-bq="' + bi + '" title="Quitar este bloque">×</button>' : '') +
       '</div>';
     };
+    var hayCambioAca = soloSemana ? !!c.puntual : !!esp;
     panel.innerHTML =
-      '<div class="pp-pt">' + esc(nombre) + ' · ' + esc(DIAS_NOMBRE[letra]) + '</div>' +
+      '<div class="pp-pt">' + esc(nombre) + ' · ' + esc(DIAS_NOMBRE[letra]) + ' ' + esc(fechaCorta(fechaDia)) + '</div>' +
+      '<label>Este cambio aplica</label>' +
+      '<div class="pp-seg pp-alcance">' +
+        '<button type="button" class="pp-seg-b' + (soloSemana ? ' on' : '') + '" data-ppalc="semana">Solo el ' +
+          esc(DIAS_NOMBRE[letra].slice(0, 3)) + ' ' + esc(fechaCorta(fechaDia)) + '</button>' +
+        '<button type="button" class="pp-seg-b' + (!soloSemana ? ' on' : '') + '" data-ppalc="todas">Todas las semanas</button>' +
+      '</div>' +
+      '<div class="pp-hint" style="margin-top:-4px">' + (soloSemana
+        ? 'Solo esa fecha: la semana siguiente sigue su horario de siempre.'
+        : 'Cambia el horario base: se repite todos los ' + esc(DIAS_NOMBRE[letra]) + '.') + '</div>' +
       '<div class="pp-seg">' +
         '<button type="button" class="pp-seg-b' + (c.trabaja ? ' on' : '') + '" data-pptrab="1">Trabaja</button>' +
         '<button type="button" class="pp-seg-b' + (!c.trabaja ? ' on' : '') + '" data-pptrab="0">Descanso</button>' +
@@ -43930,13 +43993,30 @@ function ppPanel(){
         '</div>' +
         '<label>Operación / servicio (opcional)</label>' +
         '<input type="text" id="pp-cop" maxlength="40" placeholder="Ej: Alquería, McCain…" value="' + esc(opVal) + '">' +
-        '<div class="pp-hint">' + (esp ? 'Horario u operación distintos solo este día.' : 'Déjelo igual al base o cámbielo para este día.') + '</div>' +
-        (esp ? '<button type="button" class="pp-mini" id="pp-base-dia">Volver al horario base</button>' : '') +
       '</div>' +
-      (!c.trabaja ? '<div class="pp-desc">Queda en <b>descanso</b> ese día. Marque “Trabaja ese día” si quiere darle horario.</div>' : '');
+      (!c.trabaja ? '<div class="pp-desc">Queda en <b>descanso</b> ' + (c.puntual ? 'solo ese día' : 'ese día') +
+        '. Marque “Trabaja” si quiere darle horario.</div>' : '') +
+      (hayCambioAca ? '<button type="button" class="pp-mini" id="pp-base-dia">' +
+        (soloSemana ? 'Quitar el cambio de esa fecha' : 'Volver al horario base') + '</button>' : '');
+
+    panel.querySelectorAll('[data-ppalc]').forEach(function(b){
+      b.onclick = function(){ PP_SEL.alcance = b.dataset.ppalc; ppPanel(); };
+    });
     panel.querySelectorAll('[data-pptrab]').forEach(function(b){
       b.onclick = function(){
         var trabaja = b.dataset.pptrab === '1';
+        quitarPuntual();
+        if(soloSemana){
+          /* Solo esa fecha: si lo de siempre ya es lo pedido, no queda nada
+             anotado; si no, queda el cambio puntual. */
+          if(!trabaja && cBase.trabaja) hz.especiales.push({ fecha: fechaDia, descanso: true });
+          if(trabaja && !cBase.trabaja){
+            hz.especiales.push({ fecha: fechaDia, inicio: hz.inicio, fin: hz.fin,
+              bloques: [{ inicio: hz.inicio, fin: hz.fin, almuerzo: Number(hz.almuerzo) || 0 }] });
+          }
+          pintarPropios();
+          return;
+        }
         var arr = ppDiasDe(hz), i = arr.indexOf(letra);
         if(trabaja){ if(i < 0) arr.push(letra); }
         else { if(i > -1) arr.splice(i, 1); hz.especiales = (hz.especiales || []).filter(function(e){ return e.dia !== letra; }); }
@@ -43959,16 +44039,34 @@ function ppPanel(){
     };
     /* Guarda el especial del día a partir de lo que haya en el panel. */
     var escribirEspecial = function(bloquesNuevos){
+      var op = (($p('pp-cop') || {}).value || '').trim();
+      var fijo = !!($p('pp-fijo') && $p('pp-fijo').checked);
+      var bs = bloquesNuevos || leerBloques();
+      var conAlgo = bs.filter(function(b){ return b.inicio || b.fin; });
+      quitarPuntual();
+      if(soloSemana){
+        /* Solo esa fecha. Si queda igual a lo de siempre, no se anota. */
+        var bb = (cBase.bloques || []);
+        var igualSiempre = cBase.trabaja && (fijo
+          ? (cBase.fijo && op === (cBase.op || ''))
+          : (!cBase.fijo && bs.length === bb.length && op === (cBase.op || '') &&
+             bs.every(function(b, k){ return b.inicio === (bb[k].inicio || '') && b.fin === (bb[k].fin || '') &&
+                                             (Number(b.almuerzo) || 0) === (Number(bb[k].almuerzo) || 0); })));
+        if(igualSiempre) return;
+        if(fijo){ hz.especiales.push({ fecha: fechaDia, fijo: true, op: op, bloques: [] }); return; }
+        if(!conAlgo.length) return;
+        var ep = { fecha: fechaDia, bloques: bs, inicio: bs[0].inicio, fin: bs[0].fin };
+        if(op !== (hz.op || '')) ep.op = op;
+        hz.especiales.push(ep);
+        return;
+      }
       var arr = ppDiasDe(hz);
       if(arr.indexOf(letra) < 0){ arr.push(letra); hz.dias = DIAS_LETRA.filter(function(x){ return arr.indexOf(x) > -1; }).join(','); }
-      var op = (($p('pp-cop') || {}).value || '').trim();
       hz.especiales = (hz.especiales || []).filter(function(e){ return e.dia !== letra; });
-      if($p('pp-fijo') && $p('pp-fijo').checked){
+      if(fijo){
         hz.especiales.push({ dia: letra, fijo: true, op: op, bloques: [] });
         return;
       }
-      var bs = bloquesNuevos || leerBloques();
-      var conAlgo = bs.filter(function(b){ return b.inicio || b.fin; });
       /* Un solo bloque cerrado, igual al base y misma operación/almuerzo: no
          es un día distinto, se deja en base. */
       var igualBase = (bs.length === 1 && bs[0].inicio === (hz.inicio || '') && bs[0].fin === (hz.fin || '') &&
@@ -43998,7 +44096,8 @@ function ppPanel(){
       };
     });
     if($p('pp-base-dia')) $p('pp-base-dia').onclick = function(){
-      hz.especiales = (hz.especiales || []).filter(function(e){ return e.dia !== letra; });
+      if(soloSemana) quitarPuntual();
+      else hz.especiales = (hz.especiales || []).filter(function(e){ return e.dia !== letra; });
       pintarPropios();
     };
   }
@@ -44115,7 +44214,8 @@ function pintarModo(){
      arma el servidor (hay que repartir), y en el general y el
      personalizado se arma acá, que es inmediato. */
   $p('ar-f-ver').style.display = '';
-  $p('ar-f-semanas-caja').style.display = rot ? '' : 'none';
+  /* Al modificar, rige siempre desde la próxima semana: no se pregunta. */
+  $p('ar-f-semanas-caja').style.display = (rot && !AREA_FORM.modificar) ? '' : 'none';
   $p('ar-f-24caja').style.display = rot ? '' : 'none';
   /* Los días del área solo se eligen en el horario general: en los otros
      modos los pone cada turno, y dos tiras mandando sobre lo mismo
@@ -44492,10 +44592,26 @@ function mirarImpactoArea(){
   AREA_IMPACTO = null;
   caja.style.display = 'none'; caja.innerHTML = '';
   if(!AREA_EDIT || !AREA_EDIT.nombre) return;          /* área nueva: nada que rearmar */
-  pedir({ accion:'perAreaImpacto', area: AREA_EDIT.nombre, desde: isoDe(new Date()) })
+  var proxLunes = sumarDias(lunesDe(''), 7);
+  if(AREA_FORM && AREA_FORM.modificar){
+    /* Modificar: se dice desde cuándo rige y qué queda intacto. */
+    caja.className = 'ar-modaviso';
+    caja.style.display = '';
+    caja.innerHTML = 'El cuadro nuevo rige <b>desde el lunes ' + esc(fechaCorta(proxLunes)) + '</b>. ' +
+      'Esta semana y las anteriores quedan como están (no se borra el historial).';
+  }
+  pedir({ accion:'perAreaImpacto', area: AREA_EDIT.nombre,
+          desde: (AREA_FORM && AREA_FORM.modificar) ? proxLunes : isoDe(new Date()) })
     .then(function(d){
       if(!d.semanas || !d.semanas.length) return;
       AREA_IMPACTO = d;
+      if(AREA_FORM && AREA_FORM.modificar){
+        caja.innerHTML += '<br>Las <b>' + d.semanas.length + '</b> ' + (d.semanas.length === 1 ? 'semana ya armada' : 'semanas ya armadas') +
+          ' desde esa fecha se rearman con el cuadro nuevo.' +
+          (d.extras ? ' Sus <b>' + d.extras + '</b> horas extra se vuelven a poner solas.' : '') +
+          (d.ajustes ? '<br>⚠ En esas semanas hay <b>' + d.ajustes + '</b> turnos ajustados a mano: <b>se pierden</b>.' : '');
+        return;
+      }
       var partes = ['Esta área tiene <b>' + d.semanas.length +
         (d.semanas.length === 1 ? ' semana planteada</b>' : ' semanas planteadas</b>') +
         ' con el horario actual.'];
@@ -44568,6 +44684,7 @@ function cuadroDeHorarios(semana){
           dias: diasArea.join(','), almuerzo: Number(AREA_FORM.almuerzo) || 0 }
       : (AREA_FORM.horarios || {})[p.clave];
     if(!hz || !hz.inicio || !hz.fin) return;
+    var hzP = general ? null : hz;              /* el horario propio de la persona */
     /* El horario de arriba manda: días, horas, almuerzo y días distintos
        salen de él, no de la copia que tiene la persona. Así el cuadro y
        el menú de la asignación nunca muestran cosas distintas. */
@@ -44582,6 +44699,34 @@ function cuadroDeHorarios(semana){
     var deDondeEsp = general ? (AREA_FORM.especialesGeneral || []) : ((suyo && suyo.especiales) || []);
     DIAS_LETRA.forEach(function(letra, i){
       var f = sumarDias(semana, i);
+      /* En el personalizado se arma igual que en el servidor: manda lo
+         propio de la persona (sus días, su cambio de esa fecha —incluido
+         un descanso puntual— o su día distinto); si no tiene nada
+         especial, el día distinto del horario al que apunta. */
+      if(hzP){
+        var cc = ppCeldaDe(hzP, letra, f);
+        var espB = null;
+        if(!cc.especial && !cc.puntual){
+          (((suyo && suyo.especiales) || [])).forEach(function(e){
+            if(e.fecha === f) espB = e;
+            else if(!e.fecha && e.dia === letra && !espB) espB = e;
+          });
+        }
+        if(!cc.trabaja && !espB) return;
+        var bls = espB ? [{ inicio: espB.inicio, fin: espB.fin, almuerzo: Number(hzP.almuerzo) || 0 }]
+                : cc.fijo ? [{ inicio: '', fin: '', almuerzo: 0 }]
+                : (cc.bloques || []);
+        bls.forEach(function(b){
+          var alm = Number(b.almuerzo) || 0;
+          salida.push({ area: AREA_FORM.nombre || 'Área nueva', semana: semana, fecha: f,
+                        dia: DIAS_NOMBRE[letra], turno: cc.op || hzP.nombre || 'Horario',
+                        inicio: b.inicio || '', fin: b.fin || '',
+                        persona: p.clave, nombre: p.nombre, almuerzo: alm,
+                        ajuste: cc.fijo ? 'valor fijo' : ((cc.especial || espB) ? 'otro horario ese día' : ''),
+                        horas: (b.inicio && b.fin) ? horasTurno(b.inicio, b.fin, alm) : 0 });
+        });
+        return;
+      }
       /* El día con otro horario manda sobre el habitual; una fecha
          puntual manda sobre el día de la semana. */
       var esp = null;
@@ -44629,6 +44774,7 @@ function leerFormularioArea(){
   AREA_FORM.almPorTurnos = AREA_FORM.almuerzo > 0 && !!$p('ar-f-galmturnos').checked;
   sincronizarDiasDelArea();
   AREA_FORM.semanas = $p('ar-f-semanas') ? $p('ar-f-semanas').value : '1';
+  if(AREA_FORM.modificar) AREA_FORM.semanas = '0';      /* modificar: desde la próxima semana */
   AREA_FORM.desdeProxima = AREA_FORM.semanas === '0';
 }
 
@@ -44658,6 +44804,14 @@ function guardarArea(){
   if(avisos.length && !confirm('Nadie puede estar en dos áreas el mismo día. Al guardar:\n\n' + avisos.join('\n') +
        '\n\nEsas áreas se rearman desde la semana siguiente. ¿Guardar?')) return;
 
+  /* Los cambios de una sola fecha que ya pasaron no sirven de nada: se
+     quitan para que no ocupen lugar (el servicio guarda hasta 20). */
+  var lunesHoy = lunesDe('');
+  Object.keys(AREA_FORM.horarios || {}).forEach(function(c){
+    var hz = AREA_FORM.horarios[c];
+    if(hz && hz.especiales) hz.especiales = hz.especiales.filter(function(e){ return !e.fecha || e.fecha >= lunesHoy; });
+  });
+
   var b = $p('ar-f-guardar'); b.disabled = true; b.textContent = 'Guardando…';
   err.textContent = '';
   var cuerpo = { accion:'perAreaGuardar',
@@ -44668,7 +44822,10 @@ function guardarArea(){
     inicial: AREA_FORM.inicial, semanaBase: AREA_FORM.semanas === '0' ? sumarDias(lunesDe(''), 7) : lunesDe(''),
     /* Si el área ya tenía semanas armadas y se pidió, se rearman desde
        la que corre; lo anterior queda intacto. */
-    rearmarDesde: (AREA_IMPACTO && $p('ar-f-rearmar') && $p('ar-f-rearmar').checked)
+    /* Al MODIFICAR se rearma siempre desde la próxima semana: la que
+       corre y lo anterior no se tocan. */
+    rearmarDesde: AREA_FORM.modificar ? sumarDias(lunesDe(''), 7)
+      : (AREA_IMPACTO && $p('ar-f-rearmar') && $p('ar-f-rearmar').checked)
       ? AREA_IMPACTO.desdeSemana : '',
     especiales: AREA_FORM.modo === 'general' ? (AREA_FORM.especialesGeneral || []) : [],
     almuerzoGeneral: { min: Number(AREA_FORM.almuerzo) || 0,
