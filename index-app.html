@@ -39961,12 +39961,32 @@ function abrirHorasExtra(){
     HEX.filtro = currentFilter;
     HEX.desde = r.desde; HEX.hasta = r.hasta;
   }
+  /* Si desde la última carga se creó, borró o renombró un área, lo que
+     se tenía ya no sirve: antes el tablero seguía mostrando solo las
+     áreas viejas hasta recargar la página. */
+  if(HEX.datos && !_hexMismasAreas(HEX.datos)) HEX.datos = null;
   if(HEX.datos){ pintarHorasExtra(); return; }
   /* Lo de la última vez se pinta ya mismo y se refresca por detrás: el
      tablero nunca arranca en blanco esperando al servicio. */
   var guardado = _hexLeerCache();
-  if(guardado){ HEX.datos = guardado; pintarHorasExtra(true); }
+  if(guardado && _hexMismasAreas(guardado)){ HEX.datos = guardado; pintarHorasExtra(true); }
   cargarHorasExtra();
+}
+
+/* Las áreas que hay hoy, en orden, para comparar con las de la carga. */
+function _hexNombresAreas(){
+  return (P.areas || []).map(function(a){ return a.nombre; }).filter(Boolean);
+}
+function _hexMismasAreas(d){
+  return !!(d && d.nombres) && d.nombres.slice().sort().join('|') === _hexNombresAreas().sort().join('|');
+}
+/* Se llama cuando cambian las áreas o sus turnos: lo cargado queda viejo
+   y la próxima vez que se abra el tablero se pide de nuevo. */
+function hexOlvidar(){
+  HEX.datos = null;
+  try {
+    Object.keys(localStorage).forEach(function(k){ if(k.indexOf('hexTablero|') === 0) localStorage.removeItem(k); });
+  } catch(e){}
 }
 
 /* ── LO GUARDADO DE LA ÚLTIMA VEZ ──────────────────────────────────
@@ -39976,7 +39996,7 @@ function abrirHorasExtra(){
    deja de servir solo. Sin esto, una copia guardada antes de que
    existiera 'extrasTodas' dejaba el cuadro diciendo que no había horas
    extra cuando sí las había. */
-var HEX_CACHE_VER = 2;
+var HEX_CACHE_VER = 3;   /* 3: la copia guarda los nombres de las áreas */
 function _hexClaveCache(){ return 'hexTablero|v' + HEX_CACHE_VER + '|' + HEX.desde + '|' + HEX.hasta; }
 function _hexLeerCache(){
   try {
@@ -40019,7 +40039,7 @@ function _hexDomingo(f){
 
 function cargarHorasExtra(){
   if(HEX.cargando) return;
-  var areas = (P.areas || []).map(function(a){ return a.nombre; }).filter(Boolean);
+  var areas = _hexNombresAreas();
   var caja = $p('per-hex');
   if(!areas.length){
     /* Puede que las áreas aún no hayan llegado: en ese caso el tablero
@@ -40059,7 +40079,7 @@ function cargarHorasExtra(){
     });
     HEX.datos = { turnos: turnos, extras: dentro, extrasTodas: extras,
                   novedades: P.novedades || [], traslados: P.traslados || [],
-                  fallos: fallos, areas: areas.length };
+                  fallos: fallos, areas: areas.length, nombres: areas.slice() };
     _hexGuardarCache(HEX.datos);
     pintarHorasExtra();
     try { IND.desde = HEX.desde; IND.hasta = HEX.hasta; IND.datos = HEX.datos; pintarIndicadores(); } catch(e){}
@@ -40097,8 +40117,14 @@ var HEX_TOPE_SEMANAL = 42;
 function calcHorasExtra(d){
   var turnos = (d && d.turnos) || [], extras = (d && d.extras) || [];
   var areaDe = {}, nombreDe = {};
+  /* El área de cada persona es la de su turno MÁS RECIENTE: quien pasó
+     de un área vieja a una nueva quedaba contado en la vieja. */
+  var fechaDe = {};
   turnos.forEach(function(t){
-    areaDe[t.persona] = areaDe[t.persona] || t.area;
+    if(!fechaDe[t.persona] || String(t.fecha) >= fechaDe[t.persona]){
+      fechaDe[t.persona] = String(t.fecha || '');
+      if(t.area) areaDe[t.persona] = t.area;
+    }
     nombreDe[t.persona] = nombreDe[t.persona] || t.nombre;
   });
 
@@ -40162,9 +40188,14 @@ function calcHorasExtra(d){
     cargaArea[ar] = (cargaArea[ar] || 0) + h;
   });
 
-  var areas = Object.keys(porArea).map(function(k){
-    return { etiqueta: k, valor: porArea[k], carga: cargaArea[k] || 0 };
-  }).sort(function(a, b){ return b.valor - a.valor; });
+  /* Entran TODAS las áreas, no solo las que ya tienen horas extra: un
+     área nueva sin extras todavía también se ve, en 0, con lo que lleva
+     programado. */
+  var todas = {};
+  Object.keys(porArea).concat(Object.keys(cargaArea), (d && d.nombres) || []).forEach(function(k){ todas[k] = true; });
+  var areas = Object.keys(todas).map(function(k){
+    return { etiqueta: k, valor: porArea[k] || 0, carga: cargaArea[k] || 0 };
+  }).sort(function(a, b){ return (b.valor - a.valor) || (b.carga - a.carga); });
   var personas = Object.keys(porPersona).map(function(k){ return porPersona[k]; })
     .sort(function(a, b){ return b.horas - a.horas; });
   return { total: total, aprobadas: aprobadas, porAprobar: porAprobar, deJornada: deJornada,
@@ -40388,12 +40419,12 @@ function pintarHorasExtra(deCache){
   var colorDe = {};
   m.areas.forEach(function(a, i){ colorDe[a.etiqueta] = _hexColorArea(a.etiqueta, i); });
 
-  var areas = m.areas.slice(0, 10).map(function(a){
+  var areas = m.areas.map(function(a){
     /* El porcentaje sobre lo programado es lo que de verdad compara dos
        áreas de distinto tamaño. */
     var pct = a.carga > 0 ? (a.valor / a.carga) * 100 : null;
     return { etiqueta: a.etiqueta, valor: a.valor, color: colorDe[a.etiqueta],
-             sub: a.carga ? fmtHoras1(a.carga) + ' programadas' : '',
+             sub: a.carga ? fmtHoras1(a.carga) + ' programadas' : 'sin turnos en este periodo',
              chip: pct !== null ? pct.toFixed(1).replace('.', ',') + '%' : '',
              chipSuave: true,
              titulo: a.carga ? numeroHoras(a.valor) + ' extra sobre ' + numeroHoras(a.carga) + ' programadas' : '' };
@@ -44511,12 +44542,11 @@ function diasPersonaHtml(clave){
   var delArea = AREA_FORM.dias;
   var suyos = AREA_FORM.diasPersona[clave] || delArea;
   var otras = choquesDe(clave);
+  /* Los botones "Aquí todos los días: L M X J V" se quitaron: los días de
+     cada quien ya se ven y se tocan en el cuadro por persona. Solo queda el
+     aviso de si la persona también está en otra área. */
+  if(!otras.length) return '';
   return '<div class="ar-dp">' +
-    '<span class="ar-dp-lb">' + (AREA_FORM.diasPersona[clave] ? 'Aquí solo:' : 'Aquí todos los días:') + '</span>' +
-    delArea.map(function(d){
-      return '<button type="button" class="ar-dp-d' + (suyos.indexOf(d) > -1 ? ' on' : '') + '" data-dp="' + esc(clave) +
-        '" data-dl="' + d + '" title="' + esc(DIAS_NOMBRE[d] || d) + '">' + d + '</button>';
-    }).join('') +
     (otras.length ? '<div class="ar-dp-otras">' + otras.map(function(o){
       return 'También en <b>' + esc(o.area) + '</b> (' + o.dias.join(',') + ')' +
         (o.choca.length ? ' · <span class="choca">al guardar deja ' + esc(o.area) + ' el ' + o.choca.join(',') + '</span>' : '');
@@ -44838,6 +44868,7 @@ function guardarArea(){
   pedir(cuerpo).then(function(d){
     P.areas = d.areas || P.areas; P.miembros = d.miembros || P.miembros;
     P.turnos = {}; FRESCO = {};          /* lo guardado quedó viejo */
+    hexOlvidar();                        /* el tablero también */
     /* Se marca ya como "en camino" para que el adelanto de fondo no la
        pida al mismo tiempo que se está armando. */
     AREA_VIENDO = nombre; PLANEADAS[nombre] = true;
@@ -44867,6 +44898,7 @@ function guardarArea(){
           : '';
         PREVIA = false;
         guardarTurnos(nombre, d.turnos || [], d.extras || []);
+        hexOlvidar();                      /* ya hay turnos nuevos que contar */
         if(AREA_VIENDO === nombre) verMes(nombre, MES_VIENDO);
       })
       .catch(function(e){
