@@ -43388,8 +43388,64 @@ function areaPorNombre(n){
   return null;
 }
 
+/* Borrar un área pide el mismo PIN de Cortes a Proveedor, validado por el
+   Apps Script de cortes (verificarPin). Devuelve una promesa: true si el
+   PIN es correcto, false si se cancela. */
+function pedirPinBorrarArea(nombre){
+  return new Promise(function(resolver){
+    var fondo = document.createElement('div');
+    fondo.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px';
+    fondo.innerHTML =
+      '<div style="background:#fff;border-radius:10px;padding:28px 24px;max-width:380px;width:100%;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,.25)">' +
+        '<div style="font-size:16px;font-weight:700;color:var(--navy,#1e293b);margin-bottom:6px">Borrar el área "' + esc(nombre) + '"</div>' +
+        '<div style="font-size:13px;color:var(--ink-m,#64748b);margin-bottom:18px">La gente no se borra: solo deja de estar en esta área. Ingresa el PIN de cortes a proveedor para confirmar.</div>' +
+        '<input type="password" inputmode="numeric" maxlength="12" autocomplete="off" placeholder="• • • • • •" ' +
+          'style="width:100%;box-sizing:border-box;padding:12px;font-size:20px;letter-spacing:6px;text-align:center;border:1px solid var(--rule,#cbd5e1);border-radius:6px">' +
+        '<div data-err style="font-size:12px;color:var(--red,#dc2626);font-weight:600;margin-top:10px;min-height:16px"></div>' +
+        '<div style="display:flex;gap:10px;justify-content:center;margin-top:14px">' +
+          '<button type="button" data-no style="padding:10px 20px;border:1px solid var(--rule,#cbd5e1);background:#fff;border-radius:6px;cursor:pointer;font-weight:600">Cancelar</button>' +
+          '<button type="button" data-si style="padding:10px 20px;border:none;background:var(--red,#dc2626);color:#fff;border-radius:6px;cursor:pointer;font-weight:700">Borrar área</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(fondo);
+    var inp = fondo.querySelector('input'), err = fondo.querySelector('[data-err]'),
+        si = fondo.querySelector('[data-si]'), no = fondo.querySelector('[data-no]'), ocupado = false;
+    function cerrar(ok){ fondo.remove(); resolver(ok); }
+    no.onclick = function(){ if(!ocupado) cerrar(false); };
+    fondo.onclick = function(ev){ if(ev.target === fondo && !ocupado) cerrar(false); };
+    function probar(){
+      var pin = inp.value.trim();
+      if(!pin){ err.textContent = 'Ingresa el PIN'; inp.focus(); return; }
+      ocupado = true; si.disabled = true; err.textContent = 'Verificando...';
+      fetchJSONTolerante(
+        CORTES_FAV_API + '?accion=verificarPin&pin=' + encodeURIComponent(pin) + '&t=' + Date.now(),
+        { redirect: 'follow', timeoutMs: 30000 }, 2
+      ).then(function(data){
+        ocupado = false; si.disabled = false;
+        if(!data || typeof data.valido === 'undefined'){
+          err.textContent = navigator.onLine ? 'El servidor de cortes no respondió. Intente de nuevo.' : 'Sin conexión a internet.';
+          return;
+        }
+        if(data.valido) cerrar(true);
+        else { err.textContent = 'PIN incorrecto'; inp.value = ''; inp.focus(); }
+      }).catch(function(){
+        ocupado = false; si.disabled = false;
+        err.textContent = 'No se pudo verificar el PIN. Intente de nuevo.';
+      });
+    }
+    si.onclick = probar;
+    inp.onkeydown = function(ev){
+      if(ev.key === 'Enter') probar();
+      else if(ev.key === 'Escape' && !ocupado) cerrar(false);
+    };
+    setTimeout(function(){ inp.focus(); }, 30);
+  });
+}
+
 function borrarArea(nombre){
-  if(!confirm('¿Borrar el área "' + nombre + '"? La gente no se borra: solo deja de estar en esta área.')) return;
+  pedirPinBorrarArea(nombre).then(function(ok){ if(ok) borrarAreaYa(nombre); });
+}
+function borrarAreaYa(nombre){
   pedir({ accion:'perAreaBorrar', nombre: nombre }).then(function(d){
     P.areas = d.areas || []; P.miembros = d.miembros || [];
     /* La tarjeta se va y las demás se corren a ocupar su lugar. */
