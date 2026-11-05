@@ -2871,22 +2871,6 @@ td .preop-fotos{margin-top:0;gap:4px;flex-wrap:nowrap}
   padding:32px 32px 28px;border-radius:24px;
   box-shadow:0 24px 60px -24px rgba(0,0,0,.45);
 }
-#dash-login .dl-marca{text-align:center;margin-bottom:24px}
-/* Sello: el PNG mide 1024×1536 con el sello centrado en (512, 735) y
-   ~800 px de diámetro. Se escala y se corre para mostrar solo el disco. */
-#dash-login .dl-sello{
-  --d:116px;width:var(--d);height:var(--d);margin:0 auto 14px;border-radius:50%;
-  overflow:hidden;position:relative;background:#46b03f;
-}
-#dash-login .dl-sello img{
-  position:absolute;width:calc(var(--d) * 1.28);height:auto;max-width:none;
-  left:calc(var(--d) * -0.14);top:calc(var(--d) * -0.419);
-}
-#dash-login .dl-nombre{
-  margin:0;font-family:'Playfair Display',serif;font-size:28px;font-weight:800;
-  color:var(--navy);letter-spacing:.3px;line-height:1.15;
-}
-#dash-login .dl-lema{margin:6px 0 0;font-size:13px;color:var(--ink-m);line-height:1.4}
 #dash-login .dl-campo{margin-bottom:16px}
 #dash-login label{
   display:block;margin-bottom:6px;font-size:14px;font-weight:600;color:var(--ink);
@@ -2934,9 +2918,7 @@ td .preop-fotos{margin-top:0;gap:4px;flex-wrap:nowrap}
 #dash-login .dl-cara svg{width:100%;height:100%}
 @media (max-width:420px){
   #dash-login .dl-card{padding:26px 20px 22px;border-radius:20px}
-  #dash-login .dl-sello{--d:96px}
-  #dash-login .dl-nombre{font-size:25px}
-  #dash-login .dl-marca{margin-bottom:20px}
+  #dash-login img{max-width:300px !important}
 }
 @media (prefers-reduced-motion:reduce){
   #dash-login-error{animation:none}
@@ -4830,11 +4812,15 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 <!-- ══ PANTALLA LOGIN ══ -->
 <div id="dash-login">
   <div class="dl-card">
-    <div class="dl-marca">
-      <!-- El PNG trae mucho margen propio (1024×1536): se recorta al sello. -->
-      <div class="dl-sello"><img class="login-logo" src="https://raw.githubusercontent.com/hortior2019-glitch/pil1-dashboard/main/logoverde.png" alt="Horti Organic"></div>
-      <h1 class="dl-nombre">Horti Organic</h1>
-      <p class="dl-lema">Sistema de Analítica &amp; Business Intelligence</p>
+    <div style="position:relative;text-align:center;margin-bottom:14px">
+      <img class="login-logo" src="https://raw.githubusercontent.com/hortior2019-glitch/pil1-dashboard/main/logoverde.png" alt="Logo" style="width:100%;max-width:320px;object-fit:contain;mix-blend-mode:multiply;margin-top:26px;display:inline-block">
+      <!-- "Horti Organic" y el subtitulo van superpuestos sobre la punta inferior del logo
+           (antes iban como texto aparte debajo, dejando el logo con demasiado espacio en blanco
+           propio de la imagen empujado hacia arriba) -->
+      <div style="position:absolute;left:0;right:0;bottom:6%;text-align:center;pointer-events:none">
+        <div style="font-family:'Playfair Display',serif;font-size:32px;font-weight:900;color:var(--navy);letter-spacing:1.5px;line-height:1.1;text-shadow:0 0 10px rgba(255,255,255,.95),0 0 20px rgba(255,255,255,.85)">Horti Organic</div>
+        <div style="font-size:10.5px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink-m);margin-top:2px;text-shadow:0 0 10px rgba(255,255,255,.95),0 0 20px rgba(255,255,255,.85)">Sistema de Analítica & Business Intelligence</div>
+      </div>
     </div>
     <form id="dash-login-form" novalidate onsubmit="event.preventDefault();intentarLoginDash()">
       <div class="dl-campo">
@@ -10990,6 +10976,9 @@ window.hortiGestos = (function(){
    de carga. hortiSonido.silencio(true) lo apaga todo. */
 window.hortiSonido = (function(){
   var ctx = null, salida = null, ultimo = {}, latidoT = 0, latidoN = 0;
+  /* Afinación general: todo suena unos tres semitonos más abajo de lo
+     escrito y con el brillo recortado (pedido: menos agudo en general). */
+  var TONO = 0.84;
   var mudo = false;
   try { mudo = localStorage.getItem('horti-sonido') === '0'; } catch(e){}
   function abrir(){
@@ -11004,7 +10993,7 @@ window.hortiSonido = (function(){
       /* Corta lo áspero de arriba, pero deja pasar la zona donde
          trabajan los parlantes chicos (500–3000 Hz). */
       var filtro = ctx.createBiquadFilter();
-      filtro.type = 'lowpass'; filtro.frequency.value = 4200; filtro.Q.value = 0.5;
+      filtro.type = 'lowpass'; filtro.frequency.value = 2800; filtro.Q.value = 0.5;
       /* Le quita los subgraves que en un parlante chico solo hacen ruido. */
       var hp = ctx.createBiquadFilter();
       hp.type = 'highpass'; hp.frequency.value = 90;
@@ -11019,6 +11008,7 @@ window.hortiSonido = (function(){
     window.addEventListener(ev, despertar, { capture:true, passive:true });
   });
   function osc(f0, f1, t, dur, vol, tipo, corte){
+    f0 *= TONO; if (f1) f1 *= TONO;
     var o = ctx.createOscillator(), g = ctx.createGain();
     o.type = tipo || 'sine';
     o.frequency.setValueAtTime(f0, t);
@@ -11036,12 +11026,15 @@ window.hortiSonido = (function(){
   }
   /* Nota "robot": fundamental + armónicos que decaen más rápido, así
      el ataque brilla un instante y la cola queda redonda. */
-  function nota(f0, f1, ini, dur, vol){
+  /* oscuro=true: sin el 4º armónico y con menos 3º, para sonidos más
+     graves y opacos (la carga). */
+  function nota(f0, f1, ini, dur, vol, oscuro){
+    if (oscuro === undefined) oscuro = true;   /* por defecto, opaca */
     var t = ctx.currentTime + ini, r = (f1 || f0) / f0;
     osc(f0,     f0 * r,     t, dur,        vol,        'sine');
-    osc(f0 * 2, f0 * 2 * r, t, dur * 0.75, vol * 0.55, 'sine');
-    osc(f0 * 3, f0 * 3 * r, t, dur * 0.55, vol * 0.32, 'triangle');
-    osc(f0 * 4, f0 * 4 * r, t, dur * 0.40, vol * 0.16, 'sine');
+    osc(f0 * 2, f0 * 2 * r, t, dur * 0.75, vol * (oscuro ? 0.6 : 0.55), 'sine');
+    osc(f0 * 3, f0 * 3 * r, t, dur * 0.55, vol * (oscuro ? 0.14 : 0.32), oscuro ? 'sine' : 'triangle');
+    if (!oscuro) osc(f0 * 4, f0 * 4 * r, t, dur * 0.40, vol * 0.16, 'sine');
   }
   function ruido(dur){
     var n = Math.max(1, Math.floor(ctx.sampleRate * dur)), b = ctx.createBuffer(1, n, ctx.sampleRate);
@@ -11053,7 +11046,7 @@ window.hortiSonido = (function(){
   function soplo(ini, dur, vol, f0, f1){
     var t = ctx.currentTime + ini, s = ruido(dur);
     var bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.4;
-    bp.frequency.setValueAtTime(f0, t); bp.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    bp.frequency.setValueAtTime(f0 * TONO, t); bp.frequency.exponentialRampToValueAtTime(f1 * TONO, t + dur);
     var g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(vol, t + dur * 0.35);
@@ -11064,7 +11057,7 @@ window.hortiSonido = (function(){
   /* "Tic" mecánico: un golpecito de ruido muy corto, como un relé. */
   function tic(ini, vol, f){
     var t = ctx.currentTime + ini, dur = 0.03, s = ruido(dur);
-    var bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 2.2; bp.frequency.value = f || 1700;
+    var bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 2.2; bp.frequency.value = (f || 1700) * TONO * 0.8;
     var g = ctx.createGain();
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
@@ -11100,17 +11093,17 @@ window.hortiSonido = (function(){
     },
     /* Empieza una pantalla de carga: el robot "procesa". */
     carga: function(){
-      soplo(0, 0.30, 0.05, 500, 1400);
-      nota(196, 294, 0, 0.34, 0.07);
-      tic(0.12, 0.07, 1400); nota(440, 440, 0.12, 0.08, 0.05);
-      tic(0.24, 0.07, 1600); nota(523, 523, 0.24, 0.08, 0.05);
-      tic(0.36, 0.07, 1300); nota(392, 392, 0.36, 0.12, 0.05);
+      soplo(0, 0.34, 0.045, 350, 800);
+      nota(131, 175, 0, 0.38, 0.08, true);
+      tic(0.13, 0.05, 900); nota(196, 196, 0.13, 0.10, 0.06, true);
+      tic(0.26, 0.05, 1000); nota(220, 220, 0.26, 0.10, 0.06, true);
+      tic(0.39, 0.05, 850); nota(175, 175, 0.39, 0.16, 0.06, true);
     },
     /* Pulso mientras carga: dos notas suaves que alternan. */
     latido: function(){
       var alto = (latidoN++ % 2) === 0;
-      tic(0, 0.035, alto ? 1500 : 1200);
-      nota(alto ? 330 : 294, alto ? 330 : 294, 0, 0.22, 0.035);
+      tic(0, 0.03, alto ? 950 : 800);
+      nota(alto ? 196 : 175, alto ? 196 : 175, 0, 0.26, 0.04, true);
     },
     /* Terminó de cargar: dos notas que se abren (quinta justa). */
     listo: function(){
