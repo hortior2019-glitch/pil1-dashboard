@@ -28704,6 +28704,214 @@ function vozComparativo(){
   return out + '\n';
 }
 
+/* ══════════════════════════════════════════════════════════════
+   RADAR OPERATIVO DEL ASESOR
+   Más allá de los volúmenes: producción de humus, costo de la flota por
+   kilómetro (combustible + mantenimiento), Personal y, sobre todo, los
+   VACÍOS de información. Todo sale de lo que el tablero ya cargó; no se
+   pide ni se modifica ningún dato.
+   ══════════════════════════════════════════════════════════════ */
+function vozDiasEntre(a, b){
+  if (!a || !b) return null;
+  return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 864e5);
+}
+function vozPesos(n){ return '$' + Math.round(n || 0).toLocaleString('es-CO'); }
+function vozMediana(arr){
+  if (!arr.length) return 0;
+  const s = arr.slice().sort(function(a,b){ return a-b; }), m = Math.floor(s.length/2);
+  return s.length % 2 ? s[m] : (s[m-1] + s[m]) / 2;
+}
+
+function vozRadarHumus(hoy, faltan){
+  const rows = vozArr(function(){ return dataProduccionHumus; });
+  if (!rows.length){ faltan.push('Producción de Humus: no hay ningún registro cargado. Pide que se registre la producción diaria.'); return ''; }
+  const k0 = Object.keys(rows[0] || {});
+  const col = function(re){ return k0.find(function(k){ return re.test(vozNorm(k)); }); };
+  const cProd = col(/producido/), cDesp = col(/despachado/), cStock = col(/stock actual/);
+  const porDia = {};
+  rows.forEach(function(r){
+    const y = vozAYMD(vozFechaGenerica(r));
+    if (!y) return;
+    const d = porDia[y] || (porDia[y] = { p:0, d:0, s:null });
+    d.p += cProd ? _numComb(r[cProd]) : 0;
+    d.d += cDesp ? _numComb(r[cDesp]) : 0;
+    if (cStock && r[cStock] !== '' && r[cStock] != null) d.s = _numComb(r[cStock]);
+  });
+  const dias = Object.keys(porDia).sort();
+  if (!dias.length){ faltan.push('Producción de Humus: los registros no tienen fecha legible.'); return ''; }
+  const ultima = dias[dias.length - 1], hace = vozDiasEntre(ultima, hoy);
+  const sumaEntre = function(desdeN, hastaN){
+    let p = 0, d = 0, n = 0;
+    dias.forEach(function(y){ const x = vozDiasEntre(y, hoy); if (x >= desdeN && x < hastaN){ p += porDia[y].p; d += porDia[y].d; n++; } });
+    return { p:p, d:d, n:n };
+  };
+  const s7 = sumaEntre(0, 7), s7a = sumaEntre(7, 14), s30 = sumaEntre(0, 30), s30a = sumaEntre(30, 60);
+  const ceros = dias.filter(function(y){ const x = vozDiasEntre(y, hoy); return x >= 0 && x < 14 && porDia[y].p === 0; });
+  const pct = function(a, b){ return b ? ((a-b)/b*100).toFixed(0) + '%' : 'sin base'; };
+  let t = 'HUMUS · último registro: ' + ultima + (hace > 0 ? ' (hace ' + hace + ' días)' : ' (hoy)') + '\n';
+  t += '  Producido últimos 7 días: ' + Math.round(s7.p) + ' (' + s7.n + ' días con registro) vs 7 días anteriores: ' + Math.round(s7a.p) + ' (' + pct(s7.p, s7a.p) + ')\n';
+  t += '  Producido últimos 30 días: ' + Math.round(s30.p) + ' vs 30 anteriores: ' + Math.round(s30a.p) + ' (' + pct(s30.p, s30a.p) + ') · despachado 30 días: ' + Math.round(s30.d) + '\n';
+  if (porDia[ultima].s !== null) t += '  Stock actual registrado: ' + Math.round(porDia[ultima].s) + '\n';
+  if (ceros.length) t += '  Días de las últimas 2 semanas con producción en cero: ' + ceros.length + ' (' + ceros.slice(-5).join(', ') + ')\n';
+  if (hace >= 3) faltan.push('Producción de Humus: lleva ' + hace + ' días sin registro. O la producción está parada o no se está anotando.');
+  if (s7a.p > 0 && s7.p < s7a.p * 0.6) t += '  ALERTA: la producción de la semana cayó más de 40% contra la anterior.\n';
+  if (s7.n && s7.n < 4 && hace < 3) faltan.push('Producción de Humus: solo ' + s7.n + ' días registrados en la última semana.');
+  return t;
+}
+
+function vozRadarFlota(hoy, faltan){
+  const veh = vozArr(function(){ return _vehiculos; });
+  const comb = vozArr(function(){ return dataCombustible; });
+  const mant = vozArr(function(){ return _mantenimientos; });
+  if (!comb.length) faltan.push('Combustible: no hay tanqueos cargados. Sin eso no se puede medir el costo por kilómetro.');
+  if (!veh.length) return '';
+  /* Viajes recientes por placa (Ingreso de Material): un vehículo que
+     trabaja y no tanquea es un vacío de información. */
+  const viajes14 = {};
+  vozArr(function(){ return dataIngreso; }).forEach(function(r){
+    let y = '', pl = '';
+    try { y = vozAYMD(getMarcaTemporal(r)); pl = (getPlacaReg(r) || '').toString().toUpperCase().trim(); } catch(e){}
+    if (pl && y && vozDiasEntre(y, hoy) < 14) viajes14[pl] = (viajes14[pl] || 0) + 1;
+  });
+  let t = 'FLOTA · costo por kilómetro (últimos 90 días; el valor de cada tanqueo se divide por los km recorridos desde el tanqueo anterior)\n';
+  let sinKm = 0, sinRecibo = 0;
+  veh.forEach(function(v){
+    const pl = (v.placa || '').toString().toUpperCase().trim();
+    if (!pl) return;
+    let tq = [];
+    try { tq = combDeVehiculo(pl) || []; } catch(e){}
+    const rec = tq.filter(function(x){ const d = vozDiasEntre(x.fecha, hoy); return d !== null && d <= 90; });
+    const mm = mant.filter(function(m){ const d = vozDiasEntre(String(m.fecha || '').slice(0,10), hoy);
+      return (m.placa || '').toString().toUpperCase().trim() === pl && d !== null && d <= 90; });
+    const costoMant = mm.reduce(function(s, m){ return s + (Number(m.valor) || 0); }, 0);
+    const mantSinValor = mm.filter(function(m){ return !(Number(m.valor) > 0); }).length;
+    if (!rec.length && !mm.length){
+      if (viajes14[pl]) faltan.push(pl + ': hizo ' + viajes14[pl] + ' viajes en las últimas 2 semanas pero no tiene tanqueos registrados en 90 días.');
+      return;
+    }
+    const porKm = [];
+    let km = 0, valor = 0, raros = [];
+    rec.forEach(function(x){
+      valor += x.valor;
+      if (!x.km) sinKm++;
+      if (!x.fotoRecibo) sinRecibo++;
+      if (x.kmRecorridos && x.valor){ km += x.kmRecorridos; porKm.push(x.valor / x.kmRecorridos); }
+    });
+    const med = vozMediana(porKm);
+    rec.forEach(function(x){
+      if (!x.kmRecorridos || !x.valor || !med) return;
+      const c = x.valor / x.kmRecorridos;
+      if (c > med * 1.8 || c < med * 0.4)
+        raros.push(x.fecha + ': ' + vozPesos(x.valor) + ' para ' + x.kmRecorridos + ' km = ' + vozPesos(c * 100) + ' por 100 km');
+    });
+    const ult = rec[0] ? rec[0].fecha : '';
+    let l = '  - ' + pl + (v.tipo ? ' (' + v.tipo + ')' : '') + ': ' + rec.length + ' tanqueos, ' + vozPesos(valor) + ' en combustible';
+    if (km) l += ', ' + Math.round(km) + ' km medidos, ' + vozPesos(med * 100) + ' por 100 km (mediana)';
+    else if (rec.length) l += ', SIN kilometrajes que permitan medir el rendimiento';
+    l += ' · mantenimiento 90 días: ' + vozPesos(costoMant) + ' en ' + mm.length + ' registro(s)';
+    if (km && (valor + costoMant)) l += ' · costo total por km: ' + vozPesos((valor + costoMant) / km);
+    if (ult) l += ' · último tanqueo ' + ult + ' (hace ' + vozDiasEntre(ult, hoy) + ' días)';
+    t += l + '\n';
+    if (raros.length) t += '    TANQUEOS FUERA DE LO NORMAL para esta placa: ' + raros.slice(0, 3).join(' | ') + '\n';
+    if (mantSinValor) faltan.push(pl + ': ' + mantSinValor + ' mantenimiento(s) de los últimos 90 días sin costo registrado.');
+    if (ult && viajes14[pl] && vozDiasEntre(ult, hoy) > 20)
+      faltan.push(pl + ': sigue haciendo viajes (' + viajes14[pl] + ' en 2 semanas) pero su último tanqueo registrado es de hace ' + vozDiasEntre(ult, hoy) + ' días.');
+  });
+  if (sinKm) faltan.push('Combustible: ' + sinKm + ' tanqueo(s) de los últimos 90 días sin kilometraje. Sin ese dato no se puede saber cuánto rinde cada vehículo.');
+  if (sinRecibo) t += '  Tanqueos sin foto del recibo en 90 días: ' + sinRecibo + '\n';
+  t += '  (El formulario de tanqueo no registra galones: el rendimiento se mide en pesos por kilómetro.)\n';
+  return t;
+}
+
+function vozRadarPersonal(hoy, faltan){
+  let r = null;
+  try { r = window.personalResumenAsesor ? window.personalResumenAsesor() : null; } catch(e){}
+  if (!r || !r.cargado){ faltan.push('Personal: la información del equipo todavía no está cargada en esta sesión.'); return ''; }
+  let t = 'PERSONAL · ' + r.activos + ' colaboradores activos · por área: ' +
+          Object.keys(r.porArea).map(function(a){ return a + ' ' + r.porArea[a]; }).join(', ') + '\n';
+  if (r.ausentesHoy.length) t += '  Con novedad vigente hoy: ' + r.ausentesHoy.slice(0, 10).join(', ') + '\n';
+  if (r.sinArea) faltan.push('Personal: ' + r.sinArea + ' colaborador(es) activos sin área asignada.');
+  const x = r.extras;
+  if (x){
+    const top = Object.keys(x.porPersona).map(function(k){ return [k, x.porPersona[k]]; })
+      .sort(function(a,b){ return b[1]-a[1]; }).slice(0, 5);
+    t += '  Horas extra este mes: ' + x.mes.toFixed(1) + ' h (mes pasado a la misma fecha: ' + x.mesAntMismaFecha.toFixed(1) + ' h) · sin aprobar: ' + x.porAprobar.toFixed(1) + ' h\n';
+    if (top.length) t += '  Quiénes más horas extra llevan este mes: ' + top.map(function(p){ return p[0] + ' ' + p[1].toFixed(1) + ' h'; }).join(', ') + '\n';
+    const areas = Object.keys(x.porArea);
+    if (areas.length) t += '  Horas extra por área: ' + areas.map(function(a){ return a + ' ' + x.porArea[a].toFixed(1) + ' h'; }).join(', ') + '\n';
+    if (x.ultima && vozDiasEntre(x.ultima, hoy) > 10) faltan.push('Horas extra: la última anotada es del ' + x.ultima + '. ¿No ha habido o no se están registrando?');
+  } else {
+    faltan.push('Horas extra: no hay datos del tablero de horas extra en esta sesión.');
+  }
+  return t;
+}
+
+function vozRadarAsesor(){
+  const hoy = vozHoy(), faltan = [];
+  let t = '=== RADAR OPERATIVO YA CALCULADO (no te quedes solo en los volúmenes de ingreso) ===\n';
+  try { t += vozRadarHumus(hoy, faltan); } catch(e){}
+  try { t += vozRadarFlota(hoy, faltan); } catch(e){}
+  try { t += vozRadarPersonal(hoy, faltan); } catch(e){}
+  if (faltan.length) t += 'VACÍOS DE INFORMACIÓN DETECTADOS (pide con amabilidad que alimenten el sistema):\n' +
+                          faltan.slice(0, 10).map(function(f){ return '  - ' + f; }).join('\n') + '\n';
+  return t + '\n';
+}
+
+/* La base semanal de referencias que investigan los subagentes del
+   proxy. No es en tiempo real: se baja una vez por sesión. */
+let _vozReferencias = null;
+async function vozReferenciasTexto(){
+  if (_vozReferencias === null){
+    try {
+      const c = sessionStorage.getItem('hortiVozRefs');
+      if (c){ const o = JSON.parse(c); if (Date.now() - o.t < 6 * 3600e3) _vozReferencias = o.r; }
+    } catch(e){}
+  }
+  if (_vozReferencias === null){
+    try {
+      const r = await Promise.race([vozProxy({ mode:'referencias' }), vozEsperar(6000).then(function(){ return null; })]);
+      _vozReferencias = (r && r.referencias) || [];
+      try { sessionStorage.setItem('hortiVozRefs', JSON.stringify({ t: Date.now(), r: _vozReferencias })); } catch(e){}
+    } catch(e){ _vozReferencias = []; }
+  }
+  if (!_vozReferencias.length) return '';
+  let t = '=== REFERENCIAS DEL MERCADO (base semanal propia, investigada en la web; valores aproximados, NO en tiempo real) ===\n';
+  _vozReferencias.forEach(function(h){
+    t += '• ' + h.titulo + ' (investigado el ' + h.fecha + '): ' + (h.resumen || '') + '\n';
+    (h.datos || []).slice(0, 12).forEach(function(d){
+      t += '   - ' + d.dato + ': ' + d.valor + (d.unidad ? ' ' + d.unidad : '') + (d.fecha ? ' (' + d.fecha + ')' : '') + '\n';
+    });
+    if ((h.alertas || []).length) t += '   Señales a vigilar: ' + h.alertas.slice(0, 5).join(' | ') + '\n';
+    if ((h.novedades || []).length) t += '   Novedades de la semana: ' + h.novedades.slice(0, 3).join(' | ') + '\n';
+  });
+  return t + '\n';
+}
+
+/* Para no repetir el mismo informe: se recuerdan los últimos informes
+   de este equipo y se rota el frente que abre cada día. */
+const VOZ_FRENTES = ['flota: costo por kilómetro, tanqueos y mantenimientos', 'producción de humus',
+                     'personal y horas extra', 'clientes e ingreso de material', 'calidad y vacíos de la información'];
+function vozInformesPrevios(){
+  try { return JSON.parse(localStorage.getItem('hortiVozInformes') || '[]'); } catch(e){ return []; }
+}
+function vozGuardarInforme(texto){
+  try {
+    const l = vozInformesPrevios();
+    l.push({ f: vozHoy(), t: String(texto || '').slice(0, 320) });
+    localStorage.setItem('hortiVozInformes', JSON.stringify(l.slice(-6)));
+  } catch(e){}
+}
+function vozVariedadTexto(){
+  const d = new Date(), n = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5);
+  const foco = VOZ_FRENTES[n % VOZ_FRENTES.length];
+  let t = '=== VARIEDAD ===\nFrente sugerido para profundizar hoy: ' + foco +
+          '. Si el radar muestra una alerta más grave en otro frente, empieza por esa.\n';
+  const prev = vozInformesPrevios();
+  if (prev.length) t += 'Tus informes anteriores (no repitas la misma estructura ni los mismos datos de entrada; cuenta algo nuevo):\n' +
+                        prev.map(function(p){ return '  - ' + p.f + ': ' + p.t; }).join('\n') + '\n';
+  return t + '\n';
+}
+
 function vozInstruccionAsesor(a){
   const h = new Date().getHours();
   const saludo = h < 12 ? 'buenos días' : (h < 19 ? 'buenas tardes' : 'buenas noches');
@@ -28718,7 +28926,11 @@ function vozInstruccionAsesor(a){
     'Si algo va por debajo, dilo con claridad y su impacto en la facturación, por ejemplo: este mes vamos 100 toneladas y el mes pasado a esta fecha íbamos 120, son 20 toneladas por debajo, vale la pena revisarlo.\n' +
     'Si un cliente bajó o dejó de traer material, nómbralo y señálalo como algo para tener en el radar. Si algo subió, reconócelo en media frase.\n' +
     'Eres curioso: puedes cerrar con UNA pregunta amable y útil sobre el dato más llamativo, como quien ofrece ayuda (por ejemplo, si quiere que revises a ese cliente o que compares con otro periodo).\n' +
-    'Nunca inventes tarifas, precios ni valores en pesos: el impacto en facturación lo expresas en toneladas, viajes y porcentajes.\n\n';
+    'No te limites a los volúmenes: revisa el RADAR OPERATIVO (producción de humus parada o por debajo, costo de cada vehículo por kilómetro sumando combustible y mantenimiento, horas extra y novedades del personal) y elige lo más llamativo.\n' +
+    'Sé suspicaz: un vacío de datos no es buena noticia. Si el radar lista VACÍOS DE INFORMACIÓN, menciona el más importante y pide con amabilidad que alimenten el sistema con ese dato.\n' +
+    'Si hay REFERENCIAS DEL MERCADO, contrasta con ellas: por ejemplo, si un tanqueo da 300 mil pesos para 100 km y la referencia de ese tipo de vehículo es mucho menor, ponlo en jaque como posible error de digitación o gasto a revisar, aclarando que la referencia es aproximada. Cuando venga al caso, suma una novedad útil del sector.\n' +
+    'Varía tus informes: no abras siempre con el ingreso de material ni repitas la estructura de los informes anteriores; sigue la sección VARIEDAD.\n' +
+    'Los valores en pesos que puedes decir son los que ya están en el sistema (combustible, mantenimientos) y los de las referencias. Nunca inventes tarifas de clientes: el impacto en facturación lo expresas en toneladas, viajes y porcentajes.\n\n';
 }
 
 function vozMemoriaTexto(){
@@ -28775,8 +28987,10 @@ async function vozBienvenida(){
   const plan = { fuentes:['ingreso'], panel:'clientes', desde: vozYMD(new Date(d.getFullYear(), d.getMonth(), 1)),
                  hasta: hoy, etiqueta:'este mes' };
   if (!vozOverlay.classList.contains('voz-abierto')) vozAbrir();
-  vozConsultar('Acabo de entrar al sistema. Dame la bienvenida por mi nombre con una frase cordial y con chispa y, sin esperar a que te pregunte, arranca con el informe: ' +
-               'cómo vamos este mes contra el mes pasado a la misma fecha, la proyección de cierre, los clientes que más cayeron o dejaron de venir, los que crecieron, y cómo va la semana. ' +
+  vozConsultar('Acabo de entrar al sistema. Dame la bienvenida por mi nombre con una frase cordial y con chispa y, sin esperar a que te pregunte, arranca con el informe. ' +
+               'Toca en pocas palabras cómo vamos este mes contra el mes pasado a la misma fecha, pero dedica el resto a lo más llamativo del radar operativo ' +
+               '(humus, costo por kilómetro de la flota, personal y horas extra), contrastando con las referencias del mercado si las hay, ' +
+               'y si detectas vacíos de información pide que alimenten el sistema. No repitas el informe de las veces anteriores. ' +
                'Puedes cerrar con una pregunta amable sobre lo más llamativo.', { plan: plan, silenciosa: true });
 }
 
@@ -28824,7 +29038,19 @@ async function vozConsultar(pregunta, opts){
                                           pregunta, plan.extras);
     if (asesor){
       if (plan.fuentes.indexOf('ingreso') === -1) await vozAsegurarDatos(['ingreso']);
-      contexto = vozInstruccionAsesor(asesor) + vozMemoriaTexto() + vozComparativo() + contexto;
+      /* El radar necesita humus, combustible, flota y personal. Se piden sin
+         frenar la respuesta más de unos segundos: lo que no llegue se
+         reporta como vacío. */
+      vozSetEstado('thinking','Revisando humus, flota y personal…');
+      const tope = function(p, ms){ return Promise.race([p, vozEsperar(ms)]); };
+      await tope(Promise.all([
+        vozAsegurarDatos(['humus','combustible','vehiculos']),
+        (window.personalCargar && window.personalResumenAsesor && !window.personalResumenAsesor().cargado)
+          ? Promise.resolve(window.personalCargar()).catch(function(){}) : null
+      ]), 8000);
+      const refs = await vozReferenciasTexto();
+      contexto = vozInstruccionAsesor(asesor) + vozVariedadTexto() + vozMemoriaTexto() + vozComparativo() +
+                 vozRadarAsesor() + refs + contexto;
     }
 
     /* ── FASE 2: NARRAR MOSTRANDO ──
@@ -28840,6 +29066,7 @@ async function vozConsultar(pregunta, opts){
     vozOverlay.classList.add('voz-compacto');   // deja ver el dashboard detrás
     const dicho = await vozNarrarPorTramos(r, plan, etapas);
     if (asesor){
+      if (opts.silenciosa) vozGuardarInforme(dicho);
       _vozMemoria.push({ pregunta: opts.silenciosa ? '' : pregunta, respuesta: dicho });
       _vozMemoria = _vozMemoria.slice(-3);
       if (/\?\s*$/.test(dicho)) setTimeout(vozEscucharRespuesta, 350);
@@ -40634,6 +40861,50 @@ window.personalAsignar = function(actId, claves){
 };
 window.personalAreas = function(){ return P.areas.slice(); };
 window.personalCargar = cargar;
+/* Resumen de Personal para el asistente asesor: solo lee lo que ya está
+   cargado (gente, novedades y horas extra del tablero), no pide nada. */
+window.personalResumenAsesor = function(){
+  var hoy = isoDe(new Date());
+  var activos = P.gente.filter(function(p){ return p.activo !== false; });
+  var r = { cargado: !!P.cargado, activos: activos.length, porArea: {}, ausentesHoy: [], novedadesPorTipo: {},
+            extras: null, sinArea: 0 };
+  activos.forEach(function(p){
+    var a = areaDePersona(p) || '';
+    if(!a) r.sinArea++;
+    r.porArea[a || 'sin área'] = (r.porArea[a || 'sin área'] || 0) + 1;
+  });
+  (P.novedades || []).forEach(function(v){
+    r.novedadesPorTipo[v.tipo] = (r.novedadesPorTipo[v.tipo] || 0) + 1;
+    if(v.desde && v.desde <= hoy && (!v.hasta || v.hasta >= hoy))
+      r.ausentesHoy.push((v.nombre || v.persona || '?') + ' (' + v.tipo + ')');
+  });
+  var d = (HEX && HEX.datos) || null;
+  if(!d){ try { d = _hexLeerCache(); } catch(e){} }
+  var lista = d ? (d.extrasTodas || d.extras || []) : [];
+  if(lista.length){
+    var mes = hoy.slice(0, 7);
+    var hAnt = new Date(); hAnt = new Date(hAnt.getFullYear(), hAnt.getMonth() - 1, 1);
+    var mesAnt = hAnt.getFullYear() + '-' + String(hAnt.getMonth() + 1).padStart(2, '0');
+    var diaHoy = +hoy.slice(8, 10);
+    var x = { mes: 0, mesAntMismaFecha: 0, porAprobar: 0, porPersona: {}, porArea: {}, ultima: '' };
+    lista.forEach(function(e){
+      var h = (Number(e.minutos) || 0) / 60, f = String(e.fecha || '');
+      if(f > x.ultima) x.ultima = f;
+      if(f.slice(0, 7) === mes){
+        x.mes += h;
+        if(e.estado !== 'APROBADA') x.porAprobar += h;
+        var k = e.nombre || e.persona || '?';
+        x.porPersona[k] = (x.porPersona[k] || 0) + h;
+        var ar = e.area || 'sin área';
+        x.porArea[ar] = (x.porArea[ar] || 0) + h;
+      } else if(f.slice(0, 7) === mesAnt && +f.slice(8, 10) <= diaHoy){
+        x.mesAntMismaFecha += h;
+      }
+    });
+    r.extras = x;
+  }
+  return r;
+};
 /* ── CUÁNDO SE PONE AL DÍA ─────────────────────────────────────────
    Sin botón: al entrar a la pestaña, y de nuevo si pasaron más de dos
    minutos desde la última vez (al volver a la pestaña o a la ventana).
