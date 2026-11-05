@@ -359,6 +359,9 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 @keyframes hcg-abre-i{0%,100%{transform:rotate(0)}40%,70%{transform:rotate(16deg)}}
 @keyframes hcg-abre-d{0%,100%{transform:rotate(0)}40%,70%{transform:rotate(-14deg)}}
 .hcara.hc-solo-cabeza{filter:none}
+/* El asistente nunca se ve encima de una pantalla de carga: se esconde
+   mientras está y vuelve cuando la carga termina. */
+body:has(#carga-tab.visible) #voz-overlay,body:has(#carga-tab.visible) #voz-fab{opacity:0!important;visibility:hidden!important;pointer-events:none!important}
 /* Cejas y ojos sueltos, para las expresiones de la cara al hablar */
 .hcara .hc-ceja-i{transform-origin:44px 42px}
 .hcara .hc-ceja-d{transform-origin:76px 42px}
@@ -29056,7 +29059,22 @@ function vozHablar(texto){
    se dice un tramo, se espera a que la voz lo termine, y recién ahí se
    pasa al siguiente. Trae dos respaldos porque no todos los motores de
    voz disparan onend de forma confiable. */
+/* Si hay una pantalla de carga, el asistente espera a que se vaya antes
+   de hablar (tope 25 s, por si una carga se queda pegada). */
+function vozHayCarga(){ const c = document.getElementById('carga-tab'); return !!(c && c.classList.contains('visible')); }
+function vozEsperarCarga(tope){
+  return new Promise(function(ok){
+    if (!vozHayCarga()) return ok();
+    const fin = Date.now() + (tope || 25000);
+    const t = setInterval(function(){
+      if (!vozHayCarga() || Date.now() > fin){ clearInterval(t); setTimeout(ok, 300); }
+    }, 150);
+  });
+}
 function vozHablarEsperar(texto){
+  return vozEsperarCarga().then(function(){ return vozHablarYa(texto); });
+}
+function vozHablarYa(texto){
   return new Promise(function(resolver){
     if (!('speechSynthesis' in window)){
       setTimeout(resolver, Math.min(7000, 900 + texto.length * 45));
