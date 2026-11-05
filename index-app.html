@@ -487,6 +487,8 @@ body{background:var(--bg);color:var(--ink);font-family:'Source Sans 3',sans-seri
 
 /* ── Orbe ── */
 #voz-orbWrap{position:relative;width:104px;height:104px;margin:2px auto 14px;display:flex;align-items:center;justify-content:center}
+/* Logo verde de la empresa (el del login) detrás del robot, tenue. */
+#voz-orbWrap .voz-logo-fondo{position:absolute;left:50%;top:50%;width:190%;height:190%;transform:translate(-50%,-50%);object-fit:contain;opacity:.16;mix-blend-mode:multiply;pointer-events:none;user-select:none}
 .voz-ring{position:absolute;inset:0;border-radius:50%;border:1.5px solid var(--gold);opacity:0}
 #voz-orbWrap.voz-listening .voz-ring{animation:voz-ripple 1.9s var(--voz-suave) infinite;border-color:var(--gold)}
 #voz-orbWrap.voz-speaking .voz-ring{animation:voz-ripple 1.5s var(--voz-suave) infinite;border-color:var(--green)}
@@ -9315,7 +9317,14 @@ function redrawChartsResponsive() {
   try { renderClientes(window.dataIngreso, currentFilter); } catch(e){}
   try { ajustarPosiciones(); } catch(e){}
 }
+/* En el celular, al hacer scroll el navegador esconde y muestra su barra
+   de dirección y eso dispara "resize" con solo el alto cambiado. Redibujar
+   ahí repetía la animación de la pestaña en cada scroll: solo se redibuja
+   cuando cambia el ancho (rotar, cambiar el tamaño de la ventana). */
+let _resizeAncho = window.innerWidth;
 window.addEventListener('resize', function(){
+  if (window.innerWidth === _resizeAncho) return;
+  _resizeAncho = window.innerWidth;
   clearTimeout(_resizeTimer);
   _resizeTimer = setTimeout(redrawChartsResponsive, 250);
 });
@@ -15018,11 +15027,6 @@ function _flCombustibleHTML(cm, av, tonsF, grupo, horas, selector, dela, cat){
         '<div class="cb-card-cab"><span class="cb-ico azul">' + (ico.lupa || '') + '</span>Conclusión clave</div>' +
         '<p>' + _flEsc(_cbConclusion(d)) + '</p>' +
       '</div>' +
-    '</div>' +
-
-    '<div class="cb-card cb-grafico">' +
-      '<div class="cb-card-cab"><span class="cb-ico verde">' + (ico.barras || '') + '</span>Lo tanqueado día por día</div>' +
-      _cbGrafico(cm.act, cm.ant) +
     '</div>' +
 
     '<div class="cb-card">' +
@@ -27266,6 +27270,7 @@ window.addEventListener('focus', function(){ cscRefrescarSiToca(CSC_AL_VOLVER_MS
 
     <div id="voz-body">
       <div id="voz-orbWrap">
+        <img class="voz-logo-fondo" src="https://raw.githubusercontent.com/hortior2019-glitch/pil1-dashboard/main/logoverde.png" alt="" aria-hidden="true">
         <div class="voz-ring"></div>
         <div class="voz-ring"></div>
         <div class="voz-ring"></div>
@@ -28694,13 +28699,27 @@ function vozArmarUtterance(texto){
   return u;
 }
 
+/* Chrome de escritorio corta solo cualquier frase que dure más de ~15 s.
+   Mientras habla, una pausa y reanudación cada 10 s lo evita (en Android
+   pausar la voz la cancela, ahí no se hace). */
+let _vozVivaT = 0;
+function vozMantenerViva(){
+  clearInterval(_vozVivaT);
+  if (/android/i.test(navigator.userAgent) || !/chrome/i.test(navigator.userAgent)) return;
+  _vozVivaT = setInterval(function(){
+    const ss = window.speechSynthesis;
+    if (!ss.speaking){ clearInterval(_vozVivaT); return; }
+    if (!ss.paused){ ss.pause(); ss.resume(); }
+  }, 10000);
+}
 function vozHablar(texto){
   if (!('speechSynthesis' in window)) return;
   window.speechSynthesis.cancel();
   const u = vozArmarUtterance(texto);
   u.onstart = function(){ vozSetEstado('speaking','Hablando…'); };
-  u.onend   = function(){ vozSetEstado('','Pregúntame por cualquier fecha o pestaña'); };
+  u.onend   = function(){ clearInterval(_vozVivaT); vozSetEstado('','Pregúntame por cualquier fecha o pestaña'); };
   window.speechSynthesis.speak(u);
+  vozMantenerViva();
 }
 
 /* Habla y AVISA cuando terminó. Es lo que permite narrar por partes:
@@ -28709,20 +28728,36 @@ function vozHablar(texto){
    voz disparan onend de forma confiable. */
 function vozHablarEsperar(texto){
   return new Promise(function(resolver){
-    const estimado = Math.min(22000, 1800 + texto.length * 85);
     if (!('speechSynthesis' in window)){
       setTimeout(resolver, Math.min(7000, 900 + texto.length * 45));
       return;
     }
-    window.speechSynthesis.cancel();
-    let listo = false;
-    const terminar = function(){ if (listo) return; listo = true; resolver(); };
+    const ss = window.speechSynthesis;
+    ss.cancel();
+    let listo = false, revisarT = 0;
+    const terminar = function(){
+      if (listo) return; listo = true;
+      clearInterval(revisarT); clearInterval(_vozVivaT); resolver();
+    };
     const u = vozArmarUtterance(texto);
     u.onstart = function(){ vozSetEstado('speaking','Hablando…'); };
     u.onend   = terminar;
     u.onerror = terminar;
-    window.speechSynthesis.speak(u);
-    setTimeout(terminar, estimado);
+    ss.speak(u);
+    vozMantenerViva();
+    /* Respaldo por si el motor no avisa el final: antes se soltaba al pasar
+       un tiempo calculado por la cantidad de letras, y con una voz lenta el
+       tramo siguiente le cortaba el final a este. Ahora se mira si la voz
+       sigue hablando y solo se suelta cuando calló de verdad. Tope de
+       seguridad: 2 minutos por tramo. */
+    const vel = Math.max(0.5, _vozVelocidad || 1);
+    const minimo = Math.min(20000, (1500 + texto.length * 60) / vel);
+    const inicio = Date.now();
+    revisarT = setInterval(function(){
+      const t = Date.now() - inicio;
+      if (t > 120000) return terminar();
+      if (t > minimo && !ss.speaking && !ss.pending) terminar();
+    }, 400);
   });
 }
 
