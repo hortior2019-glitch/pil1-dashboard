@@ -585,6 +585,26 @@ body:has(#carga-tab.visible) #voz-overlay,body:has(#carga-tab.visible) #voz-fab{
 .vinf-fila-n{flex:none;min-width:24px;padding:2px 7px;border-radius:12px;background:#fdf0ee;color:#9b2c1f;font-size:11.5px;font-weight:700;text-align:center}
 .vinf-nota{font-size:12.5px;line-height:1.4;color:var(--ink-m);padding:8px 2px}
 
+.vinf-nuevo{display:block;width:100%;height:36px;margin-bottom:7px;border:1px dashed var(--navy);border-radius:9px;background:transparent;color:var(--navy);font-family:'Source Sans 3',sans-serif;font-size:13px;font-weight:700;cursor:pointer}
+.vinf-nuevo:hover{background:rgba(232,245,238,.6)}
+.vinf-nuevo:disabled{opacity:.6;cursor:default}
+
+/* Supervisión: la presentación bloquea; las observaciones dejan ver la pestaña */
+#vsup-capa{position:fixed;inset:0;z-index:12600;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(8,26,16,.72)}
+.vsup-tar{width:min(440px,100%);padding:22px 24px 20px;background:var(--white);border-top:4px solid var(--gold);border-radius:16px;text-align:center;box-shadow:0 26px 70px rgba(8,26,16,.4);animation:vf-pop .5s var(--voz-spring) both}
+.vsup-robot{width:120px;height:126px;margin:0 auto 8px}
+.vsup-robot svg{width:100%;height:100%}
+.vsup-tit{font-family:'Playfair Display',serif;font-size:20px;font-weight:700;line-height:1.2;color:var(--ink);margin-bottom:8px}
+.vsup-txt{font-size:14.5px;line-height:1.45;color:var(--ink)}
+.vsup-ok{height:40px;margin-top:16px;padding:0 26px;border:none;border-radius:9px;background:var(--navy);color:#fff;font-family:'Source Sans 3',sans-serif;font-size:14px;font-weight:700;cursor:pointer}
+.vsup-ok:disabled{opacity:.45;cursor:default}
+.vsup-ok:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+#vsup-chip{position:fixed;right:22px;bottom:92px;z-index:10900;display:none;height:36px;padding:0 14px;border:1px solid var(--gold);border-radius:18px;background:var(--navy);color:#fff;font-family:'Source Sans 3',sans-serif;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 8px 22px rgba(8,26,16,.28)}
+#vsup-chip.vsup-ver{display:block}
+#voz-overlay.voz-sup.voz-vista-informes:not(.voz-colapsado) #voz-card{height:min(68vh,520px)}
+#voz-overlay.voz-sup .vinf-volver{display:none}
+@media (prefers-reduced-motion:reduce){.vsup-tar{animation:none}}
+
 /* Presentación: el robot abajo a la izquierda, señalando la escena */
 #voz-overlay.voz-inf-detalle:not(.voz-colapsado) #voz-body{position:relative;padding:10px 12px 0}
 #voz-overlay.voz-inf-detalle:not(.voz-colapsado) #voz-statusText{display:none}
@@ -29715,7 +29735,7 @@ function vozCerrarPanel(){
   vozFab.classList.remove('voz-fundido');
   vozQuitarFocos();
   vozInfParar();
-  vozOverlay.classList.remove('voz-intervencion');
+  vozOverlay.classList.remove('voz-intervencion', 'voz-sup');
   try { window.speechSynthesis.cancel(); } catch(e){}
   setTimeout(function(){
     vozOverlay.classList.remove('voz-abierto','voz-compacto');
@@ -30527,14 +30547,24 @@ async function vozLeerInformeListo(a){
                    .sort(function(x, y){ return (y.generado || 0) - (x.generado || 0); })[0] || null;
 }
 
-async function vozPrepararInforme(asesor){
-  if (!asesor || _vozPreparando || _vozOcupado) return;
-  if (!VOZ_FUENTES.ingreso.obtener().length) return;
-  /* El que la persona dejó para después se respeta: no se pisa con otro. */
-  try {
-    const guardado = JSON.parse(localStorage.getItem(vozInformeClave(asesor)) || 'null');
-    if (guardado && guardado.pospuesto && !guardado.hablado) return;
-  } catch(e){}
+/* La IA escribe máximo 2 informes al día por usuario. El tercero solo si la
+   persona lo pide; presentar los que ya están hechos no gasta nada. */
+const VOZ_PREP_DIA = 2;
+function vozPrepClave(a){ return 'hortiVozPrepDia|' + vozClaveUsuario(a) + '|' + vozHoy(); }
+function vozPrepHoy(a){ try { return parseInt(localStorage.getItem(vozPrepClave(a)), 10) || 0; } catch(e){ return 0; } }
+function vozPrepContar(a){ try { localStorage.setItem(vozPrepClave(a), String(vozPrepHoy(a) + 1)); } catch(e){} }
+async function vozPrepararInforme(asesor, opts){
+  opts = opts || {};
+  if (!asesor || _vozPreparando || _vozOcupado) return false;
+  if (!VOZ_FUENTES.ingreso.obtener().length) return false;
+  if (!opts.forzar){
+    if (vozPrepHoy(asesor) >= VOZ_PREP_DIA) return false;
+    /* Si el último sigue sin escucharse, no se escribe otro encima. */
+    try {
+      const guardado = JSON.parse(localStorage.getItem(vozInformeClave(asesor)) || 'null');
+      if (guardado && !guardado.hablado && (guardado.pospuesto || guardado.fecha === vozHoy())) return false;
+    } catch(e){}
+  }
   _vozPreparando = true; _vozSilencio = true;
   try {
     const plan = vozPlanInforme();
@@ -30557,8 +30587,11 @@ async function vozPrepararInforme(asesor){
         return { dice: String(s.dice).slice(0, 600), muestra: String(s.muestra || '').slice(0, 80), panel: String(s.panel || '').slice(0, 40) };
       })
     });
+    vozPrepContar(asesor);
+    return true;
   } catch(e){
     /* Sin informe nuevo: la próxima entrada lo arma en vivo, como antes. */
+    return false;
   } finally {
     _vozPreparando = false; _vozSilencio = false;
   }
@@ -30709,6 +30742,17 @@ function vozInfFigHallazgo(h, t){
   if (m) return { t:'medidor', placa:m[1], v:vozInfNum(m[3]), ref:vozInfNum(m[2]), tv:m[3] };
   return vozInfFigTexto(t);
 }
+/* Qué buscar en la pestaña para señalarlo mientras se dice. */
+function vozInfMuestra(h, t){
+  const fam = { 'dot-pala':'pala tamaño', 'dot-carretilla':'carretillas', 'dot-radio':'radio', 'dot-termometro':'termometro',
+                'dot-mant':'Mantenimiento', 'dot-porasignar':'Por asignar', 'dot-compras':'Nueva compra' };
+  const pre = Object.keys(fam).find(function(p){ return h.k.indexOf(p + '-') === 0; });
+  if (pre) return fam[pre];
+  if (/^dot-min/.test(h.k)) return t.split(':')[0];
+  if (/^(tq|veh|mant)-/.test(h.k)){ const m = t.match(/^([A-Z0-9]{5,8}):/); return m ? m[1] : ''; }
+  const c = t.match(/^Cliente (.+?)(?::| va )/);
+  return c ? c[1].split(' - ')[0] : '';
+}
 function vozInfTitHallazgo(h, fig){
   if (h.tit) return h.tit;
   const m = { ausente:'Se fue de la báscula', medidor:'Este tanqueo no cuadra', calendario:'Días sin anotar', pilas:'La producción se frenó', gente:'Sin área asignada' }[fig.t];
@@ -30722,7 +30766,7 @@ function vozInfTramo(h){
   const km = t.match(/para (\d+) km =/);
   if (km && +km[1] >= 5000) t += '. Ese kilometraje parece mal digitado.';
   const fig = vozInfFigHallazgo(h, t);
-  return { k: h.k, dice: t, tono: h.tono || vozInfTono(t, h.p), fig: fig, tit: vozInfTitHallazgo(h, fig), sol: vozSolDe(h.k) };
+  return { k: h.k, dice: t, tono: h.tono || vozInfTono(t, h.p), fig: fig, tit: vozInfTitHallazgo(h, fig), sol: vozSolDe(h.k), muestra: vozInfMuestra(h, t) };
 }
 /* Para no repetirse: el día del año elige variantes. */
 function vozInfDia(){ const d = new Date(); return Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5); }
@@ -30911,7 +30955,9 @@ function vozInfPintarLista(){
     caja.innerHTML = aviso || '<div class="vinf-nota">No hay informes por ahora.</div>';
     return;
   }
-  caja.innerHTML = aviso + _vozInfLista.map(function(r, i){
+  const a = vozUsuarioAsesor();
+  const nuevo = a ? '<button class="vinf-nuevo">Pedir un informe nuevo</button>' : '';
+  caja.innerHTML = aviso + nuevo + _vozInfLista.map(function(r, i){
     const alertas = r.alertas !== undefined ? r.alertas : r.tramos.filter(function(x){ return x.tono === 'alerta' && x.k; }).length;
     return '<button class="vinf-fila' + (i ? '' : ' vinf-primera') + '" data-i="' + i + '">' + vozInfIcono(r.id) +
       '<span class="vinf-fila-c"><span class="vinf-fila-t">' + vozEsc(r.titulo) + '</span><span class="vinf-fila-s">' + vozEsc(r.tramos[0].dice) + '</span></span>' +
@@ -31289,6 +31335,16 @@ async function vozInfPresentar(rep, desde){
       vozSetEstado('speaking','Presentando el informe…');
       const texto = t.habla || t.dice;
       dicho += (dicho ? ' ' : '') + texto;
+      /* Con recorrido, además se señala el dato en la pestaña abierta. */
+      if (rep.recorrido){
+        vozQuitarFocos();
+        const foco = t.muestra ? vozBuscarEnPanel(t.muestra) : null;
+        if (foco){
+          vozScrollA(foco);
+          await vozEsperar(480);
+          if (turno === _vozInfTurno){ vozAislar(foco); vozPonerTag(foco, t.muestra); }
+        }
+      }
       /* El mínimo deja ver la figura y el gesto aunque el equipo no tenga voz. */
       await Promise.all([vozHablarYa(texto), vozEsperar(2600)]);
       /* Primero el problema, y aparte la salida: ahí el robot cambia de ánimo. */
@@ -31304,6 +31360,7 @@ async function vozInfPresentar(rep, desde){
   } finally {
     if (window.hortiGestos) window.hortiGestos.tono(null);
     _vozInfSonando = false;
+    if (rep.recorrido) vozQuitarFocos();
     vozSetEstado('', 'Pregúntame por cualquier fecha o pestaña');
     vozInfBoton();
   }
@@ -31341,6 +31398,20 @@ document.getElementById('voz-informes').addEventListener('click', function(ev){
   const fila = ev.target.closest('.vinf-fila');
   if (fila){ vozInfPintarInforme(_vozInfLista[+fila.dataset.i]); return; }
   if (ev.target.closest('.vinf-volver')){ vozInfParar(); vozInfPintarLista(); return; }
+  const pide = ev.target.closest('.vinf-nuevo');
+  if (pide){
+    const a = vozUsuarioAsesor();
+    if (!a || _vozOcupado) return;
+    pide.disabled = true; pide.textContent = 'Preparando tu informe…';
+    vozPrepararInforme(a, { forzar:true }).then(function(ok){
+      vozInfActualizar();
+      const r = ok && _vozInfLista.find(function(x){ return x.id === 'asesor'; });
+      if (r) return vozInfTocar(r);
+      const b = document.querySelector('.vinf-nuevo');
+      if (b){ b.disabled = false; b.textContent = 'No se pudo preparar. Intentar de nuevo'; }
+    });
+    return;
+  }
   const abrir = ev.target.closest('.vinf-abrir');
   if (abrir){ vozInfParar(); if (vozNavegar(abrir.dataset.panel)) vozColapsar(true); return; }
   const paso = ev.target.closest('.vinf-paso');
@@ -31361,6 +31432,152 @@ document.getElementById('voz-ahora-no').addEventListener('click', function(){
   }
   vozCerrarPanel();
 });
+
+/* ══════════════════════════════════════════════════════════════
+   SUPERVISIÓN POR PESTAÑA
+   Para quienes trabajan en las pestañas y no reciben el informe de
+   gerencia, tengan o no el asistente de IA. Se presenta una vez, bloqueando
+   la pantalla un momento, y luego deja las observaciones de la pestaña en
+   la que está, con recorrido. Todo sale del radar: no gasta IA ni abre la
+   conversación. Máximo 2 pestañas al día por persona.
+   ══════════════════════════════════════════════════════════════ */
+const VOZ_SUP_DIA = 2, VOZ_SUP_MAX = 5;
+const VOZ_SUP_PANEL = {
+  personal:{ tema:'personal', etq:'Personal' }, vehiculos:{ tema:'flota', etq:'Vehículos Carga' },
+  ProduccionHumus:{ tema:'humus', etq:'Producción Humus' },
+  clientes:{ tema:'clientes', etq:'Ingreso por Cliente' }, ingreso:{ tema:'clientes', etq:'Ingreso de Material' },
+  'csc-inventario':{ tema:'dotacion', etq:'Cadena · Inventario', re:/^dot-(pala|carretilla|radio|termometro|porasignar|mant|min)/ },
+  mapa:{ tema:'dotacion', etq:'Mapa de Planta', re:/^dot-areas/ },
+  'csc-compras':{ tema:'dotacion', etq:'Cadena · Compras', re:/^dot-(compras|epp|min)/ },
+  'csc-aprobaciones':{ tema:'dotacion', etq:'Cadena · Aprobaciones', re:/^dot-compras/ },
+  'csc-pagos':{ tema:'dotacion', etq:'Cadena · Pagos', re:/^dot-(vencida|compras)/ },
+  'csc-recepcion':{ tema:'dotacion', etq:'Cadena · Recepción', re:/^dot-compras/ }
+};
+let _vozSupCorriendo = false, _vozSupUltimo = '';
+function vozSupUsuario(){
+  const u = (typeof _usuarioActual !== 'undefined') ? _usuarioActual : null;
+  return (u && u.usuario && !vozUsuarioAsesor()) ? u : null;
+}
+function vozSupId(u){ return vozNorm(String(u.usuario)); }
+function vozSupVistos(u){ try { return JSON.parse(localStorage.getItem('hortiVozSupDia|' + vozSupId(u) + '|' + vozHoy())) || []; } catch(e){ return []; } }
+function vozSupVer(u, panel){
+  const v = vozSupVistos(u); if (v.indexOf(panel) === -1) v.push(panel);
+  try { localStorage.setItem('hortiVozSupDia|' + vozSupId(u) + '|' + vozHoy(), JSON.stringify(v)); } catch(e){}
+}
+function vozSupRepClave(u, panel){ return 'hortiVozSupRep|' + vozSupId(u) + '|' + vozHoy() + '|' + panel; }
+function vozSupRepLeer(u, panel){ try { return JSON.parse(localStorage.getItem(vozSupRepClave(u, panel))); } catch(e){ return null; } }
+function vozSupPanelActivo(){
+  const p = document.querySelector('.panel.active');
+  return p ? p.id.replace(/^panel-/, '') : '';
+}
+function vozSupInforme(panel){
+  const cfg = VOZ_SUP_PANEL[panel];
+  const base = cfg && _vozInfLista.find(function(r){ return r.id === cfg.tema; });
+  if (!base) return null;
+  const t = base.tramos.filter(function(x){ return x.fig.t !== 'cierre' && (cfg.re ? (x.k && cfg.re.test(x.k)) : true); }).slice(0, VOZ_SUP_MAX);
+  if (!t.some(function(x){ return x.k; })) return null;
+  const c = vozInfCierre(t, cfg.tema);
+  const tr = c ? t.concat(c) : t;
+  return { id:'sup', titulo:'Observaciones · ' + cfg.etq, fecha:base.fecha, tramos:tr, recorrido:true, sup:true,
+           n: t.filter(function(x){ return x.k; }).length };
+}
+/* Bloquea la pantalla mientras se presenta. */
+function vozSupBloqueo(o){
+  return new Promise(function(listo){
+    const capa = document.createElement('div');
+    capa.id = 'vsup-capa';
+    capa.setAttribute('role', 'dialog');
+    capa.setAttribute('aria-modal', 'true');
+    capa.setAttribute('aria-label', o.tit);
+    capa.innerHTML = '<div class="vsup-tar"><div class="vsup-robot hc-habla">' + window.hortiCaraSVG() + '</div>' +
+      '<div class="vsup-tit">' + vozEsc(o.tit) + '</div><div class="vsup-txt">' + vozEsc(o.txt) + '</div>' +
+      (o.boton ? '<button class="vsup-ok" disabled>' + vozEsc(o.boton) + '</button>' : '') + '</div>';
+    document.body.appendChild(capa);
+    if (window.hortiGestos){ window.hortiGestos.tono('saludo'); window.hortiGestos(); }
+    const cerrar = function(){
+      if (window.hortiGestos) window.hortiGestos.tono(null);
+      capa.remove();
+      listo();
+    };
+    /* El tope evita que un motor de voz que no avisa deje a alguien encerrado. */
+    Promise.all([Promise.race([vozHablarYa(o.txt), vozEsperar(o.tope)]), vozEsperar(o.minimo)]).then(function(){
+      const b = capa.querySelector('.vsup-ok');
+      if (!b) return cerrar();
+      b.disabled = false; b.focus();
+      b.addEventListener('click', cerrar);
+    });
+  });
+}
+async function vozSupMostrar(rep){
+  if (_vozOcupado) return;
+  _vozOcupado = true;
+  vozInput.disabled = true; vozSend.disabled = true; vozMicBtn.disabled = true;
+  vozAbrir({ colapsado:true });
+  vozOverlay.classList.add('voz-sup');
+  try {
+    await vozInfPresentar(rep);
+    if (vozOverlay.classList.contains('voz-sup') && rep.completo) await vozEsperar(1200);
+  } finally {
+    _vozOcupado = false;
+    vozInput.disabled = false; vozSend.disabled = false; vozMicBtn.disabled = false;
+    vozCerrarPanel();
+    vozInfVista(false);
+    _vozInfVer = null;
+  }
+}
+async function vozSupRevisar(panel){
+  const cfg = VOZ_SUP_PANEL[panel], u = vozSupUsuario();
+  if (!cfg || !u || _vozSupCorriendo || _vozOcupado) return;
+  const vistos = vozSupVistos(u);
+  if (vistos.indexOf(panel) !== -1 || vistos.length >= VOZ_SUP_DIA) return;
+  _vozSupCorriendo = true;
+  try {
+    await vozEsperarCarga();
+    if (vozSupPanelActivo() !== panel || document.getElementById('terminos-capa')) return;
+    const primera = !localStorage.getItem('hortiVozSupIntro|' + vozSupId(u));
+    if (primera){
+      await vozSupBloqueo({ tit:'Mucho gusto, soy el asistente de Horti',
+        txt:'Hola, ' + (u.nombre || u.usuario) + '. Desde hoy voy a estar supervisando las pestañas de tu trabajo. Reviso lo que se registra, lo que falta y lo que no cuadra, y Gerencia recibe lo mismo que yo encuentro. No vengo a regañar a nadie: vengo a que ningún dato se quede sin dueño. Cuando encuentre algo te lo voy a mostrar aquí mismo, y te agradezco atenderlo.',
+        boton:'Entendido', minimo:7000, tope:30000 });
+      try { localStorage.setItem('hortiVozSupIntro|' + vozSupId(u), vozHoy()); } catch(e){}
+    }
+    await vozInfTraerDatos();
+    for (let i = 0; i < 60 && _vozInfTrayendo; i++) await vozEsperar(500);
+    vozInfActualizar();
+    if (vozSupPanelActivo() !== panel) return;
+    const rep = vozSupInforme(panel);
+    if (!rep) return;
+    vozSupVer(u, panel);
+    try { localStorage.setItem(vozSupRepClave(u, panel), JSON.stringify(rep)); } catch(e){}
+    if (!primera) await vozSupBloqueo({ tit:'Un momento, por favor', minimo:2600, tope:7000,
+      txt:'Revisé ' + cfg.etq + ' y tengo ' + rep.n + (rep.n === 1 ? ' observación' : ' observaciones') + ' para ti.' });
+    await vozSupMostrar(rep);
+  } finally { _vozSupCorriendo = false; }
+}
+/* Lo observado se queda a la mano en la pestaña durante el día. */
+function vozSupVigilar(){
+  const panel = vozSupPanelActivo(), u = vozSupUsuario();
+  const chip = document.getElementById('vsup-chip');
+  const rep = (u && panel) ? vozSupRepLeer(u, panel) : null;
+  if (chip){
+    const ver = !!rep && !_vozOcupado && !vozOverlay.classList.contains('voz-visible') && !document.getElementById('vsup-capa');
+    chip.classList.toggle('vsup-ver', ver);
+    if (rep) chip.textContent = rep.n + (rep.n === 1 ? ' observación' : ' observaciones');
+  }
+  if (panel !== _vozSupUltimo){ _vozSupUltimo = panel; }
+  const app = document.getElementById('dash-app');
+  if (u && panel && app && getComputedStyle(app).display !== 'none') vozSupRevisar(panel);
+}
+(function(){
+  const b = document.createElement('button');
+  b.id = 'vsup-chip';
+  b.type = 'button';
+  b.addEventListener('click', function(){
+    const u = vozSupUsuario(), rep = u ? vozSupRepLeer(u, vozSupPanelActivo()) : null;
+    if (rep) vozSupMostrar(rep);
+  });
+  document.body.appendChild(b);
+})();
 
 let _vozBienvenidaHecha = false;
 /* Máximo 2 informes hablados al iniciar sesión, por usuario y por día.
@@ -31535,6 +31752,7 @@ async function vozConsultar(pregunta, opts){
     if (asesor && opts.silenciosa){
       const inf = vozInfDeRespuesta(r);
       if (inf){
+        vozPrepContar(asesor);
         if (_vozPospuesto) vozInfPosponer(asesor, inf);
         else await vozDecirInformeListo(asesor, inf, { sinIntro: true });
         return;
@@ -31750,6 +31968,7 @@ if (VozSR){
       }
       ultimo = clave; _vozBienvenidaHecha = false; _vozMemoria = [];
     }
+    try { vozSupVigilar(); } catch(e){}
     const app = document.getElementById('dash-app');
     if (a && !_vozBienvenidaHecha && app && getComputedStyle(app).display !== 'none') vozBienvenida();
   }, 2000);
