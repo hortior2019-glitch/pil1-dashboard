@@ -637,7 +637,7 @@ body:has(#carga-tab.visible) #voz-overlay,body:has(#carga-tab.visible) #voz-fab{
 /* ── Orbe ── */
 #voz-orbWrap{position:relative;width:104px;height:104px;margin:2px auto 14px;display:flex;align-items:center;justify-content:center}
 /* Logo verde de la empresa (el del login) detrás del robot, tenue. */
-#voz-orbWrap .voz-logo-fondo{position:absolute;left:50%;top:50%;width:190%;height:190%;transform:translate(-50%,-50%);object-fit:contain;opacity:.32;mix-blend-mode:multiply;pointer-events:none;user-select:none}
+#voz-orbWrap .voz-logo-fondo{position:absolute;left:calc(50% - 3px);top:50%;width:190%;height:190%;transform:translate(-50%,-50%);object-fit:contain;opacity:.32;mix-blend-mode:multiply;pointer-events:none;user-select:none}
 .voz-ring{position:absolute;inset:0;border-radius:50%;border:1.5px solid var(--gold);opacity:0}
 #voz-orbWrap.voz-listening .voz-ring{animation:voz-ripple 1.9s var(--voz-suave) infinite;border-color:var(--gold)}
 #voz-orbWrap.voz-speaking .voz-ring{animation:voz-ripple 1.5s var(--voz-suave) infinite;border-color:var(--green)}
@@ -29968,7 +29968,7 @@ function vozRadarFlota(hoy, faltan){
   });
   let t = 'FLOTA · costo por kilómetro (últimos 90 días; el valor de cada tanqueo se divide por los km recorridos desde el tanqueo anterior)\n';
   let sinKm = 0, sinRecibo = 0;
-  const totFlota = { tq:0, comb:0, mant:0, km:0 };
+  const totFlota = { tq:0, comb:0, mant:0, km:0, gasto:0 };
   veh.forEach(function(v){
     const pl = (v.placa || '').toString().toUpperCase().trim();
     if (!pl) return;
@@ -29992,7 +29992,12 @@ function vozRadarFlota(hoy, faltan){
       if (x.kmRecorridos && x.valor){ km += x.kmRecorridos; porKm.push(x.valor / x.kmRecorridos); }
     });
     const med = vozMediana(porKm);
-    totFlota.tq += rec.length; totFlota.comb += valor; totFlota.mant += costoMant; totFlota.km += km;
+    totFlota.mant += costoMant;
+    rec.forEach(function(x){
+      if (!x.kmRecorridos || !x.valor || !med) return;
+      const c = x.valor / x.kmRecorridos;
+      if (c >= med * 0.4 && c <= med * 1.8){ totFlota.km += x.kmRecorridos; totFlota.gasto += x.valor; }
+    });
     rec.forEach(function(x){
       if (!x.kmRecorridos || !x.valor || !med) return;
       const c = x.valor / x.kmRecorridos;
@@ -30017,6 +30022,10 @@ function vozRadarFlota(hoy, faltan){
   if (sinKm) faltan.add('tq-sinkm-'+vozSemana(hoy),'Combustible: ' + sinKm + ' tanqueo(s) de los últimos 90 días sin kilometraje. Sin ese dato no se puede saber cuánto rinde cada vehículo.');
   if (sinRecibo) t += '  Tanqueos sin foto del recibo en 90 días: ' + sinRecibo + '\n';
   t += '  (El formulario de tanqueo no registra galones: el rendimiento se mide en pesos por kilómetro.)\n';
+  comb.forEach(function(r){
+    const d = vozDiasEntre(_fechaComb(r), hoy);
+    if (d !== null && d >= 0 && d <= 90){ totFlota.tq++; totFlota.comb += _numComb(r['Valor tanqueado']); }
+  });
   _vozCifras.flota = totFlota;
   return t;
 }
@@ -30414,7 +30423,14 @@ const VOZ_INF_TEMAS = [
   { id:'mercado',  titulo:'Novedades del sector', re:/^ref-/ }
 ];
 const VOZ_INF_MAX_TRAMOS = 4;
-let _vozInfLista = [], _vozInfVer = null, _vozInfTurno = 0, _vozInfSonando = false, _vozInfCargado = false;
+const VOZ_INF_REFRESCO = 5 * 60 * 1000;   // cada cuánto se vuelve a confirmar con el servidor
+/* Fuente del servidor -> frente que depende de ella. */
+const VOZ_INF_FUENTE_TEMA = { Ingreso:'clientes', Humus:'humus', Combustible:'flota', 'Vehículos':'flota', Personal:'personal' };
+/* Estos hallazgos dicen "no hay datos", y eso también pasa si la carga falló:
+   no se afirman, se avisan como pendientes de confirmar. */
+const VOZ_INF_SIN_CARGA = { 'hum-vacio':'Humus', 'tq-vacio':'Combustible', 'per-nocargado':'Personal', 'he-nodatos':'Horas extra' };
+let _vozInfLista = [], _vozInfVer = null, _vozInfTurno = 0, _vozInfSonando = false;
+let _vozInfHora = 0, _vozInfTrayendo = false, _vozInfFallas = [], _vozInfSinConfirmar = [];
 let _vozPospuesto = false;   // tocaron "Ahora no" durante la intervención
 
 function vozEsc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return '&#' + c.charCodeAt(0) + ';'; }); }
@@ -30426,13 +30442,16 @@ function vozInfLimpiar(t){
   return String(t || '').replace(/\s*\(\d+ kg\)/g, '').replace(/ Pide que /g, ' Hay que pedir que ').trim();
 }
 function vozInfTono(t, p){
-  if (p >= 3 || /cay[óo]|baj[óa]|fuera de lo normal|parada|no ha tra[íi]do|sigue haciendo viajes/i.test(t)) return 'alerta';
+  if (p >= 3 || /cay[óo]|baj[óa]|fuera de lo normal|parada|no ha tra[íi]do|sigue haciendo viajes|\(-\d/i.test(t)) return 'alerta';
   if (/\bsin\b|no hay|falta|alimenten|no se est[áa]n|no tiene|solo \d+ d[íi]as/i.test(t)) return 'pide';
   if (/subi[óo]|creci[óo]|mejor[óa]|va bien/i.test(t)) return 'bien';
   return 'dato';
 }
 /* El dato grande de cada tramo sale de la misma frase que se dice. */
 function vozInfDato(t, rotulo){
+  /* En un tanqueo raro el dato es el costo de ese tanqueo, no la mediana. */
+  const raro = t.match(/^(\S+):.*=\s*(\$[\d.,]+)\s*por 100 km/);
+  if (raro) return { valor: raro[2], etiqueta: 'por 100 km · ' + raro[1] };
   const pruebas = [/[+-]?\d+(?:[.,]\d+)?\s?%/, /\$\s?\d[\d.,]*/, /\d+(?:[.,]\d+)?\s?t\b/, /\d+(?:[.,]\d+)?\s?h\b/,
                    /(?:lleva|hace)\s+\d+\s+d[íi]as/i, /\d[\d.,]*\s+[a-záéíóúñ]+(?:\(s\))?/i];
   let v = '';
@@ -30449,7 +30468,10 @@ function vozInfDato(t, rotulo){
   return v ? { valor: v, etiqueta: et } : null;
 }
 function vozInfTramo(h){
-  const t = vozInfLimpiar(h.t);
+  let t = vozInfLimpiar(h.t);
+  /* Miles de km entre dos tanqueos no se recorren: es un kilometraje mal digitado. */
+  const km = t.match(/para (\d+) km =/);
+  if (km && +km[1] >= 5000) t += '. Ese kilometraje parece mal digitado.';
   return { k: h.k, dice: t, tono: vozInfTono(t, h.p), dato: vozInfDato(t) };
 }
 function vozInfCierre(tramos){
@@ -30472,7 +30494,7 @@ function vozInfBase(id){
     return { cifras: ci, dice: 'En los últimos 7 días se produjeron ' + vozNum(c.hum.s7) + ', contra ' + vozNum(c.hum.s7a) + ' de los 7 días anteriores.' };
   }
   if (id === 'flota' && c.flota && c.flota.tq) return {
-    cifras: [[vozPesos(c.flota.comb), 'combustible en 90 días'], [vozPesos(c.flota.mant), 'mantenimiento en 90 días'], [c.flota.km ? vozPesos((c.flota.comb + c.flota.mant) / c.flota.km) : 'Sin medir', 'costo por km']],
+    cifras: [[vozPesos(c.flota.comb), 'combustible en 90 días'], [vozPesos(c.flota.mant), 'mantenimiento en 90 días'], [c.flota.km ? vozPesos(c.flota.gasto / c.flota.km) : 'Sin medir', 'combustible por km, sin atípicos']],
     dice: 'En 90 días van ' + c.flota.tq + ' tanqueos por ' + vozPesos(c.flota.comb) + ' y ' + vozPesos(c.flota.mant) + ' en mantenimiento.'
   };
   if (id === 'personal' && c.per) {
@@ -30486,18 +30508,37 @@ function vozInfBase(id){
 function vozInfArmarTemas(){
   /* El comparativo va primero: deja los hallazgos de clientes que usa el radar. */
   vozComparativo();
-  const hall = vozRadarAsesor().hallazgos.slice();
+  const caidos = {};
+  _vozInfSinConfirmar = _vozInfFallas.slice();
+  _vozInfFallas.forEach(function(n){ caidos[VOZ_INF_FUENTE_TEMA[n]] = true; });
+  const temaDe = function(k){ const t = VOZ_INF_TEMAS.find(function(x){ return x.re.test(k); }); return t ? t.id : ''; };
+  const hall = vozRadarAsesor().hallazgos.filter(function(h){
+    const pre = Object.keys(VOZ_INF_SIN_CARGA).find(function(p){ return h.k.indexOf(p + '-') === 0; });
+    if (pre){
+      if (_vozInfSinConfirmar.indexOf(VOZ_INF_SIN_CARGA[pre]) === -1) _vozInfSinConfirmar.push(VOZ_INF_SIN_CARGA[pre]);
+      return false;
+    }
+    return !caidos[temaDe(h.k)];
+  });
   const dichos = _vozDichos || {};
   hall.sort(function(a, b){ return (dichos[a.k] ? 1 : 0) - (dichos[b.k] ? 1 : 0) || (b.p || 2) - (a.p || 2); });
   const lista = [];
-  const pano = hall.filter(function(h){ return !/^ref-/.test(h.k); }).slice(0, 5).map(vozInfTramo);
-  if (pano.length) lista.push({ id:'panorama', titulo:'Panorama del sistema', fecha:'Lo más importante de todos los frentes',
+  const hora = new Date(_vozInfHora).toLocaleTimeString('es-CO', { hour:'numeric', minute:'2-digit' });
+  const confirmado = 'Confirmado con el servidor a las ' + hora;
+  /* La mezcla toma de cada frente por turnos, para que uno solo no la llene. */
+  const pool = VOZ_INF_TEMAS.filter(function(t){ return t.id !== 'mercado'; })
+    .map(function(t){ return hall.filter(function(h){ return t.re.test(h.k); }); });
+  const elegidos = [];
+  for (let i = 0; i < 5; i++) pool.forEach(function(g){ if (g[i]) elegidos.push(g[i]); });
+  const pano = elegidos.sort(function(a, b){ return (b.p || 2) - (a.p || 2); }).slice(0, 5).map(vozInfTramo);
+  if (pano.length) lista.push({ id:'panorama', titulo:'Panorama del sistema', fecha: confirmado,
                                 cifras:[], tramos: pano });
   VOZ_INF_TEMAS.forEach(function(tema){
+    if (caidos[tema.id]) return;
     const tr = hall.filter(function(h){ return tema.re.test(h.k); }).slice(0, VOZ_INF_MAX_TRAMOS).map(vozInfTramo);
     const base = vozInfBase(tema.id);
     if (base) tr.unshift({ dice: base.dice, tono: 'dato', dato: null });
-    if (tr.length) lista.push({ id: tema.id, titulo: tema.titulo, fecha:'Con lo cargado en este momento', cifras: base ? base.cifras : [], tramos: tr });
+    if (tr.length) lista.push({ id: tema.id, titulo: tema.titulo, fecha: confirmado, cifras: base ? base.cifras : [], tramos: tr });
   });
   lista.forEach(function(r){ const c = vozInfCierre(r.tramos); if (c) r.tramos.push(c); });
   return lista;
@@ -30536,11 +30577,17 @@ function vozInfPeorTono(r){
 function vozInfPintarLista(){
   const caja = document.getElementById('voz-informes');
   _vozInfVer = null;
-  if (!_vozInfLista.length){
-    caja.innerHTML = '<div class="vinf-nota">' + (_vozInfCargado ? 'Todavía no hay informes: faltan datos cargados.' : 'Revisando lo que hay en el sistema…') + '</div>';
+  if (!_vozInfHora){
+    caja.innerHTML = '<div class="vinf-nota">Confirmando los datos con el servidor…</div>';
     return;
   }
-  caja.innerHTML = _vozInfLista.map(function(r, i){
+  const aviso = _vozInfSinConfirmar.length
+    ? '<div class="vinf-nota">No pude confirmar con el servidor: ' + vozEsc(_vozInfSinConfirmar.join(', ')) + '. De eso no digo nada hasta confirmarlo.</div>' : '';
+  if (!_vozInfLista.length){
+    caja.innerHTML = aviso || '<div class="vinf-nota">No hay informes por ahora.</div>';
+    return;
+  }
+  caja.innerHTML = aviso + _vozInfLista.map(function(r, i){
     const alertas = r.tramos.filter(function(x){ return x.tono === 'alerta'; }).length;
     return '<button class="vinf-fila vinf-' + vozInfPeorTono(r) + '" data-i="' + i + '"><span class="vinf-fila-t"><span>' + vozEsc(r.titulo) + '</span>' +
       '<span class="vinf-fila-n">' + (alertas ? alertas + (alertas === 1 ? ' alerta' : ' alertas') : '') + '</span></span>' +
@@ -30570,6 +30617,7 @@ function vozInfBoton(){
   b.disabled = !_vozInfSonando && _vozOcupado;
 }
 function vozInfActualizar(){
+  if (!_vozInfHora) return;
   try { _vozInfLista = vozInfArmarTemas(); } catch(e){ _vozInfLista = []; }
   const a = vozUsuarioAsesor();
   if (a){
@@ -30579,24 +30627,47 @@ function vozInfActualizar(){
   }
   if (!_vozInfVer && !_vozInfSonando && vozOverlay.classList.contains('voz-vista-informes')) vozInfPintarLista();
 }
-/* Lo que falte (humus, flota, personal, referencias) se trae sin avisos en
-   pantalla y los informes se rehacen al llegar. */
+/* Antes de mostrar un informe se confirma con el servidor: humus y
+   combustible se vuelven a leer de sus hojas. Ingreso ya lo refresca el
+   tablero cada 5 minutos. Lo que no responde no se informa. Solo lectura. */
 async function vozInfTraerDatos(){
-  if (_vozInfCargado) return;
+  if (_vozInfTrayendo) return;
+  if (_vozInfHora && Date.now() - _vozInfHora < VOZ_INF_REFRESCO) return;
+  _vozInfTrayendo = true;
   const previo = _vozSilencio;
   _vozSilencio = true;
+  const ok = {};
+  const paso = function(nombre, fn){
+    return Promise.resolve().then(fn).then(function(si){ if (si) ok[nombre] = true; }, function(){});
+  };
   try {
     await Promise.race([Promise.all([
-      vozAsegurarDatos(['humus','combustible','vehiculos']),
-      (window.personalCargar && window.personalResumenAsesor && !window.personalResumenAsesor().cargado)
-        ? Promise.resolve(window.personalCargar()).catch(function(){}) : null,
+      paso('Ingreso', function(){ return vozArr(function(){ return dataIngreso; }).length > 0 && !(typeof _ingSinSesion !== 'undefined' && _ingSinSesion); }),
+      paso('Humus', async function(){
+        const d = await fetchCSV(SHEETS.ProduccionHumus);
+        if (d && d.length){ dataProduccionHumus = d; return true; }
+      }),
+      paso('Combustible', async function(){
+        const d = await fetchCSV(SHEETS.combustible);
+        if (d && d.length){ dataCombustible = d; return true; }
+      }),
+      paso('Vehículos', async function(){
+        await vozAsegurarDatos(['vehiculos']);
+        return vozArr(function(){ return _vehiculos; }).length > 0;
+      }),
+      paso('Personal', async function(){
+        if (window.personalCargar && window.personalResumenAsesor && !window.personalResumenAsesor().cargado) await window.personalCargar();
+        return !!(window.personalResumenAsesor && window.personalResumenAsesor().cargado);
+      }),
       vozReferenciasTexto().catch(function(){})
     ]), vozEsperar(25000)]);
     const a = vozUsuarioAsesor();
     if (a && !_vozDichos) await vozLeerDichos(a);
   } catch(e){}
   _vozSilencio = previo;
-  _vozInfCargado = true;
+  _vozInfFallas = Object.keys(VOZ_INF_FUENTE_TEMA).filter(function(n){ return !ok[n]; });
+  _vozInfHora = Date.now();
+  _vozInfTrayendo = false;
   vozInfActualizar();
 }
 function vozInfVista(si){
