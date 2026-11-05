@@ -2947,6 +2947,53 @@ td .preop-fotos{margin-top:0;gap:4px;flex-wrap:nowrap}
 /* El CSS original venia de un <body> con display:flex. Al pasar a
    #panel-auditoria gana por especificidad de ID y dejaria la pestaña
    siempre visible, tapando a .panel{display:none}. Se corrige aca. */
+/* ── TÉRMINOS Y CONDICIONES (después de ingresar con las credenciales) */
+#terminos-capa{position:fixed;inset:0;z-index:10050;display:flex;align-items:center;justify-content:center;padding:16px;
+  background:rgba(16,32,22,.5);opacity:0;transition:opacity .22s ease}
+#terminos-capa.visible{opacity:1}
+body:has(#terminos-capa) #voz-fab,body:has(#terminos-capa) #voz-overlay{visibility:hidden!important}
+#terminos-capa .tc-caja{background:#fff;border-radius:20px;width:100%;max-width:720px;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);
+  display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 80px -20px rgba(16,48,29,.55);
+  transform:translateY(10px);transition:transform .3s cubic-bezier(.2,.8,.2,1)}
+#terminos-capa.visible .tc-caja{transform:none}
+#terminos-capa .tc-cab{display:flex;gap:14px;align-items:center;padding:16px 22px;border-bottom:1px solid #e3e8e5;flex:none}
+#terminos-capa .tc-cab img{width:54px;height:54px;object-fit:contain;mix-blend-mode:multiply;flex:none}
+#terminos-capa .tc-cab h2{font-family:'Playfair Display',Georgia,serif;font-size:20px;line-height:1.25;color:#1a5c35;margin:0}
+#terminos-capa .tc-cab p{margin:3px 0 0;font-size:14px;color:#5f6b64;line-height:1.4}
+#terminos-capa .tc-doc{overflow-y:auto;padding:4px 26px 22px;font-size:15px;line-height:1.62;color:#1f2a24;
+  -webkit-overflow-scrolling:touch;overscroll-behavior:contain;outline:none}
+#terminos-capa .tc-doc:focus-visible{box-shadow:inset 0 0 0 3px rgba(26,92,53,.25)}
+#terminos-capa .tc-doc h2{font-family:'Playfair Display',Georgia,serif;font-size:19px;line-height:1.3;color:#1a5c35;margin:18px 0 10px}
+#terminos-capa .tc-doc h3{font-size:15.5px;color:#1a5c35;margin:22px 0 6px;letter-spacing:.2px}
+#terminos-capa .tc-doc p{margin:0 0 10px}
+#terminos-capa .tc-doc ul{margin:0 0 12px;padding-left:22px}
+#terminos-capa .tc-doc li{margin:0 0 4px}
+#terminos-capa .tc-pie{border-top:1px solid #e3e8e5;padding:14px 22px 18px;background:#f7f9f8;flex:none}
+#terminos-capa .tc-aviso{margin:0 0 10px;font-size:13px;color:#7a5c12}
+#terminos-capa .tc-aviso[hidden]{display:none}
+#terminos-capa .tc-check{display:flex;gap:10px;align-items:flex-start;font-size:15px;line-height:1.45;color:#1f2a24;cursor:pointer}
+#terminos-capa .tc-check input{width:20px;height:20px;flex:none;margin:1px 0 0;accent-color:#1a5c35;cursor:pointer}
+#terminos-capa .tc-check.tc-bloq{color:#8b958f;cursor:not-allowed}
+#terminos-capa .tc-check.tc-bloq input{cursor:not-allowed}
+#terminos-capa .tc-botones{display:flex;gap:10px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
+#terminos-capa .tc-botones button{height:48px;padding:0 22px;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;
+  transition:background-color .15s ease,opacity .15s ease}
+#terminos-capa .tc-no{background:#fff;color:#4a5650;border:1px solid #c3ccc7}
+#terminos-capa .tc-no:hover{background:#f0f3f1}
+#terminos-capa .tc-si{background:#1a5c35;color:#fff;border:1px solid #1a5c35}
+#terminos-capa .tc-si:hover:not(:disabled){background:#154a2b}
+#terminos-capa .tc-si:disabled{opacity:.45;cursor:not-allowed}
+#terminos-capa button:focus-visible{outline:3px solid rgba(26,92,53,.35);outline-offset:2px}
+@media (max-width:520px){
+  #terminos-capa{padding:10px}
+  #terminos-capa .tc-cab{padding:14px 16px}
+  #terminos-capa .tc-cab img{width:44px;height:44px}
+  #terminos-capa .tc-cab h2{font-size:18px}
+  #terminos-capa .tc-doc{padding:2px 18px 18px}
+  #terminos-capa .tc-pie{padding:12px 16px 16px}
+  #terminos-capa .tc-botones button{flex:1}
+}
+@media (prefers-reduced-motion:reduce){#terminos-capa,#terminos-capa .tc-caja{transition:none}}
 /* ── PANTALLA DE LOGIN ─────────────────────────────────────────────
    Una sola escala de radios (tarjeta 24, controles 12), controles de
    48 px de alto para el dedo, y el sello recortado del PNG para que los
@@ -9897,6 +9944,113 @@ async function cargarUsuariosDash() {
   return;
 }
 
+/* ── TÉRMINOS Y CONDICIONES ───────────────────────────────────────
+   Después de entrar con usuario y contraseña, y antes de abrir el
+   tablero, cada usuario debe aceptar la Política de tratamiento de datos
+   y uso del aplicativo (versión TERMINOS_VERSION). Si no acepta, se
+   cierra la sesión. La aceptación se manda al servicio de ingreso
+   (acción "aceptarTerminos") para que quede registrada en el Sheet de
+   accesos; si no se pudo enviar, queda guardada en el equipo y se
+   reintenta en el siguiente ingreso. Si el servidor informa en el login
+   la versión que el usuario ya aceptó (campo "terminos"), eso manda. */
+const TERMINOS_VERSION = '1.0';
+function _terminosClave(u){ return 'hortiTerminos|' + String(u || '').toLowerCase(); }
+function _terminosPendClave(u){ return 'hortiTerminosPend|' + String(u || '').toLowerCase(); }
+function _terminosDispositivo(){ return /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'Celular' : 'Computador'; }
+function _terminosHTML(md){
+  const esc = function(t){ return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+  const inl = function(t){ return esc(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>'); };
+  let html = '', lista = false, parr = [];
+  const cerrarP = function(){ if (parr.length){ html += '<p>' + parr.map(inl).join('<br>') + '</p>'; parr = []; } };
+  const cerrarL = function(){ if (lista){ html += '</ul>'; lista = false; } };
+  md.split(/\r?\n/).forEach(function(l){
+    const t = l.trim(); let m;
+    if (!t){ cerrarP(); cerrarL(); return; }
+    if ((m = t.match(/^(#{1,3})\s+(.*)$/))){ cerrarP(); cerrarL(); const n = m[1].length + 1; html += '<h' + n + '>' + inl(m[2]) + '</h' + n + '>'; return; }
+    if ((m = t.match(/^-\s+(.*)$/))){ cerrarP(); if (!lista){ html += '<ul>'; lista = true; } html += '<li>' + inl(m[1]) + '</li>'; return; }
+    cerrarL(); parr.push(t);
+  });
+  cerrarP(); cerrarL();
+  return html;
+}
+function terminosMostrar(){
+  return new Promise(function(resolver){
+    const fuente = document.getElementById('terminos-v1-texto');
+    const capa = document.createElement('div');
+    capa.id = 'terminos-capa';
+    capa.setAttribute('role', 'dialog');
+    capa.setAttribute('aria-modal', 'true');
+    capa.setAttribute('aria-labelledby', 'tc-titulo');
+    capa.innerHTML =
+      '<div class="tc-caja">' +
+        '<div class="tc-cab">' +
+          '<img src="https://raw.githubusercontent.com/hortior2019-glitch/pil1-dashboard/main/logoverde.png" alt="">' +
+          '<div><h2 id="tc-titulo">Antes de continuar</h2>' +
+          '<p>Lee y acepta la política de datos y uso del aplicativo (versión ' + TERMINOS_VERSION + ').</p></div>' +
+        '</div>' +
+        '<div class="tc-doc" tabindex="0" aria-label="Texto de la política">' + _terminosHTML(fuente ? fuente.textContent : '') + '</div>' +
+        '<div class="tc-pie">' +
+          '<p class="tc-aviso" id="tc-aviso">Desliza hasta el final del documento para poder aceptarlo.</p>' +
+          '<label class="tc-check tc-bloq"><input type="checkbox" id="tc-acepto" disabled>' +
+          '<span>He leído y acepto la Política de tratamiento y protección de datos personales y uso del aplicativo institucional de HORTI ORGANIC S.A.S. C.I. BIC.</span></label>' +
+          '<div class="tc-botones">' +
+            '<button type="button" class="tc-no" id="tc-no">No acepto</button>' +
+            '<button type="button" class="tc-si" id="tc-si" disabled>Aceptar y continuar</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(capa);
+    const doc = capa.querySelector('.tc-doc'), chk = capa.querySelector('#tc-acepto'),
+          si = capa.querySelector('#tc-si'), no = capa.querySelector('#tc-no'),
+          aviso = capa.querySelector('#tc-aviso'), etiqueta = capa.querySelector('.tc-check');
+    function revisarFinal(){
+      if (!chk.disabled) return;
+      if (doc.scrollTop + doc.clientHeight >= doc.scrollHeight - 40){
+        chk.disabled = false; etiqueta.classList.remove('tc-bloq'); aviso.hidden = true;
+      }
+    }
+    doc.addEventListener('scroll', revisarFinal, { passive: true });
+    chk.addEventListener('change', function(){ si.disabled = !chk.checked; });
+    function cerrar(valor){
+      capa.classList.remove('visible');
+      setTimeout(function(){ capa.remove(); }, 240);
+      resolver(valor);
+    }
+    si.addEventListener('click', function(){ if (chk.checked) cerrar(true); });
+    no.addEventListener('click', function(){ cerrar(false); });
+    void capa.offsetHeight;
+    capa.classList.add('visible');
+    setTimeout(function(){ revisarFinal(); doc.focus({ preventScroll: true }); }, 60);
+  });
+}
+function _terminosEnviarPendiente(u){
+  let reg = null;
+  try { reg = JSON.parse(localStorage.getItem(_terminosPendClave(u)) || 'null'); } catch(e){}
+  if (!reg) return;
+  authPost('aceptarTerminos', reg).then(function(x){
+    if (x && x.ok){ try { localStorage.removeItem(_terminosPendClave(u)); } catch(e){} }
+    else console.warn('Términos: el servicio de ingreso todavía no registró la aceptación.', x && x.error);
+  }).catch(function(e){ console.warn('Términos: no se pudo enviar la aceptación; se reintenta en el próximo ingreso.', e); });
+}
+async function terminosExigir(r){
+  const u = r.usuario;
+  let ya = false;
+  if (r.terminos != null) ya = String(r.terminos) === TERMINOS_VERSION;
+  else { try { ya = localStorage.getItem(_terminosClave(u)) === TERMINOS_VERSION; } catch(e){} }
+  _terminosEnviarPendiente(u);
+  if (ya) return true;
+  const acepta = await terminosMostrar();
+  if (!acepta) return false;
+  const reg = { usuario: u, nombre: r.nombre || '', version: TERMINOS_VERSION, fecha: new Date().toISOString(),
+                dispositivo: _terminosDispositivo(), navegador: navigator.userAgent.slice(0, 200) };
+  try {
+    localStorage.setItem(_terminosClave(u), TERMINOS_VERSION);
+    localStorage.setItem(_terminosPendClave(u), JSON.stringify(reg));
+  } catch(e){}
+  _terminosEnviarPendiente(u);
+  return true;
+}
+
 function cerrarSesionDash() {
   const t = _authToken;
   _guardarToken(null);
@@ -10040,6 +10194,8 @@ async function intentarLoginDash() {
   if (r.permisos) _permisosConfig[r.usuario] = r.permisos;
 
   errEl.style.display = 'none';
+  /* Términos y condiciones: sin aceptarlos no se entra. */
+  if (!(await terminosExigir(r))) { cerrarSesionDash(); return; }
   if (window.hortiSonido) window.hortiSonido('entrar');
   document.getElementById('dash-login').style.display = 'none';
   const app = document.getElementById('dash-app');
@@ -49721,6 +49877,231 @@ else engancharPantalla();
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arrancar);
   else arrancar();
 })();
+</script>
+<script type="text/plain" id="terminos-v1-texto">
+# POLÍTICA DE TRATAMIENTO Y PROTECCIÓN DE DATOS PERSONALES Y USO DEL APLICATIVO INSTITUCIONAL
+
+**HORTI ORGANIC S.A.S. C.I. BIC**  
+**NIT:** 800.135.337-9  
+**Versión:** 1.0
+
+## 1. IDENTIFICACIÓN DEL RESPONSABLE DEL TRATAMIENTO
+
+**Razón social:** HORTI ORGANIC S.A.S. C.I. BIC  
+**NIT:** 800.135.337-9  
+**Dirección física:** Km 5 vía Nemocón, vereda La Granja, sector Los Jazmines, empresa HORTI ORGANIC.  
+**Teléfono:** +57 318 9663973  
+**Correo electrónico para asuntos de protección de datos:** datascience@hortiorganic.com
+
+En adelante, HORTI ORGANIC S.A.S. C.I. BIC será denominada **LA EMPRESA** o **EL RESPONSABLE**.
+
+## 2. OBJETO
+
+La presente política establece los lineamientos para el tratamiento, protección, conservación, consulta, actualización y control de los datos personales y de la información registrada, procesada o almacenada mediante los aplicativos y herramientas tecnológicas institucionales de HORTI ORGANIC S.A.S. C.I. BIC.
+
+Su propósito es establecer reglas que contribuyan a proteger la información, preservar su calidad, integridad, disponibilidad y confidencialidad, y garantizar que su tratamiento se realice conforme a la legislación colombiana vigente.
+
+## 3. MARCO NORMATIVO
+
+Esta política se fundamenta principalmente en:
+
+- Constitución Política de Colombia, artículo 15.
+- Ley Estatutaria 1581 de 2012, sobre protección de datos personales.
+- Decreto 1377 de 2013, compilado en el Decreto 1074 de 2015.
+- Decreto 1074 de 2015 y demás normas reglamentarias aplicables.
+- Instrucciones y directrices de la Superintendencia de Industria y Comercio (SIC).
+- Las demás disposiciones que modifiquen, complementen o sustituyan las anteriores.
+
+## 4. ÁMBITO DE APLICACIÓN
+
+Esta política aplica a toda persona que, por razón de su vínculo laboral, contractual, comercial, administrativo o legal, tenga acceso a información administrada por LA EMPRESA mediante sus sistemas, aplicativos, bases de datos, hojas de cálculo, plataformas digitales y demás herramientas tecnológicas.
+
+Se encuentran comprendidos:
+
+- Trabajadores y colaboradores de LA EMPRESA.
+- Contratistas y prestadores de servicios autorizados.
+- Proveedores y terceros que, por sus funciones, requieran acceso autorizado.
+- Entidades, autoridades u organismos que soliciten información por motivos legales y cuenten con competencia o facultad para requerirla.
+
+La política aplica tanto al acceso desde equipos institucionales como desde dispositivos personales autorizados.
+
+## 5. INFORMACIÓN Y DATOS OBJETO DE TRATAMIENTO
+
+El aplicativo institucional puede contener, entre otros, los siguientes tipos de información:
+
+- Datos de identificación de trabajadores, contratistas, conductores y terceros.
+- Información laboral, operativa y administrativa.
+- Información relacionada con turnos, horarios, asistencia y novedades.
+- Información de vehículos, conductores, combustible, mantenimiento e inspecciones.
+- Registros de ingreso de materiales, pesajes, tiquetes, residuos, operaciones y manifiestos.
+- Fotografías, documentos, soportes y archivos adjuntos asociados a las operaciones.
+- Registros de acceso, usuarios, dispositivos y fechas de utilización.
+- Información contenida en reportes, indicadores, tableros y documentos institucionales.
+
+La información deberá ser tratada de acuerdo con su naturaleza y nivel de confidencialidad. No toda la información del aplicativo tiene carácter público, y su disponibilidad estará sujeta a los permisos y restricciones establecidos por LA EMPRESA.
+
+## 6. PRINCIPIOS PARA EL TRATAMIENTO DE LA INFORMACIÓN
+
+LA EMPRESA y las personas autorizadas para tratar información deberán observar los siguientes principios:
+
+**Legalidad:** El tratamiento de datos personales se realizará conforme a la legislación vigente.
+
+**Finalidad:** El tratamiento deberá estar asociado a propósitos legítimos, previamente informados al titular y autorizados cuando la ley lo exija.
+
+**Libertad:** El tratamiento se realizará con autorización previa, expresa e informada del titular, salvo las excepciones legales.
+
+**Veracidad y calidad:** La información deberá ser veraz, completa, exacta, actualizada, comprobable y comprensible. Se evitará el registro de datos parciales, incompletos, fraccionados o que induzcan a error.
+
+**Transparencia:** Se garantizará al titular el derecho a conocer la información que se encuentre bajo tratamiento, en los términos previstos por la ley.
+
+**Acceso y circulación restringida:** El acceso estará limitado a las personas autorizadas y a quienes tengan una facultad legal para requerir información.
+
+**Seguridad:** Se implementarán medidas técnicas, humanas y administrativas para evitar la adulteración, pérdida, consulta, uso o acceso no autorizado o fraudulento.
+
+**Confidencialidad:** Toda persona que intervenga en el tratamiento de información no pública deberá garantizar la reserva de los datos, incluso después de finalizar su vínculo con LA EMPRESA.
+
+## 7. USO Y ACCESO AL APLICATIVO INSTITUCIONAL
+
+El acceso al aplicativo institucional será individual y estará sujeto a las autorizaciones asignadas por LA EMPRESA.
+
+Cada usuario deberá:
+
+- Utilizar exclusivamente las credenciales asignadas.
+- Mantener la confidencialidad de sus contraseñas.
+- Abstenerse de compartir cuentas o permitir el acceso de personas no autorizadas.
+- Consultar únicamente la información necesaria para el desarrollo de sus funciones.
+- Registrar información veraz y verificar su exactitud antes de guardar o reportar datos.
+- Evitar modificaciones, eliminaciones o alteraciones no autorizadas.
+- Informar oportunamente cualquier error, inconsistencia, acceso irregular o incidente de seguridad.
+- Cerrar sesión cuando finalice el uso del aplicativo, especialmente en equipos compartidos.
+
+LA EMPRESA podrá establecer perfiles, permisos y restricciones diferenciados según el cargo, función, responsabilidad o necesidad de acceso.
+
+## 8. ACCESO DE CONTRATISTAS Y TERCEROS AUTORIZADOS
+
+Los contratistas y terceros que requieran utilizar el aplicativo deberán contar con autorización previa de LA EMPRESA.
+
+Su acceso estará limitado a la información estrictamente necesaria para cumplir las actividades contratadas o autorizadas.
+
+LA EMPRESA podrá:
+
+- Asignar cuentas individuales y perfiles restringidos.
+- Establecer periodos de vigencia para los accesos.
+- Revocar o modificar permisos cuando cambien las condiciones contractuales.
+- Solicitar compromisos de confidencialidad y protección de datos.
+- Exigir la devolución, eliminación o entrega de información al finalizar el vínculo, según corresponda y de acuerdo con las obligaciones legales de conservación.
+
+Los contratistas y terceros no podrán utilizar, divulgar, copiar, transferir o almacenar información institucional para fines distintos de los autorizados.
+
+## 9. ACCESO POR PARTE DE AUTORIDADES, ENTIDADES Y ORGANISMOS
+
+HORTI ORGANIC S.A.S. C.I. BIC podrá suministrar información personal u operativa a cualquier autoridad, entidad u organismo público o privado que requiera acceder a ella por motivos legales, administrativos, judiciales, regulatorios o de control, siempre que exista una solicitud legítima y se encuentre debidamente sustentada en las facultades o competencias correspondientes.
+
+Este acceso podrá comprender, entre otros, requerimientos de autoridades judiciales, administrativas, tributarias, laborales, ambientales, de inspección, vigilancia y control, así como organismos que tengan competencia legal para solicitar información.
+
+LA EMPRESA verificará, según corresponda:
+
+- La identidad y competencia de quien realiza el requerimiento.
+- La existencia y legitimidad de la solicitud.
+- La información estrictamente necesaria para atender el requerimiento.
+- Los mecanismos seguros para entregar la información.
+- La conservación de soportes que acrediten la solicitud y la entrega realizada.
+
+El suministro de información a estas entidades no implica que el aplicativo institucional sea de acceso público ni autoriza consultas indiscriminadas por parte de terceros.
+
+## 10. TRATAMIENTO DE DATOS SENSIBLES
+
+Cuando el aplicativo o los procesos institucionales involucren datos sensibles, LA EMPRESA aplicará las disposiciones especiales previstas en la Ley 1581 de 2012.
+
+Se entenderán como sensibles aquellos datos que afectan la intimidad del titular o cuyo uso indebido puede generar discriminación, de acuerdo con la definición legal.
+
+Su tratamiento estará sujeto a las condiciones y autorizaciones exigidas por la ley, salvo las excepciones legalmente previstas.
+
+## 11. SEGURIDAD DE LA INFORMACIÓN Y SERVICIOS TECNOLÓGICOS
+
+LA EMPRESA procurará implementar medidas técnicas, administrativas y organizacionales para proteger la información frente a pérdida, alteración, uso indebido, consulta o acceso no autorizado.
+
+Estas medidas podrán comprender:
+
+- Gestión de usuarios, credenciales y permisos.
+- Restricción de acceso a archivos y bases de datos.
+- Copias de seguridad y mecanismos de recuperación.
+- Control de cambios y trazabilidad de operaciones.
+- Protección de dispositivos y cuentas institucionales.
+- Revisión periódica de permisos y accesos.
+- Gestión de incidentes y vulnerabilidades.
+- Acuerdos de confidencialidad con personal y terceros.
+
+Cuando se utilicen servicios tecnológicos externos, plataformas en la nube, herramientas de almacenamiento o servicios de inteligencia artificial, LA EMPRESA deberá evaluar las condiciones de seguridad, confidencialidad y tratamiento de datos que correspondan, así como las obligaciones contractuales y legales aplicables.
+
+## 12. CONSERVACIÓN Y ELIMINACIÓN DE LA INFORMACIÓN
+
+La información será conservada durante el tiempo necesario para atender las obligaciones legales, contractuales, administrativas, laborales, contables y operativas de LA EMPRESA.
+
+Una vez cumplidos los plazos aplicables, la información podrá ser eliminada, anonimizada o sometida a medidas de conservación restringida, según corresponda.
+
+La eliminación de información no deberá comprometer el cumplimiento de obligaciones legales de archivo, conservación documental o atención de requerimientos de autoridades competentes.
+
+## 13. DERECHOS DE LOS TITULARES DE LOS DATOS
+
+De conformidad con la Ley 1581 de 2012, los titulares de los datos personales tienen derecho a:
+
+- Conocer, actualizar y rectificar sus datos personales.
+- Solicitar prueba de la autorización otorgada, cuando sea exigible.
+- Ser informados respecto del uso que se ha dado a sus datos.
+- Presentar consultas y reclamos relacionados con el tratamiento.
+- Solicitar la revocatoria de la autorización o la supresión de datos cuando proceda legalmente.
+- Acceder gratuitamente a sus datos personales objeto de tratamiento.
+- Acudir ante la Superintendencia de Industria y Comercio cuando consideren vulnerados sus derechos, una vez agotado el trámite de consulta o reclamo ante el responsable o encargado, cuando corresponda.
+
+Estos derechos podrán ejercerse por el titular, su representante o apoderado debidamente acreditado, conforme a la ley.
+
+## 14. PROCEDIMIENTO PARA CONSULTAS Y RECLAMOS
+
+Los titulares podrán presentar consultas o reclamos mediante el correo electrónico:
+
+**datascience@hortiorganic.com**
+
+También podrán comunicarse al teléfono **+57 318 9663973** o remitir su solicitud a la dirección física indicada en el apartado 1 de esta política.
+
+La solicitud deberá incluir, como mínimo:
+
+- Nombre e identificación del titular.
+- Descripción de los hechos o solicitud.
+- Datos de contacto para recibir respuesta.
+- Documentos que permitan acreditar la identidad o representación, cuando corresponda.
+
+Los plazos de atención serán los establecidos en la Ley 1581 de 2012 y sus normas reglamentarias:
+
+- **Consultas:** máximo diez (10) días hábiles desde su recepción. Cuando no sea posible atenderlas dentro de ese término, se informarán los motivos y la nueva fecha de respuesta, que no podrá superar cinco (5) días hábiles adicionales.
+- **Reclamos:** máximo quince (15) días hábiles desde el día siguiente a su recepción. Cuando no sea posible atenderlos dentro de ese término, se informarán los motivos y la nueva fecha de respuesta, que no podrá superar ocho (8) días hábiles adicionales.
+
+Cuando la solicitud esté incompleta, se aplicarán las reglas legales para requerir la información faltante.
+
+## 15. INCIDENTES DE SEGURIDAD
+
+Todo usuario que identifique una posible pérdida, filtración, divulgación, alteración, acceso no autorizado o uso indebido de información deberá reportarlo oportunamente a LA EMPRESA a través de los canales institucionales.
+
+LA EMPRESA evaluará el incidente, adoptará las medidas de contención y corrección que correspondan, documentará lo ocurrido y realizará las notificaciones a titulares o autoridades cuando exista obligación legal de hacerlo.
+
+## 16. INCUMPLIMIENTO DE LA POLÍTICA
+
+El incumplimiento de esta política podrá dar lugar a medidas administrativas, contractuales, laborales o legales, según la naturaleza del vínculo con LA EMPRESA y la gravedad de la conducta.
+
+Lo anterior se aplicará sin perjuicio de las responsabilidades civiles, administrativas o penales que puedan derivarse de la vulneración de las normas de protección de datos y seguridad de la información.
+
+## 17. MODIFICACIONES Y ACTUALIZACIONES
+
+LA EMPRESA podrá actualizar esta política cuando existan cambios normativos, tecnológicos, organizacionales o en los procedimientos de tratamiento de información.
+
+Las modificaciones serán comunicadas por los medios institucionales disponibles y estarán a disposición de los titulares.
+
+## 18. VIGENCIA Y APROBACIÓN
+
+La presente política rige a partir de su aprobación y publicación por parte de HORTI ORGANIC S.A.S. C.I. BIC.
+
+**HORTI ORGANIC S.A.S. C.I. BIC**  
+**NIT 800.135.337-9**
 </script>
 </body>
 </html>
