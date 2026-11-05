@@ -9314,7 +9314,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
         <label class="per-chk" style="margin:0"><input type="checkbox" id="ar-f-galmturnos">
           Repartir el almuerzo en turnos</label>
       </div>
-      <div class="ayuda">El almuerzo se descuenta de las horas del día. Repartido en turnos, el área
+      <div class="ayuda">El almuerzo de 30 min es pago; el de más tiempo se descuenta de las horas del día. Repartido en turnos, el área
         no queda sola: usted define las horas de cada turno y a quién le corresponde cada una.</div>
 
       <div id="ar-f-almcaja" style="display:none;margin-top:8px">
@@ -43884,6 +43884,18 @@ var PER_LECTURAS = ['perDatos', 'perTurnos', 'perTurnosRango', 'perTurnosPrueba'
 function perEsLectura(cuerpo){
   return PER_LECTURAS.indexOf((cuerpo && cuerpo.accion) || '') > -1;
 }
+function perPagarAlmuerzos(x){
+  if(Array.isArray(x)){ x.forEach(perPagarAlmuerzos); return x; }
+  if(!x || typeof x !== 'object') return x;
+  var alm = Number(x.almuerzo);
+  if(alm > 0 && alm <= ALMUERZO_PAGO_MIN && x.inicio && x.fin && 'horas' in x){
+    x.horas = horasTurno(x.inicio, x.fin, alm);
+  }
+  Object.keys(x).forEach(function(k){
+    if(x[k] && typeof x[k] === 'object') perPagarAlmuerzos(x[k]);
+  });
+  return x;
+}
 function pedirUnaVezPer(cuerpo, segundos){
   var corte = null, cortado = false;
   var opciones = { method:'POST', redirect:'follow',
@@ -43915,7 +43927,7 @@ function pedirUnaVezPer(cuerpo, segundos){
         throw err;
       }
       if(!d || d.success === false) throw new Error((d && d.error) || 'no se pudo completar');
-      return d;
+      return perPagarAlmuerzos(d);
     });
 }
 function pedir(cuerpo, segundos){
@@ -46067,7 +46079,7 @@ function rotMenuPrincipal(m, id){
     (t.inicio ? '<div class="rt-menu-rot">Almuerzo · hoy ' + (Number(t.almuerzo) ? Number(t.almuerzo) + ' min' : 'no tiene') + '</div>' +
       (Number(t.almuerzo)
         ? '<button type="button" class="rt-menu-it' + (propio.soloAlm && !propio.almuerzo ? ' on' : '') + '" data-malm="0">' +
-            'Quitar almuerzo<span>queda N-A; suma ' + Number(t.almuerzo) + ' min a las horas del día</span></button>'
+            'Quitar almuerzo<span>queda N-A; ' + (almuerzoQueDescuenta(t.almuerzo) ? 'suma ' + Number(t.almuerzo) + ' min a las horas del día' : 'las horas no cambian, ese almuerzo es pago') + '</span></button>'
         : '') +
       [30, 60].filter(function(x){ return x !== Number(t.almuerzo); }).map(function(x){
         return '<button type="button" class="rt-menu-it' + (propio.soloAlm && propio.almuerzo === x ? ' on' : '') + '" data-malm="' + x + '">' +
@@ -46704,7 +46716,7 @@ function abrirQuincena(){
           (o.v === actual.desde + '|' + actual.hasta ? ' selected' : '') + '>' + esc(o.t) + '</option>';
       }).join('') +
     '</select>' +
-    '<div class="ayuda">Elija las fechas, o use el atajo. El archivo trae dos hojas: el detalle día por día y el resumen por persona.</div>' +
+    '<div class="ayuda">Elija las fechas, o use el atajo. El archivo trae cuatro hojas: la quincena por área, el resumen por persona, las horas extra con su motivo y el detalle día por día.</div>' +
     '<div class="per-error" id="qc-error"></div>' +
     '<div class="per-btns">' +
       '<button type="button" class="cancelar" id="qc-cancelar">Cancelar</button>' +
@@ -46728,9 +46740,10 @@ function bajarQuincena(boton){
   if(desde > hasta){ err.textContent = 'La fecha de inicio debe ser anterior o igual a la de fin.'; return; }
   err.textContent = '';
   boton.disabled = true; boton.textContent = 'Armando…';
-  pedir({ accion:'perQuincena', desde: desde, hasta: hasta }, 120)
+  pedir({ accion:'perQuincena', desde: lunesDe(desde), hasta: sumarDias(lunesDe(hasta), 6) }, 120)
     .then(function(d){
-      if(!d.turnos || !d.turnos.length){
+      d.desde = desde; d.hasta = hasta;
+      if(!(d.turnos || []).some(function(t){ return t.fecha >= desde && t.fecha <= hasta; })){
         err.textContent = 'No hay turnos guardados en ese periodo.';
         return;
       }
@@ -46780,7 +46793,162 @@ function bordeFino(){
   return { top:l, bottom:l, left:l, right:l };
 }
 
+/* ── LA LIQUIDACIÓN DE LA SEMANA ──────────────────────────────────
+   Reglas:
+     · Nocturna: de 19:00 a 06:00. Diurna: el resto.
+     · Las 42 h se cuentan de lunes a domingo, en orden de trabajo: lo que
+       pasa de ahí es extra, y es diurna o nocturna según la hora en que
+       cae. El turno pertenece al día en que empieza.
+     · Lo anotado como hora extra es extra aunque no se llegue a 42.
+     · El almuerzo que se descuenta se ubica en la mitad del turno; el
+       sistema no guarda a qué hora se almorzó ese día.
+   Solo lee: no guarda nada ni cambia ningún turno. */
+var LIQ_NOCHE_DESDE = 19 * 60, LIQ_NOCHE_HASTA = 6 * 60;
+function liqEsNoche(m){
+  m = ((m % 1440) + 1440) % 1440;
+  return m >= LIQ_NOCHE_DESDE || m < LIQ_NOCHE_HASTA;
+}
+function liqHoras(min){
+  return (Math.round(min / 60 * 100) / 100).toLocaleString('es-CO', { maximumFractionDigits:2 });
+}
+function liqHoraDe(m){
+  m = ((m % 1440) + 1440) % 1440;
+  return Math.floor(m / 60) + ':' + ('0' + (m % 60)).slice(-2);
+}
+function liqFecha(iso){
+  var dd = new Date(iso + 'T00:00:00');
+  return ['dom','lun','mar','mié','jue','vie','sáb'][dd.getDay()] + ' ' + dd.getDate() + ' ' +
+         ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][dd.getMonth()];
+}
+function liquidarSemanas(turnos, extras, novDia){
+  var tramos = [], semanas = {};
+  /* Cada persona, cada semana, en orden de trabajo. */
+  turnos.forEach(function(t){
+    t._liq = { d:0, n:0, ed:0, en:0, total:0 };
+    if(!t.inicio || !t.fin || novDia[t.persona + '|' + t.fecha]) return;
+    var lun = lunesDe(t.fecha);
+    var k = t.persona + '|' + lun;
+    var x = semanas[k] || (semanas[k] = { persona:t.persona, lunes:lun, turnos:[] });
+    var dias = Math.round((new Date(t.fecha + 'T00:00:00') - new Date(lun + 'T00:00:00')) / 86400000);
+    t._ini = dias * 1440 + minutosDe(t.inicio);
+    t._fin = dias * 1440 + minutosDe(t.fin);
+    if(t._fin <= t._ini) t._fin += 1440;
+    x.turnos.push(t);
+  });
+  /* Lo anotado se ata al turno de ese día. */
+  var anotPorTurno = function(sem){
+    var de = {};
+    sem.turnos.forEach(function(t){ de[t.fecha] = de[t.fecha] || []; de[t.fecha].push(t); });
+    extras.forEach(function(e){
+      if(e.persona !== sem.persona || !de[e.fecha]) return;
+      var lista = de[e.fecha];
+      if(e.lado === 'aparte'){
+        lista.filter(function(t){ return t.turno === 'Hora extra'; }).forEach(function(t){ t._aparte = e; });
+        return;
+      }
+      var t = lista.filter(function(y){ return y.turno === e.turno; })[0] ||
+              lista.filter(function(y){ return y.turno !== 'Hora extra'; })[0];
+      if(!t) return;
+      if(e.lado === 'antes') t._antes = e; else t._despues = e;
+    });
+  };
+  Object.keys(semanas).forEach(function(k){
+    var sem = semanas[k];
+    anotPorTurno(sem);
+    sem.turnos.sort(function(a, b){ return a._ini - b._ini; });
+    var tope = HEX_TOPE_SEMANAL * 60, ordinarias = 0, total = 0, abierto = null;
+    var cerrar = function(){ if(abierto) tramos.push(abierto); abierto = null; };
+    sem.turnos.forEach(function(t){
+      var largo = t._fin - t._ini, alm = almuerzoQueDescuenta(t.almuerzo);
+      var almDesde = t._ini + Math.floor((largo - alm) / 2), almHasta = almDesde + alm;
+      var trabajo = largo - alm, pos = 0;
+      var nAntes = t._antes ? Number(t._antes.minutos) || 0 : 0;
+      var nDespues = t._despues ? Number(t._despues.minutos) || 0 : 0;
+      for(var m = t._ini; m < t._fin; m++){
+        if(m >= almDesde && m < almHasta) continue;
+        var anot = t._aparte ? t._aparte
+                 : pos < nAntes ? t._antes
+                 : pos >= trabajo - nDespues ? t._despues : null;
+        var noche = liqEsNoche(m), esExtra = !!anot;
+        if(!anot){ ordinarias++; esExtra = ordinarias > tope; }
+        var q = esExtra ? (noche ? 'en' : 'ed') : (noche ? 'n' : 'd');
+        t._liq[q]++; t._liq.total++; total++; pos++;
+        if(esExtra){
+          if(abierto && abierto.turno === t && abierto.tipo === q && abierto.anot === anot && abierto.fin === m){
+            abierto.fin = m + 1;
+          } else {
+            cerrar();
+            abierto = { turno:t, tipo:q, anot:anot, ini:m, fin:m + 1, persona:t.persona, nombre:t.nombre,
+                        cedula:t.cedula, area:t.area, fecha:t.fecha, lunes:sem.lunes };
+          }
+        } else cerrar();
+      }
+    });
+    cerrar();
+    sem.total = total;
+    tramos.forEach(function(x){ if(x.persona === sem.persona && x.lunes === sem.lunes) x.semanaMin = total; });
+  });
+  return tramos;
+}
+/* Las palabras de cada hora extra: de dónde sale, por qué y quién responde. */
+function liqJustifica(x){
+  var cuandoDia = sumarDias(x.lunes, Math.floor(x.ini / 1440));
+  var r = {
+    tipo: x.tipo === 'en' ? 'Extra nocturna' : 'Extra diurna',
+    horas: liqHoras(x.fin - x.ini),
+    cuando: liqFecha(cuandoDia) + ' · ' + liqHoraDe(x.ini) + ' a ' + liqHoraDe(x.fin)
+  };
+  if(x.anot){
+    var e = x.anot;
+    r.origen = 'Anotada en el turno: ' + (e.lado === 'antes' ? 'entró antes' : e.lado === 'aparte' ? 'bloque aparte' : 'salió más tarde');
+    r.motivo = e.motivo || 'Sin motivo registrado';
+    r.estado = (e.estado === 'APROBADA'
+      ? 'Aprobada' + (e.aprobo ? ' por ' + e.aprobo : '')
+      : 'SIN APROBAR' + (e.planeo ? ' · planeó ' + e.planeo : '')) +
+      (e.evidencia ? ' · con foto de evidencia' : ' · sin foto de evidencia');
+  } else {
+    r.origen = 'Turno programado: la semana suma ' + liqHoras(x.semanaMin) + ' h y pasa de las ' + HEX_TOPE_SEMANAL + ' h';
+    r.motivo = x.turno.ajuste ? 'Cambio en el turno: ' + x.turno.ajuste : 'Sin novedad';
+    r.estado = 'Sale del cuadro de turnos';
+  }
+  return r;
+}
+/* Lo que dice cada día en la hoja: horario, almuerzo y cómo se liquida. */
+function liqSumaDia(lista){
+  var o = { d:0, n:0, ed:0, en:0, total:0 };
+  lista.forEach(function(t){
+    if(t._liq) Object.keys(o).forEach(function(k){ o[k] += t._liq[k]; });
+  });
+  return o;
+}
+function liqTextoDia(lista){
+  var o = liqSumaDia(lista), lin = [];
+  lista.forEach(function(t){
+    if(t.inicio) lin.push((t.turno === 'Hora extra' ? 'Extra ' : '') + hhmm(t.inicio) + '–' + hhmm(t.fin));
+  });
+  var alm = lista.reduce(function(a, t){ return Math.max(a, Number(t.almuerzo) || 0); }, 0);
+  if(alm) lin.push('Almuerzo ' + fmtAlmuerzo(alm) + (almuerzoQueDescuenta(alm) ? ' (no pago)' : ' (pago)'));
+  lin.push('Total ' + liqHoras(o.total) + ' h');
+  if(o.d) lin.push('Diurna ' + liqHoras(o.d));
+  if(o.n) lin.push('Nocturna ' + liqHoras(o.n));
+  if(o.ed) lin.push('Extra diurna ' + liqHoras(o.ed));
+  if(o.en) lin.push('Extra nocturna ' + liqHoras(o.en));
+  return lin.join('\n');
+}
+
 function escribirExcelQuincena(d){
+  /* Las 42 h se miran por semana completa: por eso se piden lunes a
+     domingo, aunque el archivo solo traiga los días del periodo. */
+  var enPeriodo = function(f){ return f >= d.desde && f <= d.hasta; };
+  var novSemana = {};
+  (d.novedades || []).forEach(function(v){
+    for(var f0 = v.desde; f0 <= v.hasta; f0 = sumarDias(f0, 1)) novSemana[v.persona + '|' + f0] = v.tipo;
+  });
+  var tramosExtra = liquidarSemanas(d.turnos || [], d.extras || [], novSemana)
+    .filter(function(x){ return enPeriodo(x.fecha); });
+  d.turnos = (d.turnos || []).filter(function(t){ return enPeriodo(t.fecha); });
+  d.extras = (d.extras || []).filter(function(e){ return enPeriodo(e.fecha); });
+
   /* Las horas extra, por persona y día, para cruzarlas con el turno. */
   var porDia = {};
   (d.extras || []).forEach(function(e){
@@ -46814,12 +46982,17 @@ function escribirExcelQuincena(d){
       'Entrada': t.inicio,
       'Salida': t.fin,
       'Almuerzo (min)': t.almuerzo || 0,
-      'Horas': t.horas,
+      'Horas': Math.round(t._liq.total / 60 * 100) / 100,
+      'Diurnas': Math.round(t._liq.d / 60 * 100) / 100,
+      'Nocturnas': Math.round(t._liq.n / 60 * 100) / 100,
+      'Extra diurna': Math.round(t._liq.ed / 60 * 100) / 100,
+      'Extra nocturna': Math.round(t._liq.en / 60 * 100) / 100,
       'Nocturno': t.nocturno ? 'SI' : '',
       'Dominical': t.dominical ? 'SI' : '',
-      'Horas extra': ex ? Math.round(ex.minutos / 60 * 100) / 100 : '',
+      'De dónde sale la extra': tramosExtra.filter(function(x){ return x.turno === t; })
+        .map(function(x){ return liqJustifica(x).origen; }).join(' · '),
       'Estado extra': ex ? ex.estados.join(' / ') : '',
-      'Motivo extra': ex ? ex.motivos.join(' · ') : '',
+      'Motivo extra': ex ? ex.motivos.join(' · ') : (t._liq.ed + t._liq.en ? 'Sin novedad' : ''),
       'Novedad': novDia[k] || '',
       'Festivo': perEsFestivoCO(t.fecha) ? 'SI' : '',
       'Ajuste': t.ajuste || ''
@@ -46833,25 +47006,27 @@ function escribirExcelQuincena(d){
     var p = porPersona[k] || (porPersona[k] = {
       'Cédula': r['Cédula'], 'Nombre': r['Nombre'], 'Cargo': r['Cargo'],
       'Áreas': [], 'Días trabajados': 0, 'Horas': 0,
-      'Días nocturnos': 0, 'Domingos': 0, 'De ellas, extra': 0, 'Días en novedad': 0
+      'Diurnas': 0, 'Nocturnas': 0, 'Extra diurna': 0, 'Extra nocturna': 0,
+      'Días nocturnos': 0, 'Domingos': 0, 'Días en novedad': 0
     });
     if(p['Áreas'].indexOf(r['Área']) < 0) p['Áreas'].push(r['Área']);
     if(r['Novedad']) { p['Días en novedad']++; }
     else {
       p['Días trabajados']++;
       p['Horas'] += Number(r['Horas']) || 0;
+      ['Diurnas','Nocturnas','Extra diurna','Extra nocturna'].forEach(function(c){ p[c] += Number(r[c]) || 0; });
       if(r['Nocturno']) p['Días nocturnos']++;
       if(r['Dominical']) p['Domingos']++;
     }
-    p['De ellas, extra'] += Number(r['Horas extra']) || 0;
   });
   var resumen = Object.keys(porPersona).sort(function(a, b){
     return String(porPersona[a]['Nombre']).localeCompare(String(porPersona[b]['Nombre']), 'es');
   }).map(function(k){
     var p = porPersona[k];
     p['Áreas'] = p['Áreas'].join(' · ');
-    p['Horas'] = Math.round(p['Horas'] * 100) / 100;
-    p['De ellas, extra'] = Math.round(p['De ellas, extra'] * 100) / 100;
+    ['Horas','Diurnas','Nocturnas','Extra diurna','Extra nocturna'].forEach(function(c){
+      p[c] = Math.round(p[c] * 100) / 100;
+    });
     return p;
   });
 
@@ -46867,8 +47042,9 @@ function escribirExcelQuincena(d){
          aparte como "Horas en festivo (HE)".
      A la derecha de cada fila va todo desglosado. */
   var DIAS3 = ['dom','lun','mar','mié','jue','vie','sáb'];
-  var DESGLOSE = ['Días trab.', 'Horas total', 'Horas ordinarias', 'Horas extra',
-                  'Festivos pagados (no trabajó)', 'Festivos trabajados', 'Horas en festivo (HE)'];
+  var DESGLOSE = ['Días trab.', 'Horas total', 'Horas diurnas', 'Horas nocturnas',
+                  'Extra diurna', 'Extra nocturna',
+                  'Festivos pagados (no trabajó)', 'Festivos trabajados', 'De esas horas, en festivo'];
   var COLS = 2 + 7 + DESGLOSE.length;    /* persona, cargo, 7 días y el desglose */
   var ROJO_PALIDO = 'F6D5D5', ROJO_FESTIVO = 'D32F2F';
 
@@ -46900,11 +47076,11 @@ function escribirExcelQuincena(d){
      semana haya estado en dos áreas. */
   var festivoYaContado = {};
 
-  var cero = function(){ return { dias:0, horas:0, extra:0, festPag:0, festTrab:0, horasFest:0 }; };
+  var cero = function(){ return { dias:0, horas:0, d:0, n:0, ed:0, en:0, festPag:0, festTrab:0, horasFest:0 }; };
   var sumarA = function(a, b){ Object.keys(a).forEach(function(k){ a[k] += b[k]; }); };
   var r2 = function(x){ return Math.round(x * 100) / 100; };
   var celdasDesglose = function(s){
-    return [s.dias, r2(s.horas), r2(s.horas - s.extra - s.horasFest), r2(s.extra),
+    return [s.dias, r2(s.horas), r2(s.d), r2(s.n), r2(s.ed), r2(s.en),
             s.festPag, s.festTrab, r2(s.horasFest)];
   };
 
@@ -46912,6 +47088,31 @@ function escribirExcelQuincena(d){
   var pintar = [];     /* { r, c, e } para colorear después */
   var poner = function(fila){ while(fila.length < COLS) fila.push(''); filas.push(fila); return filas.length - 1; };
   var vacia = function(){ poner([]); };
+  var alto = {};       /* la altura de cada fila que lo necesita */
+  var unir = [];       /* las celdas que se juntan */
+  var juntar = function(r, c1, c2){
+    if(c2 > c1) unir.push({ s:{ r:r, c:c1 }, e:{ r:r, c:c2 } });
+  };
+  /* Horas extra y novedades de un bloque: quién, cuándo, de dónde sale,
+     por qué y quién responde. */
+  var JUST = [[0,0,'Persona'], [1,1,'Tipo'], [2,2,'Cuándo'], [3,3,'Horas'],
+              [4,5,'De dónde sale'], [6,8,'Motivo'], [9,COLS - 1,'Estado y responsable']];
+  var filaJust = function(vals, estilo){
+    var fl = [];
+    JUST.forEach(function(j, i){ fl[j[0]] = vals[i]; });
+    var r = poner(fl);
+    JUST.forEach(function(j){
+      for(var c = j[0]; c <= j[1]; c++) pintar.push({ r:r, c:c, e:estilo });
+      juntar(r, j[0], j[1]);
+    });
+    var lineas = Math.max(1, Math.ceil(String(vals[4]).length / 40),
+                          Math.ceil(String(vals[5]).length / 62), Math.ceil(String(vals[6]).length / 90),
+                          Math.ceil(String(vals[0]).length / 28));
+    alto[r] = 17 * lineas + 5;
+    return r;
+  };
+  var ESTILO_JUST = { font:{ sz:10, name:'Calibri' }, border: bordeFino(),
+                      alignment:{ horizontal:'left', vertical:'center', wrapText:true } };
   var filaTotal = function(etq, s, color){
     var fl = [etq, ''];
     while(fl.length < 2 + 7) fl.push('');
@@ -46922,8 +47123,14 @@ function escribirExcelQuincena(d){
 
   var rTit = poner(['QUINCENA DEL ' + fechaCorta(d.desde) + ' AL ' + fechaCorta(d.hasta)]);
   pintar.push({ r: rTit, c: 0, e: { font: { bold:true, sz:14, name:'Calibri' } } });
-  var rLey = poner(['Colores: rojo pálido = festivo, no trabajó (se paga) · rojo = trabajó en festivo (HE) · gris = novedad']);
-  pintar.push({ r: rLey, c: 0, e: { font: { italic:true, sz:9, color:{ rgb:'777777' }, name:'Calibri' } } });
+  [ 'Colores: rojo pálido = festivo, no trabajó (se paga) · rojo = trabajó en festivo (HE) · gris = novedad',
+    'Horas: diurna de 6:00 a 19:00 · nocturna de 19:00 a 6:00 · extra: lo que pasa de ' + HEX_TOPE_SEMANAL + ' h de lunes a domingo, más lo anotado como hora extra.',
+    'Almuerzo: el de 30 min es pago y no se descuenta; el de más tiempo se descuenta y se toma en la mitad del turno.'
+  ].forEach(function(txt){
+    var rLey = poner([txt]);
+    pintar.push({ r: rLey, c: 0, e: { font: { italic:true, sz:10, color:{ rgb:'555555' }, name:'Calibri' } } });
+    juntar(rLey, 0, COLS - 1);
+  });
   vacia();
 
   var totalQ = cero();
@@ -46984,6 +47191,7 @@ function escribirExcelQuincena(d){
         var fila = [p.nombre, p.cargo];
         var s = cero();
         var pintaCeldas = [];
+        var lineasFila = 1;
         /* ¿Esta persona estuvo en el área esa semana? Solo a ella se le
            cuenta el festivo pagado de esa semana. */
         var estaEnSemana = semCompleta.some(function(f){
@@ -46992,7 +47200,8 @@ function escribirExcelQuincena(d){
         semCompleta.forEach(function(f, i){
           var lista = p.dias[f] || [];
           var t = lista.length ? turnoPrincipal(lista) : null;
-          var hDia = lista.reduce(function(a, x){ return a + (Number(x.horas) || 0); }, 0);
+          var suma = liqSumaDia(lista);
+          var hDia = suma.total / 60;
           var nov = novDia[claveP + '|' + f];
           var fest = perEsFestivoCO(f);
           if(sm.dias.indexOf(f) < 0){
@@ -47005,15 +47214,17 @@ function escribirExcelQuincena(d){
             fila.push(nov || t.turno);
             pintaCeldas.push({ c: 2 + i, e: relleno('D9D9D9', '555555', false) });
           } else if(t && hDia){
-            fila.push(r2(hDia));
-            var ex = porDia[claveP + '|' + f];
-            var hEx = ex ? ex.minutos / 60 : 0;
+            var txtDia = liqTextoDia(lista);
+            fila.push(txtDia);
+            lineasFila = Math.max(lineasFila, txtDia.split('\n').length);
             s.dias++; s.horas += hDia;
+            s.d += suma.d / 60; s.n += suma.n / 60; s.ed += suma.ed / 60; s.en += suma.en / 60;
             if(fest){ s.festTrab++; s.horasFest += hDia; }
-            else s.extra += hEx;
-            pintaCeldas.push({ c: 2 + i, e: fest
+            var eDia = fest
               ? relleno(ROJO_FESTIVO, 'FFFFFF', true)
-              : relleno(colorTurno[claveColor(t.inicio, t.fin)] || colorArea, 'FFFFFF', true) });
+              : relleno(colorTurno[claveColor(t.inicio, t.fin)] || colorArea, 'FFFFFF', true);
+            eDia.alignment = { horizontal:'center', vertical:'center', wrapText:true };
+            pintaCeldas.push({ c: 2 + i, e: eDia });
           } else if(fest){
             /* Festivo sin turno: no viene, pero la jornada se paga. */
             fila.push('Festivo');
@@ -47029,17 +47240,53 @@ function escribirExcelQuincena(d){
           }
         });
         var r = poner(fila.concat(celdasDesglose(s)));
+        alto[r] = Math.max(30, 15 * lineasFila + 6);
         pintaCeldas.forEach(function(x){ pintar.push({ r: r, c: x.c, e: x.e }); });
-        pintar.push({ r: r, c: 0, e: { font:{ bold:true, sz:10, name:'Calibri' }, border: bordeFino() } });
+        pintar.push({ r: r, c: 0, e: { font:{ bold:true, sz:10, name:'Calibri' }, border: bordeFino(),
+                                       alignment:{ vertical:'center', wrapText:true } } });
+        pintar.push({ r: r, c: 1, e: { font:{ sz:10, name:'Calibri' }, border: bordeFino(),
+                                       alignment:{ vertical:'center', wrapText:true } } });
         DESGLOSE.forEach(function(nn, j){
-          var esFest = j >= 4;
-          pintar.push({ r: r, c: 2 + 7 + j, e: relleno(esFest ? 'FBEAEA' : 'EFEDE6', esFest ? '8B1A1A' : '1A1A1A', j === 1) });
+          var esFest = j >= 6, esExt = j === 4 || j === 5;
+          pintar.push({ r: r, c: 2 + 7 + j, e: relleno(esFest ? 'FBEAEA' : esExt ? 'FFF1C9' : 'EFEDE6',
+                                                       esFest ? '8B1A1A' : '1A1A1A', j === 1 || esExt) });
         });
         sumarA(subSem, s);
       });
 
       filaTotal('Total de la semana', subSem, '777777');
       sumarA(subArea, subSem);
+
+      /* De dónde sale cada hora extra y cada novedad de esta semana. */
+      var deSemana = tramosExtra.filter(function(x){
+        return x.area === nombreArea && x.lunes === sm.lunes;
+      }).sort(function(x, y){
+        return String(x.nombre).localeCompare(String(y.nombre), 'es') || (x.ini - y.ini);
+      });
+      var novsSem = (d.novedades || []).filter(function(v){
+        return A.gente[v.persona] && sm.dias.some(function(f){ return f >= v.desde && f <= v.hasta; });
+      });
+      vacia();
+      var rJ = poner(['Horas extra y novedades de esta semana']);
+      for(var cj = 0; cj < COLS; cj++) pintar.push({ r: rJ, c: cj, e: relleno('FFF1C9', '5B4300', true) });
+      juntar(rJ, 0, COLS - 1);
+      if(!deSemana.length && !novsSem.length){
+        var rNo = poner(['Esta semana no hubo horas extra ni novedades en el área.']);
+        pintar.push({ r: rNo, c: 0, e: { font:{ italic:true, sz:10, name:'Calibri' } } });
+        juntar(rNo, 0, COLS - 1);
+      } else {
+        filaJust(JUST.map(function(j){ return j[2]; }), relleno('444444', 'FFFFFF', true));
+        deSemana.forEach(function(x){
+          var w = liqJustifica(x);
+          filaJust([x.nombre, w.tipo, w.cuando, w.horas, w.origen, w.motivo, w.estado], ESTILO_JUST);
+        });
+        novsSem.forEach(function(v){
+          filaJust([A.gente[v.persona].nombre, 'Novedad: ' + v.tipo,
+                    liqFecha(v.desde) + (v.hasta !== v.desde ? ' a ' + liqFecha(v.hasta) : ''), '—',
+                    'Registrada en Personal' + (v.registrado ? ' el ' + v.registrado : ''),
+                    v.nota || 'Sin nota registrada', 'No suma horas'], ESTILO_JUST);
+        });
+      }
       vacia();
     });
 
@@ -47056,7 +47303,8 @@ function escribirExcelQuincena(d){
     pintar.push({ r: rL, c: 0, e: { font:{ italic:true, sz:9, color:{ rgb:'777777' } } } });
 
     sumarA(totalQ, subArea);
-    vacia();
+    /* Dos filas vacías entre áreas, para que se distingan de un vistazo. */
+    vacia(); vacia();
   });
 
   filaTotal('TOTAL DE LA QUINCENA', totalQ, '1A1A1A');
@@ -47089,19 +47337,37 @@ function escribirExcelQuincena(d){
 
   var wb = XLSX.utils.book_new();
   var wsQ = XLSX.utils.aoa_to_sheet(filas);
-  wsQ['!cols'] = [{wch:26},{wch:16},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},
-                  {wch:7},{wch:8},{wch:10},{wch:8},{wch:12},{wch:11},{wch:11}];
+  wsQ['!cols'] = [{wch:30},{wch:20},{wch:22},{wch:22},{wch:22},{wch:22},{wch:22},{wch:22},{wch:22},
+                  {wch:8},{wch:9},{wch:10},{wch:11},{wch:10},{wch:11},{wch:13},{wch:12},{wch:12}];
+  wsQ['!merges'] = unir;
+  wsQ['!rows'] = filas.map(function(x, r){ return alto[r] ? { hpt: alto[r] } : {}; });
   pintar.forEach(function(x){
     estiloCelda(wsQ, XLSX.utils.encode_cell({ r: x.r, c: x.c }), x.e);
   });
   XLSX.utils.book_append_sheet(wb, wsQ, 'Quincena');
 
   var wsR = XLSX.utils.json_to_sheet(resumen);
-  wsR['!cols'] = [{wch:12},{wch:26},{wch:16},{wch:22},{wch:15},{wch:9},{wch:14},{wch:10},{wch:12},{wch:15}];
+  wsR['!cols'] = [{wch:12},{wch:30},{wch:18},{wch:24},{wch:15},{wch:9},{wch:9},{wch:10},{wch:12},{wch:14},
+                  {wch:14},{wch:10},{wch:15},{wch:14},{wch:12},{wch:14}];
   XLSX.utils.book_append_sheet(wb, wsR, 'Resumen');
+
+  /* Todas las horas extra en una lista, para filtrar por quien sea. */
+  var hojaExtra = tramosExtra.slice().sort(function(x, y){
+    return String(x.nombre).localeCompare(String(y.nombre), 'es') || String(x.lunes).localeCompare(String(y.lunes)) || (x.ini - y.ini);
+  }).map(function(x){
+    var w = liqJustifica(x);
+    return { 'Área': x.area, 'Cédula': x.cedula || '', 'Nombre': x.nombre,
+             'Semana del': x.lunes, 'Turno del día': x.fecha, 'Cuándo': w.cuando,
+             'Horas': Math.round((x.fin - x.ini) / 60 * 100) / 100, 'Tipo': w.tipo,
+             'De dónde sale': w.origen, 'Motivo': w.motivo, 'Estado y responsable': w.estado };
+  });
+  var wsE = XLSX.utils.json_to_sheet(hojaExtra.length ? hojaExtra : [{ 'Horas extra': 'No hubo horas extra en este periodo.' }]);
+  wsE['!cols'] = [{wch:18},{wch:12},{wch:30},{wch:11},{wch:12},{wch:22},{wch:7},{wch:15},{wch:52},{wch:36},{wch:44}];
+  XLSX.utils.book_append_sheet(wb, wsE, 'Horas extra');
+
   var wsD = XLSX.utils.json_to_sheet(detalle);
-  wsD['!cols'] = [{wch:16},{wch:12},{wch:26},{wch:16},{wch:11},{wch:10},{wch:14},{wch:9},{wch:9},
-                  {wch:13},{wch:8},{wch:9},{wch:10},{wch:11},{wch:13},{wch:24},{wch:14},{wch:22}];
+  wsD['!cols'] = [{wch:18},{wch:12},{wch:30},{wch:18},{wch:11},{wch:10},{wch:14},{wch:9},{wch:9},
+                  {wch:13},{wch:8},{wch:9},{wch:10},{wch:11},{wch:13},{wch:9},{wch:10},{wch:44},{wch:13},{wch:26},{wch:14},{wch:8},{wch:22}];
   XLSX.utils.book_append_sheet(wb, wsD, 'Detalle');
 
   XLSX.writeFile(wb, 'quincena_' + d.desde + '_a_' + d.hasta + '.xlsx');
@@ -47475,16 +47741,23 @@ function fechaCorta(iso){
   var d = new Date(iso + 'T00:00:00');
   return isNaN(d.getTime()) ? iso : d.toLocaleDateString('es-CO', { day:'numeric', month:'short' });
 }
-/* Lo que dura un turno, en horas, ya descontado el almuerzo. Si cruza la
-   medianoche se cuenta hasta el día siguiente: de 22:00 a 06:00 son 8
-   horas, no menos ocho. El almuerzo va en minutos (60 = una hora). */
+/* El almuerzo de media hora es PAGO: no se descuenta. Solo se descuenta
+   el que pasa de ahí (45 min, 1 h…). */
+var ALMUERZO_PAGO_MIN = 30;
+function almuerzoQueDescuenta(m){
+  m = Math.max(0, Number(m) || 0);
+  return m > ALMUERZO_PAGO_MIN ? m : 0;
+}
+/* Lo que dura un turno, en horas, ya descontado el almuerzo que no se
+   paga. Si cruza la medianoche se cuenta hasta el día siguiente: de 22:00
+   a 06:00 son 8 horas, no menos ocho. El almuerzo va en minutos. */
 function horasTurno(inicio, fin, almuerzo){
   var a = String(inicio).split(':'), b = String(fin).split(':');
   var x = Number(a[0]) * 60 + Number(a[1]), y = Number(b[0]) * 60 + Number(b[1]);
   if(isNaN(x) || isNaN(y)) return 0;
   var min = y - x;
   if(min <= 0) min += 24 * 60;
-  min -= Math.max(0, Number(almuerzo) || 0);
+  min -= almuerzoQueDescuenta(almuerzo);
   if(min < 0) min = 0;
   return Math.round(min / 6) / 10;
 }
