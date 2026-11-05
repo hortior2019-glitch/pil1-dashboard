@@ -29648,8 +29648,23 @@ function vozPintarSelectorVoces(){
   }
 }
 
+/* En Horti el dinero es en pesos: el motor de voz lee "$" como dólares. En
+   pantalla sigue el signo; aquí se cambia solo lo que se pronuncia. "US$" no
+   se toca, porque esos sí son dólares. */
+function vozDineroHablado(t){
+  return String(t == null ? '' : t).replace(/(^|[^A-Za-z$])\$\s?(\d[\d.,]*)(\s*(?:millones|millón|millon|mil)\b)?/gi, function(m, antes, num, escala){
+    const fin = /[.,]$/.test(num) ? num.slice(-1) : '';
+    const n = fin ? num.slice(0, -1) : num;
+    if (escala){
+      const e = escala.trim().toLowerCase();
+      return antes + n + ' ' + e + (e === 'mil' ? ' pesos' : ' de pesos') + fin;
+    }
+    const puro = n.replace(/[.,]\d{1,2}$/, '').replace(/[.,]/g, '');
+    return antes + puro + (Number(puro) && Number(puro) % 1000000 === 0 ? ' de pesos' : ' pesos') + fin;
+  });
+}
 function vozArmarUtterance(texto){
-  const u = new SpeechSynthesisUtterance(texto);
+  const u = new SpeechSynthesisUtterance(vozDineroHablado(texto));
   u.lang = 'es-CO';
   u.rate = _vozVelocidad;
   if (_vozElegida){
@@ -30493,7 +30508,7 @@ function vozInstruccionAsesor(a){
     'Sé suspicaz: un vacío de datos no es buena noticia. Si el radar lista VACÍOS DE INFORMACIÓN, menciona el más importante y pide con amabilidad que alimenten el sistema con ese dato.\n' +
     'Si hay REFERENCIAS DEL MERCADO, contrasta con ellas: por ejemplo, si un tanqueo da 300 mil pesos para 100 km y la referencia de ese tipo de vehículo es mucho menor, ponlo en jaque como posible error de digitación o gasto a revisar, aclarando que la referencia es aproximada. Cuando venga al caso, suma una novedad útil del sector.\n' +
     'Varía tus informes: no abras siempre con el ingreso de material ni repitas la estructura de los informes anteriores; sigue la sección VARIEDAD.\n' +
-    'Los valores en pesos que puedes decir son los que ya están en el sistema (combustible, mantenimientos) y los de las referencias. Nunca inventes tarifas de clientes: el impacto en facturación lo expresas en toneladas, viajes y porcentajes.\n\n';
+    'Todo el dinero del sistema está en pesos colombianos: nunca digas dólares. Los valores en pesos que puedes decir son los que ya están en el sistema (combustible, mantenimientos) y los de las referencias. Nunca inventes tarifas de clientes: el impacto en facturación lo expresas en toneladas, viajes y porcentajes.\n\n';
 }
 
 function vozMemoriaTexto(){
