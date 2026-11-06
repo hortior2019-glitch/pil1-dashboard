@@ -602,6 +602,10 @@ body:has(#carga-tab.visible) #voz-overlay,body:has(#carga-tab.visible) #voz-fab{
 #vsup-chip{position:fixed;right:22px;bottom:92px;z-index:10900;display:none;height:36px;padding:0 14px;border:1px solid var(--gold);border-radius:18px;background:var(--navy);color:#fff;font-family:'Source Sans 3',sans-serif;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 8px 22px rgba(8,26,16,.28)}
 #vsup-chip.vsup-ver{display:block}
 #vsup-chip.vsup-falta{background:var(--gold);color:var(--ink);border-color:var(--navy)}
+.vinf-nov{margin:0 0 10px;padding:10px 12px;border-left:3px solid var(--gold,#b8891f);background:rgba(184,137,31,.1);border-radius:4px;font-size:13px;line-height:1.45}
+.vinf-nov b{display:block;margin-bottom:4px}
+.vinf-nov ul{margin:0;padding-left:18px}
+.vinf-nov li{margin:3px 0}
 .vinf-resumen{display:flex;gap:14px;align-items:baseline;margin-bottom:8px;padding:0 2px;font-family:'Source Sans 3',sans-serif;font-size:13px;color:var(--ink-m)}
 .vinf-resumen b{font-family:'Playfair Display',serif;font-size:22px;color:var(--navy)}
 .vinf-visto{flex:none;width:22px;height:22px;color:var(--navy)}
@@ -9789,7 +9793,8 @@ function avisoSinPermisos(mostrar) {
    la pestaña "Permisos", con el id 'voz'). */
 // Usuarios que SIEMPRE tienen el asistente, pase lo que pase: no dependen
 // del check de la pestaña Permisos ni de que sigan figurando como admin.
-const VOZ_USUARIOS_SIEMPRE = ['gerencia', 'sub-gerencia', 'juan'];
+const VOZ_USUARIOS_SIEMPRE = ['gerencia', 'sub-gerencia', 'sub gerencia', 'subgerencia', 'juan',
+                              'gestion contable', 'gestioncontable', 'liliana'];
 
 function vozUsuarioPermitido() {
   const u = _usuarioActual;
@@ -9797,8 +9802,10 @@ function vozUsuarioPermitido() {
   // como la carga de permisos llama a aplicarPermisosNav() antes del
   // login, el boton flotante aparecia sobre la pantalla de ingreso.
   if (!u) return false;
-  const id = (u.usuario || '').toString().trim().toLowerCase();
-  if (VOZ_USUARIOS_SIEMPRE.includes(id)) return true;   // acceso garantizado
+  const limpio = function(x){ return (x || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase(); };
+  const id = limpio(u.usuario), nom = limpio(u.nombre);
+  if (VOZ_USUARIOS_SIEMPRE.includes(id) || VOZ_USUARIOS_SIEMPRE.includes(nom) ||
+      VOZ_USUARIOS_SIEMPRE.includes(id.split(/\s+/)[0]) || VOZ_USUARIOS_SIEMPRE.includes(nom.split(/\s+/)[0])) return true;   // acceso garantizado
   if (u.admin) return true;                             // admins: siempre
   const permitidas = _permisosConfig[u.usuario];
   if (!permitidas) return false;                        // sin config: no hay asistente
@@ -31217,7 +31224,7 @@ function vozInfVistoClave(r){ return r.inf ? 'infv-a-' + r.inf.id : 'infv-' + r.
 function vozInfEsVisto(r){ return !!(_vozDichos && _vozDichos[vozInfVistoClave(r)]); }
 function vozInfMarcar(r){
   const a = vozUsuarioAsesor();
-  if (!a || r.sup || r.id === 'sup' || vozInfEsVisto(r)) return;
+  if (!a || r.sup || r.id === 'sup' || r.id === 'saludo' || vozInfEsVisto(r)) return;
   vozChulear(a, [vozInfVistoClave(r)]);
 }
 function vozInfConteo(){
@@ -31242,7 +31249,9 @@ function vozInfPintarLista(){
   const nuevo = a ? '<button class="vinf-nuevo">Pedir un informe nuevo</button>' : '';
   const cu = vozInfConteo();
   const resumen = '<div class="vinf-resumen"><span><b>' + cu.hay + '</b> ' + (cu.hay === 1 ? 'preparado' : 'preparados') + '</span><span><b>' + cu.vistos + '</b> ' + (cu.vistos === 1 ? 'visto' : 'vistos') + '</span></div>';
-  caja.innerHTML = resumen + aviso + nuevo + _vozInfLista.map(function(r, i){
+  const novCaja = _vozNovLogin ? '<div class="vinf-nov"><b>' + (_vozNovLogin.lineas.length ? 'Novedades' : 'Sin novedades nuevas') + '</b>' +
+    (_vozNovLogin.lineas.length ? '<ul>' + _vozNovLogin.lineas.map(function(l){ return '<li>' + vozEsc(l) + '</li>'; }).join('') + '</ul>' : '') + '</div>' : '';
+  caja.innerHTML = resumen + novCaja + aviso + nuevo + _vozInfLista.map(function(r, i){
     const alertas = r.alertas !== undefined ? r.alertas : r.tramos.filter(function(x){ return x.tono === 'alerta' && x.k; }).length;
     return '<button class="vinf-fila' + (i ? '' : ' vinf-primera') + '" data-i="' + i + '">' + vozInfIcono(r.id) +
       '<span class="vinf-fila-c"><span class="vinf-fila-t">' + vozEsc(r.titulo) + '</span><span class="vinf-fila-s">' + vozEsc(r.tramos[0].dice) + '</span></span>' +
@@ -31897,7 +31906,7 @@ async function vozSupRevisar(panel){
   _vozSupCorriendo = true;
   try {
     await vozEsperarCarga();
-    if (vozSupPanelActivo() !== panel || document.getElementById('terminos-capa')) return;
+    if (!vozSupUsuario() || vozSupPanelActivo() !== panel || document.getElementById('terminos-capa')) return;
     const primera = !localStorage.getItem('hortiVozSupIntro|' + vozSupId(u));
     if (primera){
       await vozSupBloqueo({ tit:'Mucho gusto, soy el asistente de Horti',
@@ -31951,6 +31960,77 @@ let _vozBienvenidaHecha = false;
    visto. Se muestra aunque el navegador todavía no deje sonar la voz, y deja
    la lista abierta. No depende del tope de informes hablados del día. */
 function vozAvisoClave(a){ return 'hortiVozAviso|' + vozClaveUsuario(a); }
+/* Las novedades de la entrada: lo más importante que esta persona aún no
+   ha oído, sacado del radar ya confirmado con el servidor. No gasta IA. Lo
+   contado aquí se anota aparte, para que siga entrando en los informes. */
+const VOZ_NOV_MAX = 3;
+let _vozNovLogin = null, _vozNovDichas = false;
+function vozNovClave(k){ return ('nov-' + k).slice(0, 80); }
+function vozNovPrimera(t){
+  const m = String(t || '').match(/^.*?[.!?](?=\s|$)/);
+  return vozNovPlural((m ? m[0] : String(t || '')).trim());
+}
+function vozNovPlural(t){
+  return String(t || '').replace(/\b(1 \S+)\((?:es|s)\)/g, '$1').replace(/\((es|s)\)/g, '$1');
+}
+function vozNovedadesLogin(){
+  const dichos = _vozDichos || {};
+  const pano = (_vozInfLista || []).find(function(r){ return r.id === 'panorama'; });
+  const nuevas = pano ? pano.tramos.filter(function(t){
+    return t.k && !dichos[t.k] && !dichos[vozNovClave(t.k)];
+  }).slice(0, VOZ_NOV_MAX) : [];
+  const n = { tramos: nuevas, fig: pano ? pano.tramos[0].fig : null, lineas: nuevas.map(function(t){ return vozNovPrimera(t.dice); }), claves: nuevas.map(function(t){ return vozNovClave(t.k); }), texto: '' };
+  if (n.lineas.length) n.texto = (n.lineas.length === 1 ? 'La novedad es esta: ' : 'Las novedades son estas: ') + n.lineas.join(' ');
+  else if (pano && pano.alertas) n.texto = 'No hay novedades desde tu última entrada, pero ' + (pano.alertas === 1 ? 'sigue 1 alerta abierta.' : 'siguen ' + pano.alertas + ' alertas abiertas.');
+  else n.texto = 'No hay novedades desde tu última entrada.';
+  n.extra = _vozInfSinConfirmar.length ? 'No pude confirmar ' + _vozInfSinConfirmar.join(', ') + ', así que de eso no digo nada.' : '';
+  return n;
+}
+/* El saludo de la entrada lo escribe la IA para esa persona, cada vez
+   distinto. Las cifras no pasan por ella: las novedades se muestran con su
+   escena y su dato real. Si la IA no responde, entra el saludo normal. */
+async function vozSaludoIA(a, conteo, nov){
+  const respaldo = vozSaludo(a) + ' ' + conteo;
+  const hoy = new Date();
+  const contexto = 'Persona: ' + a.nombre + '. Hoy es ' +
+    hoy.toLocaleDateString('es-CO', { weekday:'long', day:'numeric', month:'long' }) + ', ' +
+    hoy.toLocaleTimeString('es-CO', { hour:'numeric', minute:'2-digit' }) + '. ' + conteo +
+    (nov.lineas.length ? ' Novedades que le vas a mostrar después: ' + nov.lineas.join(' ') : ' No hay novedades nuevas para contarle.');
+  const pedido = 'Saluda por su nombre a ' + a.nombre + ', que acaba de entrar al sistema. Tono cálido, risueño pero serio, ' +
+    'con un toque personal que cambie cada vez: el momento del día, el día de la semana o lo que traen las novedades. ' +
+    'Máximo 2 frases: el saludo y cuántos informes tiene preparados y cuántos ha visto. ' +
+    (nov.lineas.length ? 'Termina dando paso a las novedades, sin contarlas ni dar sus cifras.' : 'No menciones novedades.') +
+    ' Nada de cifras que no estén en los datos.';
+  try {
+    const r = await Promise.race([
+      vozProxy({ mode:'answer', question: pedido, context: contexto, idioma: vozIdiomaActual().lang, idiomaNombre: vozIdiomaActual().nombre }),
+      vozEsperar(12000)
+    ]);
+    const t = r && String(r.answer || '').trim();
+    return t ? t.slice(0, 400) : respaldo;
+  } catch(e){ return respaldo; }
+}
+/* Saludo y novedades como una presentación más: figura, robot y voz. */
+async function vozPresentarSaludo(a, texto, nov){
+  let primero = texto;
+  if (!nov.lineas.length) primero += ' ' + nov.texto;
+  if (nov.extra) primero += ' ' + nov.extra;
+  const rep = { id:'saludo', titulo:'Bienvenida', fecha: new Date().toLocaleDateString('es-CO', { weekday:'long', day:'numeric', month:'long' }),
+    tramos: [{ tono:'bien', tit:'Bienvenida', dice: primero, habla: primero, fig: nov.fig || { t:'nota', e:'Bienvenida' } }].concat(nov.tramos.map(function(t){ return Object.assign({}, t, { dice: vozNovPlural(t.dice) }); })) };
+  _vozOcupado = true;
+  vozInput.disabled = true; vozSend.disabled = true; vozMicBtn.disabled = true;
+  vozOverlay.classList.add('voz-intervencion');
+  try {
+    await vozInfPresentar(rep);
+    if (rep.completo) vozChulear(a, nov.claves);
+  } finally {
+    _vozOcupado = false;
+    vozInput.disabled = false; vozSend.disabled = false; vozMicBtn.disabled = false;
+    vozOverlay.classList.remove('voz-intervencion');
+    vozInfBoton();
+  }
+  if (vozUsuarioAsesor()) vozInfPintarLista();
+}
 async function vozAvisoLogin(a){
   try { if (sessionStorage.getItem(vozAvisoClave(a))) return; } catch(e){}
   await vozEsperarCarga();
@@ -31961,6 +32041,9 @@ async function vozAvisoLogin(a){
   vozInfRevisarTabs();
   vozInfVista(true);
   vozInfPintarLista();
+  /* El saludo no espera a los datos: primero saluda y luego cuenta. */
+  const saludo = vozSaludo(a);
+  vozSetEstado('', saludo + ' Estoy revisando las novedades…');
   const inf = await vozLeerInformeListo(a);
   try { if (inf) localStorage.setItem(vozInformeClave(a), JSON.stringify(inf)); } catch(e){}
   await vozLeerDichos(a);
@@ -31970,12 +32053,16 @@ async function vozAvisoLogin(a){
   for (let i = 0; i < 60 && _vozInfTrayendo; i++) await vozEsperar(500);
   if (!vozUsuarioAsesor()) return;
   vozInfActualizar();
-  if (!_vozInfHora) vozInfPintarLista();
   try { sessionStorage.setItem(vozAvisoClave(a), '1'); } catch(e){}
   const c = vozInfConteo();
-  const frase = vozSaludo(a) + (c.hay === 1 ? ' Tienes 1 informe preparado' : ' Tienes ' + c.hay + ' informes preparados') +
+  const conteo = (c.hay === 1 ? 'Tienes 1 informe preparado' : 'Tienes ' + c.hay + ' informes preparados') +
     (c.vistos === 0 ? ' y no has visto ninguno.' : (c.vistos >= c.hay ? ' y ya los viste todos.' : (c.vistos === 1 ? ' y has visto 1.' : ' y has visto ' + c.vistos + '.')));
-  vozSetEstado('', frase);
+  const nov = vozNovedadesLogin();
+  _vozNovLogin = nov;
+  _vozNovDichas = true;
+  vozInfPintarLista();
+  vozSetEstado('', saludo + ' ' + conteo);
+  const pTexto = vozSaludoIA(a, conteo, nov);
   /* La voz necesita un primer toque en la página; el aviso ya está a la vista. */
   if (navigator.userActivation && !navigator.userActivation.hasBeenActive){
     await new Promise(function(ok){
@@ -31986,9 +32073,7 @@ async function vozAvisoLogin(a){
     await vozEsperar(300);
   }
   if (!vozUsuarioAsesor()) return;
-  vozOverlay.classList.add('voz-intervencion');
-  try { await Promise.race([vozHablarYa(frase), vozEsperar(9000)]); } catch(e){}
-  vozOverlay.classList.remove('voz-intervencion');
+  await vozPresentarSaludo(a, await pTexto, nov);
 }
 /* Máximo 2 informes hablados al iniciar sesión, por usuario y por día.
    Después del segundo, al entrar el asistente queda callado y a la mano. */
@@ -32030,7 +32115,7 @@ async function vozBienvenida(){
   }
   /* El primer ingreso del día siempre trae informe: si el último ya se dijo,
      se presenta el panorama de hoy, que sale del radar sin gastar IA. */
-  if (inf && inf.hablado && vozInformesHoy(a) === 0){
+  if (inf && inf.hablado && vozInformesHoy(a) === 0 && !_vozNovDichas){
     const ing0 = VOZ_FUENTES.ingreso;
     for (let i = 0; i < 120 && !ing0.obtener().length; i++) await vozEsperar(500);
     if (!vozUsuarioAsesor()) return;
@@ -32057,7 +32142,7 @@ async function vozBienvenida(){
     }
   }
   /* Ya se dijo el último y el próximo aún no está: basta con el aviso. */
-  if (inf && inf.hablado && Date.now() - (inf.generado || 0) < 4 * 3600e3){
+  if (inf && inf.hablado && (_vozNovDichas || Date.now() - (inf.generado || 0) < 4 * 3600e3)){
     try { sessionStorage.setItem(vozBienvenidaClave(a), '1'); } catch(e){}
     vozAgendarProximoInforme(a);
     return;
@@ -32086,7 +32171,7 @@ async function vozBienvenida(){
      el informe: así el tablero se abre justo cuando empieza a hablar. */
   try { if (window.cargaRetener) window.cargaRetener(15000); } catch(e){}
   if (!vozOverlay.classList.contains('voz-abierto')) vozAbrir({ colapsado: true });
-  vozConsultar('Acabo de entrar al sistema. Dame la bienvenida por mi nombre con una frase cordial y con chispa y cuéntame solo lo NUEVO: ' +
+  vozConsultar('Acabo de entrar al sistema y ya me saludaste: no saludes de nuevo. Cuéntame solo lo NUEVO: ' +
                'los hallazgos nuevos más importantes (humus, costo por kilómetro de la flota, personal y horas extra, clientes, novedades del sector), ' +
                'contrastando con las referencias del mercado si las hay, y si detectas vacíos de información pide que alimenten el sistema. ' +
                'Corto, sin repetir lo que ya me contaste. Puedes cerrar con una pregunta amable.', { plan: plan, silenciosa: true })
@@ -32372,7 +32457,7 @@ if (VozSR){
           sessionStorage.removeItem('hortiVozAviso|' + ultimo);
         } catch(e){}
       }
-      ultimo = clave; _vozBienvenidaHecha = false; _vozMemoria = [];
+      ultimo = clave; _vozBienvenidaHecha = false; _vozMemoria = []; _vozNovLogin = null; _vozNovDichas = false;
     }
     try { vozSupVigilar(); } catch(e){}
     const app = document.getElementById('dash-app');
