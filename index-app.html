@@ -15156,6 +15156,7 @@ function _vehCmpOpts(valor){
 }
 
 function _vehCmpHTML(){
+  if(window.hxCmpHTML) return window.hxCmpHTML();
   var ahora = new Date();
   if(VEH_CMP.a === null) VEH_CMP.a = ahora.getMonth();
   if(VEH_CMP.b === null) VEH_CMP.b = ahora.getMonth() === 0 ? 11 : ahora.getMonth() - 1;
@@ -15203,6 +15204,7 @@ function vehCmpCambio(){
 }
 
 function renderVehCmpChart(){
+  if(window.hxCmpDibujar) return window.hxCmpDibujar();
   var selA = document.getElementById('veh-cmp-mes-a');
   var selB = document.getElementById('veh-cmp-mes-b');
   if(!selA || !selB) return;
@@ -15526,13 +15528,20 @@ function renderFlota(){
     '<div class="fl-kpis">' +
       _flKpi('Toneladas movidas', tonsF(totKg), tons.length + ' equipos con carga', 'var(--gold)', lbl) +
       _flKpi('Viajes', fmt(totViajes), 'ingresos en el periodo', 'var(--navy)', lbl) +
-      _flKpi('T movidas este mes', tonsF(av.kg), fmt(av.viajes) + ' viajes del mes', 'var(--green)', mesActual) +
+      _flKpi('T movidas este mes', tonsF(av.kg), fmt(av.viajes) + ' viajes' + (av.kgAnt > 0 ? ' · ' + (av.kg >= av.kgAnt ? '+' : '−') + Math.abs((av.kg - av.kgAnt) / av.kgAnt * 100).toFixed(0) + '% contra los mismos días' : ''), 'var(--green)', mesActual) +
       _flKpi('Combustible', _fmtPesos(totComb), nTanq + (nTanq === 1 ? ' tanqueo' : ' tanqueos'), 'var(--gold)', lbl) +
     '</div>' +
 
-    '<div id="hx-flota"></div>' +
+    _flSeccion('Combustible', 'lo que costó moverla · este mes contra el anterior') +
+
+    '<div id="veh-cb-caja">' + _flCombCajaHTML() + '</div>' +
 
     _flSeccion('Operación', 'qué movió la flota · ' + (lbl || 'el periodo elegido')) +
+
+    /* Viajes y peso son operación: van aquí, no dentro de combustible. */
+    _vehCmpHTML() +
+
+    '<div id="hx-flota"></div>' +
 
     '<div class="fl-g2">' +
       '<div class="fl-card">' +
@@ -15575,12 +15584,8 @@ function renderFlota(){
       '</div>' +
     '</div>' +
 
-    /* Viajes y peso son operación: van aquí, no dentro de combustible. */
-    _vehCmpHTML() +
-
-    _flSeccion('Combustible', 'lo que costó moverla · este mes contra el anterior') +
-
-    '<div id="veh-cb-caja">' + _flCombCajaHTML() + '</div>' +
+    _flSeccion('Preoperacional', 'lo que quedó malo o regular en la última revisión') +
+    _flPreopHTML() +
 
     '<details class="fl-card fl-plegable">' +
       '<summary><span class="fl-tit">Últimos tanqueos</span>' +
@@ -15600,10 +15605,7 @@ function renderFlota(){
           }).join('') +
           '</tbody></table></div>'
         : '<div class="fl-vacio">Todavía no hay tanqueos registrados de estos equipos.</div>') +
-    '</details>' +
-
-    _flSeccion('Preoperacional', 'lo que quedó malo o regular en la última revisión') +
-    _flPreopHTML();
+    '</details>';
 
   /* El lienzo ya está en el documento: ahora sí se puede dibujar. */
   try { renderVehCmpChart(); } catch(e){ console.error('Comparativo de la flota:', e); }
@@ -16142,6 +16144,11 @@ function _vfMetricas(v) {
   const gMesAnt = sum(enMesCal(_mesAnt.getFullYear(), _mesAnt.getMonth()).map(c => c.valor));
   m.gastoMes    = comb.length ? gMes : null;
   m.tendGastoMes = gMesAnt > 0 ? ((gMes - gMesAnt) / gMesAnt) * 100 : null;
+  const _corteDia = hoy.getDate();
+  const _antCorte = enMesCal(_mesAnt.getFullYear(), _mesAnt.getMonth()).filter(c => { const d = parseDateTime(c.fecha); return d.getDate() <= _corteDia; });
+  const gAntCorte = sum(_antCorte.map(c => c.valor));
+  m.tendGastoCorte = gAntCorte > 0 ? ((gMes - gAntCorte) / gAntCorte) * 100 : null;
+  m.tanqAntCorte = _antCorte.filter(c => c.valor > 0).length;
 
   // ── Viajes internos de hoy ── (salidas/regresos que registra la app de ingreso)
   m.viajesHoy = _viajesInternosHoyPlaca(placa);
@@ -16162,7 +16169,7 @@ function _vfMetricas(v) {
 
   // Toneladas movidas: peso neto (kg) de los ingresos de esta placa en el mes.
   // Datos de la pestaña Operaciones (dataIngreso: PLACA + PESO NETO + fecha).
-  const _ingDeMes = (anio, mes) => {
+  const _ingDeMes = (anio, mes, hastaDia) => {
     const data = (typeof dataIngreso !== 'undefined' ? dataIngreso : []);
     const objetivo = _placaNorm(placa);
     let kg = 0, n = 0;
@@ -16170,24 +16177,26 @@ function _vfMetricas(v) {
       const r = data[i];
       if (_placaNorm(getPlacaReg(r)) !== objetivo) continue;
       const d = parseDateTime(r['FECHA DISPOSICION PLANTA'] || r['Marca temporal'] || '');
-      if (d && d.getFullYear() === anio && d.getMonth() === mes) { kg += getPesoNeto(r); n++; }
+      if (d && d.getFullYear() === anio && d.getMonth() === mes && (!hastaDia || d.getDate() <= hastaDia)) { kg += getPesoNeto(r); n++; }
     }
     return { kg: kg, n: n };
   };
   m.tonMes    = _ingDeMes(hoy.getFullYear(), hoy.getMonth());
   m.tonMesAnt = _ingDeMes(_mesAnt.getFullYear(), _mesAnt.getMonth());
+  m.tonAntCorte = _ingDeMes(_mesAnt.getFullYear(), _mesAnt.getMonth(), _corteDia);
 
   // Viajes internos del mes (por placa)
-  const _viajesDeMes = (anio, mes) => {
+  const _viajesDeMes = (anio, mes, hastaDia) => {
     const objetivo = _placaNorm(placa);
     return _vint.filter(v => {
       if (_placaNorm(v.placa) !== objetivo) return false;
       const mm = String(v.fs || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
-      return mm && (+mm[1]) === anio && (+mm[2] - 1) === mes;
+      return mm && (+mm[1]) === anio && (+mm[2] - 1) === mes && (!hastaDia || (+mm[3]) <= hastaDia);
     }).length;
   };
   m.viajesMes    = _viajesDeMes(hoy.getFullYear(), hoy.getMonth());
   m.viajesMesAnt = _viajesDeMes(_mesAnt.getFullYear(), _mesAnt.getMonth());
+  m.viajesAntCorte = _viajesDeMes(_mesAnt.getFullYear(), _mesAnt.getMonth(), _corteDia);
 
   const conKm = comb.filter(c => c.kmRecorridos);
   m.kmEntreTanqueos = conKm.length ? Math.round(sum(conKm.map(c => c.kmRecorridos)) / conKm.length) : null;
@@ -16231,7 +16240,8 @@ function _vfMetricas(v) {
   m.ultMant = ultMant;
   m.diasSinMant = ultMant ? diasDe(ultMant.fecha) : null;
   const kmMant = ultMant && ultMant.km ? (parseInt(ultMant.km, 10) || 0) : 0;
-  m.kmDesdeMant = (kmMant && k.km > kmMant) ? (k.km - kmMant) : null;
+  /* Una diferencia de más de 50.000 km es una lectura mala, no un recorrido. */
+  m.kmDesdeMant = (kmMant && k.km > kmMant && (k.km - kmMant) <= 50000) ? (k.km - kmMant) : null;
   m.aceite = _ultimoCambioAceite(placa);
   m.mants90 = mants.filter(x => { const d = diasDe(x.fecha); return d !== null && d <= 90; }).length;
   // Barras del último trimestre, una por cada decena de días
@@ -16265,7 +16275,7 @@ function _vfMetricas(v) {
     const difs = [];
     for (let i = 0; i < mantsConKm.length - 1; i++) {
       const d = mantsConKm[i] - mantsConKm[i + 1];
-      if (d > 0) difs.push(d);
+      if (d > 0 && d <= 50000) difs.push(d);
     }
     kmInt = difs.length ? Math.round(difs.reduce((a, b) => a + b, 0) / difs.length) : null;
   }
@@ -16319,7 +16329,7 @@ function _vfComp(actual, anterior, fmtFn, color) {
   color = color || '#2e8b45';
   const a = Number(actual) || 0, p = Number(anterior) || 0;
   const max = Math.max(a, p, 1);
-  const hA = Math.max(5, (a / max) * 100), hP = Math.max(5, (p / max) * 100);
+  const hA = a ? Math.max(5, (a / max) * 100) : 0, hP = p ? Math.max(5, (p / max) * 100) : 0;
   const pct = p > 0 ? ((a - p) / p) * 100 : null;
   const dir = pct === null ? '' : (pct > 0.5 ? 'up' : pct < -0.5 ? 'down' : 'eq');
   const col = dir === 'up' ? '#2e8b45' : dir === 'down' ? 'var(--red)' : 'var(--vtxt2)';
@@ -16327,13 +16337,13 @@ function _vfComp(actual, anterior, fmtFn, color) {
   return `<div class="vf-comp">
     <div class="vf-comp-bars">
       <div class="vf-comp-col"><span class="vf-comp-num">${fmtFn(p)}</span>
-        <div class="vf-comp-track"><span class="vf-comp-bar" style="height:${hP}%;background:#cbd4ce"></span></div><em>mes ant.</em></div>
+        <div class="vf-comp-track"><span class="vf-comp-bar" style="height:${hP}%;background:#cbd4ce"></span></div><em>mismos días</em></div>
       <div class="vf-comp-col"><span class="vf-comp-num">${fmtFn(a)}</span>
         <div class="vf-comp-track"><span class="vf-comp-bar" style="height:${hA}%;background:${color}"></span></div><em>este mes</em></div>
     </div>
     <div class="vf-comp-delta" style="color:${col}">${pct === null
-      ? '<span class="vf-ctx">sin mes anterior</span>'
-      : flecha + Math.abs(pct).toFixed(0) + '% vs. mes anterior'}</div>
+      ? '<span class="vf-ctx">sin base</span>'
+      : flecha + Math.abs(pct).toFixed(0) + '% vs. mismos días'}</div>
   </div>`;
 }
 
@@ -16382,7 +16392,7 @@ function _vfTend(pct, subirEsMalo, etqAnterior) {
   const col = !sube && !baja ? 'var(--ink-l)' : (subirEsMalo ? (sube ? 'var(--red)' : '#2e8b45') : (sube ? '#2e8b45' : 'var(--red)'));
   const fl = sube ? 'M12 19V5M6 11l6-6 6 6' : baja ? 'M12 5v14M6 13l6 6 6-6' : 'M5 12h14';
   return `<span class="vf-tend" style="color:${col}">
-    <svg viewBox="0 0 24 24"><path d="${fl}"/></svg>${Math.abs(pct).toFixed(1)}%</span>
+    <svg viewBox="0 0 24 24"><path d="${fl}"/></svg>${Math.abs(pct).toFixed(1).replace('.', ',')}%</span>
     <span class="vf-ctx">vs. ${etq}</span>`;
 }
 
@@ -16598,7 +16608,7 @@ function renderFichaVehiculo(placa) {
         <div class="vf-an">
           <div class="vf-an-rot">${ICO_VF.comb}Gasto del mes</div>
           <div class="vf-an-val">${m.gastoMes !== null ? _fmtPesos(m.gastoMes) : '—'}</div>
-          <div class="vf-an-pie">${m.gastoMes !== null ? _vfTend(m.tendGastoMes, true, 'mes anterior') : sd}</div>
+          <div class="vf-an-pie">${m.gastoMes !== null ? _vfTend(m.tendGastoCorte, true, 'mismos días') : sd}</div>
           ${_vfSpark(m.serieGasto, '#2e8b45')}
         </div>
         <div class="vf-an">
@@ -16627,7 +16637,7 @@ function renderFichaVehiculo(placa) {
     <div id="hx-ficha"></div>
 
     <div class="vf-card">
-      <div class="vf-card-tit"><span class="vf-tit-ic">${ICO_VF.barras}</span>Comparativo del mes<span class="vf-an-sub">este mes vs. mes anterior</span></div>
+      <div class="vf-card-tit"><span class="vf-tit-ic">${ICO_VF.barras}</span>Comparativo del mes<span class="vf-an-sub">este mes vs. los mismos días del anterior</span></div>
 
       <!-- Combustible por fecha: puntos del valor de cada tanqueo, este mes vs anterior -->
       <div class="vf-comp-fuel">
@@ -16635,7 +16645,7 @@ function renderFichaVehiculo(placa) {
           <div>
             <div class="vf-an-rot">${ICO_VF.comb}Combustible por fecha</div>
             <div class="vf-an-val">${_fmtPesos(m.tanqMes.gasto)}</div>
-            <div class="vf-an-pie">${m.combMesAct.length || m.combMesAnt.length ? _vfTend(m.tendGastoMes, true, 'mes anterior') : sd}</div>
+            <div class="vf-an-pie">${m.combMesAct.length || m.combMesAnt.length ? _vfTend(m.tendGastoCorte, true, 'mismos días') : sd}</div>
           </div>
           <div class="vf-leyenda"><span><i style="background:#2e8b45"></i>este mes</span><span><i style="background:#c2cbc5"></i>mes anterior</span></div>
         </div>
@@ -16645,15 +16655,15 @@ function renderFichaVehiculo(placa) {
       <div class="vf-compgrid">
         <div class="vf-an">
           <div class="vf-an-rot">${ICO_VF.comb}Tanqueos del mes</div>
-          ${_vfComp(m.tanqMes.n, m.tanqMesAnt.n, v => fmt(v) + (v === 1 ? ' tanqueo' : ' tanqueos'), '#2e8b45')}
+          ${_vfComp(m.tanqMes.n, m.tanqAntCorte, v => fmt(v) + (v === 1 ? ' tanqueo' : ' tanqueos'), '#2e8b45')}
         </div>
         <div class="vf-an">
           <div class="vf-an-rot">${ICO_VF.barras}Toneladas movidas</div>
-          ${_vfComp(m.tonMes.kg, m.tonMesAnt.kg, fmtTon, '#2d8a4e')}
+          ${_vfComp(m.tonMes.kg, m.tonAntCorte.kg, fmtTon, '#2d8a4e')}
         </div>
         <div class="vf-an">
           <div class="vf-an-rot">${ICO_VF.ruta}Viajes internos</div>
-          ${_vfComp(m.viajesMes, m.viajesMesAnt, v => fmt(v) + (v === 1 ? ' viaje' : ' viajes'), '#1a5c35')}
+          ${_vfComp(m.viajesMes, m.viajesAntCorte, v => fmt(v) + (v === 1 ? ' viaje' : ' viajes'), '#1a5c35')}
           <div class="vf-an-pie" style="justify-content:center;margin-top:7px"><span class="vf-ctx">hoy: ${m.viajesHoy.total}${m.viajesHoy.enCurso ? ' · ' + m.viajesHoy.enCurso + ' en curso' : ''}</span></div>
         </div>
       </div>
@@ -18118,7 +18128,7 @@ function combDeVehiculo(placa) {
     var d = lista[i].km - lista[i-1].km;
     // Un kilometraje que baja es un error de digitacion: no se inventa un
     // recorrido negativo, se marca como sin dato.
-    lista[i].kmRecorridos = d > 0 ? d : null;
+    lista[i].kmRecorridos = (d > 0 && d <= 5000) ? d : null;
   }
   return lista.reverse();   // el mas reciente primero
 }
@@ -53130,6 +53140,104 @@ La presente política rige a partir de su aprobación y publicación por parte d
   .hx-card{padding:13px 12px}
   .hx-fr{grid-template-columns:78px minmax(0,1fr) 84px}
 }
+
+/* ── Vehículos Carga: que todo se lea ──
+   Escala: 12 ejes · 13 etiquetas · 14 cifras y texto · 20 títulos de tarjeta.
+   Grosor normal como base (el 300 heredado se veía lavado) y gris con contraste. */
+#panel-vehiculos{font-weight:400;--ink-l:#555c58;--ink-m:#3f4642}
+#panel-vehiculos .hx-tit{font-size:20px}
+#panel-vehiculos .hx-sub,#panel-vehiculos .cm-pie{font-size:13.5px;color:#4a514d}
+#panel-vehiculos .hx-ley,#panel-vehiculos .cx-ley{font-size:13px;color:#4a514d}
+#panel-vehiculos .hx-svg text{font-size:12px;fill:#4a514d}
+#panel-vehiculos .hx-seg button{font-size:13px}
+#panel-vehiculos .hx-dl{font-size:14px}
+#panel-vehiculos .hx-boton{font-size:13px}
+#panel-vehiculos .hx-vacio{font-size:14px}
+#panel-vehiculos .hx-mapa{font-size:12px;min-width:800px}
+#panel-vehiculos .hx-mapa .h{color:#4a514d}
+#panel-vehiculos .hx-mapa .h.dom{color:#a8321f}
+#panel-vehiculos .hx-mapa .pl{font-size:13px}
+#panel-vehiculos .hx-mapa .tot{font-size:13px;color:#3f4642}
+#panel-vehiculos .hx-cel{height:27px;font-size:12px}
+#panel-vehiculos .hx-sub-tit{font-size:13px}
+#panel-vehiculos .hx-part{font-size:14px}
+#panel-vehiculos .hx-fr{font-size:14px;grid-template-columns:104px minmax(0,1fr) 110px}
+#panel-vehiculos .hx-fr-t small{font-size:13px}
+#panel-vehiculos .hx-aviso-km{font-size:14px}
+#panel-vehiculos .hx-veh-chk{font-size:14px}
+#panel-vehiculos .hx-veh-fil{font-size:14px}
+#panel-vehiculos .cx-tab{font-size:14px}
+#panel-vehiculos .cx-tab em{font-size:13px;color:#4a514d}
+#panel-vehiculos .cx-f{font-size:14px;grid-template-columns:98px minmax(50px,1fr) 92px 86px 58px}
+#panel-vehiculos .cx-d{font-size:13.5px;color:#4a514d}
+#panel-vehiculos .cx-d.mal{color:#a8321f}
+#panel-vehiculos .cx-d.bien{color:#1a5c35}
+#panel-vehiculos .cx-b{color:#4a514d}
+#panel-vehiculos .cx-pcab{font-size:13px;grid-template-columns:124px repeat(3,minmax(130px,1fr)) 78px;min-width:760px}
+#panel-vehiculos .cx-p{font-size:14px;grid-template-columns:124px repeat(3,minmax(130px,1fr)) 78px;min-width:760px}
+#panel-vehiculos .cx-c{grid-template-columns:minmax(40px,1fr) 66px}
+#panel-vehiculos .cx-c em{font-size:13px;color:#4a514d}
+#panel-vehiculos .cx-det{min-width:760px}
+#panel-vehiculos .fl-sec b{font-size:15px;letter-spacing:0;text-transform:none;color:var(--ink);font-weight:700}
+#panel-vehiculos .fl-sec em{font-size:13.5px;color:#4a514d}
+#panel-vehiculos .fl-cond{font-size:14px;color:#3f4642}
+#panel-vehiculos .fl-cond em{font-size:13px;color:#555c58}
+#panel-vehiculos .fl-cb-val{color:var(--ink)!important}
+#panel-vehiculos .fl-cb-val em{font-size:13px;color:#4a514d}
+#panel-vehiculos .fl-mes-et{font-size:14px;color:#3f4642}
+#panel-vehiculos .fl-tabla,#panel-vehiculos .fp-tabla{font-size:14px}
+#panel-vehiculos .fl-tabla th,#panel-vehiculos .fp-tabla th{font-size:13px;letter-spacing:0;text-transform:none;color:#3f4642}
+#panel-vehiculos .fl-tabla em{font-size:13px;color:#4a514d}
+#panel-vehiculos .fl-plegable em{font-size:13.5px;color:#4a514d}
+#panel-vehiculos .fp-chip{font-size:13px}
+#panel-vehiculos .fp-id{font-size:13.5px}
+#panel-vehiculos .fp-id em{font-size:13.5px;color:#4a514d}
+#panel-vehiculos .fp-n em{font-size:13px;letter-spacing:0;text-transform:none}
+#panel-vehiculos .fp-sinfoto{font-size:13px;color:#4a514d}
+#panel-vehiculos .kpi-desc{font-size:14px}
+#panel-vehiculos .kpi-period{font-size:13px;letter-spacing:.4px}
+#panel-vehiculos .vfila-km{font-size:13.5px;color:#4a514d}
+#panel-vehiculos .vfila-pct{font-size:13.5px}
+#panel-vehiculos .vfila-pct-et{font-size:13px;color:#4a514d}
+#panel-vehiculos .vf-rot{font-size:13px}
+#panel-vehiculos .vf-doc-tit,#panel-vehiculos .vf-doc-fec{font-size:13.5px}
+#panel-vehiculos .vf-doc-nota{font-size:13px}
+#panel-vehiculos .vf-kpi-rot,#panel-vehiculos .vf-an-rot,#panel-vehiculos .vf-tl-rot,#panel-vehiculos .vf-tl-fec{font-size:13.5px}
+#panel-vehiculos .vf-ctx,#panel-vehiculos .vf-tend,#panel-vehiculos .vf-leyenda,#panel-vehiculos .vf-an-sub{font-size:13.5px}
+#panel-vehiculos .vf-comp-num{font-size:13.5px}
+#panel-vehiculos .vf-comp-col em{font-size:13px;font-style:normal;color:#4a514d}
+#panel-vehiculos .vf-comp-delta{font-size:13.5px}
+#panel-vehiculos .vf-badge{font-size:13px}
+#panel-vehiculos .vf-aten-txt,#panel-vehiculos .vf-aten-txt em{font-size:13.5px}
+#panel-vehiculos .vf-btn{font-size:13.5px}
+#panel-vehiculos .vf-link{font-size:13.5px}
+#panel-vehiculos .fl-card em{font-size:13px!important;color:#4a514d}
+#panel-vehiculos .fl-foto,#panel-vehiculos .fl-foto *{font-size:13px!important}
+#panel-vehiculos .vf-fuel text{fill:#4a514d}
+#panel-vehiculos .vf-nodato{color:#4a514d}
+#panel-vehiculos .vf-pos,#panel-vehiculos .vf-tend[style*="#2e8b45"]{color:#1f7a39!important}
+#panel-vehiculos .vf-doc.bien .vf-doc-est,#panel-vehiculos .vf-doc.bien .vf-doc-nota{color:#17633a}
+#panel-vehiculos .vf-aten-ir{color:#4a514d}
+#veh-barra button{font-size:13px!important;letter-spacing:0!important;text-transform:none!important}
+#veh-barra input{font-size:14px!important}
+.cm-sels{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cm-sel{display:inline-flex;align-items:center;gap:7px;border:1px solid #d9dcd6;border-radius:8px;padding:0 4px 0 10px;background:#fff}
+.cm-sel:focus-within{border-color:var(--navy);box-shadow:0 0 0 2px rgba(26,92,53,.14)}
+.cm-sel i{display:block;width:14px;height:3px;border-radius:2px}
+.cm-sel select{border:0;background:transparent;font:600 14px 'Source Sans 3',sans-serif;color:var(--ink);padding:7px 2px;min-height:34px;outline:0;cursor:pointer}
+.cm-oculto{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.cm-contra{font-size:13.5px;color:#4a514d}
+.cm-cab{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;font-variant-numeric:tabular-nums}
+.cm-rot{font-size:14px;font-weight:700;color:#3f4642;margin-right:auto}
+.cm-num{font-family:'Libre Baskerville',Georgia,serif;font-size:24px;font-weight:700;color:var(--ink)}
+.cm-ant{font-size:14px;color:#4a514d}
+.cm-pie{margin:1px 0 8px}
+@media (max-width:520px){
+  #panel-vehiculos .cx-f{grid-template-columns:74px minmax(18px,1fr) 78px 66px 46px;gap:5px;font-size:13px}
+  #panel-vehiculos .cx-d{font-size:13px}
+  #panel-vehiculos .hx-fr{grid-template-columns:84px minmax(0,1fr) 88px}
+  #panel-vehiculos .hx-tit{font-size:18px}
+}
 @media print{#hx-tip{display:none!important}}
 </style>
 <script>
@@ -53573,6 +53681,7 @@ La presente política rige a partir de su aprobación y publicación por parte d
     var caja = document.getElementById('hx-flota'); if(!caja) return;
     caja.innerHTML = htmlMapa();
     hxCombDibujar();
+    hxCmpDibujar();
     caja.dataset.w = caja.clientWidth;
   }
 
@@ -53836,6 +53945,92 @@ La presente política rige a partir de su aprobación y publicación por parte d
   }
   window.hxCombHTML = hxCombHTML;
 
+  /* ══ ANÁLISIS COMPARATIVO ═════════════════════════════════════
+     Dos meses, viajes y toneladas. Acumulado, porque la curva diaria sube
+     y baja sin decir quién va adelante. Los totales se calculan igual que
+     antes: si uno de los meses está corriendo, los dos se cortan el mismo día. */
+  function hxCmpHTML(){
+    var ahora = new Date();
+    if(VEH_CMP.a === null) VEH_CMP.a = ahora.getMonth();
+    if(VEH_CMP.b === null) VEH_CMP.b = ahora.getMonth() === 0 ? 11 : ahora.getMonth() - 1;
+    return '<div class="hx-card" style="margin-bottom:14px"><div class="hx-cab"><div class="hx-tit">¿Se mueve más o menos que el otro mes?</div>' +
+      '<div class="cm-sels">' +
+        '<label class="cm-sel"><i style="background:#1a5c35"></i><span class="cm-oculto">Mes principal</span><select id="veh-cmp-mes-a" onchange="vehCmpCambio()">' + _vehCmpOpts(VEH_CMP.a) + '</select></label>' +
+        '<span class="cm-contra">contra</span>' +
+        '<label class="cm-sel"><i style="background:#9aa39d"></i><span class="cm-oculto">Mes de comparación</span><select id="veh-cmp-mes-b" onchange="vehCmpCambio()">' + _vehCmpOpts(VEH_CMP.b) + '</select></label>' +
+      '</div></div>' +
+      '<div class="hx-g hx-g-11" style="margin:0"><div id="cm-viajes"></div><div id="cm-kg"></div></div></div>';
+  }
+  function cmCurva(a, b, topeA, topeB, corte, fmt, w, etA, etB){
+    var acum = function(arr, tope){ var o = [], t = 0; for(var i = 0; i < tope; i++){ t += arr[i] || 0; o.push(t); } return o; };
+    var ca = acum(a, topeA), cb = acum(b, topeB), dias = Math.max(a.length, b.length);
+    var mx = Math.max(ca[ca.length - 1] || 0, cb[cb.length - 1] || 0, 1);
+    var L = 52, R = 14, T = 20, alto = 230, B = 26, h = alto - T - B;
+    var x = function(d){ return L + (d - 1) / Math.max(1, dias - 1) * (w - L - R); };
+    var y = function(v){ return T + (1 - v / mx) * h; };
+    var o = '<svg class="hx-svg" viewBox="0 0 ' + w + ' ' + alto + '" role="img" aria-label="Acumulado día a día, ' + esc(etA) + ' contra ' + esc(etB) + '">';
+    [0, .5, 1].forEach(function(f2){
+      o += '<line x1="' + L + '" x2="' + (w - R) + '" y1="' + y(mx * f2) + '" y2="' + y(mx * f2) + '" stroke="' + (f2 ? '#eef0ec' : '#9aa39d') + '"/>' +
+        '<text x="' + (L - 6) + '" y="' + (y(mx * f2) + 4) + '" text-anchor="end">' + esc(fmt(mx * f2)) + '</text>';
+    });
+    var ruta = function(c){ return c.map(function(v, i){ return (i ? 'L' : 'M') + x(i + 1).toFixed(1) + ' ' + y(v).toFixed(1); }).join(''); };
+    if(cb.length) o += '<path d="' + ruta(cb) + '" fill="none" stroke="#9aa39d" stroke-width="2.5"/>';
+    if(ca.length) o += '<path d="' + ruta(ca) + '" fill="none" stroke="#1a5c35" stroke-width="3"/>';
+    if(corte){
+      o += '<line x1="' + x(corte) + '" x2="' + x(corte) + '" y1="' + T + '" y2="' + (alto - B) + '" stroke="#17201b" stroke-dasharray="2 3"/>';
+      if(ca[corte - 1] !== undefined) o += '<circle cx="' + x(corte) + '" cy="' + y(ca[corte - 1]) + '" r="5" fill="#1a5c35" stroke="#fff" stroke-width="1.5"/>';
+      if(cb[corte - 1] !== undefined) o += '<circle cx="' + x(corte) + '" cy="' + y(cb[corte - 1]) + '" r="4.5" fill="#9aa39d" stroke="#fff" stroke-width="1.5"/>';
+    }
+    var fin = cb.length > ca.length ? cb : ca;
+    o += '<text x="' + (w - R) + '" y="' + Math.max(13, y(fin[fin.length - 1] || 0) - 7) + '" text-anchor="end">' + esc(fmt(fin[fin.length - 1] || 0)) + ' al cierre</text>';
+    [1, 8, 15, 22, 29].forEach(function(d){ if(d <= dias) o += '<text x="' + x(d) + '" y="' + (alto - 6) + '" text-anchor="middle">' + d + '</text>'; });
+    var banda = (w - L - R) / Math.max(1, dias - 1);
+    for(var d = 1; d <= dias; d++){
+      var lin = [etB + ': ' + (cb[d - 1] !== undefined ? fmt(cb[d - 1]) : '—') + ' · ese día ' + fmt(b[d - 1] || 0)];
+      o += '<rect class="hx-col" x="' + (x(d) - banda / 2) + '" y="0" width="' + banda + '" height="' + (alto - B) + '"' +
+        tip('Hasta el día ' + d, ca[d - 1] !== undefined ? fmt(ca[d - 1]) : '—', [ca[d - 1] !== undefined ? etA + ': ese día ' + fmt(a[d - 1] || 0) : etA + ': aún no llega'].concat(lin)) + '/>';
+    }
+    return o + '</svg>';
+  }
+  function hxCmpDibujar(){
+    var selA = document.getElementById('veh-cmp-mes-a'), selB = document.getElementById('veh-cmp-mes-b');
+    var cV = document.getElementById('cm-viajes'), cK = document.getElementById('cm-kg');
+    if(!selA || !selB || !cV || !cK) return;
+    var dela = _flSoloFlota();
+    var datos = ((typeof dataIngreso !== 'undefined' ? dataIngreso : []) || []).filter(function(r){ var pl = getPlacaReg(r); return pl && dela[pl]; });
+    var now = new Date(), M = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    var mA = parseInt(selA.value, 10), mB = parseInt(selB.value, 10);
+    var yA = mA > now.getMonth() ? now.getFullYear() - 1 : now.getFullYear();
+    var yB = mB > now.getMonth() ? now.getFullYear() - 1 : now.getFullYear();
+    var iniA = new Date(yA, mA, 1), finA = new Date(yA, mA + 1, 1), iniB = new Date(yB, mB, 1), finB = new Date(yB, mB + 1, 1);
+    var serie = function(ds, ini, fin, campo){
+      var bk = buildBuckets(filterByRange(ds, ini, fin), ini, fin, 'dia');
+      return Object.keys(bk).sort().map(function(k){ return bk[k][campo] || 0; });
+    };
+    var vA = serie(datos, iniA, finA, 'viajes'), vB = serie(datos, iniB, finB, 'viajes');
+    var kA = serie(datos, iniA, finA, 'kg'), kB = serie(datos, iniB, finB, 'kg');
+    var esAct = function(y, m){ return y === now.getFullYear() && m === now.getMonth(); };
+    var corte = (esAct(yA, mA) || esAct(yB, mB)) ? now.getDate() : 0;
+    var topeA = esAct(yA, mA) ? now.getDate() : vA.length, topeB = esAct(yB, mB) ? now.getDate() : vB.length;
+    var suma = function(arr){ return arr.reduce(function(t, v, i){ return (corte && i + 1 > corte) ? t : t + v; }, 0); };
+    var etA = M[mA] + ' ' + yA, etB = M[mB] + ' ' + yB;
+    var rango = corte ? (corte === 1 ? 'día 1' : '1–' + corte) : 'mes completo';
+    var pinta = function(caja, tit, a, b, fmtTot, fmtEje, sa, sb){
+      var w = Math.max(280, caja.clientWidth || 480);
+      caja.innerHTML = '<div class="cm-cab"><span class="cm-rot">' + tit + '</span>' +
+        '<span class="cm-num">' + esc(fmtTot(sa)) + '</span><span class="cm-ant">contra ' + esc(fmtTot(sb)) + '</span>' + cxDelta(sa, sb, 'carga', 5) + '</div>' +
+        '<div class="cm-pie">' + esc(rango) + (corte ? ' de cada mes' : '') + '</div>' +
+        cmCurva(a, b, topeA, topeB, corte, fmtEje, w, etA, etB);
+    };
+    pinta(cV, 'Viajes', vA, vB, function(v){ return n0(v); }, function(v){ return n0(v); }, suma(vA), suma(vB));
+    pinta(cK, 'Toneladas', kA, kB, ton, function(v){ return n0(v / 1000) + ' T'; }, suma(kA), suma(kB));
+    var ley = cV.closest('.hx-card'), ex = ley.querySelector('.cm-ley');
+    if(ex) ex.remove();
+    ley.insertAdjacentHTML('beforeend', '<div class="hx-ley cm-ley"><span><i style="background:#1a5c35;height:3px;vertical-align:3px"></i>' + esc(etA) + '</span><span><i style="background:#9aa39d;height:3px;vertical-align:3px"></i>' + esc(etB) + '</span></div>');
+  }
+  window.hxCmpHTML = hxCmpHTML;
+  window.hxCmpDibujar = hxCmpDibujar;
+
   /* ══ FICHA DE UN VEHÍCULO ═════════════════════════════════════ */
   function ventana30(pl){
     var ix = indice(), lim = ymd(new Date(Date.now() - 30 * 86400000)), r = { kg:0, v:0, c:0, dias:{} };
@@ -53864,14 +54059,14 @@ La presente política rige a partir de su aprobación y publicación por parte d
     var aviso = '';
     if(km){
       var mk = (_mantsDeVehiculo(v.placa) || []).map(function(m){ return Number(m.km) || 0; }).filter(function(x){ return x >= 100 && x < 2000000; });
-      aviso = '<div class="hx-aviso-km"><b>Kilometraje por revisar:</b> ' + esc(km) + ' (' + esc(k.origen) + ')' + (mk.length ? ' · mantenimiento registró ' + n0(Math.max.apply(null, mk)) + ' km' : '') + '. El gasto por km y el próximo mantenimiento dependen de este dato.</div>';
+      aviso = '<div class="hx-aviso-km"><b>Kilometraje por revisar:</b> ' + esc(km) + (mk.length ? ' · mantenimiento registró ' + n0(Math.max.apply(null, mk)) + ' km' : '') + '. El gasto por km y el próximo mantenimiento dependen de este dato.</div>';
     }
     var hoy = hoyIso(), ks = mesesAtras(2), filasCal = ks.slice().reverse().map(function(key){
       var a = +key.slice(0, 4), m = +key.slice(5) - 1, n = new Date(a, m + 1, 0).getDate(), por = viajesPorDia(pl, key);
       var mx = Math.max.apply(null, Object.keys(por).map(function(d){ return por[d].v; }).concat([1]));
       var cab = '<div></div>'; for(var d = 1; d <= n; d++) cab += '<div class="h' + (aFecha(key + '-' + pad(d)).getDay() === 0 ? ' dom' : '') + '">' + d + '</div>';
       return '<div class="hx-esc" style="margin-bottom:7px"><div class="hx-mapa" style="grid-template-columns:38px repeat(' + n + ',minmax(0,1fr));min-width:560px">' + cab +
-        '<div style="font-size:11.5px;font-weight:700">' + MES[m] + '</div>' + celdasMes(por, key, mx, hoy, n) + '</div></div>';
+        '<div style="font-size:13px;font-weight:700">' + MES[m] + '</div>' + celdasMes(por, key, mx, hoy, n) + '</div></div>';
     }).join('');
     var bloqueFrente = '';
     if(!maq){
