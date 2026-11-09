@@ -25172,6 +25172,10 @@ function pintarBloqueX25(){
     t.stock += n;
     if (String(f).slice(0, 7) === mesAj) t.mes += n;
   });
+  /* Producido negativo no existe: un ajuste que en realidad era del mes
+     pasado no puede dejar el mes en menos de 0. A lo sumo 0. El stock sí
+     lleva el ajuste completo. */
+  t.mes = Math.max(0, t.mes);
   /* fmtInt vive dentro de otro módulo: aquí se usa fmt, que sí es global. */
   const ent = (v) => fmt(Math.round(v || 0));
   const setT = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
@@ -53605,6 +53609,22 @@ La presente política rige a partir de su aprobación y publicación por parte d
 .hx-dia.meta{background:var(--navy);color:#fff}
 .hx-dia.fut{background:transparent;border:1px dashed #e4e6e1}
 .hx-dia.hoy{box-shadow:0 0 0 2px #17201b}
+/* Repartir: los días se vuelven botones */
+button.hx-dia{border:0;font-family:inherit;text-align:left;cursor:pointer;width:100%}
+button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
+.hx-dia.rep-no{opacity:.45}
+.hx-dia.rep-org{box-shadow:0 0 0 2px var(--gold)}
+.hx-dia.rep-sel{background:var(--gold);color:#fff}
+.hx-rep{margin-top:12px;padding:12px 14px;border:1px solid #e6dcbc;background:var(--gold-l);border-radius:10px;
+  font-size:13px;line-height:1.45;color:var(--ink)}
+.hx-rep p{margin:0 0 6px}
+.hx-rep-res{font-weight:700;color:#6b520e}
+.hx-rep-btns{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:8px}
+.hx-boton.fuerte{background:var(--navy);color:#fff;border-color:var(--navy)}
+.hx-boton.fuerte:hover{background:#14492a}
+.hx-boton:disabled{opacity:.5;cursor:not-allowed}
+.hx-rep-msg{font-size:13px;font-weight:600;color:#2c5c42;margin:6px 0 8px}
+.hx-rep-msg.error{color:#b23b3b}
 
 /* Clientes */
 .hx-cli{display:grid;grid-template-columns:minmax(0,1fr) 62px 44px 14px;gap:8px;align-items:center;width:100%;background:none;border:0;border-bottom:1px solid #f0f1ee;padding:7px 2px 9px;cursor:pointer;text-align:left;font:13px 'Source Sans 3',sans-serif;color:var(--ink);position:relative}
@@ -54177,6 +54197,72 @@ La presente política rige a partir de su aprobación y publicación por parte d
       '</div></div>';
   }
 
+  /* ── REPARTIR (solo Juan) ─────────────────────────────────────
+     Cuando el operador anotó en un solo día lo molido en varios. Paso 1:
+     se toca el día que se va a dividir. Paso 2: se tocan los días en que
+     se molió. El total se reparte por partes iguales; los bultos que sobran
+     de la división van de a uno a los primeros días (igual que el servicio). */
+  function repPartes(total, ds){
+    var o = {}, n = ds.length; if(!n) return o;
+    var base = Math.floor(total / n), resto = total - base * n;
+    ds.forEach(function(f, i){ o[f] = base + (i < resto ? 1 : 0); });
+    return o;
+  }
+  function repPuede(){ try { return typeof puedeAjustarStock === 'function' && puedeAjustarStock(); } catch(e){ return false; } }
+  function htmlRep(R, totO, partes, ref){
+    var pres = ref === 'x25' ? 'x 25 kg' : 'x 50 kg';
+    var msg = R.msg ? '<div class="hx-rep-msg' + (R.err ? ' error' : '') + '" role="status">' + esc(R.msg) + '</div>' : '';
+    if(R.paso === 1){
+      return '<div class="hx-rep"><p><b>Paso 1.</b> Toca el día que vas a dividir (bultos ' + pres + ').</p>' +
+        '<div class="hx-rep-btns"><button type="button" class="hx-boton" data-hx="repFin">Cancelar</button></div>' + msg + '</div>';
+    }
+    var n = R.dias.length, vals = R.dias.map(function(f){ return partes[f]; });
+    var igual = vals.every(function(x){ return x === vals[0]; });
+    var soloElegido = n === 1 && R.dias[0] === R.origen;
+    var valido = n > 0 && !soloElegido && totO >= n;
+    var res = !n ? 'Toca los días en que se molió.' : soloElegido ? 'Marca al menos otro día.' :
+      totO < n ? 'No alcanza: ' + n0(totO) + ' bultos para ' + n + ' días.' :
+      n0(totO) + ' bultos entre ' + n + (n === 1 ? ' día' : ' días') + ': ' +
+        (igual ? n0(vals[0]) + ' cada uno' : R.dias.map(function(f){ return fCorta(f) + ' ' + n0(partes[f]); }).join(' · '));
+    return '<div class="hx-rep"><p><b>' + esc(fCorta(R.origen)) + '</b> tiene <b>' + n0(totO) + '</b> bultos ' + pres +
+        '. <b>Paso 2.</b> Toca los días en que se molió. Si no marcas el ' + esc(fCorta(R.origen)) + ', queda en 0.</p>' +
+      '<p class="hx-rep-res">' + esc(res) + '</p>' +
+      '<div class="hx-rep-btns"><button type="button" class="hx-boton" data-hx="repFin">Cancelar</button>' +
+        '<button type="button" class="hx-boton" data-hx="repIni">Cambiar día</button>' +
+        '<button type="button" class="hx-boton fuerte" data-hx="repOk"' + (valido && !R.enviando ? '' : ' disabled') + '>' +
+          (R.enviando ? 'Repartiendo...' : 'Repartir') + '</button></div>' + msg + '</div>';
+  }
+  async function repAplicar(){
+    var R = HX.rep; if(!R || R.enviando || R.paso !== 2 || !repPuede()) return;
+    var d = (humSerie(HX.ref) || []).filter(function(x){ return x.iso === R.origen; })[0];
+    var tot = d ? d.p : 0, pres = HX.ref === 'x25' ? 'x 25 kg' : 'x 50 kg';
+    if(!confirm('Se reparten ' + n0(tot) + ' bultos ' + pres + ' del ' + fCorta(R.origen) + ' entre ' + R.dias.length +
+                ' días. Se corrige la cantidad del registro original y se agregan registros en los otros días. ' +
+                'El total producido no cambia y los despachos no se tocan. ¿Continuar?')) return;
+    R.enviando = true; R.msg = ''; R.err = false; hxHumus();
+    try {
+      var res = await fetch(HUM_API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ accion: 'repartirProduccion', ref: HX.ref, origen: R.origen, dias: R.dias,
+                               token: (typeof _authToken !== 'undefined' && _authToken) || '' }) });
+      var j = await res.json();
+      if(!j.ok){ R.msg = j.error || 'No se pudo repartir.'; R.err = true; }
+      else {
+        HX.rep = null; HX.repListo = j.mensaje || 'Listo.';
+        try {
+          await cargarHumusDetalle(true);
+          var filas = window._humFilasResumen || dataProduccionHumus;
+          if(filas) renderProduccionHumus(filas);
+        } catch(eR){ console.error('repintar tras repartir:', eR); }
+      }
+    } catch(e){
+      console.error('repartirProduccion:', e);
+      R.msg = 'No hubo conexión con el inventario.'; R.err = true;
+    } finally {
+      if(HX.rep) HX.rep.enviando = false;
+      hxHumus();
+    }
+  }
+
   function htmlCalendario(dias, ref){
     var meses = {}; dias.forEach(function(d){ (meses[d.iso.slice(0, 7)] = meses[d.iso.slice(0, 7)] || {})[+d.iso.slice(8)] = d; });
     var claves = Object.keys(meses).sort().slice(-2);
@@ -54184,6 +54270,10 @@ La presente política rige a partir de su aprobación y publicación por parte d
     var conP = dias.filter(function(d){ return d.p > 0; }).filter(function(d){ return claves.indexOf(d.iso.slice(0, 7)) >= 0; });
     var ok = conP.filter(function(d){ return d.p >= META_DIA; }).length;
     var prom = conP.length ? conP.reduce(function(a, d){ return a + d.p; }, 0) / conP.length : 0;
+    var R = repPuede() ? HX.rep : null;
+    var dO = R && R.origen ? dias.filter(function(x){ return x.iso === R.origen; })[0] : null;
+    var totO = dO ? dO.p : 0;
+    var partes = R && R.paso === 2 ? repPartes(totO, R.dias) : {};
     var cal = claves.map(function(k){
       var a = +k.slice(0, 4), m = +k.slice(5) - 1, n = new Date(a, m + 1, 0).getDate();
       var ini = (new Date(a, m, 1).getDay() + 6) % 7, tot = 0, nd = 0;
@@ -54192,6 +54282,17 @@ La presente política rige a partir de su aprobación y publicación por parte d
         var iso = k + '-' + pad(dia), d = meses[k][dia], fut = iso > hoy, v = d ? d.p : 0;
         if(v){ tot += v; nd++; }
         var cl = fut ? 'fut' : v >= META_DIA ? 'meta' : v > 0 ? 'bajo' : '';
+        if(R && !fut){
+          var eleg = R.paso === 1 ? v > 0 : true;
+          var esO = iso === R.origen, esS = R.paso === 2 && R.dias.indexOf(iso) >= 0;
+          var cls = 'hx-dia ' + cl + (iso === hoy ? ' hoy' : '') + (esO ? ' rep-org' : '') + (esS ? ' rep-sel' : '') + (eleg ? '' : ' rep-no');
+          var val = esS ? '<b>' + n0(partes[iso]) + '</b>' : (v ? '<b>' + n0(v) + '</b>' : '');
+          cel += eleg
+            ? '<button type="button" class="' + cls + '" data-hx="repDia" data-v="' + iso + '" aria-pressed="' + esS + '" aria-label="' +
+                esc(fCorta(iso) + (v ? ', ' + n0(v) + ' bultos' : ', sin producción')) + '">' + dia + val + '</button>'
+            : '<div class="' + cls + '">' + dia + val + '</div>';
+          continue;
+        }
         cel += '<div class="hx-dia ' + cl + (iso === hoy ? ' hoy' : '') + '"' +
           (fut ? '' : tip(fCorta(iso), v ? n0(v) + ' bultos' : 'Sin producción', d && d.np > 1 ? [d.np + ' registros'] : (d && d.s ? ['Despachado ' + n0(d.s)] : []))) + '>' +
           dia + (v ? '<b>' + n0(v) + '</b>' : '') + '</div>';
@@ -54200,8 +54301,11 @@ La presente política rige a partir de su aprobación y publicación por parte d
         '<div class="hx-cal">' + ['L','M','X','J','V','S','D'].map(function(x){ return '<i>' + x + '</i>'; }).join('') + cel + '</div></div>';
     }).join('');
     return '<div class="hx-card"><div class="hx-cab"><div><div class="hx-tit">Cumplimiento de la meta diaria</div>' +
-      '<div class="hx-sub"><b>' + ok + '</b> de ' + conP.length + ' días con producción llegan a ' + META_DIA + ' · <b>' + n0(prom) + '</b> por día producido</div></div></div>' +
+      '<div class="hx-sub"><b>' + ok + '</b> de ' + conP.length + ' días con producción llegan a ' + META_DIA + ' · <b>' + n0(prom) + '</b> por día producido</div></div>' +
+      (repPuede() && !R ? '<button type="button" class="hx-boton" data-hx="repIni">Repartir producción</button>' : '') + '</div>' +
+      (!R && HX.repListo ? '<div class="hx-rep-msg" role="status">' + esc(HX.repListo) + '</div>' : '') +
       '<div class="hx-cals">' + cal + '</div>' +
+      (R ? htmlRep(R, totO, partes, ref) : '') +
       '<div class="hx-ley"><span><i style="background:var(--navy)"></i>≥ ' + META_DIA + '</span><span><i style="background:#f4e8c9"></i>menos de ' + META_DIA + '</span><span><i style="background:#f3f4f1"></i>sin producción</span></div></div>';
   }
 
@@ -55535,7 +55639,17 @@ La presente política rige a partir de su aprobación y publicación por parte d
     if(tocado && ev.pointerType === 'touch'){ var r = tocado.getBoundingClientRect(); tipVer(tocado, r.left + r.width / 2, r.top); }
     if(!el) return;
     var q = el.getAttribute('data-hx'), v = el.getAttribute('data-v');
-    if(q === 'ref' || q === 'ventana'){ HX[q] = v; hxHumus(); return; }
+    if(q === 'ref' || q === 'ventana'){ HX[q] = v; if(q === 'ref') HX.rep = null; hxHumus(); return; }
+    /* Repartir la producción de un día entre varios (calendario) */
+    if(q === 'repIni'){ HX.rep = { paso:1, origen:'', dias:[], msg:'' }; HX.repListo = ''; hxHumus(); return; }
+    if(q === 'repFin'){ HX.rep = null; hxHumus(); return; }
+    if(q === 'repOk'){ repAplicar(); return; }
+    if(q === 'repDia'){
+      var RP = HX.rep; if(!RP || RP.enviando) return;
+      if(RP.paso === 1){ RP.origen = v; RP.dias = [v]; RP.paso = 2; }
+      else { var ix = RP.dias.indexOf(v); if(ix >= 0) RP.dias.splice(ix, 1); else RP.dias.push(v); RP.dias.sort(); }
+      RP.msg = ''; RP.err = false; hxHumus(); return;
+    }
     if(q === 'cliRef' || q === 'cliPer'){ HX[q] = v; HX.cliAb = ''; document.getElementById('hx-cli-caja').innerHTML = htmlClientes(); return; }
     if(q === 'cli'){ HX.cliAb = HX.cliAb === v ? '' : v; document.getElementById('hx-cli-caja').innerHTML = htmlClientes(); return; }
     if(q === 'ptPer'){ PT.per = v; PT.ab = ''; hxPersonal(); return; }
