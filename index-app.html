@@ -9075,6 +9075,30 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #per-mover-modal .rt-f2chk{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-m);margin:2px 0 8px;cursor:pointer}
 #per-mover-modal .rt-cel.vacia .rt-nada{color:#b7bdb8;font-weight:600;padding:3px 0}
 #per-mover-modal .rt-cel.vacia.on{background:#f2f8f4;border-style:solid}
+#per-nov-modal.solo-ver .per-caja > .pd-campos,#per-nov-modal.solo-ver .per-caja > label,#per-nov-modal.solo-ver .per-caja > input,
+#per-nov-modal.solo-ver .per-caja > .per-ayuda,#per-nov-modal.solo-ver #pn-guardar,#per-nov-modal.solo-ver [data-pn-quitar],#per-nov-modal.solo-ver [data-pn-volver],
+#per-docs-modal.solo-ver .per-caja > .pd-campos,#per-docs-modal.solo-ver .per-caja > label,#per-docs-modal.solo-ver .per-caja > input,
+#per-docs-modal.solo-ver .per-caja > .per-ayuda,#per-docs-modal.solo-ver #pd-subir,#per-docs-modal.solo-ver [data-pd-quitar]{display:none!important}
+#per-acc-modal{position:fixed;inset:0;z-index:1200;display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;overflow:auto;background:rgba(20,28,24,.55)}
+#per-acc-modal .pa-caja{background:#fff;border-radius:10px;max-width:640px;width:100%;padding:24px;box-shadow:0 18px 50px -18px rgba(0,0,0,.5)}
+#per-acc-modal h4{margin:0 0 6px;font-size:20px;color:var(--ink)}
+#per-acc-modal .pa-sub{font-size:14px;line-height:1.5;color:#4a514d;margin-bottom:14px}
+#per-acc-modal .pa-scroll{overflow-x:auto;border:1px solid var(--rule);border-radius:8px}
+#per-acc-modal table{width:100%;border-collapse:collapse;font-size:14px}
+#per-acc-modal th{background:var(--s2);text-align:center;padding:10px 12px;font-size:13px;font-weight:700;color:var(--ink);white-space:nowrap}
+#per-acc-modal th:first-child,#per-acc-modal td:first-child{text-align:left}
+#per-acc-modal td{padding:10px 12px;border-top:1px solid var(--rule);text-align:center}
+#per-acc-modal td b{display:block;color:var(--ink);font-size:14px}
+#per-acc-modal td small{display:block;color:#4a514d;font-size:13px}
+#per-acc-modal input[type=checkbox]{width:18px;height:18px;accent-color:#1c5636;cursor:pointer}
+#per-acc-modal .pa-todas{display:flex;gap:8px;align-items:center;margin-top:12px;font-size:14px;color:var(--ink)}
+#per-acc-modal .pa-vacio{padding:18px;font-size:14px;color:#4a514d;line-height:1.5}
+#per-acc-modal .pa-msg{min-height:20px;margin-top:10px;font-size:14px;color:#b3261e}
+#per-acc-modal .pa-msg.ok{color:#1c5636}
+#per-acc-modal .pa-btns{display:flex;justify-content:flex-end;gap:10px;margin-top:10px}
+#per-acc-modal .pa-btns button{padding:10px 18px;font-size:14px;font-weight:700;border-radius:6px;cursor:pointer;border:1px solid var(--rule);background:#fff;color:var(--ink)}
+#per-acc-modal .pa-btns .si{background:#1c5636;border-color:#1c5636;color:#fff}
+#per-acc-modal .pa-btns button:disabled{opacity:.6;cursor:default}
 #per-mover-modal .rt-cel.vacia.fuera{background:#eef0ec}
 #per-mover-modal .rt-cel.vacia.fuera .rt-nada{color:#4a514d}
 /* Un solo menú: grilla a la izquierda, acciones a la derecha */
@@ -9276,6 +9300,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <select id="per-cargo"><option value="">Todos los cargos</option></select>
     <label class="per-chk"><input type="checkbox" id="per-inactivos"> Ver inactivos</label>
     <button type="button" class="per-btn fuerte" id="per-nuevo">+ Nuevo</button>
+    <button type="button" class="per-btn" id="per-accesos" style="display:none">Accesos</button>
   </div>
 
   <div class="per-aviso" id="per-aviso"></div>
@@ -10396,7 +10421,7 @@ async function intentarLoginDash() {
   }
 
   _guardarToken(r.token);
-  _usuarioActual = { usuario: r.usuario, nombre: r.nombre, admin: !!r.admin };
+  _usuarioActual = { usuario: r.usuario, nombre: r.nombre, admin: !!r.admin, poderesPersonal: r.poderesPersonal || null };
   // Los permisos llegan con la respuesta del login: son SOLO los de este
   // usuario. Ya no se descarga la matriz de todos.
   _permisosConfig = {};
@@ -10417,6 +10442,7 @@ async function intentarLoginDash() {
     });
   }
   aplicarPermisosNav();
+  try { if (window.personalAccesosAplicar) window.personalAccesosAplicar(); } catch (e) {}
   if (_usuarioActual.admin) cargarPermisosRemoto();   // la matriz completa: solo admins
   requestAnimationFrame(function(){ ajustarPosiciones(); setTimeout(ajustarPosiciones, 200); });
   loadAllData();
@@ -44338,10 +44364,162 @@ function perPagarAlmuerzos(x){
   });
   return x;
 }
+/* ══════════════════════════════════════════════════════════════════
+   LOS PODERES DENTRO DE PERSONAL
+   ------------------------------------------------------------------
+   Llegan con el inicio de sesión. Esto solo decide qué se muestra: quien
+   de verdad autoriza es el servicio, que recibe el token en cada pedido.
+   ══════════════════════════════════════════════════════════════════ */
+function perPod(){
+  var u = null;
+  try { u = _usuarioActual; } catch(e){}
+  if(!u) return { c:{}, a:{} };
+  if(u.poderesPersonal) return u.poderesPersonal;
+  return u.admin ? { todo:true } : { c:{}, a:{} };
+}
+function perDaPoderes(){ return !!perPod().todo; }
+function podCol(acc){
+  var p = perPod();
+  if(p.todo) return true;
+  var c = p.c || {};
+  return acc === 'v' ? !!(c.v || c.e) : !!c[acc];
+}
+function podArea(area, acc){
+  var p = perPod();
+  if(p.todo) return true;
+  var x = (p.a || {})[area] || {};
+  return acc === 'v' ? !!(x.v || x.a || x.e) : !!x[acc];
+}
+function podAreaCambia(area){ return podArea(area, 'a') || podArea(area, 'e'); }
+/* La quincena junta a toda la empresa: solo quien ve todas las áreas. */
+function podTodasLasAreas(){
+  return perDaPoderes() || (P.areas.length > 0 && P.areas.every(function(a){ return podArea(a.nombre, 'v'); }));
+}
+function podAlgunaArea(){
+  var p = perPod();
+  if(p.todo) return true;
+  var a = p.a || {};
+  return Object.keys(a).some(function(k){ return a[k] && (a[k].v || a[k].a || a[k].e); });
+}
+function podVista(cual){
+  if(cual === 'gente') return podCol('v') || podCol('a');
+  if(cual === 'areas') return podAlgunaArea();
+  return true;
+}
+function aplicarAccesosPersonal(){
+  document.querySelectorAll('#panel-personal .per-tab').forEach(function(t){
+    t.style.display = podVista(t.dataset.perVista) ? '' : 'none';
+  });
+  var ver = function(id, si){ var el = $p(id); if(el) el.style.display = si ? '' : 'none'; };
+  ver('per-nuevo', podCol('a'));
+  ver('per-accesos', perDaPoderes());
+  ver('ar-nueva', perDaPoderes());
+  ver('ar-quincena', podTodasLasAreas());
+}
+window.personalAccesosAplicar = aplicarAccesosPersonal;
+
+/* ── LA PANTALLA DE ACCESOS ────────────────────────────────────────
+   Solo la abren quienes dan los poderes. Lista a los usuarios que ya tienen
+   la pestaña Personal en Permisos: consultar, agregar y editar, para
+   Colaboradores o para un área. */
+function abrirAccesosPersonal(area){
+  if(!perDaPoderes()) return;
+  var viejo = $p('per-acc-modal');
+  if(viejo) viejo.remove();
+  var m = document.createElement('div');
+  m.id = 'per-acc-modal';
+  m.innerHTML = '<div class="pa-caja" role="dialog" aria-modal="true" aria-labelledby="pa-tit">' +
+    '<h4 id="pa-tit">Accesos · ' + esc(area || 'Colaboradores') + '</h4>' +
+    '<div class="pa-sub">Juan, gerencia, sub-gerencia, gestión contable y auditoría tienen siempre todos los poderes y son quienes los asignan. ' +
+      'Aquí aparecen solo los usuarios que tienen la pestaña Personal en Permisos. El cambio aplica cuando la persona vuelve a iniciar sesión.</div>' +
+    '<div id="pa-cuerpo"><div class="pa-vacio">Cargando usuarios…</div></div>' +
+    (area ? '<label class="pa-todas"><input type="checkbox" id="pa-todas"> Aplicar lo mismo en todas las áreas</label>' : '') +
+    '<div class="pa-msg" id="pa-msg"></div>' +
+    '<div class="pa-btns"><button type="button" id="pa-cerrar">Cerrar</button>' +
+      '<button type="button" class="si" id="pa-guardar" disabled>Guardar accesos</button></div>' +
+  '</div>';
+  document.body.appendChild(m);
+  var cerrar = function(){ m.remove(); document.removeEventListener('keydown', porEsc); };
+  var porEsc = function(ev){ if(ev.key === 'Escape') cerrar(); };
+  document.addEventListener('keydown', porEsc);
+  m.addEventListener('click', function(ev){ if(ev.target === m) cerrar(); });
+  $p('pa-cerrar').onclick = cerrar;
+  var msg = $p('pa-msg');
+
+  authPost('listarAccesosPersonal', {}).then(function(d){
+    if(!$p('per-acc-modal')) return;
+    if(!d || !d.ok) throw new Error((d && d.error) || 'No se pudieron traer los usuarios.');
+    var us = (d.usuarios || []).slice().sort(function(x, y){
+      return String(x.nombre || x.usuario).localeCompare(String(y.nombre || y.usuario), 'es');
+    });
+    var caja = $p('pa-cuerpo');
+    if(!us.length){
+      caja.innerHTML = '<div class="pa-vacio">Ningún otro usuario tiene la pestaña Personal. Primero se le marca en Permisos.</div>';
+      return;
+    }
+    var accs = d.accesos || {};
+    var valor = function(u){
+      var r = accs[u] || {};
+      return (area ? (r.a || {})[area] : r.c) || {};
+    };
+    var chk = function(u, k, v){
+      return '<td><input type="checkbox" data-pa-u="' + esc(u) + '" data-pa-k="' + k + '"' + (v ? ' checked' : '') +
+        ' aria-label="' + ({ v:'Consultar', a:'Agregar', e:'Editar' })[k] + ' · ' + esc(u) + '"></td>';
+    };
+    caja.innerHTML = '<div class="pa-scroll"><table><thead><tr><th>Usuario</th><th>Consultar</th><th>Agregar</th><th>Editar</th></tr></thead><tbody>' +
+      us.map(function(x){
+        var v = valor(x.usuario);
+        return '<tr><td><b>' + esc(x.nombre || x.usuario) + '</b><small>' + esc(x.usuario) + '</small></td>' +
+          chk(x.usuario, 'v', v.v) + chk(x.usuario, 'a', v.a) + chk(x.usuario, 'e', v.e) + '</tr>';
+      }).join('') + '</tbody></table></div>';
+    /* Editar incluye consultar; en un área, agregar también. */
+    var par = function(u, k){ return caja.querySelector('[data-pa-u="' + CSS.escape(u) + '"][data-pa-k="' + k + '"]'); };
+    caja.querySelectorAll('input[type=checkbox]').forEach(function(c){
+      c.onchange = function(){
+        var u = c.dataset.paU, k = c.dataset.paK;
+        if(c.checked && (k === 'e' || (k === 'a' && area))) par(u, 'v').checked = true;
+        if(!c.checked && k === 'v'){
+          par(u, 'e').checked = false;
+          if(area) par(u, 'a').checked = false;
+        }
+      };
+    });
+    var bt = $p('pa-guardar');
+    bt.disabled = false;
+    bt.onclick = function(){
+      var cambios = {};
+      us.forEach(function(x){
+        cambios[x.usuario] = { v: par(x.usuario, 'v').checked, a: par(x.usuario, 'a').checked, e: par(x.usuario, 'e').checked };
+      });
+      var enTodas = area && $p('pa-todas') && $p('pa-todas').checked;
+      if(enTodas && !confirm('¿Reemplazar los accesos de estos usuarios en las ' + P.areas.length + ' áreas?')) return;
+      bt.disabled = true; bt.textContent = 'Guardando…';
+      msg.className = 'pa-msg'; msg.textContent = '';
+      authPost('guardarAccesosPersonal', area
+        ? { seccion:'areas', areas: enTodas ? P.areas.map(function(a){ return a.nombre; }) : [area], cambios: cambios }
+        : { seccion:'colaboradores', cambios: cambios })
+        .then(function(r){
+          if(!r || !r.ok) throw new Error((r && r.error) || 'No se pudo guardar.');
+          accs = r.accesos || accs;
+          msg.className = 'pa-msg ok';
+          msg.textContent = 'Accesos guardados.';
+        })
+        .catch(function(e){ msg.className = 'pa-msg'; msg.textContent = e.message || 'No se pudo guardar.'; })
+        .then(function(){ bt.disabled = false; bt.textContent = 'Guardar accesos'; });
+    };
+  }).catch(function(e){
+    if($p('pa-cuerpo')) $p('pa-cuerpo').innerHTML = '';
+    if(msg) msg.textContent = e.message || 'No se pudieron traer los usuarios.';
+  });
+}
+
 function pedirUnaVezPer(cuerpo, segundos){
   var corte = null, cortado = false;
+  var token = '';
+  try { token = _authToken || ''; } catch(e){}
   var opciones = { method:'POST', redirect:'follow',
-      headers:{ 'Content-Type':'text/plain;charset=utf-8' }, body: JSON.stringify(cuerpo) };
+      headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+      body: JSON.stringify(Object.assign({}, cuerpo, { token: token })) };
   try {
     var ctrl = new AbortController();
     opciones.signal = ctrl.signal;
@@ -44394,6 +44572,9 @@ function pedir(cuerpo, segundos){
 function cargar(forzar){
   if(P.cargando) return Promise.resolve(P.gente);
   if(P.cargado && !forzar) return Promise.resolve(P.gente);
+  var conSesion = false;
+  try { conSesion = !!_authToken; } catch(e){}
+  if(!conSesion) return Promise.resolve(P.gente);
   P.cargando = true; P.fallo = '';
   return pedir({ accion:'perDatos' }).then(function(d){
     var traidos = d.personas || [];
@@ -45534,6 +45715,12 @@ function cargosUsados(){
 function pintar(){
   var grid = $p('per-grid');
   if(!grid) return;
+  aplicarAccesosPersonal();
+  if(!podCol('v')){
+    grid.innerHTML = podCol('a')
+      ? '<div class="per-vacio">Tu usuario puede agregar colaboradores, pero no consultar la lista.</div>' : '';
+    return;
+  }
   var q = ($p('per-buscar') || {}).value || '';
   var cargo = ($p('per-cargo') || {}).value || '';
   var verInactivos = !!(($p('per-inactivos') || {}).checked);
@@ -45602,13 +45789,13 @@ function pintar(){
         })() +
         (p.activo === false ? '<span class="per-area-et sin" style="margin-left:5px">ya no está</span>' : '') +
         '<div class="per-acc">' +
-          '<button type="button" data-per-editar="' + esc(p.clave) + '">Editar</button>' +
-          '<button type="button" data-per-foto="' + esc(p.clave) + '">' + (p.foto ? 'Cambiar foto' : 'Poner foto') + '</button>' +
+          (podCol('e') ? '<button type="button" data-per-editar="' + esc(p.clave) + '">Editar</button>' +
+          '<button type="button" data-per-foto="' + esc(p.clave) + '">' + (p.foto ? 'Cambiar foto' : 'Poner foto') + '</button>' : '') +
           '<button type="button" data-per-docs="' + esc(p.clave) + '">Documentos' +
             (docsDe(p.clave).length ? ' (' + docsDe(p.clave).length + ')' : '') + '</button>' +
           '<button type="button" data-per-nov="' + esc(p.clave) + '">Novedad' +
             (novedadesDe(p.clave).length ? ' (' + novedadesDe(p.clave).length + ')' : '') + '</button>' +
-          '<button type="button" data-per-mover="' + esc(p.clave) + '">Trasladar</button>' +
+          (podCol('e') ? '<button type="button" data-per-mover="' + esc(p.clave) + '">Trasladar</button>' : '') +
         '</div>' +
       '</div></div>';
   }).join('');
@@ -45935,6 +46122,7 @@ function hacerMover(boton){
 var AJUSTE = null;
 
 function abrirAjusteSemana(semana){
+  if(!podArea(AREA_VIENDO, 'e')) return;
   var a = areaPorNombre(AREA_VIENDO);
   if(!a){ alert('No se encontró el área.'); return; }
   /* UN SOLO MENÚ: la semana como está, y a la derecha las acciones. Ya no
@@ -47896,7 +48084,8 @@ function novedadesDe(clave){
   return (P.novedades || []).filter(function(n){ return n.persona === clave; });
 }
 function abrirNovedades(persona){
-  if(!persona) return;
+  if(!persona || !podCol('v')) return;
+  $p('per-nov-modal').classList.toggle('solo-ver', !podCol('e'));
   NOV_DE = persona;
   $p('pn-tit').textContent = 'Novedades de ' + persona.nombre;
   $p('pn-error').textContent = '';
@@ -48031,6 +48220,8 @@ function pesoCorto(n){
 }
 function abrirDocumentos(persona){
   if(!persona) return;
+  if(!podCol('v')){ alert('Tu usuario no tiene permiso para consultar los documentos del personal.'); return; }
+  $p('per-docs-modal').classList.toggle('solo-ver', !podCol('e'));
   DOCS_DE = persona;
   $p('pd-tit').textContent = 'Documentos de ' + persona.nombre;
   /* Cada documento es DE ESA PERSONA: se guarda con su nombre y solo
@@ -48302,13 +48493,20 @@ function diasDe(a){
 function pintarAreas(){
   var grid = $p('ar-grid');
   if(!grid) return;
+  aplicarAccesosPersonal();
+  if(P.areas.length && !P.areas.some(function(a){ return podArea(a.nombre, 'v'); })){
+    grid.innerHTML = '<div class="per-vacio">Tu usuario no tiene áreas asignadas.</div>';
+    $p('ar-turnos').innerHTML = '';
+    return;
+  }
   if(!P.areas.length){
     grid.innerHTML = '<div class="per-vacio">Todavía no hay áreas. Se crea una con “+ Nueva área”: ' +
       'se dice el horario y se marca de una vez toda la gente que trabaja ahí.</div>';
     $p('ar-turnos').innerHTML = '';
     return;
   }
-  grid.innerHTML = P.areas.slice().sort(function(a,b){ return String(a.nombre).localeCompare(String(b.nombre), 'es'); })
+  grid.innerHTML = P.areas.filter(function(a){ return podArea(a.nombre, 'v'); })
+    .sort(function(a,b){ return String(a.nombre).localeCompare(String(b.nombre), 'es'); })
     .map(function(a){
       var gente = miembrosDe(a.nombre);
       var mini = miniFoto(a.foto, 400);
@@ -48320,10 +48518,11 @@ function pintarAreas(){
         (gente.length ? '' : '<div class="ar-gente"><span>sin personal asignado</span></div>') +
         '<div class="ar-acc">' +
           '<button type="button" class="fuerte" data-ar-turnos="' + esc(a.nombre) + '">Ver los turnos</button>' +
-          '<button type="button" data-ar-mover="' + esc(a.nombre) + '">Rotar personal</button>' +
-          '<button type="button" data-ar-editar="' + esc(a.nombre) + '">Editar</button>' +
-          '<button type="button" data-ar-modificar="' + esc(a.nombre) + '" title="Cambia el cuadro base de la próxima semana en adelante; lo ya armado no se toca">Modificar área</button>' +
-          '<button type="button" data-ar-borrar="' + esc(a.nombre) + '">Borrar</button>' +
+          (podAreaCambia(a.nombre) ? '<button type="button" data-ar-mover="' + esc(a.nombre) + '">Rotar personal</button>' : '') +
+          (podArea(a.nombre, 'e') ? '<button type="button" data-ar-editar="' + esc(a.nombre) + '">Editar</button>' +
+          '<button type="button" data-ar-modificar="' + esc(a.nombre) + '" title="Cambia el cuadro base de la próxima semana en adelante; lo ya armado no se toca">Modificar área</button>' : '') +
+          (perDaPoderes() ? '<button type="button" data-ar-borrar="' + esc(a.nombre) + '">Borrar</button>' +
+          '<button type="button" data-ar-accesos="' + esc(a.nombre) + '">Accesos</button>' : '') +
         '</div></div>';
     }).join('');
 
@@ -48342,6 +48541,9 @@ function pintarAreas(){
   grid.querySelectorAll('[data-ar-turnos]').forEach(function(b){
     b.onclick = function(){ movAbrirArea(b, b.dataset.arTurnos); };
   });
+  grid.querySelectorAll('[data-ar-accesos]').forEach(function(b){
+    b.onclick = function(){ abrirAccesosPersonal(b.dataset.arAccesos); };
+  });
   adelantarTurnos();
 }
 
@@ -48358,7 +48560,7 @@ function adelantarTurnos(){
   /* No se adelanta el área que se está mirando (esa se pide igual) ni se
      traen más de tres de una: el servicio es uno solo y lo que importa
      es lo que la persona tiene en pantalla. */
-  var faltan = P.areas.filter(function(a){ return a.nombre !== AREA_VIENDO; })
+  var faltan = P.areas.filter(function(a){ return a.nombre !== AREA_VIENDO && podArea(a.nombre, 'v'); })
     .map(function(a){ return { area: a.nombre, desde: semanasDelCuadro(mes)[0] }; })
     .filter(function(x){ return !P.turnos[x.area + '|' + x.desde]; })
     .slice(0, 3);
@@ -50321,6 +50523,7 @@ function semanasDelCuadro(iso){
 }
 
 function verMes(area, fecha, forzar){
+  if(!podArea(area, 'v')) return;
   if(AREA_VIENDO !== area) DESGLOSE = null;      /* otra área, otro cuadro */
   AREA_VIENDO = area;
   /* Mirando los turnos, la lista de áreas estorba: se guarda hasta que
@@ -50557,7 +50760,7 @@ function fusionarSemana(area, semana, turnos, extras){
 }
 function planearSiFalta(area){
   var a = areaPorNombre(area);
-  if(!a) return;
+  if(!a || !podAreaCambia(area)) return;
   if(PLANEADAS[area]) return;
   PLANEADAS[area] = true;
   var lunes = lunesDe('');
@@ -50603,7 +50806,7 @@ function planearSiFalta(area){
    sesión, para que nunca quede dando vueltas. */
 var AL_DIA = {};
 function ponerAlDiaSiHaceFalta(area, turnos){
-  if(AL_DIA[area] || !desfaseDe(area, turnos)) return;
+  if(AL_DIA[area] || !podAreaCambia(area) || !desfaseDe(area, turnos)) return;
   AL_DIA[area] = true;
   ESTADO_TURNOS = 'aviso:Actualizando el cuadro con el personal actual del área…';
   if(AREA_VIENDO === area){ $p('ar-turnos').innerHTML = cuadroMes(area, turnos); repintarDesglose(); engancharMes(); }
@@ -50669,7 +50872,7 @@ function cuadroMes(area, turnos){
         '<div class="mes-btns">' +
           /* Rotar gente desde aquí mismo: traerla a esta área (eligiendo
              con qué turno entra a cubrir) o sacarla hacia otra. */
-          '<button type="button" id="mes-rotar">Rotar personal</button>' +
+          (podAreaCambia(area) ? '<button type="button" id="mes-rotar">Rotar personal</button>' : '') +
           '<button type="button" id="mes-hoy">Ir a hoy</button>' +
           '<button type="button" id="mes-cerrar">Cerrar</button>' +
         '</div>' +
@@ -50698,12 +50901,12 @@ function cuadroMes(area, turnos){
         '<span class="hs">' + (dela.length ? dela.length + ' turnos · ' + numeroHoras(horas) : 'sin generar') + '</span>' +
       '</summary><div class="cuerpo">' +
       (dela.length ? tablaSemana(dela, sem, ausentesDeSemana(area, sem, dela)) +
-          '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">' +
-            '<button type="button" class="per-btn fuerte" data-ajustar="' + sem + '">Editar turnos de la semana</button></div>'
+          (podArea(area, 'e') ? '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">' +
+            '<button type="button" class="per-btn fuerte" data-ajustar="' + sem + '">Editar turnos de la semana</button></div>' : '')
         : '<div class="per-vacio" style="padding:14px">Esta semana aún no está generada.' +
-          ' <button type="button" class="per-btn" data-armar="' + sem + '">Generar la semana</button>' +
+          (podAreaCambia(area) ? ' <button type="button" class="per-btn" data-armar="' + sem + '">Generar la semana</button>' +
           (turnos.some(function(t){ return t.semana < sem; })
-            ? ' <button type="button" class="per-btn" data-repetir="' + sem + '">Repetir la semana anterior</button>' : '') +
+            ? ' <button type="button" class="per-btn" data-repetir="' + sem + '">Repetir la semana anterior</button>' : '') : '') +
           '</div>') +
       '</div></details>';
   });
@@ -51550,6 +51753,7 @@ function engancharMes(){
     bt.onclick = function(){ repetirSemana(bt.dataset.repetir, bt); };
   });
   caja.querySelectorAll('[data-cel]').forEach(function(td){
+    if(!podArea(AREA_VIENDO, 'e')){ td.style.cursor = 'default'; td.removeAttribute('title'); return; }
     td.onclick = function(){ abrirEdicionSemana(td); };
   });
   /* La semana de una persona día por día (el menú viejo) ya no se abre:
@@ -51567,7 +51771,7 @@ function engancharMes(){
   caja.querySelectorAll('.cel .ex').forEach(function(tira){
     tira.onclick = function(ev){
       ev.stopPropagation();
-      abrirEdicionSemana(tira.closest('[data-cel]'));
+      if(podArea(AREA_VIENDO, 'e')) abrirEdicionSemana(tira.closest('[data-cel]'));
     };
   });
   caja.querySelectorAll('[data-ajustar]').forEach(function(b){
@@ -51614,6 +51818,13 @@ function armarSemana(semana, rehacer, boton){
     });
 }
 function verVista(cual){
+  aplicarAccesosPersonal();
+  if(!podVista(cual)){
+    cual = 'tablero';
+    document.querySelectorAll('#panel-personal .per-tab').forEach(function(t){
+      t.classList.toggle('on', t.dataset.perVista === 'tablero');
+    });
+  }
   $p('per-vista-gente').style.display = cual === 'gente' ? '' : 'none';
   $p('per-vista-areas').style.display = cual === 'areas' ? '' : 'none';
   if($p('per-vista-tablero')) $p('per-vista-tablero').style.display = cual === 'tablero' ? '' : 'none';
@@ -52185,6 +52396,7 @@ function engancharPantalla(){
     if(e) e.oninput = e.onchange = pintar;
   });
   $p('per-nuevo').onclick = function(){ abrirFormulario(null); };
+  if($p('per-accesos')) $p('per-accesos').onclick = function(){ abrirAccesosPersonal(''); };
   $p('per-f-cancelar').onclick = cerrarFormulario;
   $p('per-f-guardar').onclick = guardarFormulario;
   $p('per-modal').addEventListener('click', function(ev){ if(ev.target === $p('per-modal')) cerrarFormulario(); });
