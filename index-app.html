@@ -9311,6 +9311,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <div class="per-barra">
       <button type="button" class="per-btn fuerte" id="ar-nueva">+ Nueva área</button>
       <button type="button" class="per-btn" id="ar-quincena">Descargar quincena</button>
+      <button type="button" class="per-btn" id="ar-bloqueo" style="display:none"></button>
     </div>
     <div class="ar-grid" id="ar-grid"></div>
     <div id="ar-turnos"></div>
@@ -9808,6 +9809,8 @@ function aplicarPermisosNav() {
     if (t.hasAttribute('data-users-only')) return; // se resuelve aparte, con prioridad
     const panel = t.getAttribute('data-panel');
     if (panel === 'permisos') { t.style.display = 'none'; return; }
+    // Quien da los poderes de Personal entra siempre, sin depender de Permisos.
+    if (panel === 'personal' && u.poderesPersonal && u.poderesPersonal.todo) { t.style.display = ''; return; }
     // Si no hay config definida para el usuario → no ve nada hasta que un
     // administrador le marque las pestañas en la pestaña Permisos.
     if (!permitidas) { t.style.display = 'none'; return; }
@@ -44401,9 +44404,10 @@ function podAlgunaArea(){
   var a = p.a || {};
   return Object.keys(a).some(function(k){ return a[k] && (a[k].v || a[k].a || a[k].e); });
 }
+function podCreaAreas(){ var p = perPod(); return !!(p.todo || p.creaAreas); }
 function podVista(cual){
   if(cual === 'gente') return podCol('v') || podCol('a');
-  if(cual === 'areas') return podAlgunaArea();
+  if(cual === 'areas') return podAlgunaArea() || podCreaAreas();
   return true;
 }
 function aplicarAccesosPersonal(){
@@ -44413,10 +44417,28 @@ function aplicarAccesosPersonal(){
   var ver = function(id, si){ var el = $p(id); if(el) el.style.display = si ? '' : 'none'; };
   ver('per-nuevo', podCol('a'));
   ver('per-accesos', perDaPoderes());
-  ver('ar-nueva', perDaPoderes());
+  ver('ar-nueva', podCreaAreas());
   ver('ar-quincena', podTodasLasAreas());
+  ver('ar-bloqueo', perDaPoderes());
+  if($p('ar-bloqueo')) $p('ar-bloqueo').textContent = perPod().areasBloqueadas ? 'Permitir crear áreas' : 'Bloquear creación de áreas';
 }
 window.personalAccesosAplicar = aplicarAccesosPersonal;
+
+/* Un solo interruptor para toda la empresa. Solo lo ven quienes dan poderes. */
+function cambiarBloqueoAreas(boton){
+  var ahora = !!perPod().areasBloqueadas;
+  if(!confirm(ahora
+    ? '¿Permitir que los usuarios con la pestaña Personal creen áreas nuevas?'
+    : '¿Bloquear la creación de áreas nuevas? Solo quienes dan los poderes podrán crearlas.')) return;
+  boton.disabled = true;
+  authPost('bloquearAreasPersonal', { bloqueado: !ahora }).then(function(d){
+    if(!d || !d.ok) throw new Error((d && d.error) || 'No se pudo cambiar.');
+    _usuarioActual.poderesPersonal.areasBloqueadas = !!d.bloqueado;
+    aplicarAccesosPersonal();
+  }).catch(function(e){
+    alert(e.message || 'No se pudo cambiar.');
+  }).then(function(){ boton.disabled = false; });
+}
 
 /* ── LA PANTALLA DE ACCESOS ────────────────────────────────────────
    Solo la abren quienes dan los poderes. Lista a los usuarios que ya tienen
@@ -48495,7 +48517,8 @@ function pintarAreas(){
   if(!grid) return;
   aplicarAccesosPersonal();
   if(P.areas.length && !P.areas.some(function(a){ return podArea(a.nombre, 'v'); })){
-    grid.innerHTML = '<div class="per-vacio">Tu usuario no tiene áreas asignadas.</div>';
+    grid.innerHTML = '<div class="per-vacio">Tu usuario no tiene áreas asignadas.' +
+      (podCreaAreas() ? ' Puedes crear una con “+ Nueva área”; para verla después, necesitas que te asignen acceso.' : '') + '</div>';
     $p('ar-turnos').innerHTML = '';
     return;
   }
@@ -50435,6 +50458,16 @@ function guardarArea(){
     P.areas = d.areas || P.areas; P.miembros = d.miembros || P.miembros;
     P.turnos = {}; FRESCO = {};          /* lo guardado quedó viejo */
     hexOlvidar();                        /* el tablero también */
+    /* Quien la creó todavía no tiene acceso: se le dice, y sus primeras
+       semanas se arman por detrás. */
+    if(!podArea(nombre, 'v')){
+      var lunesNueva = cuantas === '0' ? sumarDias(lunesDe(''), 7) : lunesDe('');
+      AREA_VIENDO = '';
+      guardarLocal(); cerrarArea(); pintarAreas();
+      movAviso('Área <b>' + esc(nombre) + '</b> creada · falta que le asignen acceso para verla');
+      pedir({ accion:'perTurnosPlan', area: nombre, desde: lunesNueva, cuantas: 4 }, 120).catch(function(){});
+      return;
+    }
     /* Se marca ya como "en camino" para que el adelanto de fondo no la
        pida al mismo tiempo que se está armando. */
     AREA_VIENDO = nombre; PLANEADAS[nombre] = true;
@@ -51882,6 +51915,7 @@ function engancharAreas(){
   if($p('ar-f-guardarvar')) $p('ar-f-guardarvar').onclick = function(){ guardarVariante(this); };
   if($p('ar-f-borrarvar')) $p('ar-f-borrarvar').onclick = function(){ borrarVariante(this); };
   if($p('ar-quincena')) $p('ar-quincena').onclick = function(){ abrirQuincena(); };
+  if($p('ar-bloqueo')) $p('ar-bloqueo').onclick = function(){ cambiarBloqueoAreas(this); };
   if($p('ar-f-preset2')) $p('ar-f-preset2').onchange = function(){
     if(this.value === 'libre') return;
     AREA_FORM.turnos = PRESETS_TURNO[this.value].map(function(t){ return { nombre:t.nombre, inicio:t.inicio, fin:t.fin, dias:TODOS_LOS_DIAS, fijo:false, almuerzo:0, especiales:[] }; });
