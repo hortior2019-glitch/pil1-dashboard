@@ -8285,6 +8285,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-personal .tn-personas .cel.pinta,#per-area-modal .tn-personas .cel.pinta{color:#fff}
 #panel-personal .tn-personas .cel.libre,#per-area-modal .tn-personas .cel.libre{background:var(--s2);color:var(--ink-l)}
 #panel-personal .tn-personas .cel.libre .nt,#per-area-modal .tn-personas .cel.libre .nt{opacity:1;font-weight:400;letter-spacing:.3px}
+#panel-personal .tn-personas .cel.sin-trab{background:#e7e9e5;color:#4a514d;cursor:pointer}
+#panel-personal .tn-personas .cel.sin-trab .nt{font-weight:600}
 #panel-personal .tn-personas .cel.dom,#per-area-modal .tn-personas .cel.dom{box-shadow:inset 0 -3px 0 rgba(139,26,26,.55)}
 #panel-personal .tn-personas .cel:hover,#per-area-modal .tn-personas .cel:hover{filter:brightness(1.12)}
 #panel-personal .tn-personas tr.suma td,#per-area-modal .tn-personas tr.suma td{background:var(--bg);font-weight:700;padding:12px 14px;font-size:14px}
@@ -9073,6 +9075,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #per-mover-modal .rt-f2chk{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-m);margin:2px 0 8px;cursor:pointer}
 #per-mover-modal .rt-cel.vacia .rt-nada{color:#b7bdb8;font-weight:600;padding:3px 0}
 #per-mover-modal .rt-cel.vacia.on{background:#f2f8f4;border-style:solid}
+#per-mover-modal .rt-cel.vacia.fuera{background:#eef0ec}
+#per-mover-modal .rt-cel.vacia.fuera .rt-nada{color:#4a514d}
 /* Un solo menú: grilla a la izquierda, acciones a la derecha */
 #per-mover-modal .rt-split{display:grid;grid-template-columns:minmax(0,1fr) 248px;gap:16px;align-items:start}
 #per-mover-modal .rt-left{min-width:0}
@@ -46014,6 +46018,12 @@ function montarRotador(a, semana){
     visto[t.persona] = 1;
     gente.push({ clave: t.persona, nombre: t.nombre });
   });
+  /* Quien es del área y no tiene turnos esta semana: aquí se le devuelven. */
+  ausentesDeSemana(a.nombre, semana, turnosDeSemana(a.nombre, semana)).forEach(function(x){
+    if(visto[x.clave]) return;
+    visto[x.clave] = 1;
+    gente.push({ clave: x.clave, nombre: x.nombre, fuera: true });
+  });
   gente.sort(function(x, y){ return String(x.nombre).localeCompare(String(y.nombre), 'es'); });
 
   /* Si el día tiene turno y además un bloque suelto de horas extra, la
@@ -46034,7 +46044,7 @@ function montarRotador(a, semana){
     fechasSem.forEach(function(f){
       var id = p.clave + '|' + f;
       if(!porCelda[id]) porCelda[id] = { persona: p.clave, nombre: p.nombre, fecha: f,
-                                         turno: '', inicio: '', fin: '', almuerzo: 0, vacia: true };
+                                         turno: '', inicio: '', fin: '', almuerzo: 0, vacia: true, fuera: !!p.fuera };
     });
   });
 
@@ -46063,8 +46073,8 @@ function montarRotador(a, semana){
       var t = porCelda[p.clave + '|' + f];
       /* Día de descanso (sin turno): celda accionable para asignarle turno u
          horas ("trabajar en día de descanso"). */
-      if(t && t.vacia) return '<td class="rt-td"><button type="button" class="rt-cel vacia" data-rt="' + esc(p.clave) + '|' + f + '">' +
-        '<span class="rt-nada">descanso</span></button>' +
+      if(t && t.vacia) return '<td class="rt-td"><button type="button" class="rt-cel vacia' + (t.fuera ? ' fuera' : '') + '" data-rt="' + esc(p.clave) + '|' + f + '">' +
+        '<span class="rt-nada">' + (t.fuera ? txtSinTurno(semana) : 'descanso') + '</span></button>' +
         '<button type="button" class="rt-flecha" data-rtmenu="' + esc(p.clave) + '|' + f + '"' +
         ' title="Asignar turno u horas este día"></button></td>';
       /* Un día de novedad no tiene horas: no se rota, se respeta. */
@@ -46543,9 +46553,9 @@ function rotMenuPrincipal(m, id){
   var difArea = hzArea && (esVacia || t.inicio !== hzArea.inicio || t.fin !== hzArea.fin ||
                            Number(t.almuerzo || 0) !== hzArea.almuerzo);
   var html =
-    '<div class="rt-menu-tit">' + esc(esVacia ? 'Descanso' : t.nombre) + ' · ' + esc(fechaCorta(fecha)) + '</div>' +
+    '<div class="rt-menu-tit">' + esc(t.fuera ? t.nombre : (esVacia ? 'Descanso' : t.nombre)) + ' · ' + esc(fechaCorta(fecha)) + '</div>' +
     '<button type="button" class="rt-menu-it' + (!ROT.propio[id] ? ' on' : '') + '" data-mdef="1">' +
-      (esVacia ? 'Dejar en descanso' : 'Dejar como está') + '</button>' +
+      (t.fuera ? 'Dejar sin trabajar' : (esVacia ? 'Dejar en descanso' : 'Dejar como está')) + '</button>' +
     '<div class="rt-menu-rot">' + (esVacia ? 'Trabajar en' : 'Pasarlo a') + '</div>' +
     (difArea ? '<button type="button" class="rt-menu-it' + (propio.tipo === 'horas' && propio.delArea ? ' on' : '') + '" data-marea="1">' +
       'Horario del área<span>' + esc(hzArea.inicio) + '–' + esc(hzArea.fin) +
@@ -46824,7 +46834,7 @@ function rotConfirmar(titulo, sub, filas, pie, textoOk){
 }
 function rotTxtTurno(t){
   if(t && t.fijo) return (t.turno || 'Destino') + ' (sin horas)';
-  if(!t || !t.inicio) return 'descanso';
+  if(!t || !t.inicio) return (t && t.fuera) ? txtSinTurno(lunesDe(t.fecha)) : 'descanso';
   var alm = Number(t.almuerzo) || 0;
   return (t.turno || 'Horario') + ' ' + t.inicio + '–' + t.fin + (alm ? ' · almuerzo ' + alm + ' min' : ' · sin almuerzo');
 }
@@ -50687,7 +50697,7 @@ function cuadroMes(area, turnos){
         '<span class="mes">' + d.toLocaleDateString('es-CO', { month:'long' }) + '</span>' + et +
         '<span class="hs">' + (dela.length ? dela.length + ' turnos · ' + numeroHoras(horas) : 'sin generar') + '</span>' +
       '</summary><div class="cuerpo">' +
-      (dela.length ? tablaSemana(dela, sem) +
+      (dela.length ? tablaSemana(dela, sem, ausentesDeSemana(area, sem, dela)) +
           '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">' +
             '<button type="button" class="per-btn fuerte" data-ajustar="' + sem + '">Editar turnos de la semana</button></div>'
         : '<div class="per-vacio" style="padding:14px">Esta semana aún no está generada.' +
@@ -50769,7 +50779,45 @@ function sinBajasEnteras(turnos){
   return (turnos || []).filter(function(t){ return trabaja[t.persona || t.nombre]; });
 }
 
-function tablaSemana(turnos, semana){
+/* Es del área y esa semana no tiene ningún turno (se le quitaron todos porque
+   trabajó por fuera): sigue apareciendo, como que no trabajó, para poder
+   devolverle turnos. No sale quien está dado de baja ni quien todavía no
+   estaba en el área esa semana: en una semana ya pasada solo cuenta si ya
+   había tenido turnos aquí antes (y según sus traslados). */
+function txtSinTurno(semana){
+  return semana > lunesDe(isoDe(new Date())) ? 'no trabaja' : 'no trabajó';
+}
+function ausentesDeSemana(area, semana, turnos){
+  if(!area || !semana) return [];
+  var hasta = sumarDias(semana, 6);
+  var yaPaso = semana < lunesDe(isoDe(new Date()));
+  var antes = {};
+  Object.keys(P.turnos || {}).forEach(function(k){
+    if(k.indexOf(area + '|') !== 0) return;
+    (P.turnos[k] || []).forEach(function(t){ if(t.persona && t.fecha < semana) antes[t.persona] = 1; });
+  });
+  var estan = {};
+  (turnos || []).forEach(function(t){ if(t.persona) estan[t.persona] = 1; });
+  var salida = [];
+  miembrosDe(area).forEach(function(m){
+    if(estan[m.persona]) return;
+    var p = window.personalPorClave && window.personalPorClave(m.persona);
+    if(p && p.activo === false) return;
+    if(!diasDeMiembro(m).length) return;
+    if(yaPaso && !antes[m.persona]) return;
+    var mov = (P.traslados || []).filter(function(x){
+      return x.persona === m.persona && x.efectivo && (x.hacia === area || x.desde === area);
+    });
+    var previos = mov.filter(function(x){ return x.efectivo <= hasta; })
+                     .sort(function(x, y){ return x.efectivo < y.efectivo ? -1 : 1; });
+    var ultimo = previos[previos.length - 1];
+    if(ultimo ? ultimo.hacia !== area : mov.some(function(x){ return x.hacia === area; })) return;
+    salida.push({ clave: m.persona, nombre: (p && p.nombre) || m.nombre });
+  });
+  return salida;
+}
+
+function tablaSemana(turnos, semana, ausentes){
   turnos = sinBajasEnteras(turnos);
   var fechas = [], vistas = {};
   turnos.forEach(function(t){ if(!vistas[t.fecha]){ vistas[t.fecha] = 1; fechas.push(t.fecha); } });
@@ -50782,6 +50830,11 @@ function tablaSemana(turnos, semana){
   }
   var personas = [], vistoP = {};
   turnos.forEach(function(t){ if(!vistoP[t.nombre]){ vistoP[t.nombre] = 1; personas.push(t.nombre); } });
+  var sinTrabajar = {};
+  (ausentes || []).forEach(function(x){
+    if(vistoP[x.nombre]) return;
+    vistoP[x.nombre] = 1; personas.push(x.nombre); sinTrabajar[x.nombre] = x.clave;
+  });
   personas.sort(function(a, b){ return String(a).localeCompare(String(b), 'es'); });
 
   var colores = coloresDe(turnos);
@@ -50796,11 +50849,12 @@ function tablaSemana(turnos, semana){
   };
   var h = '<div class="tn-gente">' + personas.map(function(p){
     var suyos = suyosDe(p);
-    var clave = (suyos[0] || {}).persona || '';
+    var clave = (suyos[0] || {}).persona || sinTrabajar[p] || '';
     var ficha = (window.personalPorClave && window.personalPorClave(clave)) || { nombre: p, foto: '' };
     return '<div class="tg">' + caritaPersona({ nombre: p, foto: ficha.foto }) +
       '<div class="tg-d"><div class="tg-n">' + esc(p) + '</div>' +
-        '<div class="tg-h">' + numeroHoras(horasDe(suyos)) + ' · ' + suyos.length + (suyos.length === 1 ? ' turno' : ' turnos') + '</div>' +
+        '<div class="tg-h">' + (sinTrabajar.hasOwnProperty(p) ? (txtSinTurno(semana) === 'no trabaja' ? 'No trabaja esta semana' : 'No trabajó esta semana')
+          : numeroHoras(horasDe(suyos)) + ' · ' + suyos.length + (suyos.length === 1 ? ' turno' : ' turnos')) + '</div>' +
       '</div></div>';
   }).join('') + '</div>';
 
@@ -50820,11 +50874,17 @@ function tablaSemana(turnos, semana){
 
   personas.forEach(function(p){
     var suyos = suyosDe(p);
-    var clave = (suyos[0] || {}).persona || '';
+    var clave = (suyos[0] || {}).persona || sinTrabajar[p] || '';
     h += '<tr><td class="quien"><button type="button" class="ver-quien" data-ver-persona="' + esc(clave) +
       '" data-nombre="' + esc(p) + '" data-semana="' + esc(semana || '') + '">' + esc(p) + '</button></td>';
     fechas.forEach(function(f){
       var esDom = new Date(f + 'T00:00:00').getDay() === 0;
+      if(sinTrabajar.hasOwnProperty(p)){
+        h += '<td class="cel libre sin-trab' + (esDom ? ' dom' : '') + '" data-cel="1" data-persona="' + esc(clave) +
+          '" data-fecha="' + f + '" data-quien="' + esc(p) +
+          '" title="Sin turnos en esta área esta semana. Toca para asignarle turnos."><span class="nt">' + txtSinTurno(semana) + '</span></td>';
+        return;
+      }
       var hoy = suyos.filter(function(t){ return t.fecha === f; });
       var t0 = hoy[0];
       /* Valor fijo: un servicio sin horas. NO es novedad: se ve como día
