@@ -6817,6 +6817,10 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
         <div class="hum-pres-tit" id="liq-tit">Humus líquido</div>
         <div class="hum-pres-sub" id="liq-sub">—</div>
       </div>
+      <div class="liq-seg" role="group" aria-label="Periodo">
+        <button type="button" id="liq-v-mes" class="on" aria-pressed="true" onclick="liqVista('mes')">Este mes</button>
+        <button type="button" id="liq-v-ant" aria-pressed="false" onclick="liqVista('ant')">Mes anterior</button>
+      </div>
     </div>
     <div class="liq-kpis" id="liq-kpis"></div>
     <div class="liq-g">
@@ -6828,7 +6832,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
       <div class="liq-card">
         <div class="liq-card-tit">Litros despachados por día <span id="liq-dias-sub"></span></div>
         <div id="liq-dias"></div>
-        <div class="liq-ley"><span><i style="background:var(--navy)"></i>este mes</span><span><i style="background:#c9cec9"></i>mes anterior</span></div>
+        <div class="liq-ley" id="liq-ley-dias"></div>
       </div>
     </div>
   </section>
@@ -7844,6 +7848,13 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 /* ── HUMUS LÍQUIDO ── */
 #panel-ProduccionHumus .hum-pres-liq{margin:44px 0 24px;padding:22px 22px 20px;background:var(--blue-l);
   border:1px solid #cfe3d6;border-radius:16px}
+#panel-ProduccionHumus .hum-pres-liq .hum-pres-cab{justify-content:space-between;flex-wrap:wrap}
+.liq-seg{display:inline-flex;background:var(--white);border:1px solid #cfe3d6;border-radius:9px;padding:3px;gap:3px}
+.liq-seg button{border:0;background:transparent;font:700 13px 'Source Sans 3',sans-serif;color:var(--ink-m);
+  padding:6px 12px;border-radius:6px;cursor:pointer;min-height:32px}
+.liq-seg button:hover{color:var(--ink)}
+.liq-seg button.on{background:var(--navy);color:#fff}
+.liq-seg button:focus-visible{outline:2px solid var(--navy);outline-offset:1px}
 .liq-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px}
 .liq-kpi{background:var(--white);border:1px solid #d6e6db;border-radius:12px;padding:12px 14px;position:relative}
 .liq-kpi.mal{border-color:#e9c9a6;box-shadow:inset 0 3px 0 #c8742b}
@@ -7859,10 +7870,10 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 .liq-card-tit{font-size:13px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--ink);margin-bottom:8px;
   display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .liq-card-tit span{font-weight:600;letter-spacing:0;text-transform:none;color:var(--ink-m)}
-.liq-ref{display:grid;grid-template-columns:40px minmax(0,1.1fr) minmax(0,1.6fr) auto;align-items:center;gap:10px;
+.liq-ref{display:grid;grid-template-columns:45px minmax(0,1.1fr) minmax(0,1.6fr) auto;align-items:center;gap:10px;
   padding:8px 0;border-top:1px solid var(--rule-l)}
 .liq-ref:first-child{border-top:0}
-.liq-foto{width:40px;height:40px;border-radius:9px;background:var(--s2);border:1px solid var(--rule-l);overflow:hidden;
+.liq-foto{width:45px;height:45px;border-radius:9px;background:var(--s2);border:1px solid var(--rule-l);overflow:hidden;
   display:flex;align-items:center;justify-content:center;font:800 15px 'Source Sans 3',sans-serif;color:var(--navy)}
 .liq-foto{position:relative}
 /* La foto tapa la inicial; si no carga, se quita y queda la inicial. */
@@ -7888,7 +7899,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 @media (max-width:640px){
   #panel-ProduccionHumus .hum-pres-liq{padding:16px 12px 14px;margin-top:32px}
   .liq-kpi-val{font-size:24px}
-  .liq-ref{grid-template-columns:36px minmax(0,1fr) auto}
+  .liq-ref{grid-template-columns:41px minmax(0,1fr) auto}
+  .liq-foto{width:41px;height:41px}
   .liq-ref .liq-bar{grid-column:2 / 4;grid-row:2}
 }
 @media (max-width:640px){
@@ -25380,6 +25392,44 @@ function _liqGrupo(pres){
 function _liqCorto(linea){ return String(linea || '').trim().replace(/^humus\s+l[ií]quido\s+/i, ''); }
 function _liqTip(t, b, l){ return ' data-hx-tip="' + _liqEsc(JSON.stringify({ t: t, b: b, l: l || [] })) + '"'; }
 
+/* Qué mes se mira: 'mes' (este) o 'ant' (el anterior). */
+let LIQ_VISTA = 'mes';
+function liqVista(v){
+  LIQ_VISTA = v === 'ant' ? 'ant' : 'mes';
+  ['mes', 'ant'].forEach(k => {
+    const b = document.getElementById('liq-v-' + k);
+    if (b) { b.classList.toggle('on', k === LIQ_VISTA); b.setAttribute('aria-pressed', k === LIQ_VISTA); }
+  });
+  try { pintarHumusLiquido(); } catch(e) { console.error('Humus líquido:', e); }
+}
+
+/* LO DESPACHADO NO PUEDE SUPERAR LO PRODUCIDO
+   Cada referencia se recorre en orden de fecha (en litros), desde el 1 del
+   mes anterior con stock 0. Si una salida es mayor que lo que hay, la
+   diferencia es producción que no se registró y se cuenta como producida
+   ese día. Así producido = registrado + sin registrar, y nunca queda por
+   debajo de lo despachado. No se escribe nada en la hoja. */
+function _liqSinRegistrar(d, esLiq){
+  const mov = {};
+  const juntar = (arr, signo) => (arr || []).forEach(r => {
+    if (!r || !esLiq(r[1])) return;
+    const lt = _liqLitros(r[2]); if (lt == null) return;
+    const k = _liqNorm(r[1]);
+    (mov[k] = mov[k] || []).push({ f: String(r[0] || ''), n: signo * lt * (Number(r[3]) || 0) });
+  });
+  juntar(d.produccion, 1); juntar(d.salidas, -1);
+  const out = {};   /* out[ref][aaaa-mm] = litros sin registrar */
+  Object.keys(mov).forEach(k => {
+    let s = 0;
+    /* Misma hora: primero lo que entra. */
+    mov[k].sort((a, b) => a.f < b.f ? -1 : a.f > b.f ? 1 : b.n - a.n).forEach(m => {
+      s += m.n;
+      if (s < 0) { const mes = m.f.slice(0, 7); out[k] = out[k] || {}; out[k][mes] = (out[k][mes] || 0) - s; s = 0; }
+    });
+  });
+  return out;
+}
+
 function pintarHumusLiquido(){
   const sec = document.getElementById('hum-liq');
   if (!sec) return;
@@ -25393,116 +25443,133 @@ function pintarHumusLiquido(){
   const mA = hoy.getFullYear() + '-' + p2(hoy.getMonth() + 1);
   const antD = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
   const mP = antD.getFullYear() + '-' + p2(antD.getMonth() + 1);
+  const nomMes = k => { const t = MESES[+k.slice(5) - 1]; return t.charAt(0).toUpperCase() + t.slice(1) + ' ' + k.slice(0, 4); };
   const fC = iso => (+iso.slice(8)) + ' ' + MESES[+iso.slice(5, 7) - 1].slice(0, 3);
+  const verAnt = LIQ_VISTA === 'ant';
+  const mV = verAnt ? mP : mA, mO = verAnt ? mA : mP;          /* el que se mira y el otro */
 
+  /* Por mes: totales y por referencia. 'Pm' = mes anterior hasta el mismo día. */
+  const vacio = () => ({ l: 0, n: 0, cli: new Set(), prod: 0, imp: 0, sinL: 0 });
+  const tot = { [mA]: vacio(), [mP]: vacio(), Pm: vacio() };
   const refs = {};
-  const ref = l => { const k = _liqNorm(l); return refs[k] || (refs[k] = { k: k, nombre: String(l).trim(), lA: 0, lP: 0, nA: 0, nP: 0, sinL: 0, grupos: {} }); };
-  const tot = { lA: 0, lPm: 0, lP: 0, nA: 0, nPm: 0, prodA: 0, sinL: 0 };
-  const cliA = new Set(), cliPm = new Set(), porDia = {};
+  const ref = l => {
+    const k = _liqNorm(l);
+    return refs[k] || (refs[k] = { k: k, nombre: String(l).trim(), m: { [mA]: { l: 0, n: 0, sinL: 0, imp: 0, g: {} }, [mP]: { l: 0, n: 0, sinL: 0, imp: 0, g: {} } } });
+  };
+  const porDia = {};
   d.salidas.forEach(r => {
     if (!r || !esLiq(r[1])) return;
     const f = String(r[0] || '').slice(0, 10), mes = f.slice(0, 7);
     if (mes !== mA && mes !== mP) return;
     const q = Number(r[3]) || 0, lt = _liqLitros(r[2]), litros = lt == null ? 0 : lt * q;
-    const c = _liqNorm(r[4]), o = ref(r[1]);
-    if (mes === mA) {
-      tot.lA += litros; tot.nA++; if (c) cliA.add(c);
-      o.lA += litros; o.nA++; if (lt == null) { o.sinL += q; tot.sinL += q; }
-      const g = _liqGrupo(r[2]); o.grupos[g] = (o.grupos[g] || 0) + litros;
-    } else {
-      tot.lP += litros; o.lP += litros; o.nP++;
-      if (+f.slice(8) <= diaHoy) { tot.lPm += litros; tot.nPm++; if (c) cliPm.add(c); }
-    }
+    const c = _liqNorm(r[4]), o = ref(r[1]).m[mes], T = tot[mes];
+    T.l += litros; T.n++; if (c) T.cli.add(c); if (lt == null) T.sinL += q;
+    o.l += litros; o.n++; if (lt == null) o.sinL += q;
+    const g = _liqGrupo(r[2]); o.g[g] = (o.g[g] || 0) + litros;
+    if (mes === mP && +f.slice(8) <= diaHoy) { tot.Pm.l += litros; tot.Pm.n++; if (c) tot.Pm.cli.add(c); }
     const dd = porDia[f] || (porDia[f] = { l: 0, n: 0 }); dd.l += litros; dd.n++;
   });
   (d.produccion || []).forEach(r => {
-    if (!r || !esLiq(r[1]) || String(r[0] || '').slice(0, 7) !== mA) return;
-    const lt = _liqLitros(r[2]); tot.prodA += lt == null ? 0 : lt * (Number(r[3]) || 0);
+    if (!r || !esLiq(r[1])) return;
+    const mes = String(r[0] || '').slice(0, 7); if (mes !== mA && mes !== mP) return;
+    const lt = _liqLitros(r[2]); tot[mes].prod += lt == null ? 0 : lt * (Number(r[3]) || 0);
     ref(r[1]);
   });
+  const imp = _liqSinRegistrar(d, esLiq);
+  Object.keys(imp).forEach(k => Object.keys(imp[k]).forEach(mes => {
+    if (!tot[mes]) return;
+    tot[mes].imp += imp[k][mes];
+    if (refs[k]) refs[k].m[mes].imp += imp[k][mes];
+  }));
   const det = (d.resumenPorLinea && Array.isArray(d.resumenPorLinea.detallePorLinea)) ? d.resumenPorLinea.detallePorLinea : [];
   det.forEach(x => {
     if (!x || !esLiq(x.linea)) return;
-    const o = ref(x.linea);
-    o.stock = Math.max(0, Number(x.stock) || 0);          /* nunca negativo */
-    o.prodTot = Number(x.producido) || 0; o.despTot = Number(x.despachado) || 0;
+    const k = _liqNorm(x.linea); if (!refs[k]) return;
+    refs[k].stock = Math.max(0, Number(x.stock) || 0);          /* nunca negativo */
   });
   /* Solo las que se movieron en estos dos meses: una fila en 0 y 0 es ruido. */
-  const lista = Object.keys(refs).map(k => refs[k]).filter(o => o.lA || o.lP || o.nA || o.nP);
+  const lista = Object.keys(refs).map(k => refs[k]).filter(o => o.m[mA].n || o.m[mP].n);
   if (!lista.length) { sec.style.display = 'none'; return; }
   sec.style.display = '';
 
-  const nombreMes = MESES[hoy.getMonth()].charAt(0).toUpperCase() + MESES[hoy.getMonth()].slice(1) + ' ' + hoy.getFullYear();
+  const V = tot[mV];
   const sub = document.getElementById('liq-sub');
-  if (sub) sub.textContent = lista.length + ' referencias · ' + nombreMes;
+  if (sub) sub.textContent = lista.length + ' referencias · ' + nomMes(mV) + (verAnt ? ' · mes completo' : '');
 
-  /* Comparación con el mes anterior hasta el mismo día. Base chica: gris, sin %. */
+  /* Este mes: contra el anterior hasta el mismo día. Mes anterior: completo,
+     sin con qué compararlo (antes de él no llegan registros). Base chica: gris, sin %. */
   const comp = (a, b) => {
+    if (verAnt) return '<span class="liq-base">mes completo</span>';
     if (!b) return '<span class="liq-base">mes ant. —</span>';
     if (b < 5) return '<span class="liq-base">mes ant. ' + n0(b) + '</span>';
     const p = Math.round((a - b) / b * 100);
     return '<span class="liq-base">' + (p > 0 ? '+' : '') + p + ' % vs mes ant.</span>';
   };
   const hastaDia = 'Mes anterior hasta el ' + diaHoy;
-  const sinProdMes = tot.prodA === 0 && tot.nA > 0;
+  const producido = V.prod + V.imp;
   const kpis = [
-    ['Litros despachados', n0(tot.lA) + '<small>L</small>', comp(tot.lA, tot.lPm),
-      _liqTip('Litros despachados · ' + nombreMes, n0(tot.lA) + ' L', [hastaDia + ': ' + n0(tot.lPm) + ' L', 'Mes anterior completo: ' + n0(tot.lP) + ' L']
-        .concat(tot.sinL ? [n0(tot.sinL) + ' unidades sin litros en el nombre (no suman)'] : [])), ''],
-    ['Despachos', n0(tot.nA), comp(tot.nA, tot.nPm),
-      _liqTip('Despachos · ' + nombreMes, n0(tot.nA), [hastaDia + ': ' + n0(tot.nPm)]), ''],
-    ['Clientes', n0(cliA.size), comp(cliA.size, cliPm.size),
-      _liqTip('Clientes distintos · ' + nombreMes, n0(cliA.size), [hastaDia + ': ' + n0(cliPm.size)]), ''],
-    ['Producción registrada', n0(tot.prodA) + '<small>L</small>',
-      sinProdMes ? '<span class="liq-chip">Sin registrar</span>' : '<span class="liq-base">' + nombreMes.toLowerCase() + '</span>',
-      _liqTip('Producción de líquidos anotada', n0(tot.prodA) + ' L',
-        sinProdMes ? ['Hay despachos sin producción anotada', 'El stock no baja de 0: falta registrar la producción en la app de planta'] : []),
-      sinProdMes ? ' mal' : '']
+    ['Litros despachados', n0(V.l) + '<small>L</small>', comp(V.l, tot.Pm.l),
+      _liqTip('Litros despachados · ' + nomMes(mV), n0(V.l) + ' L',
+        (verAnt ? [] : [hastaDia + ': ' + n0(tot.Pm.l) + ' L', 'Mes anterior completo: ' + n0(tot[mP].l) + ' L'])
+        .concat(V.sinL ? [n0(V.sinL) + ' unidades sin litros en el nombre (no suman)'] : [])), ''],
+    ['Despachos', n0(V.n), comp(V.n, tot.Pm.n),
+      _liqTip('Despachos · ' + nomMes(mV), n0(V.n), verAnt ? [] : [hastaDia + ': ' + n0(tot.Pm.n)]), ''],
+    ['Clientes', n0(V.cli.size), comp(V.cli.size, tot.Pm.cli.size),
+      _liqTip('Clientes distintos · ' + nomMes(mV), n0(V.cli.size), verAnt ? [] : [hastaDia + ': ' + n0(tot.Pm.cli.size)]), ''],
+    ['Litros producidos', n0(producido) + '<small>L</small>',
+      V.imp ? '<span class="liq-chip">' + n0(V.imp) + ' L sin registrar</span>' : '<span class="liq-base">registrados</span>',
+      _liqTip('Litros producidos · ' + nomMes(mV), n0(producido) + ' L',
+        ['Registrados en la app de planta: ' + n0(V.prod) + ' L', 'Sin registrar: ' + n0(V.imp) + ' L']
+        .concat(V.imp ? ['Salió más de lo que había: lo despachado no puede superar lo producido'] : [])),
+      V.imp ? ' mal' : '']
   ];
   document.getElementById('liq-kpis').innerHTML = kpis.map(k =>
     '<div class="liq-kpi' + k[4] + '"' + k[3] + '><div class="liq-kpi-lbl">' + k[0] + '</div><div class="liq-kpi-val">' + k[1] + '</div>' + k[2] + '</div>').join('');
 
-  /* Por referencia: barra del mes por presentación y, debajo, el mes anterior en gris. */
-  lista.sort((a, b) => b.lA - a.lA || b.lP - a.lP || a.nombre.localeCompare(b.nombre));
-  const maxL = Math.max(1, ...lista.map(o => Math.max(o.lA, o.lP)));
+  /* Por referencia: barra del mes que se mira, por presentación, y debajo el otro mes en gris. */
+  lista.sort((a, b) => b.m[mV].l - a.m[mV].l || b.m[mO].l - a.m[mO].l || a.nombre.localeCompare(b.nombre));
+  const maxL = Math.max(1, ...lista.map(o => Math.max(o.m[mA].l, o.m[mP].l)));
+  const otro = verAnt ? 'este mes' : 'ant.';
   const hay = {};
-  const filas = lista.map(o => {
+  document.getElementById('liq-refs').innerHTML = lista.map(o => {
+    const v = o.m[mV], w = o.m[mO];
     const corto = _liqCorto(o.nombre), foto = LIQ_FOTOS[_liqNorm(corto)];
     const img = foto ? '<img src="' + foto + '.jpg" alt="" loading="lazy" onerror="this.remove()">' : '';
-    const segs = LIQ_GRUPOS.filter(g => o.grupos[g[0]]).map(g => {
+    const segs = LIQ_GRUPOS.filter(g => v.g[g[0]]).map(g => {
       hay[g[0]] = 1;
-      return '<i style="width:' + (o.grupos[g[0]] / (o.lA || 1) * 100).toFixed(1) + '%;background:' + g[2] + '"></i>';
+      return '<i style="width:' + (v.g[g[0]] / (v.l || 1) * 100).toFixed(1) + '%;background:' + g[2] + '"></i>';
     }).join('');
-    const sinProd = (o.prodTot || 0) === 0 && (o.despTot || 0) > 0;
-    const lineasTip = LIQ_GRUPOS.filter(g => o.grupos[g[0]]).map(g => g[1] + ': ' + n0(o.grupos[g[0]]) + ' L')
-      .concat(['Mes anterior: ' + n0(o.lP) + ' L', o.nA + (o.nA === 1 ? ' despacho' : ' despachos') + ' este mes'])
-      .concat(o.sinL ? [n0(o.sinL) + ' unidades sin litros en el nombre'] : [])
-      .concat(o.stock != null ? ['Stock: ' + n0(o.stock) + ' unidades (nunca baja de 0)'] : [])
-      .concat(sinProd ? ['Sin producción registrada: ' + n0(o.despTot) + ' unidades despachadas'] : []);
-    return '<div class="liq-ref"' + _liqTip(o.nombre, n0(o.lA) + ' L este mes', lineasTip) + '>' +
+    const lineasTip = LIQ_GRUPOS.filter(g => v.g[g[0]]).map(g => g[1] + ': ' + n0(v.g[g[0]]) + ' L')
+      .concat([(verAnt ? 'Este mes: ' : 'Mes anterior: ') + n0(w.l) + ' L', v.n + (v.n === 1 ? ' despacho' : ' despachos')])
+      .concat(v.imp ? ['Producido sin registrar: ' + n0(v.imp) + ' L'] : [])
+      .concat(v.sinL ? [n0(v.sinL) + ' unidades sin litros en el nombre'] : [])
+      .concat(o.stock != null ? ['Stock: ' + n0(o.stock) + ' unidades (nunca baja de 0)'] : []);
+    return '<div class="liq-ref"' + _liqTip(o.nombre, n0(v.l) + ' L · ' + nomMes(mV), lineasTip) + '>' +
       '<span class="liq-foto">' + _liqEsc(corto.charAt(0).toUpperCase()) + img + '</span>' +
       '<span class="liq-nom">' + _liqEsc(corto) + '<div><small>Stock ' + (o.stock != null ? n0(o.stock) : '—') + '</small>' +
-        (sinProd ? '<span class="liq-chip">Sin producción</span>' : '') + '</div></span>' +
-      '<span class="liq-bar"><span class="liq-bar-a" style="width:' + (o.lA / maxL * 100).toFixed(1) + '%">' + segs + '</span>' +
-        '<span class="liq-bar-p" style="width:' + (o.lP / maxL * 100).toFixed(1) + '%"></span></span>' +
-      '<span class="liq-v">' + n0(o.lA) + ' L<small>ant. ' + n0(o.lP) + '</small></span></div>';
+        (v.imp ? '<span class="liq-chip">' + n0(v.imp) + ' L sin registrar</span>' : '') + '</div></span>' +
+      '<span class="liq-bar"><span class="liq-bar-a" style="width:' + (v.l / maxL * 100).toFixed(1) + '%">' + segs + '</span>' +
+        '<span class="liq-bar-p" style="width:' + (w.l / maxL * 100).toFixed(1) + '%"></span></span>' +
+      '<span class="liq-v">' + n0(v.l) + ' L<small>' + otro + ' ' + n0(w.l) + '</small></span></div>';
   }).join('');
-  document.getElementById('liq-refs').innerHTML = filas;
-  document.getElementById('liq-refs-sub').textContent = 'litros · ' + nombreMes.toLowerCase();
+  document.getElementById('liq-refs-sub').textContent = 'litros · ' + nomMes(mV).toLowerCase();
   document.getElementById('liq-ley').innerHTML = LIQ_GRUPOS.filter(g => hay[g[0]])
     .map(g => '<span><i style="background:' + g[2] + '"></i>' + g[1] + '</span>').join('') +
-    '<span><i style="background:#c9cec9;height:4px;vertical-align:2px"></i>mes anterior</span>';
+    '<span><i style="background:#c9cec9;height:4px;vertical-align:2px"></i>' + (verAnt ? 'este mes' : 'mes anterior') + '</span>';
 
-  /* Litros por día: del 1 del mes anterior a hoy. */
+  /* Litros por día: del 1 del mes anterior a hoy; el mes que se mira en verde. */
   const caja = document.getElementById('liq-dias');
   const dias = [];
   for (let c = new Date(antD); c <= hoy; c.setDate(c.getDate() + 1)) {
     const iso = c.getFullYear() + '-' + p2(c.getMonth() + 1) + '-' + p2(c.getDate());
     dias.push({ iso: iso, l: porDia[iso] ? porDia[iso].l : 0, n: porDia[iso] ? porDia[iso].n : 0 });
   }
-  const totDias = dias.reduce((a, x) => a + x.l, 0);
-  document.getElementById('liq-dias-sub').textContent = n0(totDias) + ' L · ' + dias.filter(x => x.n).length + ' días con despacho';
-  if (!totDias) { caja.innerHTML = '<div class="liq-vacio">Sin despachos de líquidos en estos dos meses.</div>'; return; }
+  const delMes = dias.filter(x => x.iso.slice(0, 7) === mV);
+  document.getElementById('liq-dias-sub').textContent = n0(delMes.reduce((a, x) => a + x.l, 0)) + ' L · ' +
+    delMes.filter(x => x.n).length + ' días con despacho';
+  document.getElementById('liq-ley-dias').innerHTML = '<span><i style="background:var(--navy)"></i>' + nomMes(mV).toLowerCase() +
+    '</span><span><i style="background:#c9cec9"></i>' + nomMes(mO).toLowerCase() + '</span>';
+  if (!dias.some(x => x.l)) { caja.innerHTML = '<div class="liq-vacio">Sin despachos de líquidos en estos dos meses.</div>'; return; }
   const W = Math.max(280, caja.clientWidth || 420), H = 190, L = 34, Rm = 6, T = 10, B = 24;
   const maxD = Math.max(...dias.map(x => x.l));
   const paso = maxD > 400 ? 200 : maxD > 200 ? 100 : maxD > 80 ? 50 : maxD > 40 ? 20 : 10;
@@ -25520,13 +25587,14 @@ function pintarHumusLiquido(){
       svg += '<text x="' + (cx - bw / 2).toFixed(1) + '" y="' + (H - 6) + '">' + MESES[+x.iso.slice(5, 7) - 1].slice(0, 3) + '</text>';
     }
     if (!x.l) return;
-    const actual = x.iso.slice(0, 7) === mA;
+    const visto = x.iso.slice(0, 7) === mV;
     svg += '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + y(x.l).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (y(0) - y(x.l)).toFixed(1) +
-      '" rx="2" fill="' + (actual ? '#1a5c35' : '#c9cec9') + '"' +
+      '" rx="2" fill="' + (visto ? '#1a5c35' : '#c9cec9') + '"' +
       _liqTip(fC(x.iso), n0(x.l) + ' L', [x.n + (x.n === 1 ? ' despacho' : ' despachos')]) + '/>';
   });
-  caja.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Litros despachados por día, mes anterior y este mes">' + svg + '</svg>';
+  caja.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Litros despachados por día, ' + nomMes(mP) + ' y ' + nomMes(mA) + '">' + svg + '</svg>';
 }
+
 
 /* ── LA PRODUCCIÓN DE HOY, SEGÚN LOS REGISTROS ──────────────────────
    La hoja 'Resumen Diario' solo se rehace cuando pasa algo por la app o
