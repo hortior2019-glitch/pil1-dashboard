@@ -51680,9 +51680,9 @@ function armarSemana(semana, rehacer, boton){
    Bandeja para los administradores: cada hora extra anotada con quién,
    motivo, horario, cuántas horas y en qué franja del día cae. Aprueba con
    perExtraGuardar y rechaza con perExtraBorrar, los mismos del cuadro.
-   Las de jornada (lado 'jornada') las genera el sistema y se ven sin
-   botones: perExtraGuardar las trataría como 'despues' y alargaría el
-   turno, y perExtraBorrar le devolvería el horario base.
+   Las de jornada (lado 'jornada') las genera el sistema: se aprueban con
+   perExtraAprobar, que no toca el turno. No se rechazan: son las horas
+   que cubren las 24 horas del área.
    ══════════════════════════════════════════════════════════════════ */
 var HEA = { cargando:false, listo:false, cuando:0, extras:[], turnos:[], fallos:[], filtro:'pendiente', area:'',
             fotos:{}, motivos:{}, errores:{}, ocupado:{}, aviso:'', errorCarga:'' };
@@ -51781,7 +51781,8 @@ function heaContar(lista){
 function heaPintarContador(){
   var n = $p('hea-n');
   if(!n) return;
-  var c = HEA.listo ? heaContar(HEA.extras).pendiente : 0;
+  var cc = HEA.listo ? heaContar(HEA.extras) : null;
+  var c = cc ? cc.pendiente + cc.jornada : 0;
   n.textContent = c;
   n.style.display = c ? '' : 'none';
 }
@@ -51820,7 +51821,11 @@ function heaTarjeta(e){
     acc = '<div class="hea-est">Aprobada</div>' + ev +
       '<div class="hea-dim">' + esc((e.aprobo ? 'Aprobó ' + e.aprobo : '') + (e.aprobadaEl ? ' · ' + e.aprobadaEl : '')) + '</div>';
   } else {
-    acc = '<div class="hea-dim">La generó el sistema al repartir las 24 horas del área. Por ahora no se puede aprobar aquí.</div>';
+    var ocJ = HEA.ocupado[e.id];
+    acc = ev + '<div class="hea-dim">La generó el sistema al repartir las 24 horas del área. Ya está dentro del turno.</div>' +
+      (HEA.errores[e.id] ? '<div class="hea-err" role="alert">' + esc(HEA.errores[e.id]) + '</div>' : '') +
+      '<button type="button" class="hea-b si" data-hea-si="' + esc(e.id) + '"' + (ocJ ? ' disabled' : '') + '>' +
+        (ocJ ? 'Aprobando…' : 'Aprobar') + '</button>';
   }
   return '<article class="hea-c">' +
     '<div class="hea-q">' + _hexCarita(e.persona, e.nombre) + '<div style="min-width:0">' +
@@ -51859,6 +51864,7 @@ function heaPintar(){
   var base = HEA.extras.filter(function(e){ return !HEA.area || e.area === HEA.area; });
   var c = heaContar(base);
   var lista = base.filter(function(e){ return heaClase(e) === HEA.filtro; });
+  HEA.visibles = lista.map(function(e){ return e.id; });
   /* Lo que lleva más tiempo esperando va primero; lo ya aprobado, al revés. */
   lista.sort(function(a, b){
     var d = String(a.fecha).localeCompare(String(b.fecha));
@@ -51891,6 +51897,9 @@ function heaPintar(){
           (totMin - sinHorario > 0 ? ': ' + esc(heaTxtFranja(totMin - sinHorario, noct)) : '') +
           (sinHorario ? ' · ' + numeroHoras(sinHorario / 60) + ' sin horario' : '') +
           ' · últimos 90 días y próximos 30</div>' +
+        (HEA.filtro === 'jornada' && lista.length > 1
+          ? '<div class="hea-cab"><button type="button" class="hea-b si" data-hea-todas="1"' +
+              (Object.keys(HEA.ocupado).length ? ' disabled' : '') + '>Aprobar las ' + lista.length + ' automáticas de esta lista</button></div>' : '') +
         '<div class="hea-ley"><span><i style="background:#c2571f"></i>Hora extra</span><span><i style="background:#5d9273"></i>Turno</span>' +
           '<span><i style="background:#d5dbe4"></i>Noche, de 19 a 6</span></div>' +
         '<div class="hea-lista">' + lista.map(heaTarjeta).join('') + '</div>'
@@ -51952,6 +51961,12 @@ function heaEnganchar(){
     else if(b.dataset.heaSi) heaDecidir(b.dataset.heaSi, true);
     else if(b.dataset.heaNo) heaDecidir(b.dataset.heaNo, false);
     else if(b.dataset.heaReintentar){ HEA.errorCarga = ''; heaPintar(); heaCargar(); }
+    else if(b.dataset.heaTodas){
+      var ids = (HEA.visibles || []).slice();
+      var hs = 0;
+      HEA.extras.forEach(function(x){ if(ids.indexOf(x.id) > -1) hs += (Number(x.minutos) || 0) / 60; });
+      if(ids.length && confirm('¿Aprobar ' + ids.length + ' horas extra automáticas, ' + numeroHoras(hs) + ' en total?')) heaAprobarJornada(ids);
+    }
   });
   caja.addEventListener('change', function(ev){
     var el = ev.target;
@@ -51973,7 +51988,8 @@ function heaEnganchar(){
 }
 function heaDecidir(id, aprobar){
   var e = HEA.extras.filter(function(x){ return x.id === id; })[0];
-  if(!e || e.lado === 'jornada') return;
+  if(!e) return;
+  if(e.lado === 'jornada'){ if(aprobar) heaAprobarJornada([id]); return; }
   var quien = e.nombre || e.persona;
   var cuerpo;
   var filaDe = function(lista){
@@ -52022,6 +52038,40 @@ function heaDecidir(id, aprobar){
     .catch(function(er){
       delete HEA.ocupado[id];
       HEA.errores[id] = (er && er.message) || 'No se pudo guardar.';
+      heaRepintar();
+    });
+}
+
+/* Las automáticas: solo cambia el estado, el turno queda como está. */
+function heaAprobarJornada(ids){
+  ids.forEach(function(i){ HEA.ocupado[i] = 'si'; delete HEA.errores[i]; });
+  HEA.aviso = ids.length > 1 ? 'Aprobando ' + ids.length + ' horas extra…' : '';
+  heaPintar();
+  var cuerpo = { accion:'perExtraAprobar', ids: ids, quien: quienSoy() };
+  if(ids.length === 1 && HEA.fotos[ids[0]]) cuerpo.foto = HEA.fotos[ids[0]];
+  pedir(cuerpo, 180)
+    .then(function(d){
+      var ok = {};
+      (d.aprobadas || []).forEach(function(i){ ok[i] = true; });
+      var ahora = new Date().toLocaleString('es-CO');
+      var marcar = function(x){
+        if(!ok[x.id]) return;
+        x.estado = 'APROBADA'; x.aprobo = quienSoy(); x.aprobadaEl = ahora;
+        if(cuerpo.foto) x.evidencia = cuerpo.foto;
+      };
+      HEA.extras.forEach(marcar);
+      try { Object.keys(EXTRAS).forEach(function(a){ (EXTRAS[a] || []).forEach(marcar); }); } catch(x){}
+      ids.forEach(function(i){ delete HEA.ocupado[i]; delete HEA.fotos[i]; if(!ok[i]) HEA.errores[i] = 'No se aprobó: ya no estaba o le falta el motivo.'; });
+      var n = (d.aprobadas || []).length, falla = ids.length - n;
+      HEA.aviso = n ? (n === 1 ? 'Aprobada 1 hora extra automática.' : 'Aprobadas ' + n + ' horas extra automáticas.') +
+                      (falla ? ' ' + falla + ' no se pudieron aprobar.' : '')
+                    : 'No se aprobó ninguna. Vuelve a intentarlo.';
+      hexOlvidar();
+      heaRepintar();
+    })
+    .catch(function(er){
+      ids.forEach(function(i){ delete HEA.ocupado[i]; HEA.errores[i] = (er && er.message) || 'No se pudo guardar.'; });
+      HEA.aviso = '';
       heaRepintar();
     });
 }
