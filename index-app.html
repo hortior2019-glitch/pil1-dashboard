@@ -44979,7 +44979,7 @@ function hexOlvidar(){
    deja de servir solo. Sin esto, una copia guardada antes de que
    existiera 'extrasTodas' dejaba el cuadro diciendo que no había horas
    extra cuando sí las había. */
-var HEX_CACHE_VER = 3;   /* 3: la copia guarda los nombres de las áreas */
+var HEX_CACHE_VER = 4;   /* 3: la copia guarda los nombres de las áreas. 4: descarta ceros guardados por un fallo */
 function _hexClaveCache(){ return 'hexTablero|v' + HEX_CACHE_VER + '|' + HEX.desde + '|' + HEX.hasta; }
 function _hexLeerCache(){
   try {
@@ -45043,7 +45043,7 @@ function cargarHorasExtra(){
   if(iniMesPasado < desdeS) desdeS = iniMesPasado;
   var finHoy = isoDe(hoyD);
   if(finHoy > hastaS) hastaS = finHoy;
-  var turnos = [], extras = [], fallos = [], listas = 0;
+  var turnos = [], extras = [], fallos = [], listas = 0, motivo = '';
 
   var avisar = function(){
     var el = $p('hex-progreso');
@@ -45055,6 +45055,18 @@ function cargarHorasExtra(){
 
   var cerrar = function(){
     HEX.cargando = false;
+    /* Si no respondió ninguna área no hay datos: se dice, y no se pinta ni se
+       guarda un tablero en cero que parece real. */
+    if(fallos.length >= areas.length){
+      HEX.datos = null;
+      if(caja){
+        caja.innerHTML = '<div class="hex-cargando" role="alert">No se pudieron traer las horas: ' + esc(motivo || 'el servicio de Personal no respondió') +
+          ' <button type="button" class="per-btn" id="hex-reintentar">Reintentar</button></div>';
+        var bt = $p('hex-reintentar');
+        if(bt) bt.onclick = function(){ cargarHorasExtra(); };
+      }
+      return;
+    }
     /* Las extras anotadas se recortan al rango que se pidió; los turnos
        se dejan completos, que es lo que necesita la regla semanal. */
     var dentro = extras.filter(function(e){
@@ -45063,7 +45075,7 @@ function cargarHorasExtra(){
     HEX.datos = { turnos: turnos, extras: dentro, extrasTodas: extras,
                   novedades: P.novedades || [], traslados: P.traslados || [],
                   fallos: fallos, areas: areas.length, nombres: areas.slice() };
-    _hexGuardarCache(HEX.datos);
+    if(!fallos.length) _hexGuardarCache(HEX.datos);
     pintarHorasExtra();
     try { IND.desde = HEX.desde; IND.hasta = HEX.hasta; IND.datos = HEX.datos; pintarIndicadores(); } catch(e){}
   };
@@ -45078,7 +45090,7 @@ function cargarHorasExtra(){
         (d.turnos || []).forEach(function(t){ if(!t.area) t.area = nombre; turnos.push(t); });
         (d.extras || []).forEach(function(e){ if(!e.area) e.area = nombre; extras.push(e); });
       })
-      .catch(function(){ fallos.push(nombre); })
+      .catch(function(e){ fallos.push(nombre); motivo = (e && e.message) || motivo; })
       .then(function(){
         listas++;
         avisar();
