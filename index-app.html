@@ -15527,38 +15527,9 @@ function renderFlota(){
       '</div>' +
     '</div>' +
 
-    '<div class="fl-g2">' +
-      '<div class="fl-card">' +
-        '<div class="fl-tit">Distribución de viajes por operación</div>' +
-        _flBarrasOps(topOps, maxOps, maxOpsKg, tonsF) +
-      '</div>' +
-      '<div class="fl-col">' +
-        '<div class="fl-card">' +
-          '<div class="fl-tit">Equipos con carga hoy</div>' +
-          _flPastel({ etiqueta:'Con movimiento', valor: conHoy, texto: conHoy + ' equipos' },
-                    { etiqueta:'Sin movimiento', valor: sinHoy, texto: sinHoy + ' equipos' },
-                    '#1c5636', '#dfe3de') +
-        '</div>' +
-        '<div class="fl-card">' +
-          '<div class="fl-tit">Estado según el preoperacional</div>' +
-          ((estPre.conNov + estPre.alDia)
-            ? _flPastel({ etiqueta:'Con novedades', valor: estPre.conNov,
-                          texto: estPre.conNov + ' equipos' },
-                        { etiqueta:'Sin novedades', valor: estPre.alDia,
-                          texto: estPre.alDia + ' equipos' },
-                        '#b23b3b', '#1c5636')
-            : '<div class="fl-vacio">Ningún equipo de la flota tiene preoperacional registrado.</div>') +
-          (estPre.sinPreop
-            ? '<div class="fl-aparte">' + estPre.sinPreop +
-              (estPre.sinPreop === 1 ? ' equipo sin preoperacional registrado'
-                                     : ' equipos sin preoperacional registrado') + '</div>'
-            : '') +
-        '</div>' +
-      '</div>' +
-    '</div>' +
+    (window.hxOperacionHTML ? window.hxOperacionHTML() : '') +
 
-    _flSeccion('Preoperacional', 'ítems malos o regulares en la última revisión') +
-    _flPreopHTML() +
+    (window.hxPreopHTML ? window.hxPreopHTML() : _flPreopHTML()) +
 
     '<details class="fl-card fl-plegable">' +
       '<summary><span class="fl-tit">Últimos tanqueos</span>' +
@@ -45254,7 +45225,22 @@ function _hexGraficoMeses(extras){
   '</div>';
 }
 
+window.perKit = {
+  hex: function(){ return HEX; },
+  gente: function(){ return P.gente || []; },
+  docs: function(){ return P.documentos || []; },
+  novedades: function(){ return P.novedades || []; },
+  liquidar: function(t, e, n){ return liquidarSemanas(t, e, n); },
+  justifica: function(x){ return liqJustifica(x); },
+  lunesDe: function(f){ return lunesDe(f); },
+  sumarDias: function(f, n){ return sumarDias(f, n); },
+  carita: function(c, n){ return _hexCarita(c, n); },
+  fotoArea: function(a, ch){ return _hexFotoArea(a, ch); },
+  nombre: function(n){ return _hexNombre(n); },
+  abrirDocs: function(c){ abrirDocumentos(window.personalPorClave(c)); }
+};
 function pintarHorasExtra(deCache){
+  if(window.hxPersonal){ window.hxPersonal(deCache); return; }
   var caja = $p('per-hex');
   if(!caja) return;
   var m = calcHorasExtra(HEX.datos);
@@ -45418,9 +45404,12 @@ function pintarIndicadores(){
     : '<div class="ind-vacio">Hoy no falta nadie.</div>';
 
   /* ── Novedades por tipo ── */
-  $p('ind-novedades').innerHTML = indDona(
-    Object.keys(porTipo).map(function(k){ return { k: k, v: porTipo[k], color: indColorNov(k) }; })
-          .sort(function(a, b){ return b.v - a.v; }));
+  var _tiposNov = Object.keys(porTipo).map(function(k){ return { k: k, v: porTipo[k], color: indColorNov(k) }; })
+          .sort(function(a, b){ return b.v - a.v; });
+  $p('ind-novedades').innerHTML = _tiposNov.length >= 3 ? indDona(_tiposNov)
+    : (_tiposNov.length ? '<table><thead><tr><th>Tipo</th><th>Registros</th></tr></thead><tbody>' + _tiposNov.map(function(x){
+        return '<tr><td><span class="et-nov"><i style="background:' + x.color + '"></i>' + esc(x.k) + '</span></td><td>' + x.v + '</td></tr>';
+      }).join('') + '</tbody></table>' : '<div class="ind-vacio">Sin novedades registradas.</div>');
 
   /* ── Quién hizo horas extra ── */
   var listaEP = Object.keys(extraPersona).map(function(k){
@@ -53219,6 +53208,136 @@ La presente política rige a partir de su aprobación y publicación por parte d
 #panel-vehiculos .fp-cab .fl-mini{width:72px;height:54px;border-radius:7px}
 #panel-vehiculos .vfila-foto,#panel-vehiculos .vfila-sinfoto{width:66px;height:50px}
 #panel-vehiculos .vf-hdr-foto{width:150px;height:100px}
+#panel-vehiculos .op-f{padding:9px 0 11px;border-bottom:1px solid #f0f1ee}
+#panel-vehiculos .op-c{display:flex;align-items:center;gap:9px;font-size:14px;font-variant-numeric:tabular-nums;margin-bottom:6px}
+#panel-vehiculos .op-logo{width:30px;height:30px;object-fit:contain;flex:none}
+#panel-vehiculos .op-n{font-weight:700;font-size:15px;margin-right:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#panel-vehiculos .op-v{white-space:nowrap;color:#3f4642}
+#panel-vehiculos .op-v b{font-weight:700;color:var(--ink)}
+#panel-vehiculos .op-t{white-space:nowrap;min-width:62px;text-align:right}
+#panel-vehiculos .op-p{white-space:nowrap;min-width:38px;text-align:right;color:#4a514d;font-size:13px}
+#panel-vehiculos .op-b{display:flex;gap:2px;height:13px;margin-bottom:5px}
+#panel-vehiculos .op-b i{display:block;height:100%;border-radius:2px;min-width:2px}
+#panel-vehiculos .op-l{font-size:13px;color:#4a514d;font-variant-numeric:tabular-nums}
+#panel-vehiculos .op-l b{font-weight:700;color:var(--ink)}
+#panel-vehiculos .dp-cab,#panel-vehiculos .dp-f{display:grid;grid-template-columns:minmax(170px,1.3fr) minmax(86px,.8fr) minmax(92px,.8fr) minmax(130px,1.3fr);gap:10px;align-items:center;min-width:520px}
+#panel-vehiculos .dp-cab{font-size:13px;font-weight:700;color:#4f5652;padding:0 2px 6px;border-bottom:2px solid #e3e5e0}
+#panel-vehiculos .dp-f{width:100%;background:none;border:0;border-bottom:1px solid #f0f1ee;padding:6px 2px;cursor:pointer;text-align:left;font:14px 'Source Sans 3',sans-serif;color:var(--ink);font-variant-numeric:tabular-nums;transition:background-color .15s ease}
+#panel-vehiculos .dp-f:hover{background:#f3f7f4}
+#panel-vehiculos .dp-c em,#panel-vehiculos .px-tb em{font-style:normal;color:#4a514d;font-size:13px}
+#panel-vehiculos .dp-id{display:flex;align-items:center;gap:9px;min-width:0}
+#panel-vehiculos .dp-foto{flex:none;display:block;width:52px;height:39px;overflow:hidden;border-radius:6px}
+#panel-vehiculos .dp-foto .fl-mini{width:100%;height:100%;border-radius:6px;display:block}
+#panel-vehiculos .px-chip{display:inline-block;border-radius:5px;padding:1px 7px;font-size:13px;font-weight:700;white-space:nowrap}
+#panel-vehiculos .px-chip.malo{background:#fbe6e0;color:#8a2f1d}
+#panel-vehiculos .px-chip.reg{background:#f8efd4;color:#6b520e}
+#panel-vehiculos .px-chip.ok{background:#e4efe8;color:#17633a}
+#panel-vehiculos #px-caja{margin-top:26px}
+#panel-vehiculos .px-ctrl{display:flex;gap:8px;flex-wrap:wrap}
+#panel-vehiculos .px-inds .px-ind{cursor:default;border-right:1px solid #eef0ec}
+#panel-vehiculos .px-inds .px-ind:hover{background:#fff}
+#panel-vehiculos .px-inds .px-ind.alerta b{color:#a8321f}
+#panel-vehiculos .px-inds{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+#panel-vehiculos .px-cf{display:grid;grid-template-columns:52px 86px minmax(70px,1fr) 44px 132px;gap:9px;align-items:center;width:100%;background:none;border:0;border-bottom:1px solid #f0f1ee;padding:5px 2px;cursor:pointer;text-align:left;font:14px 'Source Sans 3',sans-serif;color:var(--ink);font-variant-numeric:tabular-nums}
+#panel-vehiculos .px-cf:hover{background:#f3f7f4}
+#panel-vehiculos .px-cf em,#panel-vehiculos .px-it em{font-style:normal;font-size:13px;color:#4a514d;text-align:right;white-space:nowrap}
+#panel-vehiculos .px-b{display:flex;height:11px;background:#f1f2ef;border-radius:3px;overflow:hidden}
+#panel-vehiculos .px-b i{display:block;height:100%}
+#panel-vehiculos .px-v{text-align:right;font-weight:700;font-size:14px;font-variant-numeric:tabular-nums}
+#panel-vehiculos .px-it{display:grid;grid-template-columns:minmax(120px,1.25fr) minmax(70px,1fr) 34px 112px;gap:9px;align-items:center;padding:8px 0;border-bottom:1px solid #f0f1ee;font-size:14px}
+#panel-vehiculos .px-it-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#panel-vehiculos .px-ncab,#panel-vehiculos .px-nf{display:grid;grid-template-columns:230px 76px 190px minmax(200px,1fr) 88px;gap:12px;align-items:center;min-width:860px}
+#panel-vehiculos .px-ncab{font-size:13px;font-weight:700;color:#4f5652;padding:0 4px 6px;border-bottom:2px solid #e3e5e0}
+#panel-vehiculos .px-ncab span:last-child{text-align:right}
+#panel-vehiculos .px-nf{width:100%;background:none;border:0;border-bottom:1px solid #f0f1ee;padding:7px 4px;cursor:pointer;text-align:left;font:14px 'Source Sans 3',sans-serif;color:var(--ink);font-variant-numeric:tabular-nums;transition:background-color .15s ease}
+#panel-vehiculos .px-nf:hover,#panel-vehiculos .px-nf.abierto{background:#f3f7f4}
+#panel-vehiculos .px-nf:focus-visible,#panel-vehiculos .px-cf:focus-visible,#panel-vehiculos .dp-f:focus-visible,#panel-vehiculos .px-mp:focus-visible{outline:2px solid var(--navy);outline-offset:-2px}
+#panel-vehiculos .px-top{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px;color:#3f4642}
+#panel-vehiculos .px-fotos{padding:2px 4px 12px;border-bottom:1px solid #f0f1ee;min-width:860px;box-sizing:border-box}
+#panel-vehiculos .px-det{background:#f3f7f4;padding:10px 12px 14px;min-width:860px;box-sizing:border-box}
+#panel-vehiculos .px-tb{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}
+#panel-vehiculos .px-tb th{text-align:left;font-size:13px;color:#3f4642;border-bottom:2px solid #dfe3de;padding:5px 8px;font-weight:700}
+#panel-vehiculos .px-tb td{padding:6px 8px;border-bottom:1px solid #e6e9e4;vertical-align:middle}
+#panel-vehiculos .px-obs{font-size:14px;margin:10px 0 0;max-width:80ch;line-height:1.4}
+#panel-vehiculos .cx-det-acc{margin-top:10px}
+#panel-vehiculos .px-m{display:grid;grid-template-columns:92px repeat(4,minmax(52px,1fr)) 40px;gap:3px;align-items:stretch;font-size:13px;font-variant-numeric:tabular-nums}
+#panel-vehiculos .px-mh{font-size:13px;font-weight:700;color:#3f4642;text-align:center;padding-bottom:3px}
+#panel-vehiculos .px-mp{background:none;border:0;padding:0 4px 0 0;text-align:left;font:700 13px 'Source Sans 3',sans-serif;color:var(--ink);cursor:pointer}
+#panel-vehiculos .px-mp:hover{text-decoration:underline}
+#panel-vehiculos .px-mc{display:flex;align-items:center;justify-content:center;height:30px;border-radius:4px;font-weight:600}
+#panel-vehiculos .px-mn{display:flex;align-items:center;justify-content:flex-end;color:#3f4642}
+#panel-vehiculos .px-dl{grid-template-columns:118px 1fr;font-size:13.5px;margin-top:8px;row-gap:8px}
+#panel-vehiculos .px-dl b{font-weight:400;text-align:left;color:#3f4642}
+#panel-vehiculos .px-ab{display:grid;grid-template-columns:minmax(0,1fr) auto 136px;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid #f0f1ee;font-size:14px}
+#panel-vehiculos .px-ab em{font-style:normal;font-size:13px;color:#4a514d;text-align:right}
+#panel-personal{overflow-x:clip}
+#panel-personal .hex-aviso{font-size:13.5px}
+#panel-personal #per-hex{font-weight:400}
+#panel-personal .hx-tit{font-size:20px}
+#panel-personal .hx-sub{font-size:13.5px;color:#4a514d}
+#panel-personal .hx-ley{font-size:13px;color:#4a514d;margin-top:6px}
+#panel-personal .hx-svg text{font-size:12px;fill:#4a514d}
+#panel-personal .hx-seg button{font-size:13px}
+#panel-personal .hx-sub-tit{font-size:13px}
+#panel-personal .hx-vacio{font-size:14px}
+#panel-personal .hx-boton{font-size:13px}
+#panel-personal .cx-enc{margin-bottom:14px;border-radius:13px;overflow:hidden;border:1px solid #1a5c35}
+#panel-personal .cx-band{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;background:#1a5c35;color:#fff;padding:16px 20px}
+#panel-personal .cx-h{margin:0;font-family:'Playfair Display',serif;font-size:27px;font-weight:700;line-height:1.15;color:#fff}
+#panel-personal .cx-hsub{font-size:15px;color:#e4efe8;margin-top:4px;font-variant-numeric:tabular-nums}
+#panel-personal .cx-tabs{border:0;border-radius:0;margin:0;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+#panel-personal .cx-tab{padding:13px 18px 14px;font-size:14px;box-shadow:none}
+#panel-personal .cx-tab span{font-size:15px;font-weight:700;color:#3f4642}
+#panel-personal .cx-tab b{font-size:26px;margin:3px 0 2px}
+#panel-personal .cx-tab em{font-size:14px;color:#3f4642}
+#panel-personal .px-ind{cursor:default;border-right:1px solid #eef0ec}
+#panel-personal .px-ind:hover{background:#fff}
+#panel-personal .px-ind.alerta b{color:#a8321f}
+#panel-personal .cx-nom{min-width:0;display:block}
+#panel-personal .cx-nom b{display:block;font-size:14.5px;line-height:1.2;font-weight:700}
+#panel-personal .cx-nom em{display:block;font-style:normal;font-size:13px;color:#4a514d;line-height:1.2;margin-top:2px}
+#panel-personal .px-chip{display:inline-block;border-radius:5px;padding:1px 7px;font-size:13px;font-weight:700;white-space:nowrap}
+#panel-personal .px-chip.malo{background:#fbe6e0;color:#8a2f1d}
+#panel-personal .px-chip.reg{background:#f8efd4;color:#6b520e}
+#panel-personal .px-b{display:flex;height:12px;background:#f1f2ef;border-radius:3px;overflow:hidden}
+#panel-personal .px-b i{display:block;height:100%}
+#panel-personal .px-v{text-align:right;font-weight:700;font-size:14px;font-variant-numeric:tabular-nums;white-space:nowrap}
+#panel-personal .px-it{display:grid;grid-template-columns:minmax(120px,1.25fr) minmax(70px,1fr) 86px;gap:9px;align-items:center;padding:8px 0;border-bottom:1px solid #f0f1ee;font-size:14px}
+#panel-personal .px-it-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#panel-personal .pt-acab,#panel-personal .pt-a{display:grid;grid-template-columns:190px minmax(180px,1fr) 88px 76px 66px 66px;gap:12px;align-items:center;min-width:760px}
+#panel-personal .pt-acab{font-size:13px;font-weight:700;color:#4f5652;padding:0 6px 6px;border-bottom:2px solid #e3e5e0}
+#panel-personal .pt-acab span:nth-child(n+3){text-align:right}
+#panel-personal .pt-a{width:100%;background:none;border:0;border-bottom:1px solid #f0f1ee;padding:7px 6px;cursor:pointer;text-align:left;font:14px 'Source Sans 3',sans-serif;color:var(--ink);font-variant-numeric:tabular-nums;transition:background-color .15s ease}
+#panel-personal .pt-a:hover{background:#f3f7f4}
+#panel-personal .pt-a.on{background:#e4efe8;box-shadow:inset 3px 0 0 #1a5c35}
+#panel-personal .pt-an{display:flex;align-items:center;gap:8px;font-weight:700;text-transform:capitalize;min-width:0}
+#panel-personal .pt-bar{height:15px}
+#panel-personal .pt-bar i+i{margin-left:1px}
+#panel-personal .pt-p{display:grid;grid-template-columns:230px minmax(180px,1fr) 80px 104px;gap:12px;align-items:center;width:100%;min-width:640px;background:none;border:0;border-bottom:1px solid #f0f1ee;padding:6px 4px;cursor:pointer;text-align:left;font:14px 'Source Sans 3',sans-serif;color:var(--ink);font-variant-numeric:tabular-nums;transition:background-color .15s ease}
+#panel-personal .pt-p:hover,#panel-personal .pt-p.abierto{background:#f3f7f4}
+#panel-personal .pt-a:focus-visible,#panel-personal .pt-p:focus-visible,#panel-personal .pt-d:focus-visible,#panel-personal .hx-seg button:focus-visible{outline:2px solid var(--navy);outline-offset:-2px}
+#panel-personal .pt-s{font-size:13px;color:#3f4642;text-align:right;white-space:nowrap}
+#panel-personal .pt-jn{display:flex;align-items:center;gap:8px;min-width:0;font-size:14px}
+#panel-personal .pt-jn>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#panel-personal .px-det{background:#f3f7f4;padding:10px 12px 14px;min-width:640px;box-sizing:border-box}
+#panel-personal .px-tb{width:100%;border-collapse:collapse;font-size:13.5px;font-variant-numeric:tabular-nums}
+#panel-personal .px-tb th{text-align:left;font-size:13px;color:#3f4642;border-bottom:2px solid #dfe3de;padding:5px 8px;font-weight:700}
+#panel-personal .px-tb td{padding:6px 8px;border-bottom:1px solid #e6e9e4;vertical-align:top}
+#panel-personal .pt-j{display:grid;gap:3px;align-items:center;min-width:720px;font-variant-numeric:tabular-nums}
+#panel-personal .pt-jh{font-size:13px;font-weight:700;color:#3f4642;text-align:center;padding-bottom:4px}
+#panel-personal .pt-j .pt-jh:last-child{text-align:right}
+#panel-personal .pt-jh.hoy{color:#1a5c35;text-decoration:underline;text-underline-offset:3px}
+#panel-personal .pt-jc{display:flex;align-items:center;justify-content:center;height:30px;border-radius:4px;background:#f3f4f1;font-size:13.5px}
+#panel-personal .pt-c{display:grid;grid-template-columns:minmax(96px,1.2fr) repeat(7,minmax(36px,1fr));gap:3px;align-items:center;font-variant-numeric:tabular-nums}
+#panel-personal .pt-can{font-size:13.5px;font-weight:700;text-transform:capitalize;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#panel-personal .pt-d{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) auto;gap:9px;align-items:center;width:100%;background:none;border:0;border-bottom:1px solid #f0f1ee;padding:7px 2px;cursor:pointer;text-align:left;font:14px 'Source Sans 3',sans-serif;color:var(--ink)}
+#panel-personal .pt-d:hover{background:#f3f7f4}
+#panel-personal #panel-indicadores .ind-tit{font-family:'Playfair Display',serif;font-size:20px;font-weight:700;letter-spacing:0;text-transform:none;color:var(--ink)}
+#panel-personal #panel-indicadores .ind-tit .hex-sub{font-family:'Source Sans 3',sans-serif;font-size:13.5px;color:#4a514d;font-weight:400;display:block;margin-top:3px}
+#panel-personal #panel-indicadores table{font-size:14px;font-weight:400}
+#panel-personal #panel-indicadores th{font-size:13px;letter-spacing:0;text-transform:none;color:#3f4642}
+#panel-personal #panel-indicadores small{font-size:13px}
+#panel-personal #panel-indicadores .ind-vacio{font-size:14px;color:#4a514d}
 #veh-barra button{font-size:13px!important;letter-spacing:0!important;text-transform:none!important}
 #veh-barra input{font-size:14px!important}
 .cm-sels{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -53238,6 +53357,26 @@ La presente política rige a partir de su aprobación y publicación por parte d
   #panel-vehiculos .cx-d{font-size:13px}
   #panel-vehiculos .hx-fr{grid-template-columns:84px minmax(0,1fr) 88px}
   #panel-vehiculos .hx-tit{font-size:18px}
+  #panel-personal .hx-tit,#panel-personal #panel-indicadores .ind-tit{font-size:18px}
+  #panel-personal .cx-h{font-size:22px}
+  #panel-personal .cx-band{padding:13px 14px}
+  #panel-personal .cx-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #panel-personal .cx-tab{padding:10px 12px 12px}
+  #panel-personal .cx-tab b{font-size:20px}
+  #panel-personal .cx-tab em{font-size:13px}
+  #panel-personal .px-it{grid-template-columns:minmax(90px,1.3fr) minmax(40px,1fr) 70px;gap:6px}
+  #panel-personal .pt-c{grid-template-columns:minmax(70px,1fr) repeat(7,minmax(26px,1fr))}
+  #panel-personal .pt-c .pt-jh{font-size:12px}
+  #panel-vehiculos .px-inds{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #panel-vehiculos .px-cf{grid-template-columns:40px 66px minmax(30px,1fr) 38px;gap:6px}
+  #panel-vehiculos .px-cf em{grid-column:2 / -1;text-align:left}
+  #panel-vehiculos .px-it{grid-template-columns:minmax(90px,1.4fr) minmax(40px,1fr) 28px;gap:6px}
+  #panel-vehiculos .px-it em{grid-column:1 / -1;text-align:left}
+  #panel-vehiculos .px-m{grid-template-columns:70px repeat(4,minmax(40px,1fr)) 28px}
+  #panel-vehiculos .px-mh{font-size:12px}
+  #panel-vehiculos .px-dl{grid-template-columns:96px 1fr}
+  #panel-vehiculos .px-ab{grid-template-columns:minmax(0,1fr) auto}
+  #panel-vehiculos .px-ab em{grid-column:1 / -1;text-align:left}
   #panel-vehiculos .cx-foto{width:60px;height:45px}
   #panel-vehiculos .cx-pcab,#panel-vehiculos .cx-p{grid-template-columns:176px repeat(4,minmax(106px,1fr)) 66px;min-width:860px}
   #panel-vehiculos .cx-det{min-width:860px}
@@ -53695,6 +53834,7 @@ La presente política rige a partir de su aprobación y publicación por parte d
     caja.innerHTML = htmlMapa();
     hxCombDibujar();
     hxCmpDibujar();
+    pxDibujar();
     caja.dataset.w = caja.clientWidth;
   }
 
@@ -54057,6 +54197,608 @@ La presente política rige a partir de su aprobación y publicación por parte d
   window.hxCmpHTML = hxCmpHTML;
   window.hxCmpDibujar = hxCmpDibujar;
 
+  /* ══ OPERACIÓN DE HOY Y DISTRIBUCIÓN DE VIAJES ════════════════ */
+  var OPX = { per:'mes' };
+  function opDatos(){
+    if(OPX.per === 'filtro') return _flotaPorOperacion();
+    var ks = mesesAtras(2), key = OPX.per === 'ant' ? ks[0] : ks[1], ix = indice(), por = {};
+    Object.keys(ix.via).forEach(function(pl){
+      ix.via[pl].forEach(function(x){
+        if(x.iso.slice(0, 7) !== key) return;
+        var o = por[x.op] || (por[x.op] = { op:x.op, viajes:0, kg:0, placas:{} });
+        o.viajes++; o.kg += x.kg; o.placas[pl] = (o.placas[pl] || 0) + 1;
+      });
+    });
+    return Object.keys(por).map(function(k){ return por[k]; }).sort(function(a, b){ return b.viajes - a.viajes; });
+  }
+  function htmlDistribucion(){
+    var ops = opDatos(), tot = ops.reduce(function(a, o){ return a + o.viajes; }, 0), totKg = ops.reduce(function(a, o){ return a + o.kg; }, 0);
+    var hoy = new Date(), ant = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+    var cab = '<div class="hx-cab"><div><div class="hx-tit">Distribución de viajes por operación</div>' +
+      (tot ? '<div class="hx-sub"><b>' + n0(tot) + '</b> viajes · <b>' + ton(totKg) + '</b> · ' + ops.length + (ops.length === 1 ? ' operación' : ' operaciones') + '</div>' : '') + '</div>' +
+      seg('opPer', [['mes', MES[hoy.getMonth()]], ['ant', MES[ant.getMonth()]], ['filtro', _flEtiquetaPeriodo() || 'Periodo']], OPX.per) + '</div>';
+    if(!ops.length) return '<div class="hx-card">' + cab + '<div class="hx-vacio">Sin viajes en este periodo.</div></div>';
+    var mx = ops[0].viajes || 1;
+    var filas = ops.slice(0, 8).map(function(o){
+      var pls = Object.keys(o.placas).sort(function(p, q){ return o.placas[q] - o.placas[p]; });
+      var color = getClientColor(o.op) || '#1c5636', tonos = _flTonosOp(color, pls.length), logo = getClientLogo(o.op);
+      var segs = pls.map(function(pl, i){
+        return '<i style="width:' + (o.placas[pl] / o.viajes * 100).toFixed(1) + '%;background:' + tonos[i] + '"' + tip(pl + ' · ' + o.op, o.placas[pl] + (o.placas[pl] === 1 ? ' viaje' : ' viajes'), [Math.round(o.placas[pl] / o.viajes * 100) + '% de la operación']) + '></i>';
+      }).join('');
+      return '<div class="op-f">' +
+        '<div class="op-c">' + (logo ? '<img class="op-logo" src="' + esc(logo) + '" alt="" onerror="this.style.display=\'none\'">' : '') + '<b class="op-n">' + esc(o.op) + '</b>' +
+          '<span class="op-v"><b>' + n0(o.viajes) + '</b> ' + (o.viajes === 1 ? 'viaje' : 'viajes') + '</span><span class="op-t">' + ton(o.kg) + '</span><span class="op-p">' + Math.round(o.viajes / tot * 100) + '%</span></div>' +
+        '<div class="op-b" style="width:' + Math.max(3, o.viajes / mx * 100).toFixed(1) + '%">' + segs + '</div>' +
+        '<div class="op-l">' + pls.slice(0, 5).map(function(pl){ return esc(pl) + ' <b>' + o.placas[pl] + '</b>'; }).join(' · ') + (pls.length > 5 ? ' · +' + (pls.length - 5) : '') + '</div>' +
+      '</div>';
+    }).join('');
+    var resto = ops.slice(8);
+    if(resto.length){
+      var rv = resto.reduce(function(a, o){ return a + o.viajes; }, 0);
+      filas += '<div class="hx-part"><span>Otras ' + resto.length + ' operaciones</span><span><b>' + n0(rv) + '</b> viajes · ' + Math.round(rv / tot * 100) + '%</span></div>';
+    }
+    return '<div class="hx-card">' + cab + filas + '</div>';
+  }
+  function htmlDisponibilidad(){
+    var hoy = hoyIso(), carga = {};
+    _flotaOperacionesHoy().forEach(function(x){ carga[x.placa] = x; });
+    var filas = (_vehiculos || []).filter(placaDe).map(function(v){
+      var pl = placaDe(v), d = pxEquipo(pl), u = d.lista[d.lista.length - 1] || null, c = carga[pl] || null;
+      return { pl:pl, v:v, c:c, preopHoy:!!(u && u.iso === hoy), ult:u ? u.iso : '', m:u ? u.malos : 0, r:u ? u.regulares : 0, cond:u ? u.conductor : '' };
+    });
+    filas.sort(function(a, b){ return (b.m - a.m) || (!!b.c - !!a.c) || (b.r - a.r) || a.pl.localeCompare(b.pl); });
+    var nC = filas.filter(function(f){ return f.c; }).length, nP = filas.filter(function(f){ return f.preopHoy; }).length, nM = filas.filter(function(f){ return f.m; }).length;
+    var cuerpo = filas.map(function(f){
+      var dias = f.ult ? difDias(f.ult, hoy) : null;
+      return '<button type="button" class="dp-f" data-hx="abrir" data-v="' + esc(f.pl) + '">' +
+        '<span class="dp-id"><span class="dp-foto">' + _miniPlaca(f.pl) + '</span><span class="cx-nom"><b>' + esc(f.pl) + '</b><em>' + esc(_flCatDe(f.v) || 'Sin categoría') + '</em></span></span>' +
+        '<span class="dp-c">' + (f.c ? '<b>' + f.c.viajes + '</b> · ' + ton(f.c.kg) : '<em>sin carga</em>') + '</span>' +
+        '<span class="dp-c">' + (f.preopHoy ? '<span class="px-chip ok">Hecho</span>' : (f.ult ? '<em>hace ' + dias + ' d</em>' : '<em>sin registro</em>')) + '</span>' +
+        '<span class="dp-c">' + (f.m ? '<span class="px-chip malo">' + f.m + (f.m === 1 ? ' malo' : ' malos') + '</span> ' : '') + (f.r ? '<span class="px-chip reg">' + f.r + (f.r === 1 ? ' regular' : ' regulares') + '</span>' : '') + (!f.m && !f.r ? (f.ult ? '<em>sin novedad</em>' : '<em>—</em>') : '') + '</span></button>';
+    }).join('');
+    return '<div class="hx-card"><div class="hx-tit">Disponibilidad de la flota hoy</div>' +
+      '<div class="hx-sub" style="margin-bottom:8px"><b>' + nC + '</b> de ' + filas.length + ' con carga · <b>' + nP + '</b> con preoperacional hoy · <b>' + nM + '</b> con ítems malos</div>' +
+      '<div class="hx-esc"><div class="dp-cab"><span>Equipo</span><span>Carga de hoy</span><span>Preoperacional</span><span>Última revisión</span></div>' + cuerpo + '</div></div>';
+  }
+  function opRepintar(){ var c = document.getElementById('op-dist'); if(c) c.innerHTML = htmlDistribucion(); }
+  function hxOperacionHTML(){
+    return '<div class="hx-g hx-g-11" id="op-caja"><div id="op-dist">' + htmlDistribucion() + '</div><div>' + htmlDisponibilidad() + '</div></div>';
+  }
+  window.hxOperacionHTML = hxOperacionHTML;
+
+  /* ══ ANÁLISIS DE PREOPERACIONAL ═══════════════════════════════
+     Todo sale de las revisiones ya registradas. "Cumplimiento" cruza los días
+     con tiquete de cada placa contra los días con preoperacional. Una novedad
+     se da por cerrada cuando una revisión posterior ya no la reporta: no hay
+     registro de la reparación, así que es una deducción y se dice en pantalla. */
+  var PX = { ven:30, clase:'', secc:'', ab:'' };
+  var _pxC = null;
+  function pxSecciones(){
+    var o = {};
+    [PREOP_SECCIONES_VOL, PREOP_SECCIONES_CAR].forEach(function(S){
+      Object.keys(S).forEach(function(sec){ S[sec].forEach(function(col){ o[col.replace(/^[A-Z]+\d+\s*-\s*/, '')] = sec; }); });
+    });
+    return o;
+  }
+  function pxTodo(){
+    var a = (typeof dataPreopVol !== 'undefined' ? dataPreopVol : []) || [], b = (typeof dataPreopCar !== 'undefined' ? dataPreopCar : []) || [];
+    if(_pxC && _pxC.a === a && _pxC.b === b && _pxC.nv === (_vehiculos || []).length) return _pxC;
+    var por = {};
+    (_vehiculos || []).forEach(function(v){
+      var pl = placaDe(v); if(!pl) return;
+      var l = (preopDeVehiculo(pl) || []).map(function(x){
+        var d = parseDateTime(x.ts) || parseDate(x.fecha);
+        var iso = /^\d{4}-\d{2}-\d{2}/.test(x.fecha) ? x.fecha.slice(0, 10) : (d && !isNaN(d) ? ymd(d) : '');
+        return Object.assign({}, x, { iso:iso });
+      }).filter(function(x){ return x.iso; }).reverse();
+      por[pl] = { pl:pl, v:v, maq:esMaquina(v), lista:l };
+    });
+    _pxC = { a:a, b:b, nv:(_vehiculos || []).length, por:por, secc:pxSecciones() };
+    return _pxC;
+  }
+  function pxEquipo(pl){ return pxTodo().por[pl] || { pl:pl, lista:[], maq:false }; }
+  function pxEquipos(){
+    var t = pxTodo().por;
+    return Object.keys(t).map(function(k){ return t[k]; }).filter(function(e){ return !PX.clase || (PX.clase === 'maq' ? e.maq : !e.maq); });
+  }
+  function pxLim(n, desfase){ return ymd(new Date(Date.now() - (n + (desfase || 0)) * 86400000)); }
+  function pxTieneItem(x, it){ return x.detMalos.indexOf(it) >= 0 || x.detReg.indexOf(it) >= 0; }
+  /* Lo que reporta la última revisión, y desde cuándo viene sin cerrarse. */
+  function pxAbiertas(e){
+    var l = e.lista, u = l[l.length - 1]; if(!u) return [];
+    var hoy = hoyIso();
+    return u.detMalos.map(function(t){ return { t:t, est:'malo' }; }).concat(u.detReg.map(function(t){ return { t:t, est:'reg' }; })).map(function(o){
+      var i = l.length - 1, desde = u.iso, n = 0;
+      while(i >= 0 && pxTieneItem(l[i], o.t)){ desde = l[i].iso; n++; i--; }
+      o.desde = desde; o.dias = difDias(desde, hoy); o.n = n; o.pl = e.pl;
+      return o;
+    });
+  }
+  /* Ítems malos cerrados en la ventana: días desde que aparecieron hasta la
+     primera revisión que ya no los trae. */
+  function pxCierres(eqs, lim){
+    var d = [];
+    eqs.forEach(function(e){
+      var ab = {};
+      e.lista.forEach(function(x){
+        Object.keys(ab).forEach(function(t){
+          if(!pxTieneItem(x, t)){ if(ab[t].malo && x.iso >= lim) d.push(difDias(ab[t].ini, x.iso)); delete ab[t]; }
+        });
+        x.detMalos.concat(x.detReg).forEach(function(t){ if(!ab[t]) ab[t] = { ini:x.iso, malo:false }; });
+        x.detMalos.forEach(function(t){ ab[t].malo = true; });
+      });
+    });
+    return d;
+  }
+  function pxTasa(eqs, desde, hasta){
+    var it = 0, ha = 0, m = 0, r = 0, n = 0;
+    eqs.forEach(function(e){ e.lista.forEach(function(x){
+      if(x.iso < desde || (hasta && x.iso >= hasta)) return;
+      n++; it += x.malos + x.regulares + x.buenos; ha += x.malos + x.regulares; m += x.malos; r += x.regulares;
+    }); });
+    return { n:n, items:it, hall:ha, malos:m, regs:r, tasa:it ? ha / it * 100 : null };
+  }
+  function pxCumplimiento(e, lim){
+    var ix = indice(), hoy = hoyIso(), tr = {}, ins = {};
+    (ix.via[e.pl] || []).forEach(function(x){ if(x.iso >= lim && x.iso <= hoy) tr[x.iso] = 1; });
+    e.lista.forEach(function(x){ if(x.iso >= lim && x.iso <= hoy) ins[x.iso] = 1; });
+    var dias = Object.keys(tr), hechos = dias.filter(function(d){ return ins[d]; }).length;
+    return { dias:dias.length, hechos:hechos, inspDias:Object.keys(ins).length, pct:dias.length ? hechos / dias.length * 100 : null };
+  }
+  function pxTonoPct(p){ return p >= 80 ? '#1a5c35' : p >= 50 ? '#b08a2e' : '#c2553f'; }
+
+  function pxIndicadores(eqs){
+    var lim = pxLim(PX.ven), ant = pxLim(PX.ven, PX.ven);
+    var cump = eqs.reduce(function(a, e){ var c = pxCumplimiento(e, lim); a.d += c.dias; a.h += c.hechos; return a; }, { d:0, h:0 });
+    var abie = eqs.reduce(function(a, e){ return a.concat(pxAbiertas(e)); }, []);
+    var nMal = abie.filter(function(x){ return x.est === 'malo'; }).length;
+    var eqM = eqs.filter(function(e){ var u = e.lista[e.lista.length - 1]; return u && u.malos; }).length;
+    var tA = pxTasa(eqs, lim);
+    /* Solo equipos con revisiones en las dos ventanas: la maquinaria empezó a
+       registrarse hace poco, y sumarla inflaría la comparación. */
+    var ambos = eqs.filter(function(e){ return pxTasa([e], lim).n && pxTasa([e], ant, lim).n; });
+    var tA2 = pxTasa(ambos, lim), tB2 = pxTasa(ambos, ant, lim);
+    var dT = tA2.tasa !== null && tB2.tasa ? pctDe(tA2.tasa, tB2.tasa) : null;
+    var cie = pxCierres(eqs, lim), med = cie.length >= 3 ? mediana(cie) : null;
+    var ind = function(rot, val, pie, cl, t){ return '<div class="cx-tab px-ind' + (cl ? ' ' + cl : '') + '"' + (t || '') + '><span>' + rot + '</span><b>' + val + '</b><em>' + pie + '</em></div>'; };
+    return '<div class="cx-tabs px-inds">' +
+      ind('Cumplimiento', cump.d ? Math.round(cump.h / cump.d * 100) + '%' : '—', cump.d ? cump.h + ' de ' + cump.d + ' días con viajes' : 'sin viajes', cump.d && cump.h / cump.d < .5 ? 'alerta' : '',
+        tip('Cumplimiento de inspección', cump.h + ' de ' + cump.d, ['Días con tiquete que también tienen preoperacional', 'La maquinaria no entra: no carga tiquetes'])) +
+      ind('Novedades abiertas', n0(abie.length), nMal + (nMal === 1 ? ' mala' : ' malas') + ' · ' + (abie.length - nMal) + (abie.length - nMal === 1 ? ' regular' : ' regulares'), nMal ? 'alerta' : '',
+        tip('Novedades abiertas', n0(abie.length), ['Lo que reporta la última revisión de cada equipo'])) +
+      ind('Equipos con ítems malos', eqM + ' de ' + eqs.length, 'en su última revisión', '') +
+      ind('Hallazgos por 100 ítems', tA.tasa !== null ? tA.tasa.toFixed(1).replace('.', ',') : '—', dT === null ? tA.n + ' revisiones' : signo(dT) + ' contra ' + PX.ven + ' días antes', '',
+        tip('Tasa de hallazgos', tA.hall + ' de ' + n0(tA.items) + ' ítems', [tA.malos + ' malos · ' + tA.regs + ' regulares', tA.n + ' revisiones', dT !== null ? 'La comparación usa ' + ambos.length + ' equipos con revisiones en los dos periodos' : 'Sin periodo anterior comparable'])) +
+      ind('Cierre de ítems malos', med !== null ? String(med).replace('.', ',') + ' d' : '—', med !== null ? 'mediana · ' + cie.length + ' cierres' : 'pocos cierres', '',
+        tip('Tiempo de cierre', med !== null ? String(med).replace('.', ',') + ' días' : 'Sin base', ['Se deduce: una revisión posterior ya no lo reporta', 'No hay registro de la reparación'])) +
+    '</div>';
+  }
+  function pxCumplHTML(eqs){
+    var lim = pxLim(PX.ven), hoy = hoyIso();
+    var filas = eqs.map(function(e){ var c = pxCumplimiento(e, lim), u = e.lista[e.lista.length - 1]; return { e:e, c:c, ult:u ? u.iso : '' }; });
+    filas.sort(function(a, b){
+      var x = a.c.pct === null ? 999 : a.c.pct, y = b.c.pct === null ? 999 : b.c.pct;
+      return (x - y) || (b.c.dias - a.c.dias) || (b.c.inspDias - a.c.inspDias);
+    });
+    return '<div class="hx-card"><div class="hx-tit">Cumplimiento de inspección por equipo</div><div class="hx-sub" style="margin-bottom:8px">Días con viajes que tienen preoperacional · ' + PX.ven + ' días</div>' +
+      filas.map(function(f){
+        var p = f.c.pct, dias = f.ult ? difDias(f.ult, hoy) : null;
+        return '<button type="button" class="px-cf" data-hx="abrir" data-v="' + esc(f.e.pl) + '"' + tip(f.e.pl, p !== null ? Math.round(p) + '%' : f.c.inspDias + ' días con revisión', p !== null ? [f.c.hechos + ' de ' + f.c.dias + ' días con viajes', (f.c.dias - f.c.hechos) + ' días sin preoperacional'] : ['No carga tiquetes: no hay días de trabajo con qué comparar']) + '>' +
+          '<span class="dp-foto">' + _miniPlaca(f.e.pl) + '</span><b>' + esc(f.e.pl) + '</b>' +
+          '<span class="px-b">' + (p !== null ? '<i style="width:' + Math.max(1, p).toFixed(1) + '%;background:' + pxTonoPct(p) + '"></i>' : '') + '</span>' +
+          '<span class="px-v">' + (p !== null ? Math.round(p) + '%' : f.c.inspDias + ' d') + '</span>' +
+          '<em>' + (p !== null ? f.c.hechos + ' de ' + f.c.dias : 'sin tiquetes') + (dias !== null ? (dias === 0 ? ' · hoy' : ' · hace ' + dias + ' d') : '') + '</em></button>';
+      }).join('') + '</div>';
+  }
+  function pxItems(eqs){
+    var lim = pxLim(PX.ven), secc = pxTodo().secc, por = {};
+    eqs.forEach(function(e){ e.lista.forEach(function(x){
+      if(x.iso < lim) return;
+      var add = function(t, c){ var o = por[t] || (por[t] = { t:t, m:0, r:0, pl:{}, sec:secc[t] || 'Otros' }); o[c]++; o.pl[e.pl] = 1; };
+      x.detMalos.forEach(function(t){ add(t, 'm'); }); x.detReg.forEach(function(t){ add(t, 'r'); });
+    }); });
+    return Object.keys(por).map(function(k){ return por[k]; }).sort(function(a, b){ return (b.m + b.r) - (a.m + a.r) || b.m - a.m; });
+  }
+  function pxFallasHTML(eqs){
+    var todos = pxItems(eqs), secs = {};
+    todos.forEach(function(i){ secs[i.sec] = 1; });
+    if(PX.secc && !secs[PX.secc]) PX.secc = '';
+    var ls = todos.filter(function(i){ return !PX.secc || i.sec === PX.secc; }).slice(0, 10);
+    var mx = ls.reduce(function(a, i){ return Math.max(a, i.m + i.r); }, 1);
+    return '<div class="hx-card"><div class="hx-cab"><div><div class="hx-tit">Componentes con más fallas</div><div class="cx-ley"><span><i style="background:#c2553f"></i>mal estado</span><span><i style="background:#e0b84f"></i>regular</span></div></div>' +
+      seg('pxSecc', [['','Todos']].concat(Object.keys(secs).sort().map(function(s){ return [s, s]; })), PX.secc) + '</div>' +
+      (ls.length ? ls.map(function(i){
+        var nE = Object.keys(i.pl).length;
+        return '<div class="px-it"' + tip(i.t, (i.m + i.r) + ' reportes', [i.m + ' mal estado · ' + i.r + ' regular', Object.keys(i.pl).slice(0, 6).join(' · '), i.sec]) + '><span class="px-it-n">' + esc(i.t) + '</span>' +
+          '<span class="px-b">' + (i.m ? '<i style="width:' + (i.m / mx * 100).toFixed(1) + '%;background:#c2553f"></i>' : '') + (i.r ? '<i style="width:' + (i.r / mx * 100).toFixed(1) + '%;background:#e0b84f"></i>' : '') + '</span>' +
+          '<span class="px-v">' + (i.m + i.r) + '</span><em>' + nE + (nE === 1 ? ' equipo' : ' equipos') + '</em></div>';
+      }).join('') : '<div class="hx-vacio">Sin fallas reportadas en el periodo.</div>') + '</div>';
+  }
+  function pxNovedadesHTML(eqs){
+    var filas = eqs.map(function(e){ var a = pxAbiertas(e), u = e.lista[e.lista.length - 1]; return { e:e, a:a, u:u, m:a.filter(function(x){ return x.est === 'malo'; }).length, r:a.filter(function(x){ return x.est === 'reg'; }).length, vieja:a.reduce(function(t, x){ return Math.max(t, x.dias); }, 0) }; })
+      .filter(function(f){ return f.a.length; }).sort(function(x, y){ return (y.m - x.m) || (y.r - x.r) || (y.vieja - x.vieja); });
+    var cuerpo = filas.map(function(f){
+      var ab = PX.ab === f.e.pl;
+      var det = '';
+      if(ab){
+        var fotos = (f.u.fotos || []).slice(), norm = function(t){ return (t || '').toString().toLowerCase().replace(/\s+/g, ' ').trim(); };
+        det = '<div class="px-det"><div class="hx-esc"><table class="px-tb"><thead><tr><th>Ítem</th><th>Estado</th><th>Abierta desde</th><th>Revisiones seguidas</th><th>Foto</th></tr></thead><tbody>' +
+          f.a.slice().sort(function(x, y){ return (x.est === 'malo' ? 0 : 1) - (y.est === 'malo' ? 0 : 1) || y.dias - x.dias; }).map(function(o){
+            var i = fotos.findIndex(function(fo){ return norm(fo.item) === norm(o.t); }), fo = i > -1 ? fotos.splice(i, 1)[0] : null;
+            return '<tr><td>' + esc(o.t) + '</td><td><span class="px-chip ' + (o.est === 'malo' ? 'malo' : 'reg') + '">' + (o.est === 'malo' ? 'Malo' : 'Regular') + '</span></td><td>' + esc(fCorta(o.desde)) + ' · ' + o.dias + ' d</td><td>' + o.n + '</td><td>' + (fo ? htmlFotosPreop([fo], 64) : '<em>sin foto</em>') + '</td></tr>';
+          }).join('') + fotos.map(function(fo){
+            return '<tr><td>' + esc(fo.item || 'Foto') + '</td><td><span class="px-chip ' + (fo.estado === 'malo' ? 'malo' : 'reg') + '">' + (fo.estado === 'malo' ? 'Malo' : 'Regular') + '</span></td><td>—</td><td>—</td><td>' + htmlFotosPreop([fo], 64) + '</td></tr>';
+          }).join('') + '</tbody></table></div>' +
+          (f.u.obs ? '<p class="px-obs"><b>Observación del operador:</b> ' + esc(f.u.obs) + '</p>' : '') +
+          '<div class="cx-det-acc"><button type="button" class="hx-boton" data-hx="abrir" data-v="' + esc(f.e.pl) + '">Abrir ficha</button></div></div>';
+      }
+      return '<button type="button" class="px-nf' + (ab ? ' abierto' : '') + '" data-hx="pxAb" data-v="' + esc(f.e.pl) + '" aria-expanded="' + ab + '">' +
+        '<span class="dp-id"><span class="dp-foto">' + _miniPlaca(f.e.pl) + '</span><span class="cx-nom"><b>' + esc(f.e.pl) + '</b><em>' + esc(f.u.conductor || 'Sin conductor') + '</em></span></span>' +
+        '<span>' + esc(fCorta(f.u.iso)) + '</span>' +
+        '<span>' + (f.m ? '<span class="px-chip malo">' + f.m + (f.m === 1 ? ' malo' : ' malos') + '</span> ' : '') + (f.r ? '<span class="px-chip reg">' + f.r + (f.r === 1 ? ' regular' : ' regulares') + '</span>' : '') + '</span>' +
+        '<span class="px-top">' + esc(f.a.slice(0, 3).map(function(x){ return x.t; }).join(' · ')) + (f.a.length > 3 ? ' · +' + (f.a.length - 3) : '') + '</span>' +
+        '<span class="px-v">' + f.vieja + ' d</span></button>' +
+        ((f.u.fotos || []).length ? '<div class="px-fotos">' + htmlFotosPreop(f.u.fotos, 84) + '</div>' : '') + det;
+    }).join('');
+    return '<div class="hx-card" style="margin-bottom:14px"><div class="hx-tit">Novedades abiertas por equipo</div><div class="hx-sub" style="margin-bottom:8px">Según la última revisión · toca una foto para verla en grande · abre una fila para ver cada ítem</div>' +
+      (filas.length ? '<div class="hx-esc"><div class="px-ncab"><span>Equipo y conductor</span><span>Revisión</span><span>Novedades</span><span>Ítems</span><span>Más antigua</span></div>' + cuerpo + '</div>' : '<div class="hx-vacio">Ningún equipo tiene novedades en su última revisión.</div>') + '</div>';
+  }
+  function pxMapaHTML(eqs){
+    var lim = pxLim(PX.ven), secc = pxTodo().secc, SEC = ['Luces','Cabina','Llantas','Mecánico'];
+    var filas = eqs.map(function(e){
+      var en = e.lista.filter(function(x){ return x.iso >= lim; }), c = {};
+      SEC.forEach(function(s){ c[s] = { m:0, r:0 }; });
+      en.forEach(function(x){
+        x.detMalos.forEach(function(t){ var s = secc[t]; if(c[s]) c[s].m++; });
+        x.detReg.forEach(function(t){ var s = secc[t]; if(c[s]) c[s].r++; });
+      });
+      return { pl:e.pl, n:en.length, c:c };
+    }).filter(function(f){ return f.n; });
+    if(!filas.length) return '<div class="hx-card"><div class="hx-tit">Hallazgos por equipo y sistema</div><div class="hx-vacio">Sin revisiones en el periodo.</div></div>';
+    var val = function(f, s){ return (f.c[s].m + f.c[s].r) / f.n; };
+    var mx = Math.max.apply(null, filas.map(function(f){ return Math.max.apply(null, SEC.map(function(s){ return val(f, s); })); }).concat([.1]));
+    filas.sort(function(a, b){ return SEC.reduce(function(t, s){ return t + val(b, s); }, 0) - SEC.reduce(function(t, s){ return t + val(a, s); }, 0); });
+    return '<div class="hx-card"><div class="hx-tit">Hallazgos por equipo y sistema</div><div class="hx-sub" style="margin-bottom:8px">Promedio por revisión · ' + PX.ven + ' días</div>' +
+      '<div class="px-m"><span></span>' + SEC.map(function(s){ return '<span class="px-mh">' + s + '</span>'; }).join('') + '<span class="px-mh">Rev.</span>' +
+      filas.map(function(f){
+        return '<button type="button" class="px-mp" data-hx="abrir" data-v="' + esc(f.pl) + '">' + esc(f.pl) + '</button>' + SEC.map(function(s){
+          var v = val(f, s), a = v / mx, c = f.c[s];
+          return '<span class="px-mc" style="background:' + (v ? 'rgba(194,85,63,' + (.12 + a * .78).toFixed(2) + ')' : '#f3f4f1') + ';color:' + (a > .55 ? '#fff' : '#17201b') + '"' + tip(f.pl + ' · ' + s, v.toFixed(1).replace('.', ',') + ' por revisión', [c.m + ' malos · ' + c.r + ' regulares', f.n + ' revisiones']) + '>' + (v ? v.toFixed(1).replace('.', ',') : '—') + '</span>';
+        }).join('') + '<span class="px-mn">' + f.n + '</span>';
+      }).join('') + '</div></div>';
+  }
+  function pxSemanas(eqs, n){
+    var lunes = function(iso){ var d = aFecha(iso), o = (d.getDay() + 6) % 7; d.setDate(d.getDate() - o); return ymd(d); };
+    var ini = lunes(hoyIso()), keys = [];
+    for(var i = n - 1; i >= 0; i--){ var d = aFecha(ini); d.setDate(d.getDate() - i * 7); keys.push(ymd(d)); }
+    var por = {}; keys.forEach(function(k){ por[k] = { k:k, n:0, it:0, m:0, r:0 }; });
+    eqs.forEach(function(e){ e.lista.forEach(function(x){ var o = por[lunes(x.iso)]; if(!o) return; o.n++; o.it += x.malos + x.regulares + x.buenos; o.m += x.malos; o.r += x.regulares; }); });
+    return keys.map(function(k){ var o = por[k]; o.tasa = o.it ? (o.m + o.r) / o.it * 100 : null; return o; });
+  }
+  function pxSvgTend(sem, w){
+    var L = 44, R = 12, H1 = 92, G = 18, H2 = 96, B = 20, alto = H1 + G + H2 + B;
+    var banda = (w - L - R) / sem.length, bw = Math.min(30, banda * .62), x = function(i){ return L + (i + .5) * banda; };
+    var mxN = Math.max.apply(null, sem.map(function(s){ return s.n; }).concat([1]));
+    var ts = sem.filter(function(s){ return s.tasa !== null; }).map(function(s){ return s.tasa; });
+    var mxT = Math.max.apply(null, ts.concat([1]));
+    var y = function(v){ return 12 + (H1 - 22) * (1 - v / mxT); };
+    var o = '<svg class="hx-svg" viewBox="0 0 ' + w + ' ' + alto + '" role="img" aria-label="Hallazgos por 100 ítems y revisiones por semana">';
+    o += '<text x="' + (L - 6) + '" y="' + (y(mxT) + 4) + '" text-anchor="end">' + mxT.toFixed(0) + '</text><text x="' + (L - 6) + '" y="' + (y(0) + 4) + '" text-anchor="end">0</text>';
+    o += '<line x1="' + L + '" x2="' + (w - R) + '" y1="' + y(0) + '" y2="' + y(0) + '" stroke="#d9dcd6"/>';
+    var ant = null;
+    sem.forEach(function(s, i){
+      if(s.tasa === null){ ant = null; return; }
+      var c = i === sem.length - 1, pY = y(s.tasa);
+      if(ant) o += '<line x1="' + ant[0] + '" y1="' + ant[1] + '" x2="' + x(i) + '" y2="' + pY + '" stroke="#c2553f" stroke-width="2.5"' + (c ? ' stroke-dasharray="4 3"' : '') + '/>';
+      o += '<circle cx="' + x(i) + '" cy="' + pY + '" r="4" fill="' + (c ? '#fff' : '#c2553f') + '" stroke="#c2553f" stroke-width="2"/>';
+      if(i % 2 === sem.length % 2 || c) o += '<text x="' + x(i) + '" y="' + (pY - 9) + '" text-anchor="middle" style="fill:#17201b;font-weight:700">' + s.tasa.toFixed(1).replace('.', ',') + '</text>';
+      ant = [x(i), pY];
+    });
+    var base = H1 + G + H2;
+    sem.forEach(function(s, i){
+      var h = s.n / mxN * (H2 - 18), c = i === sem.length - 1;
+      o += '<rect x="' + (x(i) - bw / 2) + '" y="' + (base - h) + '" width="' + bw + '" height="' + Math.max(0, h) + '" rx="2" fill="' + (c ? '#a9c5b3' : '#1a5c35') + '"/>';
+      if(s.n) o += '<text x="' + x(i) + '" y="' + (base - h - 4) + '" text-anchor="middle">' + s.n + '</text>';
+      o += '<text x="' + x(i) + '" y="' + (alto - 5) + '" text-anchor="middle">' + (+s.k.slice(8)) + '/' + (+s.k.slice(5, 7)) + '</text>';
+      o += '<rect class="hx-col" x="' + (L + i * banda) + '" y="0" width="' + banda + '" height="' + (alto - B) + '"' + tip('Semana del ' + fCorta(s.k), s.tasa !== null ? s.tasa.toFixed(1).replace('.', ',') + ' por 100 ítems' : 'Sin revisiones', [s.n + ' revisiones', s.m + ' malos · ' + s.r + ' regulares'].concat(c ? ['Semana en curso'] : [])) + '/>';
+    });
+    o += '<line x1="' + L + '" x2="' + (w - R) + '" y1="' + base + '" y2="' + base + '" stroke="#9aa39d"/>';
+    return o + '</svg>';
+  }
+  function pxConductorHTML(eqs){
+    var lim = pxLim(PX.ven), por = {};
+    eqs.forEach(function(e){ e.lista.forEach(function(x){
+      if(x.iso < lim || !x.conductor) return;
+      var k = normCli(x.conductor), o = por[k] || (por[k] = { nom:x.conductor, n:0, nov:0, m:0, r:0, pl:{} });
+      o.n++; if(x.malos || x.regulares) o.nov++; o.m += x.malos; o.r += x.regulares; o.pl[e.pl] = 1;
+    }); });
+    var ls = Object.keys(por).map(function(k){ return por[k]; }).sort(function(a, b){ return b.n - a.n; }).slice(0, 8);
+    var mx = ls.length ? ls[0].n : 1;
+    return '<div class="hx-card"><div class="hx-tit">Reporte por conductor</div><div class="hx-sub" style="margin-bottom:8px">Revisiones y hallazgos por revisión · ' + PX.ven + ' días</div>' +
+      (ls.length ? ls.map(function(c){
+        var h = (c.m + c.r) / c.n;
+        return '<div class="px-it"' + tip(c.nom, c.n + ' revisiones', [c.nov + ' con novedades', c.m + ' malos · ' + c.r + ' regulares', Object.keys(c.pl).slice(0, 5).join(' · ')]) + '><span class="px-it-n">' + esc(c.nom) + '</span>' +
+          '<span class="px-b"><i style="width:' + (c.n / mx * 100).toFixed(1) + '%;background:#1a5c35"></i></span><span class="px-v">' + c.n + '</span><em>' + h.toFixed(1).replace('.', ',') + ' por revisión</em></div>';
+      }).join('') : '<div class="hx-vacio">Sin revisiones en el periodo.</div>') + '</div>';
+  }
+  function hxPreopHTML(){
+    var eqs = pxEquipos(), lim = pxLim(PX.ven), tn = pxTasa(eqs, lim).n;
+    return '<div class="cx" id="px-caja"><div class="cx-enc"><div class="cx-band"><div><h3 class="cx-h">Preoperacional · Análisis operacional</h3><div class="cx-hsub">' + tn + ' revisiones en ' + PX.ven + ' días</div></div>' +
+        '<div class="px-ctrl">' + seg('pxClase', [['','Toda la flota'],['carga','Carga'],['maq','Maquinaria']], PX.clase) + seg('pxVen', [['7','7 d'],['30','30 d'],['90','90 d']], String(PX.ven)) + '</div></div>' +
+      pxIndicadores(eqs) + '</div>' +
+      pxNovedadesHTML(eqs) +
+      '<div class="hx-g hx-g-11">' + pxCumplHTML(eqs) + pxFallasHTML(eqs) + '</div>' +
+      '<div class="hx-g hx-g-11">' + pxMapaHTML(eqs) +
+        '<div class="hx-card"><div class="hx-tit">Tendencia semanal de inspección</div><div class="cx-ley"><span><i style="background:#c2553f"></i>hallazgos por 100 ítems</span><span><i style="background:#1a5c35"></i>revisiones</span></div><div data-px="tend"></div></div>' +
+      '</div>' +
+      '<div class="hx-g hx-g-11">' + pxConductorHTML(eqs) + '<div class="hx-card px-nota"><div class="hx-tit">Cómo se calcula</div><div class="hx-dl px-dl">' +
+        '<span>Cumplimiento</span><b>días con tiquete y preoperacional ÷ días con tiquete</b>' +
+        '<span>Novedad abierta</span><b>ítem malo o regular en la última revisión</b>' +
+        '<span>Cierre</span><b>una revisión posterior ya no lo reporta; se deduce, no hay registro de reparación</b>' +
+        '<span>Hallazgo</span><b>cada ítem marcado malo o regular</b>' +
+      '</div></div></div>' +
+    '</div>';
+  }
+  function pxDibujar(){
+    var el = document.querySelector('[data-px="tend"]');
+    if(el) el.innerHTML = pxSvgTend(pxSemanas(pxEquipos(), 10), Math.max(280, el.clientWidth || 480));
+  }
+  function pxRepintar(){
+    var c = document.getElementById('px-caja'); if(!c) return;
+    var t = document.createElement('div'); t.innerHTML = hxPreopHTML();
+    c.parentNode.replaceChild(t.firstChild, c); pxDibujar();
+  }
+  window.hxPreopHTML = hxPreopHTML;
+
+  /* ══ PERSONAL · CONTROL DE JORNADA ════════════════════════════
+     Las horas salen de liquidarSemanas, la misma cuenta del Excel de quincena:
+     almuerzo de 30 min pago, tope de 42 h de lunes a domingo, nocturna de 19:00
+     a 06:00. Así el tablero y el archivo de nómina dicen lo mismo. */
+  var PT = { per:'mes', area:'', todos:false, ab:'' };
+  var _ptC = null;
+  function ptMin(m){ return (Math.round(m / 60 * 10) / 10).toLocaleString('es-CO') + ' h'; }
+  function ptLiquidar(d){
+    if(_ptC && _ptC.d === d) return _ptC;
+    var kit = window.perKit, nov = {};
+    (d.novedades || kit.novedades()).forEach(function(v){
+      if(!v.desde || !v.hasta) return;
+      for(var f = v.desde; f <= v.hasta; f = kit.sumarDias(f, 1)) nov[v.persona + '|' + f] = v.tipo;
+    });
+    var T = (d.turnos || []).map(function(t){ return Object.assign({}, t); });
+    var E = d.extrasTodas || d.extras || [];
+    var tramos = kit.liquidar(T, E, nov);
+    _ptC = { d:d, T:T, E:E, tramos:tramos };
+    return _ptC;
+  }
+  function ptRango(){
+    var hoy = new Date(), h = ymd(hoy), kit = window.perKit;
+    if(PT.per === 'semana'){
+      var l = kit.lunesDe(h);
+      return { desde:l, hasta:h, et:'Esta semana', antD:kit.sumarDias(l, -7), antH:kit.sumarDias(h, -7), antEt:'la semana pasada a este día' };
+    }
+    if(PT.per === 'ant'){
+      var a = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1), b = new Date(hoy.getFullYear(), hoy.getMonth(), 0);
+      return { desde:ymd(a), hasta:ymd(b), et:MES[a.getMonth()] + ' ' + a.getFullYear() };
+    }
+    if(PT.per === 'filtro'){
+      var H = kit.hex();
+      return { desde:H.desde, hasta:H.hasta > h ? h : H.hasta, et:'Filtro de arriba' };
+    }
+    var ini = new Date(hoy.getFullYear(), hoy.getMonth(), 1), ap = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+    var fin = new Date(hoy.getFullYear(), hoy.getMonth(), 0), diaA = Math.min(hoy.getDate(), fin.getDate());
+    return { desde:ymd(ini), hasta:h, et:MES[hoy.getMonth()] + ' ' + hoy.getFullYear(),
+      antD:ymd(ap), antH:ymd(new Date(ap.getFullYear(), ap.getMonth(), diaA)), antEt:'los mismos días de ' + MES[ap.getMonth()].toLowerCase() };
+  }
+  function ptDatos(L, desde, hasta, area){
+    var r = { d:0, n:0, ed:0, en:0, areas:{}, per:{}, aprob:0, sinAp:0, jor:0, motivos:{}, nAnot:{}, conFoto:{} };
+    var dame = function(c, nom, ar){ return r.per[c] || (r.per[c] = { clave:c, nombre:nom, area:ar, d:0, n:0, ed:0, en:0, aprob:0, sinAp:0, jor:0, sem:{}, tramos:[] }); };
+    L.T.forEach(function(t){
+      if(!t._liq || t.fecha < desde || t.fecha > hasta) return;
+      var ar = t.area || 'Sin área';
+      var A = r.areas[ar] || (r.areas[ar] = { k:ar, d:0, n:0, ed:0, en:0, gente:{} });
+      ['d','n','ed','en'].forEach(function(q){ A[q] += t._liq[q]; });
+      if(t._liq.total) A.gente[t.persona] = 1;
+      if(area && ar !== area) return;
+      ['d','n','ed','en'].forEach(function(q){ r[q] += t._liq[q]; });
+      if(t.persona && t._liq.total){
+        var p = dame(t.persona, t.nombre, ar);
+        ['d','n','ed','en'].forEach(function(q){ p[q] += t._liq[q]; });
+        p.area = ar;
+      }
+    });
+    L.tramos.forEach(function(x){
+      if(x.fecha < desde || x.fecha > hasta) return;
+      if(area && x.area !== area) return;
+      var m = x.fin - x.ini, p = dame(x.persona, x.nombre, x.area);
+      p.tramos.push(x);
+      if(x.anot){
+        var ap = x.anot.estado === 'APROBADA';
+        if(ap){ p.aprob += m; r.aprob += m; } else { p.sinAp += m; r.sinAp += m; }
+        var mk = normCli(x.anot.motivo) || 'sin motivo';
+        var mo = r.motivos[mk] || (r.motivos[mk] = { nom:x.anot.motivo || 'Sin motivo registrado', m:0 });
+        mo.m += m;
+        r.nAnot[x.anot.id || (x.persona + x.fecha + x.ini)] = 1;
+        if(x.anot.evidencia) r.conFoto[x.anot.id || (x.persona + x.fecha + x.ini)] = 1;
+      } else { p.jor += m; r.jor += m; p.sem[x.lunes] = x.semanaMin; }
+    });
+    r.total = r.d + r.n + r.ed + r.en; r.extra = r.ed + r.en;
+    r.lista = Object.keys(r.per).map(function(k){ var p = r.per[k]; p.extra = p.ed + p.en; p.total = p.d + p.n + p.extra; return p; });
+    return r;
+  }
+  function ptAreasHTML(R){
+    var kit = window.perKit, ls = Object.keys(R.areas).map(function(k){ var a = R.areas[k]; a.total = a.d + a.n + a.ed + a.en; a.extra = a.ed + a.en; return a; }).filter(function(a){ return a.total; }).sort(function(x, y){ return y.extra - x.extra || y.total - x.total; });
+    if(!ls.length) return '<div class="hx-card" style="margin-bottom:14px"><div class="hx-tit">Composición de horas por área</div><div class="hx-vacio">Sin turnos en este periodo.</div></div>';
+    var mx = ls.reduce(function(a, x){ return Math.max(a, x.total); }, 1);
+    return '<div class="hx-card" style="margin-bottom:14px"><div class="hx-cab"><div><div class="hx-tit">Composición de horas por área</div><div class="hx-sub">Toca un área para filtrar lo de abajo</div></div>' +
+      '<div class="hx-ley" style="margin:0"><span><i style="background:#8fb29c"></i>diurna</span><span><i style="background:#2f6690"></i>nocturna</span><span><i style="background:#d9a441"></i>extra diurna</span><span><i style="background:#c2553f"></i>extra nocturna</span></div></div>' +
+      '<div class="hx-esc"><div class="pt-acab"><span>Área</span><span>Horas</span><span>Total</span><span>Extra</span><span>% extra</span><span>Personas</span></div>' +
+      ls.map(function(a){
+        var on = PT.area === a.k, seg2 = function(q, c){ return a[q] ? '<i style="width:' + (a[q] / mx * 100).toFixed(2) + '%;background:' + c + '"></i>' : ''; };
+        return '<button type="button" class="pt-a' + (on ? ' on' : '') + '" data-hx="ptArea" data-v="' + esc(a.k) + '" aria-pressed="' + on + '"' +
+          tip(a.k, ptMin(a.total), ['Diurna ' + ptMin(a.d), 'Nocturna ' + ptMin(a.n), 'Extra diurna ' + ptMin(a.ed), 'Extra nocturna ' + ptMin(a.en)]) + '>' +
+          '<span class="pt-an">' + kit.fotoArea(a.k, true) + esc(a.k) + '</span><span class="px-b pt-bar">' + seg2('d', '#8fb29c') + seg2('n', '#2f6690') + seg2('ed', '#d9a441') + seg2('en', '#c2553f') + '</span>' +
+          '<span class="px-v">' + ptMin(a.total) + '</span><span class="px-v">' + ptMin(a.extra) + '</span><span class="px-v">' + (a.total ? (a.extra / a.total * 100).toFixed(1).replace('.', ',') : '0') + '%</span><span class="px-v">' + Object.keys(a.gente).length + '</span></button>';
+      }).join('') + '</div></div>';
+  }
+  function ptOrigenHTML(R){
+    var mx = Math.max(R.aprob, R.sinAp, R.jor, 1);
+    var fila = function(rot, m, c, t){ return '<div class="px-it pt-o"' + t + '><span class="px-it-n">' + rot + '</span><span class="px-b"><i style="width:' + (m / mx * 100).toFixed(1) + '%;background:' + c + '"></i></span><span class="px-v pt-w">' + ptMin(m) + '</span></div>'; };
+    var mot = Object.keys(R.motivos).map(function(k){ return R.motivos[k]; }).sort(function(a, b){ return b.m - a.m; });
+    var mxM = mot.length ? mot[0].m : 1, nA = Object.keys(R.nAnot).length, nF = Object.keys(R.conFoto).length;
+    return '<div class="hx-card"><div class="hx-tit">Origen y aprobación de horas extra</div><div class="hx-sub" style="margin-bottom:8px">' + nA + ' anotaciones · ' + nF + ' con foto de evidencia</div>' +
+      fila('Anotadas aprobadas', R.aprob, '#1a5c35', '') +
+      fila('Anotadas sin aprobar', R.sinAp, '#d9a441', tip('Sin aprobar', ptMin(R.sinAp), ['Anotadas y esperando visto bueno'])) +
+      fila('Excedente sobre 42 h', R.jor, '#c2553f', tip('Excedente de jornada', ptMin(R.jor), ['Sale del cuadro de turnos: nadie la anotó'])) +
+      (mot.length ? '<div class="hx-sub-tit" style="margin-top:12px">Motivos de lo anotado</div>' + mot.slice(0, 5).map(function(o){
+        return '<div class="px-it pt-o"' + tip('Motivo', ptMin(o.m), [o.nom]) + '><span class="px-it-n">' + esc(o.nom) + '</span><span class="px-b"><i style="width:' + (o.m / mxM * 100).toFixed(1) + '%;background:#8a9089"></i></span><span class="px-v pt-w">' + ptMin(o.m) + '</span></div>';
+      }).join('') : '') + '</div>';
+  }
+  function ptAcumHTML(){
+    return '<div class="hx-card"><div class="hx-tit">Horas extra acumuladas frente al mes anterior</div><div class="hx-sub" style="margin-bottom:8px">Anotadas y excedente sobre 42 h, día a día</div><div data-pt="acum"></div><div class="hx-ley"><span><i style="background:#1a5c35;height:3px;vertical-align:3px"></i>este mes</span><span><i style="background:#9aa39d;height:3px;vertical-align:3px"></i>mes anterior</span></div></div>';
+  }
+  function ptDibujar(L){
+    var el = document.querySelector('[data-pt="acum"]'); if(!el) return;
+    var hoy = new Date(), ka = ymd(hoy).slice(0, 7), ant = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1), kb = ymd(ant).slice(0, 7);
+    var na = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate(), nb = new Date(ant.getFullYear(), ant.getMonth() + 1, 0).getDate();
+    var a = [], b = [], i; for(i = 0; i < na; i++) a.push(0); for(i = 0; i < nb; i++) b.push(0);
+    L.tramos.forEach(function(x){
+      if(PT.area && x.area !== PT.area) return;
+      var k = x.fecha.slice(0, 7), d = +x.fecha.slice(8) - 1, h = (x.fin - x.ini) / 60;
+      if(k === ka) a[d] += h; else if(k === kb) b[d] += h;
+    });
+    el.innerHTML = cmCurva(a, b, hoy.getDate(), nb, hoy.getDate(), function(v){ return (Math.round(v * 10) / 10).toLocaleString('es-CO') + ' h'; }, Math.max(280, el.clientWidth || 480), MES[hoy.getMonth()], MES[ant.getMonth()]);
+  }
+  function ptJornadaHTML(L, hasta){
+    var kit = window.perKit, hoy = ymd(new Date()), lun = kit.lunesDe(hoy), sems = [];
+    for(var i = 5; i >= 0; i--) sems.push(kit.sumarDias(lun, -7 * i));
+    var por = {};
+    L.T.forEach(function(t){
+      if(!t._liq || !t.persona || !t._liq.total) return;
+      if(PT.area && t.area !== PT.area) return;
+      var s = kit.lunesDe(t.fecha); if(sems.indexOf(s) < 0) return;
+      var p = por[t.persona] || (por[t.persona] = { c:t.persona, nom:t.nombre, s:{} });
+      p.s[s] = (p.s[s] || 0) + t._liq.total;
+    });
+    var tope = 42 * 60;
+    var ls = Object.keys(por).map(function(k){ var p = por[k]; p.sob = sems.filter(function(s){ return (p.s[s] || 0) > tope + 3; }).length; p.max = Math.max.apply(null, sems.map(function(s){ return p.s[s] || 0; })); p.exc = sems.reduce(function(t, s){ return t + Math.max(0, (p.s[s] || 0) - tope); }, 0); return p; }).sort(function(a, b){ return b.exc - a.exc || b.max - a.max; });
+    if(!ls.length) return '';
+    var ver = PT.todos ? ls : ls.slice(0, 14), plant = 'grid-template-columns:minmax(190px,1.4fr) repeat(' + sems.length + ',minmax(58px,1fr)) 72px';
+    return '<div class="hx-card" style="margin-bottom:14px"><div class="hx-cab"><div><div class="hx-tit">Jornada semanal por persona</div><div class="hx-sub">Horas de lunes a domingo · tope de 42 h · la semana en curso incluye lo programado</div></div>' +
+      (ls.length > 14 ? '<button type="button" class="hx-boton" data-hx="ptTodos">' + (PT.todos ? 'Ver 14' : 'Ver los ' + ls.length) + '</button>' : '') + '</div>' +
+      '<div class="hx-esc"><div class="pt-j" style="' + plant + '"><span class="pt-jh" style="text-align:left">Persona</span>' + sems.map(function(s){ return '<span class="pt-jh' + (s === lun ? ' hoy' : '') + '">' + (+s.slice(8)) + '/' + (+s.slice(5, 7)) + '</span>'; }).join('') + '<span class="pt-jh">Sobre 42</span>' +
+      ver.map(function(p){
+        return '<span class="pt-jn">' + kit.carita(p.c, p.nom) + '<span>' + esc(kit.nombre(p.nom)) + '</span></span>' + sems.map(function(s){
+          var m = p.s[s] || 0, h = m / 60, over = m > tope + 3, a = over ? Math.min(1, (h - 42) / 12) : 0;
+          var st = !m ? '' : over ? 'background:rgba(194,85,63,' + (.25 + a * .7).toFixed(2) + ');color:' + (a > .45 ? '#fff' : '#17201b') + ';font-weight:700' : 'background:rgba(26,92,53,' + (.08 + h / 42 * .22).toFixed(2) + ')';
+          return '<span class="pt-jc" style="' + st + '"' + (m ? tip(kit.nombre(p.nom), (Math.round(h * 10) / 10).toLocaleString('es-CO') + ' h', ['Semana del ' + fCorta(s), over ? (Math.round((h - 42) * 10) / 10).toLocaleString('es-CO') + ' h sobre el tope' : 'Dentro del tope']) : '') + '>' + (m ? (Math.round(h * 10) / 10).toLocaleString('es-CO') : '—') + '</span>';
+        }).join('') + '<span class="px-v">' + p.sob + (p.sob === 1 ? ' sem.' : ' sem.') + '</span>';
+      }).join('') + '</div></div></div>';
+  }
+  function ptPersonasHTML(R){
+    var kit = window.perKit, ls = R.lista.filter(function(p){ return p.extra > 0; }).sort(function(a, b){ return b.extra - a.extra; });
+    if(!ls.length) return '<div class="hx-card" style="margin-bottom:14px"><div class="hx-tit">Horas extra por persona</div><div class="hx-vacio">Sin horas extra en este periodo.</div></div>';
+    var mx = ls[0].extra || 1, ver = PT.todos ? ls : ls.slice(0, 12);
+    return '<div class="hx-card" style="margin-bottom:14px"><div class="hx-cab"><div><div class="hx-tit">Horas extra por persona</div><div class="hx-sub">' + ls.length + (ls.length === 1 ? ' persona' : ' personas') + ' · abre una fila para ver de dónde sale cada hora</div></div>' +
+      '<div class="hx-ley" style="margin:0"><span><i style="background:#1a5c35"></i>aprobada</span><span><i style="background:#d9a441"></i>sin aprobar</span><span><i style="background:#c2553f"></i>sobre 42 h</span></div></div>' +
+      '<div class="hx-esc">' + ver.map(function(p){
+        var ab = PT.ab === p.clave, nS = Object.keys(p.sem).length, seg3 = function(v, c){ return v ? '<i style="width:' + (v / mx * 100).toFixed(2) + '%;background:' + c + '"></i>' : ''; };
+        var det = '';
+        if(ab){
+          det = '<div class="px-det pt-det"><table class="px-tb"><thead><tr><th>Cuándo</th><th>Tipo</th><th>Horas</th><th>Origen</th><th>Motivo</th><th>Estado</th></tr></thead><tbody>' +
+            p.tramos.slice().sort(function(x, y){ return x.fecha < y.fecha ? 1 : x.fecha > y.fecha ? -1 : 0; }).slice(0, 14).map(function(x){
+              var j = kit.justifica(x);
+              return '<tr><td>' + esc(j.cuando) + '</td><td>' + esc(j.tipo) + '</td><td>' + esc(j.horas) + '</td><td>' + esc(j.origen) + '</td><td>' + esc(j.motivo) + '</td><td>' + esc(j.estado) + '</td></tr>';
+            }).join('') + '</tbody></table>' + (p.tramos.length > 14 ? '<div class="hx-sub" style="margin-top:6px">y ' + (p.tramos.length - 14) + ' más</div>' : '') + '</div>';
+        }
+        return '<button type="button" class="pt-p' + (ab ? ' abierto' : '') + '" data-hx="ptAb" data-v="' + esc(p.clave) + '" aria-expanded="' + ab + '">' +
+          '<span class="pt-jn">' + kit.carita(p.clave, p.nombre) + '<span class="cx-nom"><b>' + esc(kit.nombre(p.nombre)) + '</b><em>' + esc(p.area) + '</em></span></span>' +
+          '<span class="px-b pt-bar"' + tip(kit.nombre(p.nombre), ptMin(p.extra), ['Aprobada ' + ptMin(p.aprob), 'Sin aprobar ' + ptMin(p.sinAp), 'Sobre 42 h ' + ptMin(p.jor), 'Diurna ' + ptMin(p.ed) + ' · nocturna ' + ptMin(p.en)]) + '>' + seg3(p.aprob, '#1a5c35') + seg3(p.sinAp, '#d9a441') + seg3(p.jor, '#c2553f') + '</span>' +
+          '<span class="px-v">' + ptMin(p.extra) + '</span><span class="pt-s">' + (nS ? nS + ' sem. +42 h' : '—') + '</span></button>' + det;
+      }).join('') + '</div></div>';
+  }
+  function ptCoberturaHTML(L){
+    var kit = window.perKit, hoy = ymd(new Date()), lun = kit.lunesDe(hoy), dias = [], i;
+    for(i = 0; i < 7; i++) dias.push(kit.sumarDias(lun, i));
+    var por = {};
+    L.T.forEach(function(t){
+      if(t.turno === 'Hora extra' || !t.persona || !t._liq || !t._liq.total) return;
+      if(dias.indexOf(t.fecha) < 0) return;
+      var ar = t.area || 'Sin área', a = por[ar] || (por[ar] = {});
+      (a[t.fecha] = a[t.fecha] || {})[t.persona] = kit.nombre(t.nombre);
+    });
+    var areas = Object.keys(por).sort(); if(!areas.length) return '';
+    var mx = 1; areas.forEach(function(a){ dias.forEach(function(d){ mx = Math.max(mx, Object.keys(por[a][d] || {}).length); }); });
+    var L7 = ['L','M','X','J','V','S','D'];
+    return '<div class="hx-card"><div class="hx-tit">Cobertura por área y día</div><div class="hx-sub" style="margin-bottom:8px">Personas programadas · semana del ' + esc(fCorta(lun)) + '</div>' +
+      '<div class="pt-c"><span></span>' + dias.map(function(d, n){ return '<span class="pt-jh' + (d === hoy ? ' hoy' : '') + '">' + L7[n] + ' ' + (+d.slice(8)) + '</span>'; }).join('') +
+      areas.map(function(a){
+        return '<span class="pt-can">' + esc(a) + '</span>' + dias.map(function(d){
+          var o = por[a][d] || {}, n = Object.keys(o).length, al = n / mx, nom = Object.keys(o).map(function(k){ return o[k]; });
+          return '<span class="pt-jc" style="' + (n ? 'background:rgba(26,92,53,' + (.12 + al * .78).toFixed(2) + ');color:' + (al > .55 ? '#fff' : '#17201b') : '') + '"' + (n ? tip(a + ' · ' + fCorta(d), n + (n === 1 ? ' persona' : ' personas'), nom.slice(0, 7)) : '') + '>' + (n || '—') + '</span>';
+        }).join('');
+      }).join('') + '</div></div>';
+  }
+  function ptDocsHTML(){
+    var kit = window.perKit, hoy = ymd(new Date()), en30 = kit.sumarDias(hoy, 30);
+    var act = kit.gente().filter(function(p){ return p.activo !== false && p.activo !== 'false'; }), docs = kit.docs();
+    var esAct = {}; act.forEach(function(p){ esAct[p.clave] = p; });
+    var dA = docs.filter(function(d){ return esAct[d.persona]; });
+    var conDoc = {}, porT = {};
+    dA.forEach(function(d){ conDoc[d.persona] = 1; var t = d.tipo || 'Otro'; (porT[t] = porT[t] || {})[d.persona] = 1; });
+    var tipos = Object.keys(porT).filter(function(t){ return t !== 'Otro' && t !== 'Documento'; }).map(function(t){ return { t:t, n:Object.keys(porT[t]).length }; }).sort(function(a, b){ return b.n - a.n; });
+    var alert = dA.filter(function(d){ return d.vence && d.vence <= en30; }).sort(function(a, b){ return a.vence < b.vence ? -1 : 1; });
+    var nV = alert.filter(function(d){ return d.vence < hoy; }).length;
+    return '<div class="hx-card"><div class="hx-tit">Documentación del personal</div><div class="hx-sub" style="margin-bottom:8px"><b>' + Object.keys(conDoc).length + '</b> de ' + act.length + ' activos con algún documento · <b>' + nV + '</b> vencidos · <b>' + (alert.length - nV) + '</b> vencen en 30 días</div>' +
+      tipos.map(function(x){ var p = x.n / (act.length || 1) * 100; return '<div class="px-it pt-o"' + tip(x.t, x.n + ' de ' + act.length, ['Activos con este documento cargado']) + '><span class="px-it-n">' + esc(x.t) + '</span><span class="px-b"><i style="width:' + p.toFixed(1) + '%;background:#2f6690"></i></span><span class="px-v pt-w">' + x.n + ' de ' + act.length + '</span></div>'; }).join('') +
+      (alert.length ? '<div class="hx-sub-tit" style="margin-top:12px">Vencidos y por vencer</div>' + alert.slice(0, 8).map(function(d){
+        var v = d.vence < hoy, dd = difDias(d.vence, hoy);
+        return '<button type="button" class="pt-d" data-hx="ptDoc" data-v="' + esc(d.persona) + '"><span>' + esc(kit.nombre(d.nombre || esAct[d.persona].nombre)) + '</span><span>' + esc(d.tipo || 'Documento') + '</span><span class="px-chip ' + (v ? 'malo' : 'reg') + '">' + (v ? 'hace ' + dd + ' d' : 'en ' + (-dd) + ' d') + '</span></button>';
+      }).join('') : '') + '</div>';
+  }
+  function ptPlantillaHTML(L){
+    var kit = window.perKit, act = kit.gente().filter(function(p){ return p.activo !== false && p.activo !== 'false'; }), lim = kit.sumarDias(ymd(new Date()), -14);
+    var conT = {}; L.T.forEach(function(t){ if(t.fecha >= lim && t.persona) conT[t.persona] = 1; });
+    var sinT = act.filter(function(p){ return !conT[p.clave]; }), c = {};
+    act.forEach(function(p){ var k = p.cargo || 'Sin cargo'; c[k] = (c[k] || 0) + 1; });
+    var ls = Object.keys(c).map(function(k){ return { k:k, n:c[k] }; }).sort(function(a, b){ return b.n - a.n; }), mx = ls.length ? ls[0].n : 1;
+    var sinF = act.filter(function(p){ return !p.foto; }).length, sinC = act.filter(function(p){ return !p.cedula; }).length;
+    return '<div class="hx-card"><div class="hx-tit">Plantilla activa</div><div class="hx-sub" style="margin-bottom:8px"><b>' + act.length + '</b> personas · <span' + tip('Sin turnos en 14 días', sinT.length + ' personas', sinT.slice(0, 8).map(function(p){ return kit.nombre(p.nombre); })) + '><b>' + sinT.length + '</b> sin turnos en 14 días</span> · <b>' + sinF + '</b> sin foto · <b>' + sinC + '</b> sin cédula</div>' +
+      ls.slice(0, 8).map(function(x){ return '<div class="px-it pt-o"><span class="px-it-n">' + esc(x.k) + '</span><span class="px-b"><i style="width:' + (x.n / mx * 100).toFixed(1) + '%;background:#1a5c35"></i></span><span class="px-v pt-w">' + x.n + '</span></div>'; }).join('') + '</div>';
+  }
+  function hxPersonal(deCache){
+    var kit = window.perKit, caja = document.getElementById('per-hex'); if(!caja || !kit) return;
+    var H = kit.hex(), d = H.datos; if(!d) return;
+    var L = ptLiquidar(d), rg = ptRango(), R = ptDatos(L, rg.desde, rg.hasta, PT.area);
+    var B = rg.antD ? ptDatos(L, rg.antD, rg.antH, PT.area) : null;
+    var nPer = R.lista.filter(function(p){ return p.total; }).length, nSob = R.lista.filter(function(p){ return Object.keys(p.sem).length; }).length;
+    var dEx = B && B.extra ? pctDe(R.extra, B.extra) : null;
+    var E0 = L.E.filter(function(e){ return e.fecha >= rg.desde && e.fecha <= rg.hasta && (!PT.area || e.area === PT.area) && !L.T.some(function(t){ return t.persona === e.persona && t.fecha === e.fecha; }); });
+    var ind = function(rot, val, pie, cl, t){ return '<div class="cx-tab px-ind' + (cl ? ' ' + cl : '') + '"' + (t || '') + '><span>' + rot + '</span><b>' + val + '</b><em>' + pie + '</em></div>'; };
+    var fallos = d.fallos || [];
+    caja.innerHTML =
+      (deCache ? '<div class="hex-aviso" id="hex-progreso">Mostrando lo de la última consulta · actualizando…</div>' : '') +
+      (!deCache && fallos.length ? '<div class="hex-aviso malo">' + (fallos.length === 1 ? 'Falta un área que no respondió: ' : 'Faltan ' + fallos.length + ' áreas que no respondieron: ') + esc(fallos.join(', ')) + '. Las cifras están incompletas.</div>' : '') +
+      '<div class="cx-enc"><div class="cx-band"><div><h3 class="cx-h">Personal · Control de jornada' + (PT.area ? ' · ' + esc(PT.area) : '') + '</h3><div class="cx-hsub">' + esc(rg.et) + ' · ' + esc(fCorta(rg.desde)) + ' al ' + esc(fCorta(rg.hasta)) + ' · misma regla del Excel de quincena</div></div>' +
+        seg('ptPer', [['semana','Semana'],['mes','Mes'],['ant','Mes anterior'],['filtro','Filtro de arriba']], PT.per) + '</div>' +
+      '<div class="cx-tabs px-inds">' +
+        ind('Horas trabajadas', ptMin(R.total), nPer + (nPer === 1 ? ' persona' : ' personas') + ' · nocturnas ' + ptMin(R.n + R.en), '', tip('Horas trabajadas', ptMin(R.total), ['Diurnas ' + ptMin(R.d), 'Nocturnas ' + ptMin(R.n), 'Extra diurna ' + ptMin(R.ed), 'Extra nocturna ' + ptMin(R.en), 'Almuerzo de 30 min pago'])) +
+        ind('Horas extra', ptMin(R.extra), dEx === null ? 'diurna ' + ptMin(R.ed) + ' · nocturna ' + ptMin(R.en) : signo(dEx) + ' contra ' + esc(rg.antEt), '', tip('Horas extra', ptMin(R.extra), ['Anotadas ' + ptMin(R.aprob + R.sinAp), 'Sobre 42 h ' + ptMin(R.jor)].concat(B ? ['Antes: ' + ptMin(B.extra)] : []))) +
+        ind('Extra sobre lo trabajado', R.total ? (R.extra / R.total * 100).toFixed(1).replace('.', ',') + '%' : '—', 'de todas las horas', '') +
+        ind('Anotadas sin aprobar', ptMin(R.sinAp), ptMin(R.aprob) + ' aprobadas', R.sinAp && !R.aprob ? 'alerta' : '') +
+        ind('Personas sobre 42 h', nSob + ' de ' + nPer, ptMin(R.jor) + ' de excedente', nSob ? 'alerta' : '', tip('Sobre el tope semanal', nSob + ' personas', ['Semanas de lunes a domingo que pasan de 42 h'])) +
+      '</div></div>' +
+      (E0.length ? '<div class="hex-aviso">' + E0.length + (E0.length === 1 ? ' anotación' : ' anotaciones') + ' de hora extra (' + ptMin(E0.reduce(function(t, e){ return t + (Number(e.minutos) || 0); }, 0)) + ') sin turno ese día: no ' + (E0.length === 1 ? 'entra' : 'entran') + ' a la cuenta, igual que en el Excel. Hay que crear el turno o corregir la fecha.</div>' : '') +
+      ptAreasHTML(R) +
+      '<div class="hx-g hx-g-11">' + ptOrigenHTML(R) + ptAcumHTML() + '</div>' +
+      ptPersonasHTML(R) +
+      ptJornadaHTML(L, rg.hasta) +
+      '<div class="hx-g hx-g-11">' + ptCoberturaHTML(L) + ptPlantillaHTML(L) + '</div>' +
+      ptDocsHTML();
+    ptDibujar(L);
+    caja.dataset.w = caja.clientWidth;
+  }
+  window.hxPersonal = hxPersonal;
+
   /* ══ FICHA DE UN VEHÍCULO ═════════════════════════════════════ */
   function ventana30(pl){
     var ix = indice(), lim = ymd(new Date(Date.now() - 30 * 86400000)), r = { kg:0, v:0, c:0, dias:{} };
@@ -54117,7 +54859,13 @@ La presente política rige a partir de su aprobación y publicación por parte d
       if(!ks2.length) return '<div class="hx-vacio" style="padding:6px 0">Sin viajes.</div>';
       return ks2.map(function(q){ return '<div class="hx-part"><span>' + esc(nombres ? nombres[q] : q) + '</span><b>' + obj[q] + '</b><i style="width:' + (obj[q] / obj[ks2[0]] * 100) + '%"></i></div>'; }).join('');
     };
-    caja.innerHTML = aviso +
+    var pxE = pxEquipo(pl), pxC = pxCumplimiento(pxE, pxLim(30)), pxA = pxAbiertas(pxE), pxU = pxE.lista[pxE.lista.length - 1];
+    var bloqueInsp = '<div class="hx-card" style="margin-bottom:14px"><div class="hx-tit">Inspección preoperacional del equipo</div>' +
+      '<div class="hx-sub" style="margin-bottom:8px">' + (pxC.pct !== null ? 'Cumplimiento <b>' + Math.round(pxC.pct) + '%</b> · ' + pxC.hechos + ' de ' + pxC.dias + ' días con viajes en 30 días' : '<b>' + pxC.inspDias + '</b> días con revisión en 30 días') + (pxU ? ' · última ' + esc(fCorta(pxU.iso)) : ' · sin revisiones') + '</div>' +
+      (pxA.length ? pxA.slice().sort(function(x, y){ return (x.est === 'malo' ? 0 : 1) - (y.est === 'malo' ? 0 : 1) || y.dias - x.dias; }).slice(0, 8).map(function(o){
+        return '<div class="px-ab"><span>' + esc(o.t) + '</span><span class="px-chip ' + (o.est === 'malo' ? 'malo' : 'reg') + '">' + (o.est === 'malo' ? 'Malo' : 'Regular') + '</span><em>' + o.dias + ' d · ' + o.n + (o.n === 1 ? ' revisión' : ' revisiones') + '</em></div>';
+      }).join('') + (pxA.length > 8 ? '<div class="hx-sub" style="margin-top:6px">y ' + (pxA.length - 8) + ' más</div>' : '') : '<div class="hx-sub">Sin novedades en la última revisión.</div>') + '</div>';
+    caja.innerHTML = aviso + bloqueInsp +
       '<div class="hx-g ' + (bloqueFrente ? 'hx-g-11' : '') + '">' +
         '<div class="hx-card"><div class="hx-tit">' + (maq ? 'Gasto mensual de combustible' : 'Evolución de toneladas y costo') + '</div><div class="hx-sub" style="margin-bottom:8px">Últimos 6 meses</div><div data-hx-ficha-t="1"></div></div>' +
         bloqueFrente +
@@ -54159,6 +54907,16 @@ La presente política rige a partir de su aprobación y publicación por parte d
     if(q === 'ref' || q === 'ventana'){ HX[q] = v; hxHumus(); return; }
     if(q === 'cliRef' || q === 'cliPer'){ HX[q] = v; HX.cliAb = ''; document.getElementById('hx-cli-caja').innerHTML = htmlClientes(); return; }
     if(q === 'cli'){ HX.cliAb = HX.cliAb === v ? '' : v; document.getElementById('hx-cli-caja').innerHTML = htmlClientes(); return; }
+    if(q === 'ptPer'){ PT.per = v; PT.ab = ''; hxPersonal(); return; }
+    if(q === 'ptArea'){ PT.area = PT.area === v ? '' : v; PT.ab = ''; hxPersonal(); return; }
+    if(q === 'ptTodos'){ PT.todos = !PT.todos; hxPersonal(); return; }
+    if(q === 'ptAb'){ PT.ab = PT.ab === v ? '' : v; hxPersonal(); return; }
+    if(q === 'ptDoc'){ window.perKit.abrirDocs(v); return; }
+    if(q === 'opPer'){ OPX.per = v; opRepintar(); return; }
+    if(q === 'pxVen'){ PX.ven = +v; pxRepintar(); return; }
+    if(q === 'pxClase'){ PX.clase = v; PX.ab = ''; pxRepintar(); return; }
+    if(q === 'pxSecc'){ PX.secc = v; pxRepintar(); return; }
+    if(q === 'pxAb'){ PX.ab = PX.ab === v ? '' : v; pxRepintar(); return; }
     if(q === 'cxCat'){ CX.cat = v; CX.ab = ''; cxRepintar(); return; }
     if(q === 'cxOrden'){ CX.orden = v; cxRepintar(); return; }
     if(q === 'cxPl'){ CX.ab = CX.ab === v ? '' : v; cxRepintar(); return; }
@@ -54175,7 +54933,7 @@ La presente política rige a partir de su aprobación y publicación por parte d
   function alCambiarAncho(){
     clearTimeout(pend);
     pend = setTimeout(function(){
-      [['hx-humus', hxHumus], ['hx-flota', hxFlota]].forEach(function(p){
+      [['hx-humus', hxHumus], ['hx-flota', hxFlota], ['per-hex', function(){ if(window.perKit && window.perKit.hex().datos) hxPersonal(); }]].forEach(function(p){
         var c = document.getElementById(p[0]);
         if(c && c.clientWidth && String(c.clientWidth) !== c.dataset.w){ try { p[1](); } catch(e){ console.error(e); } }
       });
@@ -54191,9 +54949,9 @@ La presente política rige a partir de su aprobación y publicación por parte d
   if(window.ResizeObserver){
     var ro = new ResizeObserver(alCambiarAncho);
     document.addEventListener('DOMContentLoaded', function(){
-      ['panel-ProduccionHumus','panel-vehiculos'].forEach(function(id){ var p = document.getElementById(id); if(p) ro.observe(p); });
+      ['panel-ProduccionHumus','panel-vehiculos','panel-personal'].forEach(function(id){ var p = document.getElementById(id); if(p) ro.observe(p); });
     });
-    ['panel-ProduccionHumus','panel-vehiculos'].forEach(function(id){ var p = document.getElementById(id); if(p) ro.observe(p); });
+    ['panel-ProduccionHumus','panel-vehiculos','panel-personal'].forEach(function(id){ var p = document.getElementById(id); if(p) ro.observe(p); });
   }
 
   window.hxHumus = hxHumus;
