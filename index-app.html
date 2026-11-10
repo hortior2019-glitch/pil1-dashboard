@@ -55079,7 +55079,7 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
         else if(k === kb){ r.mbt += v; r.nmbt++; if(d <= dia){ r.mb += v; r.nmb++; } }
       });
       return r;
-    }).filter(function(r){ return r.a > 0 || r.b > 0 || r.ta > 0 || r.tb > 0 || r.nma > 0 || r.nmb > 0; });
+    }).filter(function(r){ return r.a > 0 || r.b > 0 || r.ta > 0 || r.tb > 0 || r.nma > 0 || r.nmb > 0 || r.nmbt > 0; });
   }
   function cxCelda(va, vb, mx, col, txtA, txtB){
     return '<span class="cx-c"><span class="cx-l"><i style="width:' + (va / mx * 100).toFixed(1) + '%;background:' + col + '"></i></span><b>' + txtA + '</b>' +
@@ -55103,8 +55103,15 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
     var mxC = Math.max.apply(null, filas.map(function(r){ return Math.max(r.a, r.b); }).concat([1]));
     var mxQ = Math.max.apply(null, filas.map(function(r){ return horas ? Math.max(r.na, r.nb) : Math.max(r.ta, r.tb); }).concat([1]));
     var mxU = Math.max.apply(null, filas.map(function(r){ return Math.max(r.ua || 0, r.ub || 0); }).concat([1]));
-    var mxM = Math.max.apply(null, filas.map(function(r){ return Math.max(r.ma, r.mb); }).concat([1]));
+    /* El mantenimiento no es parejo como el combustible: un arreglo del 23
+       no cae en "los mismos días" y la columna quedaba en blanco aunque el
+       mes pasado sí hubo gasto. Si en esos días no hay nada, se muestra el
+       mes anterior completo, marcado con el nombre del mes. */
+    var mesB = etB.split(' ').pop();
+    filas.forEach(function(r){ r.mbMes = !r.nmb && r.nmbt > 0; r.mbV = r.mbMes ? r.mbt : r.mb; });
+    var mxM = Math.max.apply(null, filas.map(function(r){ return Math.max(r.ma, r.mbV); }).concat([1]));
     var txtM = function(v, n){ return v > 0 ? corto(v) : (n ? 'sin valor' : '—'); };
+    var txtMB = function(r){ return r.mbMes ? (r.mbt > 0 ? corto(r.mbt) : 'sin valor') + ' ' + mesB : txtM(r.mb, r.nmb); };
     var ORO = '#8b6914', VER = '#1a5c35', AZU = '#2f6690';
     var cuerpo = filas.map(function(r){
       var ab = CX.ab === r.pl;
@@ -55116,7 +55123,7 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
       return '<button type="button" class="cx-p' + (ab ? ' abierto' : '') + '" data-hx="cxPl" data-v="' + esc(r.pl) + '" aria-expanded="' + ab + '">' +
         '<span class="cx-id"><span class="cx-foto">' + _miniPlaca(r.pl) + '</span><span class="cx-nom"><b>' + esc(r.pl) + '</b>' + (cond ? '<em>' + esc(cond.nombre) + '</em>' : '') + '</span></span>' +
         cxCelda(r.a, r.b, mxC, ORO, corto(r.a), corto(r.b)) +
-        '<span' + (r.nma || r.nmb ? tip(r.pl + ' · mantenimiento', pesos(r.ma), [r.nma + (r.nma === 1 ? ' registro' : ' registros') + ' este mes', r.nmb + (r.nmb === 1 ? ' registro' : ' registros') + ' en los mismos días']) : '') + '>' + cxCelda(r.ma, r.mb, mxM, '#5b6b7a', txtM(r.ma, r.nma), txtM(r.mb, r.nmb)) + '</span>' +
+        '<span' + (r.nma || r.nmb || r.nmbt ? tip(r.pl + ' · mantenimiento', pesos(r.ma), [r.nma + (r.nma === 1 ? ' registro' : ' registros') + ' este mes', r.nmb + (r.nmb === 1 ? ' registro' : ' registros') + ' en los mismos días', mesB + ' completo: ' + pesos(r.mbt) + ' · ' + r.nmbt + (r.nmbt === 1 ? ' registro' : ' registros')]) : '') + '>' + cxCelda(r.ma, r.mbV, mxM, '#5b6b7a', txtM(r.ma, r.nma), txtMB(r)) + '</span>' +
         (horas ? cxCelda(r.na, r.nb, mxQ, VER, String(r.na), String(r.nb))
                : cxCelda(r.ta, r.tb, mxQ, VER, n0(r.ta) + ' T', n0(r.tb) + ' T')) +
         cxCelda(r.ua || 0, r.ub || 0, mxU, AZU, r.ua !== null ? corto(r.ua) : '—', r.ub !== null ? corto(r.ub) : '—') +
