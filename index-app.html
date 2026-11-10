@@ -12633,9 +12633,11 @@ async function loadAllData() {
   try {
     if (SHEETS.combustible.indexOf('PEGAR_GID') === -1) {
       dataCombustible = await fetchCSV(SHEETS.combustible);
-      try { if (typeof renderVehiculos === 'function' && _vehiculosCargados) renderVehiculos(); } catch(eV) {}
     }
   } catch(e) { console.error('Combustible (no bloqueante):', e); }
+  /* Ya llegó (o falló): la tabla de la flota deja de decir "Cargando". */
+  window._combListo = true;
+  try { if (typeof renderVehiculos === 'function' && _vehiculosCargados) renderVehiculos(); } catch(eV) {}
   /* La lista de vehículos se pide ya, en segundo plano, para que al abrir
      la pestaña no haya que esperarla (el servicio tarda unos 5 s). */
   try { cargarVehiculos(); } catch(eP) { console.error('precarga vehículos:', eP); }
@@ -46522,10 +46524,21 @@ function montarRotador(a, semana){
 
   /* Si el día tiene turno y además un bloque suelto de horas extra, la
      celda es el turno: antes quedaba la hora extra y el turno no se veía. */
-  var porCelda = {};
+  var porCelda = {}, bloquesDe = {};
   dela.forEach(function(t){
     var id = t.persona + '|' + t.fecha;
     if(!porCelda[id] || porCelda[id].turno === 'Hora extra') porCelda[id] = t;
+    /* Un horario partido son varias filas el mismo día: se juntan. */
+    if(t.turno !== 'Hora extra' && t.inicio) (bloquesDe[id] = bloquesDe[id] || []).push(t);
+  });
+  Object.keys(porCelda).forEach(function(id){
+    var t = porCelda[id];
+    if(rotEsFijo(t)) porCelda[id] = Object.assign({}, t, { fijo: true, valor: rotValorDe(t) });
+    var bs = (bloquesDe[id] || []).slice().sort(function(x, y){ return x.inicio < y.inicio ? -1 : 1; });
+    if(bs.length > 1){
+      porCelda[id] = t = Object.assign({}, bs[0]);
+      t.bloques = bs.map(function(b){ return { inicio: b.inicio, fin: b.fin, almuerzo: Number(b.almuerzo) || 0 }; });
+    }
   });
 
   /* Las celdas en blanco (descanso) también se registran, vacías, para que
@@ -46571,16 +46584,25 @@ function montarRotador(a, semana){
         '<span class="rt-nada">' + (t.fuera ? txtSinTurno(semana) : 'descanso') + '</span></button>' +
         '<button type="button" class="rt-flecha" data-rtmenu="' + esc(p.clave) + '|' + f + '"' +
         ' title="Asignar turno u horas este día"></button></td>';
+      /* Valor fijo: un servicio sin horas. Se puede cambiar como cualquier día. */
+      if(t && t.fijo) return '<td class="rt-td"><button type="button" class="rt-cel" data-rt="' + esc(p.clave) + '|' + f + '"' +
+        ' style="--c:#e0e7ff"><span class="rt-t">' + esc(t.turno) + '</span>' +
+        '<span class="rt-h">valor fijo</span>' +
+        (t.valor ? '<span class="rt-hp">' + esc(rotPesos(t.valor)) + '</span>' : '') +
+        '</button><button type="button" class="rt-flecha" data-rtmenu="' + esc(p.clave) + '|' + f + '"' +
+        ' title="Elegir a dónde va este día"></button></td>';
       /* Un día de novedad no tiene horas: no se rota, se respeta. */
       if(!t || !t.inicio) return '<td class="rt-td"><span class="rt-nov" title="Las novedades (incapacidad, permiso, vacaciones) ' +
         'se cambian o se quitan en Colaboradores → Novedad de esta persona.">' + esc((t && t.turno) || 'novedad') + '</span></td>';
       var col = colores[claveColor(t.inicio, t.fin)] || '#e5e7eb';
       var cerrado = t.inicio && t.fin;
-      var hpR = cerrado ? numeroHoras(t.horas || horasTurno(t.inicio, t.fin, t.almuerzo)) : '';
+      var hpR = cerrado ? numeroHoras(t.bloques ? rotHorasBloques(t.bloques) : (t.horas || horasTurno(t.inicio, t.fin, t.almuerzo))) : '';
       return '<td class="rt-td"><button type="button" class="rt-cel" data-rt="' + esc(p.clave) + '|' + f + '"' +
         ' style="--c:' + col + '">' +
         '<span class="rt-t">' + esc(t.turno) + '</span>' +
-        '<span class="rt-h">' + (t.inicio ? esc(t.inicio) : 'por definir') + '–' + (t.fin ? esc(t.fin) : 'por definir') + '</span>' +
+        (t.bloques || [t]).map(function(b){
+          return '<span class="rt-h">' + (b.inicio ? esc(b.inicio) : 'por definir') + '–' + (b.fin ? esc(b.fin) : 'por definir') + '</span>';
+        }).join('') +
         (cerrado ? '<span class="rt-hp">' + esc(hpR) + ' · 🍽️ ' + esc(fmtAlmuerzo(Number(t.almuerzo) || 0)) + '</span>' : '') +
         '</button><button type="button" class="rt-flecha" data-rtmenu="' + esc(p.clave) + '|' + f + '"' +
         ' title="Elegir a dónde va este día"></button></td>';
@@ -46864,6 +46886,17 @@ function rotSumarMin(hhmm, delta){
   tot = ((tot % 1440) + 1440) % 1440;
   return ('0' + Math.floor(tot / 60)).slice(-2) + ':' + ('0' + (tot % 60)).slice(-2);
 }
+/* Valor fijo: día sin horas con la nota "valor fijo" (y su valor, si lo tiene:
+   "valor fijo $120000"). */
+function rotEsFijo(t){ return !!t && !t.inicio && /valor fijo/i.test(String(t.ajuste || t.nota || '')); }
+function rotValorDe(t){
+  var m = String((t && (t.ajuste || t.nota)) || '').match(/valor fijo\D*([\d.,]+)/i);
+  return m ? (Number(m[1].replace(/[.,]/g, '')) || 0) : 0;
+}
+function rotPesos(v){ return '$' + Math.round(Number(v) || 0).toLocaleString('es-CO'); }
+function rotHorasBloques(bs){
+  return (bs || []).reduce(function(s, b){ return s + (b.inicio && b.fin ? horasTurno(b.inicio, b.fin, Number(b.almuerzo) || 0) : 0); }, 0);
+}
 function rotHHMMaMin(hhmm){ var p = (hhmm || '').split(':'); return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0); }
 /* Minutos de 'desde' hasta 'hasta' yendo hacia adelante (da la vuelta al día):
    sirve para medir la hora extra entre la hora elegida y el turno. */
@@ -46884,7 +46917,7 @@ function rotAplicarAccion(boton){
    dice si la marca viene de un atajo (nombre, día, semana). */
 function rotMarcar(id, si, grupo){
   var t = ROT.celdas[id];
-  if(!t || (!t.inicio && !t.vacia)) return;
+  if(!t || (!t.inicio && !t.vacia && !t.fijo)) return;
   if(si){ ROT.sel[id] = 1; if(grupo) ROT.grupo[id] = 1; return; }
   delete ROT.sel[id];
   delete ROT.grupo[id];
@@ -46936,7 +46969,9 @@ function rotDestinoDe(t, id){
     if(propio.tipo === 'descanso') return { descanso: true };
     if(propio.tipo === 'horas') return { nombre: propio.turno || t.turno || 'Horario',
                inicio: propio.fijo ? '' : propio.inicio, fin: propio.fijo ? '' : propio.fin,
-               almuerzo: propio.fijo ? 0 : (Number(propio.almuerzo) || 0), fijo: !!propio.fijo };
+               almuerzo: propio.fijo ? 0 : (Number(propio.almuerzo) || 0), fijo: !!propio.fijo,
+               valor: propio.fijo ? (Number(propio.valor) || 0) : 0,
+               bloques: (!propio.fijo && propio.bloques && propio.bloques.length > 1) ? propio.bloques : null };
     if(propio.tipo === 'swap'){
       var otra = ROT.celdas[propio.con + '|' + t.fecha];
       if(!otra || !otra.inicio) return null;         /* ya no tiene turno ese día */
@@ -46974,7 +47009,7 @@ function rotDestinoDe(t, id){
 function rotMenu(boton, id){
   rotCerrarMenu();
   var t = ROT.celdas[id];
-  if(!t || (!t.inicio && !t.vacia)) return;
+  if(!t || (!t.inicio && !t.vacia && !t.fijo)) return;
   var m = document.createElement('div');
   m.className = 'rt-menu';
   m.id = 'rt-menu';
@@ -47078,8 +47113,8 @@ function rotMenuPrincipal(m, id){
       'Descanso<span>ese día no trabaja</span></button>') +
     '<div class="rt-menu-rot">Hora extra</div>' +
     '<button type="button" class="rt-menu-it" data-mextra="1">Agregar hora extra…' +
-      '<span>' + (esVacia ? 'un bloque aparte, con su horario' : 'antes, después o un bloque aparte') + '</span></button>' +
-    (!esVacia ? (otros.length
+      '<span>' + (esVacia || t.fijo ? 'un bloque aparte, con su horario' : 'antes, después o un bloque aparte') + '</span></button>' +
+    (!esVacia && !t.fijo ? (otros.length
       ? '<div class="rt-menu-rot">Cambiarlo con</div>' + otros.map(function(p){
           var o = ROT.celdas[p.clave + '|' + fecha];
           return '<button type="button" class="rt-menu-it' + (propio.tipo === 'swap' && propio.con === p.clave ? ' on' : '') +
@@ -47167,45 +47202,85 @@ function rotMenuHoras(m, id){
   var base = propio.tipo === 'horas' ? propio
     : (t.inicio ? { inicio: t.inicio, fin: t.fin, almuerzo: t.almuerzo || 0, turno: t.turno }
                 : (ROT.turnos[0] || { inicio:'06:00', fin:'14:00', almuerzo:0, nombre:'Horario' }));
-  var nombreT = base.turno || base.nombre || t.turno || 'Horario';
+  var nombreT = (t.fijo && propio.tipo !== 'horas' && t.turno) || base.turno || base.nombre || t.turno || 'Horario';
+  /* Lo que ya tiene la celda: valor fijo (con su valor) o sus bloques. */
+  var esFijo = propio.tipo === 'horas' ? !!propio.fijo : !!t.fijo;
+  var valorIni = propio.tipo === 'horas' && propio.fijo ? (Number(propio.valor) || 0) : (Number(t.valor) || 0);
+  var bloques = (propio.tipo === 'horas' && propio.bloques && propio.bloques.length) ? propio.bloques
+    : (propio.tipo !== 'horas' && t.bloques && t.bloques.length) ? t.bloques
+    : [{ inicio: base.inicio || '', fin: base.fin || '', almuerzo: Number(base.almuerzo) || 0 }];
+  bloques = bloques.map(function(b){ return { inicio: b.inicio || '', fin: b.fin || '', almuerzo: Number(b.almuerzo) || 0 }; });
   m.innerHTML =
     '<div class="rt-menu-tit">Horario personalizado · ' + esc(fechaCorta(t.fecha)) + '</div>' +
     '<label class="rt-f2">Destino o nombre del turno' +
-      '<input type="text" id="rh-turno" value="' + esc(nombreT) + '" placeholder="Ej: Alpina - internos" maxlength="30"></label>' +
-    '<label class="rt-f2chk"><input type="checkbox" id="rh-fijo"' + (propio.fijo ? ' checked' : '') + '> ' +
-      'Solo destino, sin horas (valor fijo)</label>' +
-    '<div class="rt-f2row" id="rh-horas">' +
-      '<label class="rt-f2">Entrada<input type="time" id="rh-ini" value="' + esc(base.inicio || '') + '"></label>' +
-      '<label class="rt-f2">Salida<input type="time" id="rh-fin" value="' + esc(base.fin || '') + '"></label>' +
-      '<label class="rt-f2">Almuerzo (min)<input type="number" id="rh-alm" min="0" max="240" step="5" value="' + (Number(base.almuerzo) || 0) + '"></label>' +
-    '</div>' +
+      '<input type="text" id="rh-turno" value="' + esc(nombreT) + '" placeholder="Ej: Alquería" maxlength="30"></label>' +
+    '<label class="rt-f2chk"><input type="checkbox" id="rh-fijo"' + (esFijo ? ' checked' : '') + '> ' +
+      'Valor fijo (servicio sin horas)</label>' +
+    '<label class="rt-f2" id="rh-valor-caja">Valor (COP)' +
+      '<input type="text" id="rh-valor" inputmode="numeric" maxlength="12" placeholder="Ej: 120000" value="' + (valorIni || '') + '"></label>' +
+    '<div id="rh-horas"><div id="rh-bloques"></div>' +
+      '<button type="button" class="rt-f2cancel" id="rh-bmas" style="margin-top:6px">+ Agregar bloque</button></div>' +
     '<div class="rt-f2err" id="rh-err"></div>' +
     '<div class="rt-f2acc">' +
       '<button type="button" class="rt-f2cancel" data-rhcancel="1">Volver</button>' +
-      '<button type="button" class="rt-f2ok" data-rhok="1">Usar estas horas</button>' +
+      '<button type="button" class="rt-f2ok" data-rhok="1">Usar este horario</button>' +
     '</div>';
-  rotMenuNoCerrar(m); rotMenuPos(m);
+  rotMenuNoCerrar(m);
+  var cajaB = document.getElementById('rh-bloques');
+  /* Lee lo escrito antes de re-pintar, para no perderlo al agregar o quitar. */
+  var leer = function(){
+    cajaB.querySelectorAll('.rt-f2row').forEach(function(row, k){
+      bloques[k] = { inicio: row.querySelector('.rh-ini').value, fin: row.querySelector('.rh-fin').value,
+                     almuerzo: Math.max(0, Math.min(240, Number(row.querySelector('.rh-alm').value) || 0)) };
+    });
+  };
+  var pintarB = function(){
+    cajaB.innerHTML = bloques.map(function(b, k){
+      return '<div class="rt-f2row">' +
+        '<label class="rt-f2">' + (bloques.length > 1 ? 'Entrada ' + (k + 1) : 'Entrada') +
+          '<input type="time" class="rh-ini" value="' + esc(b.inicio) + '"></label>' +
+        '<label class="rt-f2">Salida<input type="time" class="rh-fin" value="' + esc(b.fin) + '"></label>' +
+        '<label class="rt-f2">Almuerzo (min)<input type="number" class="rh-alm" min="0" max="240" step="5" value="' + (Number(b.almuerzo) || 0) + '"></label>' +
+        (bloques.length > 1 ? '<button type="button" class="rt-f2cancel" data-rhx="' + k + '" title="Quitar este bloque" style="align-self:flex-end">×</button>' : '') +
+      '</div>';
+    }).join('');
+    cajaB.querySelectorAll('[data-rhx]').forEach(function(b){
+      b.onclick = function(){ leer(); bloques.splice(Number(b.dataset.rhx), 1); pintarB(); };
+    });
+    rotMenuPos(m);
+  };
+  pintarB();
+  document.getElementById('rh-bmas').onclick = function(){ leer(); bloques.push({ inicio: '', fin: '', almuerzo: 0 }); pintarB(); };
   m.querySelector('[data-rhcancel]').onclick = function(){ rotMenuPrincipal(m, id); };
   var fijoChk = document.getElementById('rh-fijo');
-  var verHoras = function(){ document.getElementById('rh-horas').style.display = fijoChk.checked ? 'none' : ''; rotMenuPos(m); };
+  var verHoras = function(){
+    document.getElementById('rh-horas').style.display = fijoChk.checked ? 'none' : '';
+    document.getElementById('rh-valor-caja').style.display = fijoChk.checked ? '' : 'none';
+    rotMenuPos(m);
+  };
   fijoChk.onchange = verHoras; verHoras();
   m.querySelector('[data-rhok]').onclick = function(){
-    var ini = document.getElementById('rh-ini').value;
-    var fin = document.getElementById('rh-fin').value;
-    var alm = Math.max(0, Math.min(240, Number(document.getElementById('rh-alm').value) || 0));
+    var err = document.getElementById('rh-err');
     var nom = (document.getElementById('rh-turno').value || '').trim().slice(0, 30);
     if(fijoChk.checked){
-      if(!nom){ document.getElementById('rh-err').textContent = 'Escriba el destino.'; return; }
+      if(!nom){ err.textContent = 'Escriba el nombre del servicio.'; return; }
+      var valor = Number(String(document.getElementById('rh-valor').value || '').replace(/\D/g, '')) || 0;
       rotSoltarPareja(id);
-      ROT.propio[id] = { tipo:'horas', fijo: true, turno: nom, inicio: '', fin: '', almuerzo: 0 };
+      ROT.propio[id] = { tipo:'horas', fijo: true, turno: nom, valor: valor, inicio: '', fin: '', almuerzo: 0 };
       ROT.sel[id] = 1; delete ROT.grupo[id];
       rotCerrarMenu(); rotPintar();
       return;
     }
     nom = nom || 'Horario';
-    if(!ini || !fin){ document.getElementById('rh-err').textContent = 'Ponga la hora de entrada y la de salida.'; return; }
+    leer();
+    var bs = bloques.filter(function(b){ return b.inicio || b.fin; });
+    if(!bs.length || bs.some(function(b){ return !b.inicio || !b.fin; })){
+      err.textContent = 'Ponga la entrada y la salida de cada bloque.'; return;
+    }
+    bs.sort(function(x, y){ return x.inicio < y.inicio ? -1 : 1; });
     rotSoltarPareja(id);
-    ROT.propio[id] = { tipo:'horas', turno: nom, inicio: ini, fin: fin, almuerzo: alm };
+    ROT.propio[id] = { tipo:'horas', turno: nom, inicio: bs[0].inicio, fin: bs[0].fin, almuerzo: bs[0].almuerzo,
+                       bloques: bs.length > 1 ? bs : null };
     ROT.sel[id] = 1; delete ROT.grupo[id];
     rotCerrarMenu(); rotPintar();
   };
@@ -47217,7 +47292,7 @@ function rotMenuHoras(m, id){
    aprueba. En una celda de descanso solo se ofrece el bloque aparte. */
 function rotMenuExtra(m, id){
   var t = ROT.celdas[id];
-  var esVacia = !!t.vacia;
+  var esVacia = !!t.vacia || !!t.fijo;   /* sin horas: solo el bloque aparte */
   m.innerHTML =
     '<div class="rt-menu-tit">Hora extra · ' + esc(t.nombre) + ' · ' + esc(fechaCorta(t.fecha)) + '</div>' +
     '<label class="rt-f2">Cuándo' +
@@ -47327,8 +47402,11 @@ function rotConfirmar(titulo, sub, filas, pie, textoOk){
   });
 }
 function rotTxtTurno(t){
-  if(t && t.fijo) return (t.turno || 'Destino') + ' (sin horas)';
+  if(t && t.fijo) return (t.turno || 'Destino') + ' · valor fijo' + (Number(t.valor) ? ' ' + rotPesos(t.valor) : '');
   if(!t || !t.inicio) return (t && t.fuera) ? txtSinTurno(lunesDe(t.fecha)) : 'descanso';
+  if(t.bloques && t.bloques.length > 1) return (t.turno || 'Horario') + ' ' + t.bloques.map(function(b){
+    return b.inicio + '–' + b.fin + (Number(b.almuerzo) ? ' (alm. ' + Number(b.almuerzo) + ')' : '');
+  }).join(' y ');
   var alm = Number(t.almuerzo) || 0;
   return (t.turno || 'Horario') + ' ' + t.inicio + '–' + t.fin + (alm ? ' · almuerzo ' + alm + ' min' : ' · sin almuerzo');
 }
@@ -47397,11 +47475,16 @@ function rotSoltarPareja(id){
    turno pero otra hora sí cuenta como cambio). */
 function rotEsCambio(t, d){
   if(!d || !t) return false;
-  if(d.descanso) return !!t.inicio;
-  if(d.fijo) return !!t.inicio || d.nombre !== t.turno;
+  if(d.descanso) return !!t.inicio || !!t.fijo;
+  if(d.fijo) return !t.fijo || d.nombre !== t.turno || (Number(d.valor) || 0) !== (Number(t.valor) || 0);
   if(t.vacia) return !!(d.inicio && d.fin);
-  return d.nombre !== t.turno || d.inicio !== t.inicio || d.fin !== t.fin ||
-         (Number(d.almuerzo) || 0) !== (Number(t.almuerzo) || 0);
+  /* Un horario partido se compara bloque por bloque. */
+  var bd = d.bloques || [d], bt = t.bloques || [t];
+  if(bd.length !== bt.length) return true;
+  return d.nombre !== t.turno || bd.some(function(b, k){
+    return b.inicio !== bt[k].inicio || b.fin !== bt[k].fin ||
+           (Number(b.almuerzo) || 0) !== (Number(bt[k].almuerzo) || 0);
+  });
 }
 
 function rotPintar(){
@@ -47438,7 +47521,7 @@ function rotPintar(){
       var soloAlm = !d.descanso && !d.fijo && t.inicio && d.nombre === t.turno &&
                     d.inicio === t.inicio && d.fin === t.fin;
       flecha.textContent = (d.descanso ? '→ descanso'
-        : d.fijo ? '→ ' + d.nombre + ' (sin horas)'
+        : d.fijo ? '→ ' + d.nombre + ' · valor fijo' + (Number(d.valor) ? ' ' + rotPesos(d.valor) : '')
         : soloAlm ? (Number(d.almuerzo) ? '→ almuerzo ' + Number(d.almuerzo) + ' min' : '→ sin almuerzo')
         : (propio && propio.tipo === 'swap' ? '⇄ ' : '→ ') + d.nombre) + ' ▾';
       flecha.classList.remove('sinrumbo');
@@ -47476,10 +47559,14 @@ function aplicarRotacion(boton){
     if(d.descanso){
       cambios.push({ persona: t.persona, fecha: t.fecha, quitar: true });
     } else if(d.fijo){
-      cambios.push({ persona: t.persona, fecha: t.fecha, turno: d.nombre, fijo: true, inicio: '', fin: '', almuerzo: 0 });
+      cambios.push({ persona: t.persona, fecha: t.fecha, turno: d.nombre, fijo: true, valor: Number(d.valor) || 0,
+                     inicio: '', fin: '', almuerzo: 0 });
     } else {
-      cambios.push({ persona: t.persona, fecha: t.fecha, turno: d.nombre,
-                     inicio: d.inicio, fin: d.fin, almuerzo: Number(d.almuerzo) || 0 });
+      var cb = { persona: t.persona, fecha: t.fecha, turno: d.nombre,
+                 inicio: d.inicio, fin: d.fin, almuerzo: Number(d.almuerzo) || 0 };
+      /* Horario partido: va cada bloque. El servidor deja una fila por bloque. */
+      if(d.bloques && d.bloques.length > 1) cb.bloques = d.bloques;
+      cambios.push(cb);
     }
   });
   if(!cambios.length){ err.textContent = 'No hay ningún cambio en lo marcado.'; return; }
@@ -47497,7 +47584,10 @@ function aplicarRotacion(boton){
   /* Cómo queda: cada cambio (ahora → queda) y las horas de la semana de
      cada persona antes y después. */
   var filas = [], horas = {};
-  var hsDe = function(x){ return x && x.inicio && x.fin ? horasTurno(x.inicio, x.fin, Number(x.almuerzo) || 0) : 0; };
+  var hsDe = function(x){
+    if(x && x.bloques && x.bloques.length > 1) return rotHorasBloques(x.bloques);
+    return x && x.inicio && x.fin ? horasTurno(x.inicio, x.fin, Number(x.almuerzo) || 0) : 0;
+  };
   Object.keys(ROT.celdas).forEach(function(id){
     var t = ROT.celdas[id];
     var h = horas[t.persona] || (horas[t.persona] = { nombre: t.nombre, antes: 0, despues: 0 });
@@ -49546,7 +49636,7 @@ function ppCeldaDe(hz, letra, fecha){
   var pu = fecha ? ppPuntualDe(hz, fecha) : null;
   if(pu){
     if(pu.descanso) return { trabaja:false, puntual:true };
-    if(pu.fijo) return { trabaja:true, fijo:true, op:(pu.op || hz.op || ''), almuerzo:0, especial:true, puntual:true, bloques:null };
+    if(pu.fijo) return { trabaja:true, fijo:true, op:(pu.op || hz.op || ''), valor:(Number(pu.valor) || 0), almuerzo:0, especial:true, puntual:true, bloques:null };
     var blp = ppBloquesDeEsp(pu, base);
     var q0 = (blp && blp[0]) || { inicio:'', fin:'', almuerzo:base };
     return { trabaja:true, op:(pu.op || hz.op || ''), especial:true, puntual:true, bloques:blp,
@@ -49554,7 +49644,7 @@ function ppCeldaDe(hz, letra, fecha){
   }
   var esp = ppEspecialDe(hz, letra);
   if(esp){
-    if(esp.fijo) return { trabaja:true, fijo:true, op:(esp.op || hz.op || ''), almuerzo:0, especial:true, bloques:null };
+    if(esp.fijo) return { trabaja:true, fijo:true, op:(esp.op || hz.op || ''), valor:(Number(esp.valor) || 0), almuerzo:0, especial:true, bloques:null };
     var bl = ppBloquesDeEsp(esp, base);
     var p0 = (bl && bl[0]) || { inicio:'', fin:'', almuerzo:base };
     return { trabaja:true, op:(esp.op || hz.op || ''), especial:true, bloques:bl,
@@ -49681,7 +49771,8 @@ function pintarPropios(){
       var cont = !c.trabaja
         ? '<span class="pp-d">descansa</span>' + (c.puntual ? '<span class="pp-punt">solo esta semana</span>' : '')
         : (c.fijo
-            ? '<span class="pp-fijo">valor fijo</span>' + (c.op ? '<span class="pp-op">' + esc(c.op) + '</span>' : '')
+            ? '<span class="pp-fijo">valor fijo</span>' + (c.op ? '<span class="pp-op">' + esc(c.op) + '</span>' : '') +
+              (c.valor ? '<span class="pp-op">' + esc(rotPesos(c.valor)) + '</span>' : '')
             : (bloquesTxt || '<span class="pp-h">' + esc(c.inicio) + '–' + esc(c.fin) + '</span>') + (c.op ? '<span class="pp-op">' + esc(c.op) + '</span>' : ''))
           + (c.puntual ? '<span class="pp-punt">solo esta semana</span>' : '');
       return '<td class="pp-td"><button type="button" class="pp-cel' + (c.trabaja ? '' : ' descansa') +
@@ -49816,6 +49907,8 @@ function ppPanel(){
       '</div>' +
       '<div id="pp-trab-caja"' + (c.trabaja ? '' : ' style="display:none"') + '>' +
         '<label class="pp-chk"><input type="checkbox" id="pp-fijo"' + (c.fijo ? ' checked' : '') + '> Valor fijo (servicio sin horas)</label>' +
+        '<div id="pp-valor-caja"' + (c.fijo ? '' : ' style="display:none"') + '><label>Valor (COP)</label>' +
+          '<input type="text" id="pp-cval" inputmode="numeric" maxlength="12" placeholder="Ej: 120000" value="' + (Number(c.valor) || '') + '"></div>' +
         '<div id="pp-horas-caja"' + (c.fijo ? ' style="display:none"' : '') + '>' +
           '<div id="pp-bloques">' +
             bloques.map(function(b, bi){ return filaBloque(b, bi, bloques.length > 1); }).join('') +
@@ -49874,6 +49967,7 @@ function ppPanel(){
     var escribirEspecial = function(bloquesNuevos){
       var op = (($p('pp-cop') || {}).value || '').trim();
       var fijo = !!($p('pp-fijo') && $p('pp-fijo').checked);
+      var valor = Number(String((($p('pp-cval') || {}).value) || '').replace(/\D/g, '')) || 0;
       var bs = bloquesNuevos || leerBloques();
       var conAlgo = bs.filter(function(b){ return b.inicio || b.fin; });
       quitarPuntual();
@@ -49881,12 +49975,12 @@ function ppPanel(){
         /* Solo esa fecha. Si queda igual a lo de siempre, no se anota. */
         var bb = (cBase.bloques || []);
         var igualSiempre = cBase.trabaja && (fijo
-          ? (cBase.fijo && op === (cBase.op || ''))
+          ? (cBase.fijo && op === (cBase.op || '') && valor === (Number(cBase.valor) || 0))
           : (!cBase.fijo && bs.length === bb.length && op === (cBase.op || '') &&
              bs.every(function(b, k){ return b.inicio === (bb[k].inicio || '') && b.fin === (bb[k].fin || '') &&
                                              (Number(b.almuerzo) || 0) === (Number(bb[k].almuerzo) || 0); })));
         if(igualSiempre) return;
-        if(fijo){ hz.especiales.push({ fecha: fechaDia, fijo: true, op: op, bloques: [] }); return; }
+        if(fijo){ hz.especiales.push({ fecha: fechaDia, fijo: true, op: op, valor: valor, bloques: [] }); return; }
         if(!conAlgo.length) return;
         var ep = { fecha: fechaDia, bloques: bs, inicio: bs[0].inicio, fin: bs[0].fin };
         if(op !== (hz.op || '')) ep.op = op;
@@ -49897,7 +49991,7 @@ function ppPanel(){
       if(arr.indexOf(letra) < 0){ arr.push(letra); hz.dias = DIAS_LETRA.filter(function(x){ return arr.indexOf(x) > -1; }).join(','); }
       hz.especiales = (hz.especiales || []).filter(function(e){ return e.dia !== letra; });
       if(fijo){
-        hz.especiales.push({ dia: letra, fijo: true, op: op, bloques: [] });
+        hz.especiales.push({ dia: letra, fijo: true, op: op, valor: valor, bloques: [] });
         return;
       }
       /* Un solo bloque cerrado, igual al base y misma operación/almuerzo: no
@@ -49914,6 +50008,7 @@ function ppPanel(){
     panel.querySelectorAll('.pp-bini,.pp-bfin,.pp-balm').forEach(function(inp){ inp.onchange = guardarCelda; });
     if($p('pp-fijo')) $p('pp-fijo').onchange = guardarCelda;
     if($p('pp-cop')) $p('pp-cop').onchange = guardarCelda;
+    if($p('pp-cval')) $p('pp-cval').onchange = guardarCelda;
     if($p('pp-bmas')) $p('pp-bmas').onclick = function(){
       var bs = leerBloques();
       bs.push({ inicio: '', fin: '', almuerzo: 0 });
@@ -55141,6 +55236,10 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
   function hxCombHTML(){
     var cats = cxCats();
     if(!cats.length) return '<div class="hx-card"><div class="hx-vacio">No hay vehículos registrados.</div></div>';
+    /* El combustible llega después que los mantenimientos: sin esto la tabla
+       salía solo con mantenimientos y parecía que el resto se había perdido. */
+    if(!window._combListo && !((typeof dataCombustible !== 'undefined' ? dataCombustible : []) || []).length)
+      return '<div class="hx-card"><div class="hx-vacio" style="padding:30px;text-align:center">Cargando combustible y mantenimientos…</div></div>';
     if(!cats.some(function(c){ return c.k === CX.cat; })) CX.cat = cats[0].k;
     var sel = cats.filter(function(c){ return c.k === CX.cat; })[0];
     var tabs = cats.map(function(c){
