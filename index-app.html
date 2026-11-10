@@ -10160,8 +10160,9 @@ function aplicarPermisoVoz() {
   if (!ok) {
     const ov = document.getElementById('voz-overlay');
     if (ov) ov.classList.remove('voz-abierto', 'voz-compacto');
-    try { window.speechSynthesis.cancel(); } catch(e) {}
+    vozCallar();
   }
+  if (ok) setTimeout(function(){ window.hortiPiper.precargar(); }, 4000);   // la voz se baja sola, sin esperar
 }
 
 // Carga la config de permisos desde el Apps Script
@@ -28778,15 +28779,14 @@ window.addEventListener('focus', function(){ cscRefrescarSiToca(CSC_AL_VOLVER_MS
         <div class="voz-h-tit">Asistente Horti</div>
         <div class="voz-h-sub">Consulta y navega el sistema</div>
       </div>
-      <button id="voz-cfg" title="Elegir la voz del asistente">🔊</button>
+      <button id="voz-cfg" title="Velocidad de la voz">🔊</button>
       <button id="voz-expandir" title="Mostrar la conversación y el campo para escribir" aria-expanded="true">▾</button>
       <button id="voz-cerrar" title="Cerrar (Esc)">✕</button>
     </div>
 
     <div id="voz-ajustes">
       <div class="voz-aj-tit">Voz del asistente</div>
-      <label class="voz-aj-lbl">Voz</label>
-      <select id="voz-select"></select>
+      <select id="voz-select" style="display:none"></select>
       <label class="voz-aj-lbl">Velocidad · <span id="voz-vel-val">1.0</span>×</label>
       <input id="voz-vel" type="range" min="0.6" max="1.4" step="0.05" value="1">
       <div class="voz-aj-btns">
@@ -30162,7 +30162,6 @@ function vozBurbuja(rol, texto){
 let _vozElegida = '';
 let _vozVelocidad = 1;
 try {
-  _vozElegida = localStorage.getItem('hortiVozNombre') || '';
   _vozVelocidad = parseFloat(localStorage.getItem('hortiVozVelocidad')) || 1;
 } catch(e){}
 
@@ -30239,6 +30238,170 @@ function vozDineroHablado(t){
     return antes + puro + (Number(puro) && Number(puro) % 1000000 === 0 ? ' de pesos' : ' pesos') + fin;
   });
 }
+/* ══════════════════════════════════════════════════════════════
+   VOZ PIPER · Sharvard (mujer). Voz libre que corre dentro del navegador,
+   sin servidor y sin costo. La primera vez se descarga el modelo (77 MB)
+   y queda guardado; mientras no esté listo, o si algo falla, el asistente
+   habla con la voz del navegador como antes.
+   Habla por oraciones: suena la primera mientras se arma la siguiente.
+   ══════════════════════════════════════════════════════════════ */
+window.hortiPiper = (function(){
+  const MODELO = 'https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/sharvard/medium/es_ES-sharvard-medium.onnx';
+  const ORT = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/';
+  const FON = 'https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@1.0.0/build/piper_phonemize';
+  const FON_JS = 'https://cdn.jsdelivr.net/npm/@mintplex-labs/piper-tts-web@1.0.5/dist/piper-o91UDS6e.js';
+  const CACHE = 'horti-voces-piper';
+  const API = { listo:false, estado:'sin descargar', avance:0 };
+  let carga = null, ort = null, crearFon = null, sesion = null, cfg = null, ctx = null;
+  let turno = 0, fuentes = [], pendiente = null;
+
+  async function traer(url, alAvanzar){
+    let cache = null;
+    try { cache = await caches.open(CACHE); const r = await cache.match(url); if (r) return r.arrayBuffer(); } catch(e){}
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('descarga ' + res.status);
+    const total = +(res.headers.get('Content-Length') || 0);
+    let buf;
+    if (res.body && total && alAvanzar){
+      const lec = res.body.getReader(), partes = []; let n = 0;
+      for(;;){ const r = await lec.read(); if (r.done) break; partes.push(r.value); n += r.value.length; alAvanzar(n / total); }
+      const todo = new Uint8Array(n); let q = 0; for (const x of partes){ todo.set(x, q); q += x.length; }
+      buf = todo.buffer;
+    } else buf = await res.arrayBuffer();
+    try { if (cache) await cache.put(url, new Response(buf.slice(0))); } catch(e){}
+    return buf;
+  }
+
+  API.precargar = function(){
+    if (carga) return carga;
+    API.estado = 'descargando';
+    carga = (async function(){
+      ort = await import(ORT + 'esm/ort.wasm.min.js');
+      ort.env.wasm.wasmPaths = ORT;
+      ort.env.wasm.numThreads = 1;
+      crearFon = (await import(FON_JS)).createPiperPhonemize;
+      cfg = JSON.parse(new TextDecoder().decode(await traer(MODELO + '.json')));
+      const modelo = await traer(MODELO, function(f){ API.avance = f; });
+      sesion = await ort.InferenceSession.create(modelo, { executionProviders:['wasm'] });
+      API.listo = true; API.estado = 'lista';
+    })().catch(function(e){
+      console.warn('voz Piper no disponible:', e);
+      API.estado = 'falló'; carga = null;
+    });
+    return carga;
+  };
+
+  function audio(){
+    if (!ctx){
+      const C = window.AudioContext || window.webkitAudioContext;
+      if (!C) return null;
+      ctx = new C();
+      // En iPhone, que suene aunque el celular esté en silencio
+      try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch(e){}
+    }
+    return ctx;
+  }
+  /* Safari solo deja sonar audio que se desbloqueó con un toque o tecla */
+  API.desbloquear = function(){
+    if (!carga && !API.listo) return;
+    const c = audio();
+    if (c && c.state !== 'running') { try { c.resume(); } catch(e){} }
+  };
+
+  function fonemas(texto){
+    return new Promise(function(ok, mal){
+      crearFon({
+        print: function(d){ try { ok(JSON.parse(d).phoneme_ids); } catch(e){ mal(e); } },
+        printErr: function(m){ console.warn(m); },
+        locateFile: function(u){ return u.endsWith('.wasm') ? FON + '.wasm' : u.endsWith('.data') ? FON + '.data' : u; }
+      }).then(function(m){
+        m.callMain(['-l', cfg.espeak.voice, '--input', JSON.stringify([{ text: texto }]), '--espeak_data', '/espeak-ng-data']);
+      }).catch(mal);
+    });
+  }
+  async function sintetizar(texto, vel){
+    const ids = await fonemas(texto);
+    const inf = cfg.inference;
+    const { output } = await sesion.run({
+      input: new ort.Tensor('int64', ids, [1, ids.length]),
+      input_lengths: new ort.Tensor('int64', [ids.length]),
+      scales: new ort.Tensor('float32', [inf.noise_scale, inf.length_scale / Math.max(0.5, vel || 1), inf.noise_w]),
+      sid: new ort.Tensor('int64', [cfg.speaker_id_map.F])
+    });
+    return output.data;
+  }
+  // Oraciones; los puntos de "1.000" no cortan porque no van seguidos de espacio
+  function oraciones(t){
+    const out = [];
+    String(t).replace(/([.!?;:])\s+/g, '$1\u0001').split('\u0001').forEach(function(o){
+      o = o.trim(); if (!o) return;
+      while (o.length > 280){
+        let k = o.lastIndexOf(',', 280); if (k < 80) k = o.lastIndexOf(' ', 280); if (k < 1) k = 280;
+        out.push(o.slice(0, k + 1).trim()); o = o.slice(k + 1).trim();
+      }
+      if (o) out.push(o);
+    });
+    return out;
+  }
+
+  API.parar = function(){
+    turno++;
+    fuentes.forEach(function(f){ try { f.onended = null; f.stop(); } catch(e){} });
+    fuentes = [];
+    if (pendiente){ const p = pendiente; pendiente = null; p('cortado'); }
+  };
+
+  /* Habla y avisa al terminar. Rechaza si no puede sonar (para usar la voz
+     del navegador en su lugar). */
+  API.hablar = async function(texto, vel, alEmpezar){
+    if (!API.listo) throw new Error('no lista');
+    const c = audio();
+    if (!c) throw new Error('sin audio');
+    if (c.state !== 'running'){
+      try { await Promise.race([c.resume(), new Promise(function(r){ setTimeout(r, 400); })]); } catch(e){}
+      if (c.state !== 'running') throw new Error('audio bloqueado');
+    }
+    API.parar();
+    const mio = turno;
+    const partes = oraciones(texto);
+    if (!partes.length) return 'listo';
+    return new Promise(async function(fin){
+      pendiente = fin;
+      let cursor = 0, ultima = null, empezo = false;
+      try {
+        for (let i = 0; i < partes.length; i++){
+          const pcm = await sintetizar(partes[i], vel);
+          if (mio !== turno) return;
+          const buf = c.createBuffer(1, pcm.length, cfg.audio.sample_rate);
+          buf.copyToChannel(pcm, 0);
+          const src = c.createBufferSource();
+          src.buffer = buf; src.connect(c.destination);
+          cursor = Math.max(cursor, c.currentTime + 0.03);
+          src.start(cursor);
+          cursor += buf.duration + 0.16;
+          fuentes.push(src);
+          ultima = src;
+          if (!empezo){ empezo = true; if (alEmpezar) alEmpezar(); }
+        }
+        ultima.onended = function(){ if (mio === turno && pendiente === fin){ pendiente = null; fuentes = []; fin('listo'); } };
+      } catch(e){
+        console.warn('voz Piper:', e);
+        if (pendiente === fin){ pendiente = null; fin(empezo ? 'listo' : 'falló'); }
+      }
+    });
+  };
+  ['pointerdown', 'keydown', 'touchend'].forEach(function(ev){
+    document.addEventListener(ev, function(){ API.desbloquear(); }, true);
+  });
+  return API;
+})();
+
+/* Calla cualquier voz (Piper o la del navegador) */
+function vozCallar(){
+  try { window.hortiPiper.parar(); } catch(e){}
+  try { window.speechSynthesis.cancel(); } catch(e){}
+}
+
 function vozArmarUtterance(texto){
   const u = new SpeechSynthesisUtterance(vozDineroHablado(texto));
   u.lang = 'es-CO';
@@ -30264,6 +30427,18 @@ function vozMantenerViva(){
   }, 10000);
 }
 function vozHablar(texto){
+  vozCallar();
+  if (window.hortiPiper.listo){
+    window.hortiPiper.hablar(vozDineroHablado(texto), _vozVelocidad, function(){ vozSetEstado('speaking','Hablando…'); })
+      .then(function(r){
+        if (r === 'falló') return vozHablarNavegador(texto);
+        if (r !== 'cortado') vozSetEstado('','Pregúntame por cualquier fecha o pestaña');
+      }, function(){ vozHablarNavegador(texto); });
+    return;
+  }
+  vozHablarNavegador(texto);
+}
+function vozHablarNavegador(texto){
   if (!('speechSynthesis' in window)) return;
   window.speechSynthesis.cancel();
   const u = vozArmarUtterance(texto);
@@ -30293,6 +30468,15 @@ function vozHablarEsperar(texto){
   return vozEsperarCarga().then(function(){ return vozHablarYa(texto); });
 }
 function vozHablarYa(texto){
+  if (window.hortiPiper.listo){
+    vozCallar();
+    return window.hortiPiper.hablar(vozDineroHablado(texto), _vozVelocidad, function(){ vozSetEstado('speaking','Hablando…'); })
+      .then(function(r){ if (r === 'falló') return vozHablarYaNavegador(texto); },
+            function(){ return vozHablarYaNavegador(texto); });
+  }
+  return vozHablarYaNavegador(texto);
+}
+function vozHablarYaNavegador(texto){
   return new Promise(function(resolver){
     if (!('speechSynthesis' in window)){
       setTimeout(resolver, Math.min(7000, 900 + texto.length * 45));
@@ -30374,7 +30558,7 @@ function vozCerrarPanel(){
   vozQuitarFocos();
   vozInfParar();
   vozOverlay.classList.remove('voz-intervencion', 'voz-sup');
-  try { window.speechSynthesis.cancel(); } catch(e){}
+  vozCallar();
   setTimeout(function(){
     vozOverlay.classList.remove('voz-abierto','voz-compacto');
     vozModoConsulta(false);
@@ -32562,7 +32746,7 @@ function vozInfRevisarTabs(){
 function vozInfParar(){
   if (!_vozInfSonando) return;
   _vozInfTurno++;
-  try { window.speechSynthesis.cancel(); } catch(e){}
+  vozCallar();
 }
 /* Presenta un informe en el menú, escena por escena, desde donde esté
    (se puede pausar y seguir). No cambia de pestaña ni filtra nada. */
@@ -33212,7 +33396,7 @@ if (vozVelVal) vozVelVal.textContent = _vozVelocidad.toFixed(2).replace(/0$/,'')
 vozCfg.addEventListener('click', function(){
   const abierto = vozAj.classList.toggle('voz-abierto');
   vozCfg.classList.toggle('voz-on', abierto);
-  if (abierto){ vozPintarSelectorVoces(); vozAvisarIdioma(); }
+  if (abierto) vozPintarEstadoVoz();
 });
 document.getElementById('voz-aj-cerrar').addEventListener('click', function(){
   vozAj.classList.remove('voz-abierto');
@@ -33223,6 +33407,17 @@ vozSelect.addEventListener('change', function(){
   try { localStorage.setItem('hortiVozNombre', _vozElegida); } catch(e){}
   vozAvisarIdioma();
 });
+
+function vozPintarEstadoVoz(){
+  const nota = document.getElementById('voz-aj-nota');
+  if (!nota) return;
+  const P = window.hortiPiper;
+  nota.textContent = P.listo ? 'Voz Sharvard lista.'
+    : P.estado === 'descargando' ? 'Descargando la voz Sharvard… ' + Math.round(P.avance * 100) + ' %. Mientras tanto habla la voz del navegador.'
+    : P.estado === 'falló' ? 'No se pudo cargar la voz Sharvard; habla la voz del navegador.'
+    : 'La voz Sharvard se descarga sola la primera vez (77 MB).';
+  if (vozAj.classList.contains('voz-abierto') && !P.listo && P.estado === 'descargando') setTimeout(vozPintarEstadoVoz, 1000);
+}
 
 /* Avisa en qué idioma va a responder según la voz elegida */
 function vozAvisarIdioma(){
@@ -33247,7 +33442,7 @@ document.getElementById('voz-probar').addEventListener('click', function(){
 // La lista de voces suele llegar después de cargar la página
 if ('speechSynthesis' in window){
   window.speechSynthesis.onvoiceschanged = function(){
-    if (vozAj.classList.contains('voz-abierto')) vozPintarSelectorVoces();
+    if (vozAj.classList.contains('voz-abierto')) vozPintarEstadoVoz();
   };
 }
 
@@ -33335,7 +33530,7 @@ if (VozSR){
   vozMicBtn.addEventListener('click', function(){
     _vozEscuchaAuto = false;
     if (vozEscuchando){ vozRec.stop(); return; }
-    try { window.speechSynthesis.cancel(); } catch(e){}
+    vozCallar();
     // El micrófono escucha en el mismo idioma en que responde el asistente
     try { vozRec.lang = vozIdiomaActual().lang; } catch(e){}
     vozReintento = 0;
