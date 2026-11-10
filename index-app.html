@@ -8357,7 +8357,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 }
 /* Sin el poder, los botones que cambian algo no se muestran */
 #panel-personal.per-sin-quincena #ar-quincena,
-#panel-personal.per-sin-docs :is(#per-nuevo,[data-per-editar],[data-per-foto],[data-per-docs]),
+#panel-personal.per-sin-docs :is(#per-nuevo,#per-cargo,[data-per-editar],[data-per-foto],[data-per-docs]),
 #panel-personal.per-sin-horas :is(#ar-nueva,[data-ar-mover],[data-ar-editar],[data-ar-modificar],[data-ar-borrar],[data-ajustar],[data-rehacer],[data-repetir],[data-per-nov],[data-per-mover]){display:none!important}
 /* Accesos de Personal (solo el maestro) */
 #panel-personal .pac-cab{margin-bottom:14px}
@@ -46141,11 +46141,16 @@ function pintar(){
   var dc = $p('per-cargos');
   if(dc) dc.innerHTML = cargos.map(function(c){ return '<option value="' + esc(c) + '">'; }).join('');
 
+  /* Sin el poder de documentación solo se ve nombre y foto: tampoco se
+     busca por cédula ni por cargo. */
+  var conDocs = perPoder('docs');
+  if(!conDocs) cargo = '';
+  if($p('per-buscar')) $p('per-buscar').placeholder = conDocs ? 'Buscar por nombre, cargo o área' : 'Buscar por nombre';
   var lista = P.gente.filter(function(p){
     if(!verInactivos && p.activo === false) return false;
     if(cargo && String(p.cargo || '') !== cargo) return false;
     if(q){
-      var t = (p.nombre + ' ' + (p.cargo || '') + ' ' + areaDePersona(p) + ' ' + (p.cedula || '')).toLowerCase();
+      var t = (conDocs ? p.nombre + ' ' + (p.cargo || '') + ' ' + areaDePersona(p) + ' ' + (p.cedula || '') : String(p.nombre)).toLowerCase();
       if(t.indexOf(q) < 0) return false;
     }
     return true;
@@ -46168,6 +46173,7 @@ function pintar(){
       cajaFotoPersona(p, 'per-foto') +
       '<div class="per-d">' +
         '<div class="per-nom">' + esc(p.nombre) + '</div>' +
+        (!conDocs ? '' :
         (p.cargo ? '<div class="per-cargo">' + esc(p.cargo) + '</div>' : '') +
         (p.cedula ? '<div class="per-dato">CC ' + esc(p.cedula) + '</div>' : '') +
         (p.telefono ? '<div class="per-dato">' + esc(p.telefono) + '</div>' : '') +
@@ -46179,7 +46185,7 @@ function pintar(){
             (deEquipo ? ' title="Está en el equipo de esta área"' : '') + '>' +
             esc(suya || 'sin área') + '</span>';
         })() +
-        (p.activo === false ? '<span class="per-area-et sin" style="margin-left:5px">ya no está</span>' : '') +
+        (p.activo === false ? '<span class="per-area-et sin" style="margin-left:5px">ya no está</span>' : '')) +
         '<div class="per-acc">' +
           '<button type="button" data-per-editar="' + esc(p.clave) + '">Editar</button>' +
           '<button type="button" data-per-foto="' + esc(p.clave) + '">' + (p.foto ? 'Cambiar foto' : 'Poner foto') + '</button>' +
@@ -48100,6 +48106,8 @@ function liqTextoDia(lista){
 }
 
 function escribirExcelQuincena(d){
+  /* Sin el poder de documentación, el archivo sale sin cédula ni cargo. */
+  var conDocs = perPoder('docs');
   /* Las 42 h se miran por semana completa: por eso se piden lunes a
      domingo, aunque el archivo solo traiga los días del periodo. */
   var enPeriodo = function(f){ return f >= d.desde && f <= d.hasta; };
@@ -48136,9 +48144,9 @@ function escribirExcelQuincena(d){
     var ex = porDia[k];
     return {
       'Área': t.area,
-      'Cédula': t.cedula || '',
+      'Cédula': conDocs ? (t.cedula || '') : '',
       'Nombre': t.nombre,
-      'Cargo': t.cargo || '',
+      'Cargo': conDocs ? (t.cargo || '') : '',
       'Fecha': t.fecha,
       'Día': t.dia,
       'Turno': t.turno,
@@ -48351,7 +48359,7 @@ function escribirExcelQuincena(d){
       var subSem = cero();
       gente.forEach(function(claveP){
         var p = A.gente[claveP];
-        var fila = [p.nombre, p.cargo];
+        var fila = [p.nombre, conDocs ? p.cargo : ''];
         var s = cero();
         var pintaCeldas = [];
         var lineasFila = 1;
@@ -48519,7 +48527,7 @@ function escribirExcelQuincena(d){
     return String(x.nombre).localeCompare(String(y.nombre), 'es') || String(x.lunes).localeCompare(String(y.lunes)) || (x.ini - y.ini);
   }).map(function(x){
     var w = liqJustifica(x);
-    return { 'Área': x.area, 'Cédula': x.cedula || '', 'Nombre': x.nombre,
+    return { 'Área': x.area, 'Cédula': conDocs ? (x.cedula || '') : '', 'Nombre': x.nombre,
              'Semana del': x.lunes, 'Turno del día': x.fecha, 'Cuándo': w.cuando,
              'Horas': Math.round((x.fin - x.ini) / 60 * 100) / 100, 'Tipo': w.tipo,
              'De dónde sale': w.origen, 'Motivo': w.motivo, 'Estado y responsable': w.estado };
