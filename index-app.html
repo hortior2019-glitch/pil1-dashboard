@@ -9418,6 +9418,15 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   background:#fdf8ee;padding:10px 12px;border-radius:8px;font-size:12px;color:var(--ink-m);line-height:1.6}
 #per-mover-modal .mv-aviso b{color:var(--ink)}
 #per-mover-modal .mv-aviso.malo{border-left-color:#c0392b;background:#fdeceb}
+/* Agregar trabajador a un área (pedido tarde: ya venía trabajando) */
+#per-mover-modal .ag-buscar{width:100%;margin-bottom:6px}
+#per-mover-modal .ag-gente label{font-size:13px}
+#per-mover-modal .ag-gente small{font-size:13px;color:#5b5b5b}
+#per-mover-modal .ag-alerta{border:1px solid #e3b4ad;border-left:4px solid #c0392b;background:#fdeceb;
+  padding:10px 12px;border-radius:8px;font-size:13px;color:#4a1a14;line-height:1.5;margin-top:10px}
+#per-mover-modal .ag-libre{border:1px solid var(--rule);border-left:4px solid #1c5636;background:#f2f8f4;
+  padding:10px 12px;border-radius:8px;font-size:13px;color:#1f3a2a;line-height:1.5;margin-top:10px}
+#per-mover-modal .ag-paso{font-size:13px;color:#3d3d3d;line-height:1.55;margin:4px 0 0}
 #panel-personal .per-recorrido{margin-top:10px}
 #panel-personal .per-recorrido .paso{display:flex;gap:8px;align-items:baseline;font-size:12px;
   border-left:2px solid var(--rule);padding:4px 0 4px 10px;color:var(--ink-m)}
@@ -28779,7 +28788,7 @@ window.addEventListener('focus', function(){ cscRefrescarSiToca(CSC_AL_VOLVER_MS
         <div class="voz-h-tit">Asistente Horti</div>
         <div class="voz-h-sub">Consulta y navega el sistema</div>
       </div>
-      <button id="voz-cfg" title="Velocidad de la voz">🔊</button>
+      <button id="voz-cfg" title="Voz del asistente">🔊</button>
       <button id="voz-expandir" title="Mostrar la conversación y el campo para escribir" aria-expanded="true">▾</button>
       <button id="voz-cerrar" title="Cerrar (Esc)">✕</button>
     </div>
@@ -28787,8 +28796,6 @@ window.addEventListener('focus', function(){ cscRefrescarSiToca(CSC_AL_VOLVER_MS
     <div id="voz-ajustes">
       <div class="voz-aj-tit">Voz del asistente</div>
       <select id="voz-select" style="display:none"></select>
-      <label class="voz-aj-lbl">Velocidad · <span id="voz-vel-val">1.0</span>×</label>
-      <input id="voz-vel" type="range" min="0.6" max="1.4" step="0.05" value="1">
       <div class="voz-aj-btns">
         <button id="voz-probar">▶ Probar</button>
         <button id="voz-aj-cerrar">Listo</button>
@@ -30160,10 +30167,7 @@ function vozBurbuja(rol, texto){
    navegador. getVoices() suele venir vacío al principio y llenarse después,
    por eso también se escucha el evento onvoiceschanged. */
 let _vozElegida = '';
-let _vozVelocidad = 1;
-try {
-  _vozVelocidad = parseFloat(localStorage.getItem('hortiVozVelocidad')) || 1;
-} catch(e){}
+const _vozVelocidad = 0.9;   /* fija: no se elige ni se guarda */
 
 function vozVocesDisponibles(){
   if (!('speechSynthesis' in window)) return [];
@@ -33429,11 +33433,6 @@ function vozAvisarIdioma(){
     : 'El asistente va a responder en ' + id.nombre + ', no solo a leer con esa voz.';
   nota.style.display = 'block';
 }
-vozVel.addEventListener('input', function(){
-  _vozVelocidad = parseFloat(vozVel.value) || 1;
-  if (vozVelVal) vozVelVal.textContent = _vozVelocidad.toFixed(2).replace(/0$/,'');
-  try { localStorage.setItem('hortiVozVelocidad', String(_vozVelocidad)); } catch(e){}
-});
 document.getElementById('voz-probar').addEventListener('click', function(){
   const id = vozIdiomaActual();
   vozHablar(VOZ_FRASE_PRUEBA[id.codigo] || VOZ_FRASE_PRUEBA.es);
@@ -46703,6 +46702,170 @@ function hacerMover(boton){
 }
 
 /* ══════════════════════════════════════════════════════════════════
+   AGREGAR TRABAJADOR A UN ÁREA
+   ------------------------------------------------------------------
+   Para cuando el supervisor no lo ingresó a tiempo y la persona ya venía
+   trabajando. Se elige a quién y desde qué día:
+     · si ya estaba programado en otra área, se avisa y se pide el día en
+       que empezó en ESTA área (desde ese día deja la otra);
+     · si estaba suelto, solo se pide la fecha de ingreso.
+   Queda planillado desde esa fecha (el servicio rearma desde esa semana)
+   y enseguida se pide replantear el área en “Editar turnos de la semana”.
+   Usa el mismo traslado de siempre (perMover): no hay servicio nuevo.
+   ══════════════════════════════════════════════════════════════════ */
+function abrirAgregarTrabajador(area){
+  if(perSinPoder('horas')) return;
+  if(!area || !areaPorNombre(area)){ alert('No se encontró el área.'); return; }
+  MOVER = { origen: '', destino: area, elegidas: [], efectivo: '', incluirSemana: true,
+            sentido: 'traer', dias: [], agregar: true };
+
+  var candidatas = P.gente.filter(function(p){
+    if(p.activo === false) return false;
+    /* Quien ya está en esta área todos los días no tiene nada que agregar. */
+    var aqui = miembrosDe(area).filter(function(m){ return m.persona === p.clave; })[0];
+    return !aqui || !!aqui.dias;
+  }).sort(function(a, b){ return String(a.nombre).localeCompare(String(b.nombre), 'es'); });
+
+  $p('mv-caja').innerHTML =
+    '<div class="per-tit">Agregar trabajador · ' + esc(area) + '</div>' +
+    '<div class="per-sub">Para quien ya está trabajando aquí y no se había ingresado.</div>' +
+    '<label>¿Quién?</label>' +
+    '<input type="search" class="ag-buscar" id="ag-buscar" placeholder="Buscar por nombre" autocomplete="off">' +
+    '<div class="mv-gente ag-gente" id="ag-gente"></div>' +
+    '<div id="ag-estado"></div>' +
+    '<label id="ag-fecha-lbl">Fecha de ingreso a laborar</label>' +
+    '<input type="date" id="ag-fecha" value="">' +
+    '<div class="mv-aviso" id="mv-aviso" style="margin-top:12px">Elija a quién y desde qué día.</div>' +
+    '<div class="per-error" id="mv-error"></div>' +
+    '<div class="per-btns">' +
+      '<button type="button" class="cancelar" id="ag-cancelar">Cancelar</button>' +
+      '<button type="button" class="guardar" id="ag-guardar">Agregar</button>' +
+    '</div>';
+  $p('per-mover-modal').classList.add('open');
+
+  var pintarGente = function(){
+    var q = String($p('ag-buscar').value || '').trim().toLowerCase();
+    var lista = candidatas.filter(function(p){ return !q || String(p.nombre).toLowerCase().indexOf(q) > -1; });
+    $p('ag-gente').innerHTML = lista.length ? lista.map(function(p){
+      var otras = P.miembros.filter(function(m){ return m.persona === p.clave && m.area !== area; })
+                            .map(function(m){ return m.area; });
+      var on = MOVER.elegidas[0] === p.clave;
+      return '<label data-c="' + esc(p.clave) + '"' + (on ? ' class="on"' : '') + '>' +
+        '<input type="radio" name="ag-quien" value="' + esc(p.clave) + '"' + (on ? ' checked' : '') + '>' +
+        '<span>' + esc(p.nombre) + '<br><small>' + (otras.length ? esc(otras.join(', ')) : 'sin área') + '</small></span></label>';
+    }).join('') : '<div class="ayuda">' + (candidatas.length ? 'Nadie con ese nombre.' : 'Todo el personal activo ya está en esta área.') + '</div>';
+    $p('ag-gente').querySelectorAll('input').forEach(function(r){
+      r.onchange = function(){ MOVER.elegidas = [r.value]; pintarGente(); pintarEstado(); revisar(); };
+    });
+  };
+
+  /* Ya programado en otra área: alerta y se pide el día que empezó aquí.
+     Suelto: solo la fecha de ingreso. */
+  var pintarEstado = function(){
+    var clave = MOVER.elegidas[0];
+    var caja = $p('ag-estado'), lbl = $p('ag-fecha-lbl');
+    if(!clave){ caja.innerHTML = ''; lbl.textContent = 'Fecha de ingreso a laborar'; return; }
+    var p = P.gente.filter(function(g){ return g.clave === clave; })[0] || {};
+    var otras = P.miembros.filter(function(m){ return m.persona === clave && m.area !== area; });
+    if(otras.length){
+      caja.innerHTML = '<div class="ag-alerta">⚠ <b>' + esc(p.nombre) + '</b> ya está programado en ' +
+        otras.map(function(m){ return '<b>' + esc(m.area) + '</b> (' + esc(diasDeMiembro(m).join(',')) + ')'; }).join(' y ') +
+        '. Aclara qué día empezó en <b>' + esc(area) + '</b>: desde ese día deja ' +
+        (otras.length === 1 ? 'esa área' : 'esas áreas') + '.</div>';
+      lbl.textContent = '¿Qué día empezó en ' + area + '?';
+    } else {
+      caja.innerHTML = '<div class="ag-libre"><b>' + esc(p.nombre) + '</b> no está en ninguna área. Solo falta la fecha de ingreso.</div>';
+      lbl.textContent = 'Fecha de ingreso a laborar';
+    }
+  };
+
+  var revisar = function(){
+    MOVER.efectivo = $p('ag-fecha').value || '';
+    $p('mv-error').textContent = '';
+    if(!MOVER.elegidas.length || !MOVER.efectivo){
+      $p('mv-aviso').className = 'mv-aviso';
+      $p('mv-aviso').textContent = !MOVER.elegidas.length ? 'Elija a quién.' : 'Falta la fecha.';
+      return;
+    }
+    revisarMover();
+  };
+
+  $p('ag-buscar').oninput = pintarGente;
+  $p('ag-fecha').onchange = revisar;
+  $p('ag-cancelar').onclick = function(){ cerrarMover(); };
+  $p('ag-guardar').onclick = function(){ guardarAgregarTrabajador(this, area); };
+  pintarGente();
+  try { $p('ag-buscar').focus(); } catch(e){}
+}
+
+function guardarAgregarTrabajador(boton, area){
+  var err = $p('mv-error');
+  var clave = MOVER && MOVER.elegidas[0];
+  var fecha = $p('ag-fecha').value || '';
+  if(!clave){ err.textContent = 'Falta decir a quién.'; return; }
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha)){ err.textContent = 'Falta la fecha.'; return; }
+  err.textContent = '';
+  boton.disabled = true;
+  boton.textContent = 'Agregando…';
+  var otras = P.miembros.filter(function(m){ return m.persona === clave && m.area !== area; }).map(function(m){ return m.area; });
+  pedir({ accion:'perMover', personas: [clave], destino: area, efectivo: fecha,
+          incluirSemana: true, dias: '', origen: '', inicial: '',
+          nota: otras.length ? 'Ingreso tardío: venía de ' + otras.join(', ') : 'Ingreso tardío',
+          quien: quienSoy() })
+    .then(function(d){
+      P.areas = d.areas || P.areas;
+      P.miembros = d.miembros || P.miembros;
+      P.gente = d.personas || P.gente;
+      P.traslados = d.traslados || P.traslados || [];
+      P.turnos = {}; FRESCO = {};
+      guardarLocal();
+      cerrarMover();
+      pintar();
+      movLlevarA({ destino: area, personas: [clave], efectivo: fecha, dias: [] });
+      pedirReplantear(area, clave, fecha);
+    })
+    .catch(function(e){
+      err.textContent = e.message || 'No se pudo agregar.';
+      boton.disabled = false;
+      boton.textContent = 'Agregar';
+    });
+}
+
+/* Ya quedó planillado: se pide replantear el área en esa semana para que
+   circule en el organigrama. El botón espera a que el cuadro termine de
+   cargar, si no el editor vería la semana vacía. */
+function pedirReplantear(area, clave, fecha){
+  var p = P.gente.filter(function(g){ return g.clave === clave; })[0] || {};
+  var sem = lunesDe(fecha);
+  $p('mv-caja').innerHTML =
+    '<div class="per-tit">Quedó planillado</div>' +
+    '<p class="ag-paso"><b>' + esc(p.nombre || clave) + '</b> trabaja en <b>' + esc(area) + '</b> desde el <b>' +
+      esc(fechaCorta(fecha)) + '</b>.</p>' +
+    '<p class="ag-paso">Ahora replantea el área para que quede circulando en el organigrama.</p>' +
+    '<div class="per-btns">' +
+      '<button type="button" class="cancelar" id="ag-despues">Después</button>' +
+      '<button type="button" class="guardar" id="ag-editar" disabled>Cargando el cuadro…</button>' +
+    '</div>';
+  $p('per-mover-modal').classList.add('open');
+  $p('ag-despues').onclick = function(){ cerrarMover(); };
+  var vueltas = 0;
+  var listo = function(){
+    var b = $p('ag-editar');
+    if(!b || !$p('per-mover-modal').classList.contains('open')) return;
+    var cargado = AREA_VIENDO === area && ESTADO_TURNOS !== 'trayendo' &&
+      Object.keys(P.turnos || {}).some(function(k){ return k.indexOf(area + '|') === 0; });
+    if(cargado || ++vueltas > 150){
+      b.disabled = false;
+      b.textContent = 'Editar turnos de la semana del ' + fechaCorta(sem);
+      b.onclick = function(){ cerrarMover(); abrirAjusteSemana(sem); };
+      return;
+    }
+    setTimeout(listo, 400);
+  };
+  setTimeout(listo, 600);
+}
+
+/* ══════════════════════════════════════════════════════════════════
    AJUSTAR LA SEMANA DE TODA EL ÁREA
    ------------------------------------------------------------------
    Hasta ahora solo se podía tocar el turno de una persona un día. Lo que
@@ -51559,6 +51722,7 @@ function cuadroMes(area, turnos){
           /* Rotar gente desde aquí mismo: traerla a esta área (eligiendo
              con qué turno entra a cubrir) o sacarla hacia otra. */
           '<button type="button" id="mes-rotar">Rotar personal</button>' +
+          '<button type="button" id="mes-agregar">Agregar trabajador</button>' +
           '<button type="button" id="mes-hoy">Ir a hoy</button>' +
           '<button type="button" id="mes-cerrar">Cerrar</button>' +
         '</div>' +
@@ -52419,6 +52583,7 @@ function engancharMes(){
     PLANEADAS[AREA_VIENDO] = false; ESTADO_TURNOS = ''; verMes(AREA_VIENDO, MES_VIENDO, true);
   };
   if(b('mes-rotar'))   b('mes-rotar').onclick   = function(){ abrirMover({ origen: AREA_VIENDO }); };
+  if(b('mes-agregar')) b('mes-agregar').onclick = function(){ abrirAgregarTrabajador(AREA_VIENDO); };
   if(b('mes-hoy'))     b('mes-hoy').onclick     = function(){
     var antes = semanasDelCuadro(MES_VIENDO || isoDe(new Date()))[0];
     var ahora = semanasDelCuadro(isoDe(new Date()))[0];
