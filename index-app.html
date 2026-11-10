@@ -8338,8 +8338,9 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-personal .per-portada{
   position:relative;overflow:hidden;background:#0f3320;
   border:none;border-bottom:4px solid #1c5636;
-  /* Se sale del respiro del tablero para ir de borde a borde de la pantalla */
-  width:100vw;margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw);margin-bottom:18px;
+  /* Va al ancho del panel: el panel recorta lo que se sale a los lados
+     (overflow-x:clip), y de borde a borde cortaba la foto y el título. */
+  margin-bottom:18px;border-radius:6px;
   height:clamp(160px,22vw,260px);
 }
 #panel-personal .per-portada img{
@@ -8354,6 +8355,34 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   max-width:1280px;margin:0 auto;padding:0 20px;
   font-family:'Playfair Display',serif;font-size:clamp(24px,3.2vw,36px);font-weight:700;color:#fff;line-height:1.1;
 }
+/* Sin el poder, los botones que cambian algo no se muestran */
+#panel-personal.per-sin-quincena #ar-quincena,
+#panel-personal.per-sin-docs :is(#per-nuevo,[data-per-editar],[data-per-foto],[data-per-docs]),
+#panel-personal.per-sin-horas :is(#ar-nueva,[data-ar-mover],[data-ar-editar],[data-ar-modificar],[data-ar-borrar],[data-ajustar],[data-rehacer],[data-repetir],[data-per-nov],[data-per-mover]){display:none!important}
+/* Accesos de Personal (solo el maestro) */
+#panel-personal .pac-cab{margin-bottom:14px}
+#panel-personal .pac-tit{font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:var(--ink)}
+#panel-personal .pac-sub{font-size:14px;color:#4a514d;margin-top:4px}
+#panel-personal .pac-scroll{overflow-x:auto;background:var(--white);border:1px solid var(--rule)}
+#panel-personal .pac-tabla{border-collapse:collapse;width:100%;min-width:520px;font-size:14px}
+#panel-personal .pac-tabla th{text-align:center;padding:10px 12px;font-size:13px;font-weight:700;color:var(--ink);background:var(--s2,#f3f4f1);border-bottom:2px solid var(--ink)}
+#panel-personal .pac-tabla th:first-child{text-align:left}
+#panel-personal .pac-tabla th span,#panel-personal .pac-n span{display:block;font-size:13px;font-weight:400;color:#4a514d}
+#panel-personal .pac-tabla td{padding:10px 12px;border-bottom:1px solid var(--rule-l,#ececec)}
+#panel-personal .pac-n{font-weight:700;color:var(--ink)}
+#panel-personal .pac-c{text-align:center}
+#panel-personal .pac-c input{width:18px;height:18px;accent-color:#1c5636;cursor:pointer}
+#panel-personal .pac-todo{font-size:13px;color:#1c5636;font-weight:700}
+#panel-personal .pac-a{min-width:190px}
+#panel-personal .pac-a summary{cursor:pointer;font-size:14px;font-weight:700;color:#1c5636;padding:2px 0}
+#panel-personal .pac-lista{display:grid;gap:6px;margin-top:8px;max-height:260px;overflow:auto;padding-right:6px}
+#panel-personal .pac-lista label{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--ink);cursor:pointer}
+#panel-personal .pac-lista input{width:17px;height:17px;accent-color:#1c5636}
+#panel-personal .pac-lista .pac-todas{font-weight:700;border-bottom:1px solid var(--rule-l,#ececec);padding-bottom:6px}
+#panel-personal .pac-pie{display:flex;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap}
+#panel-personal .pac-aviso{font-size:14px;color:#1c5636;font-weight:700}
+#panel-personal .pac-vacio{font-size:14px;color:#4a514d;padding:14px 0}
+#panel-personal .pac-err{font-size:14px;color:#b23b3b;font-weight:700;padding:14px 0}
 /* ── ÁREAS DE TRABAJO Y TURNOS ─────────────────────────────────── */
 /* Las dos vistas de la pestaña: fichas, no subrayados */
 #panel-personal .per-tabs{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
@@ -9456,6 +9485,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <button type="button" class="per-tab" data-per-vista="gente"><span>Colaboradores</span></button>
     <button type="button" class="per-tab" data-per-vista="areas"><span>Áreas y turnos</span></button>
     <button type="button" class="per-tab" data-per-vista="aprobar" id="hea-tab" style="display:none"><span>Aprobar horas extra</span><b class="hea-n" id="hea-n" style="display:none"></b></button>
+    <button type="button" class="per-tab" data-per-vista="accesos" id="pac-tab" style="display:none"><span>Accesos</span></button>
   </div>
 
   <!-- El tablero de Personal: horas extra, ausencias, carga y
@@ -9506,6 +9536,9 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 
   <!-- Bandeja de aprobación de horas extra: solo administradores -->
   <div id="per-vista-aprobar" style="display:none"></div>
+
+  <!-- Accesos: el usuario maestro reparte los dos poderes de Personal -->
+  <div id="per-vista-accesos" style="display:none"></div>
 </div>
 
 <!-- El formulario de un área: horario y gente, todo junto -->
@@ -9945,6 +9978,9 @@ const PESTANAS_CONTROLABLES = [
   { id:'ProduccionHumus', label:'Producción Humus' },
   { id:'vehiculos',       label:'Vehículos Carga' },
   { id:'personal',        label:'Personal' },
+  // No es una pestaña: marca al usuario maestro de Personal, que reparte
+  // dentro de Personal quién maneja documentación y quién horas y turnos.
+  { id:'personal-maestro', label:'Personal · Maestro', porDefecto:false },
   { id:'cortes',          label:'Cortes a Proveedor' },
   { id:'preopequipo',     label:'Preop. Equipo Pesado' },
   { id:'catalogo',        label:'Catálogo de Precios' },
@@ -9961,6 +9997,36 @@ const PESTANAS_CONTROLABLES = [
 
 // Config de permisos cargada: { usuario: [listaDePestañasPermitidas] }
 let _permisosConfig = {};
+
+/* Poderes dentro de Personal. 'maestro' lo da un admin en Permisos; 'docs'
+   (crear, modificar y ver la documentación del personal) y 'horas'
+   (modificar horas de áreas y turnos) los reparte el maestro desde la
+   pestaña Personal. Admins y maestros los tienen todos. */
+const PODERES_PERSONAL = ['personal-docs', 'personal-horas', 'personal-quincena', 'personal-areas-todas'];
+const PER_PREFIJO_AREA = 'personal-area:';
+function perEsPoderPersonal(p) { return PODERES_PERSONAL.includes(p) || String(p).indexOf(PER_PREFIJO_AREA) === 0; }
+/* A qué áreas entra: admins y maestros a todas; los demás a las que les
+   marcó el maestro (o "Todas"). Sin nada marcado, a ninguna. */
+function perAreaPermitida(nombre) {
+  const u = _usuarioActual;
+  if (!u) return false;
+  if (perPoder('maestro')) return true;
+  const l = _permisosConfig[u.usuario] || [];
+  if (l.includes('personal-areas-todas')) return true;
+  const n = String(nombre || '').trim().toLowerCase();
+  return l.some(p => {
+    if (String(p).indexOf(PER_PREFIJO_AREA) !== 0) return false;
+    try { return decodeURIComponent(p.slice(PER_PREFIJO_AREA.length)).trim().toLowerCase() === n; } catch (e) { return false; }
+  });
+}
+function perPoder(cual) {
+  const u = _usuarioActual;
+  if (!u) return false;
+  if (u.admin || esAdminDash(u.usuario)) return true;
+  const l = _permisosConfig[u.usuario] || [];
+  if (l.includes('personal-maestro')) return true;
+  return cual !== 'maestro' && l.includes('personal-' + cual);
+}
 
 // Pestañas con lista blanca explícita de usuarios (atributo data-users-only="a,b,c").
 // Tienen prioridad absoluta: se ocultan a TODOS salvo a los usuarios exactos de la
@@ -10176,6 +10242,11 @@ function guardarPermisos() {
     const u = chk.dataset.usuario, p = chk.dataset.panel;
     if (!config[u]) config[u] = [];
     if (chk.checked) config[u].push(p);
+  });
+  // Los poderes de Personal no tienen casilla aquí: se conservan.
+  Object.keys(config).forEach(u => {
+    if (!config[u].includes('personal')) return;
+    (_permisosConfig[u] || []).forEach(p => { if (perEsPoderPersonal(p) && !config[u].includes(p)) config[u].push(p); });
   });
   _permisosConfig = config;
 
@@ -44868,6 +44939,18 @@ function pedirUnaVezPer(cuerpo, segundos){
     });
 }
 function pedir(cuerpo, segundos){
+  var poder = cuerpo && PER_PODER_DE[cuerpo.accion];
+  if(poder && !perPoder(poder)){
+    return Promise.reject(new Error('No tienes acceso para modificar ' + PER_PODER_TXT[poder] + '. Pídeselo al usuario maestro de Personal.'));
+  }
+  if(poder === 'horas'){
+    var ajenas = [cuerpo.area, cuerpo.destino, cuerpo.origen, cuerpo.nombreAnterior,
+                  cuerpo.accion === 'perAreaBorrar' ? cuerpo.nombre : '']
+      .filter(function(a){ return a && !perAreaPermitida(a); });
+    if(ajenas.length){
+      return Promise.reject(new Error('No tienes acceso al área ' + ajenas[0] + '. Pídeselo al usuario maestro de Personal.'));
+    }
+  }
   var intentos = perEsLectura(cuerpo) ? 3 : 1;
   var intentar = function(i){
     return pedirUnaVezPer(cuerpo, segundos).catch(function(e){
@@ -46143,6 +46226,7 @@ function pintar(){
 var MOVER = null;
 
 function abrirMover(opciones){
+  if(perSinPoder('horas')) return;
   var o = opciones || {};
   var hoy = isoDe(new Date());
   /* Dos sentidos cuando se abre desde un área: traer gente a esta área o
@@ -46431,6 +46515,7 @@ function hacerMover(boton){
 var AJUSTE = null;
 
 function abrirAjusteSemana(semana){
+  if(perSinPoder('horas')) return;
   var a = areaPorNombre(AREA_VIENDO);
   if(!a){ alert('No se encontró el área.'); return; }
   /* UN SOLO MENÚ: la semana como está, y a la derecha las acciones. Ya no
@@ -47764,6 +47849,7 @@ function quincenasDelMes(anio, mes){
 }
 
 function abrirQuincena(){
+  if(!perPoder('quincena')){ alert('No tienes acceso para descargar la quincena. Pídeselo al usuario maestro de Personal.'); return; }
   var hoy = new Date();
   var MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   var opciones = [];
@@ -48480,6 +48566,7 @@ function novedadesDe(clave){
   return (P.novedades || []).filter(function(n){ return n.persona === clave; });
 }
 function abrirNovedades(persona){
+  if(perSinPoder('horas')) return;
   if(!persona) return;
   NOV_DE = persona;
   $p('pn-tit').textContent = 'Novedades de ' + persona.nombre;
@@ -48615,6 +48702,7 @@ function pesoCorto(n){
 }
 function abrirDocumentos(persona){
   if(!persona) return;
+  if(perSinPoder('docs')) return;
   DOCS_DE = persona;
   $p('pd-tit').textContent = 'Documentos de ' + persona.nombre;
   /* Cada documento es DE ESA PERSONA: se guarda con su nombre y solo
@@ -48717,6 +48805,7 @@ function quitarDocumento(id, boton){
 
 /* ── EL FORMULARIO ────────────────────────────────────────────────── */
 function abrirFormulario(persona, enfocarFoto){
+  if(perSinPoder('docs')) return;
   EDITANDO = persona || null;
   FOTO_NUEVA = '';
   $p('per-modal-tit').textContent = persona ? persona.nombre : 'Nueva persona';
@@ -48892,7 +48981,13 @@ function pintarAreas(){
     $p('ar-turnos').innerHTML = '';
     return;
   }
-  grid.innerHTML = P.areas.slice().sort(function(a,b){ return String(a.nombre).localeCompare(String(b.nombre), 'es'); })
+  var mias = P.areas.filter(function(a){ return perAreaPermitida(a.nombre); });
+  if(!mias.length){
+    grid.innerHTML = '<div class="per-vacio">No tienes áreas asignadas. Pídeselas al usuario maestro de Personal.</div>';
+    $p('ar-turnos').innerHTML = '';
+    return;
+  }
+  grid.innerHTML = mias.sort(function(a,b){ return String(a.nombre).localeCompare(String(b.nombre), 'es'); })
     .map(function(a){
       var gente = miembrosDe(a.nombre);
       var mini = miniFoto(a.foto, 400);
@@ -49103,6 +49198,7 @@ function pedirPinBorrarArea(nombre){
 }
 
 function borrarArea(nombre){
+  if(perSinPoder('horas')) return;
   pedirPinBorrarArea(nombre).then(function(ok){ if(ok) borrarAreaYa(nombre); });
 }
 function borrarAreaYa(nombre){
@@ -49142,6 +49238,7 @@ function horariosDeLaGente(horarios){
    como están; las semanas ya armadas de ahí en adelante se rearman con
    el cuadro nuevo. */
 function abrirArea(a, modificar){
+  if(perSinPoder('horas')) return;
   AREA_EDIT = a || null;
   AREA_FORM = {
     modificar: !!(a && modificar),
@@ -51828,6 +51925,7 @@ function menuExtra(celda, donde){
    de la semana de ese día: el único lugar donde se cambian turnos y se cargan
    horas extra, con su justificación y aprobador. */
 function abrirEdicionSemana(cel){
+  if(perSinPoder('horas')) return;
   if(!cel) return;
   var det = cel.closest ? cel.closest('details[data-sem]') : null;
   var semana = det ? det.dataset.sem : lunesDe(cel.dataset.fecha);
@@ -52601,6 +52699,16 @@ function heaAprobarJornada(ids){
 
 function verVista(cual){
   if(cual === 'aprobar' && !heaEsAdmin()) cual = 'tablero';
+  var docs = perPoder('docs'), horas = perPoder('horas'), maestro = perPoder('maestro');
+  if(cual === 'accesos' && !maestro) cual = 'tablero';
+  if(cual === 'gente' && !docs && !horas) cual = 'tablero';
+  var panel = $p('panel-personal');
+  if(panel){ panel.classList.toggle('per-sin-docs', !docs); panel.classList.toggle('per-sin-horas', !horas);
+             panel.classList.toggle('per-sin-quincena', !perPoder('quincena')); }
+  var tg = document.querySelector('#panel-personal .per-tab[data-per-vista="gente"]');
+  if(tg) tg.style.display = (docs || horas) ? '' : 'none';
+  if($p('pac-tab')) $p('pac-tab').style.display = maestro ? '' : 'none';
+  if($p('per-vista-accesos')) $p('per-vista-accesos').style.display = cual === 'accesos' ? '' : 'none';
   if($p('hea-tab')) $p('hea-tab').style.display = heaEsAdmin() ? '' : 'none';
   if($p('per-vista-aprobar')) $p('per-vista-aprobar').style.display = cual === 'aprobar' ? '' : 'none';
   $p('per-vista-gente').style.display = cual === 'gente' ? '' : 'none';
@@ -52612,6 +52720,126 @@ function verVista(cual){
   if(cual === 'areas') pintarAreas();
   if(cual === 'tablero') abrirHorasExtra();
   if(cual === 'aprobar') heaAbrir();
+  if(cual === 'accesos') pacAbrir();
+}
+
+/* ── ACCESOS DENTRO DE PERSONAL ─────────────────────────────────────
+   El usuario maestro (casilla "Personal · Maestro" en Permisos) marca,
+   de los que tienen la pestaña Personal, quién maneja la documentación
+   y quién las horas de áreas y turnos. Se guarda en el servicio de
+   autenticación; cada uno lo ve al volver a entrar. */
+var PAC = { usuarios: [], cargando: false, error: '', aviso: '', guardando: false, abierto: '' };
+/* Las áreas que existen hoy, por nombre. */
+function PAC_AREAS(){
+  return (P.areas || []).map(function(a){ return String(a.nombre || '').trim(); }).filter(Boolean)
+    .sort(function(a, b){ return a.localeCompare(b, 'es'); });
+}
+function pacAbrir(){
+  if(PAC.cargando) return;
+  PAC.cargando = true; PAC.error = ''; PAC.aviso = '';
+  pacPintar();
+  authPost('listarAccesosPersonal', {}).then(function(d){
+    PAC.cargando = false;
+    if(d && d.ok){ PAC.usuarios = d.usuarios || []; }
+    else PAC.error = (d && d.error === 'Accion no valida')
+      ? 'Falta publicar el código nuevo de Autenticación.'
+      : 'No se pudieron traer los accesos' + (d && d.error ? ' · ' + d.error : '') + '.';
+    pacPintar();
+  }).catch(function(){ PAC.cargando = false; PAC.error = 'No contestó el servicio de autenticación.'; pacPintar(); });
+}
+function pacPintar(){
+  var caja = $p('per-vista-accesos');
+  if(!caja) return;
+  var cab = '<div class="pac-cab"><div class="pac-tit">Accesos de Personal</div>' +
+    '<div class="pac-sub">Solo aparecen quienes tienen la pestaña Personal. Los cambios se ven al volver a entrar.</div></div>';
+  if(PAC.cargando && !PAC.usuarios.length){ caja.innerHTML = cab + '<div class="pac-vacio">Cargando…</div>'; return; }
+  if(PAC.error){ caja.innerHTML = cab + '<div class="pac-err">' + esc(PAC.error) + '</div>'; return; }
+  if(!PAC.usuarios.length){ caja.innerHTML = cab + '<div class="pac-vacio">Nadie más tiene la pestaña Personal.</div>'; return; }
+  var filas = PAC.usuarios.slice().sort(function(a, b){ return String(a.nombre || a.usuario).localeCompare(String(b.nombre || b.usuario), 'es'); })
+    .map(function(u){
+      var chk = function(campo){
+        return u.maestro
+          ? '<td class="pac-c"><span class="pac-todo">sí</span></td>'
+          : '<td class="pac-c"><input type="checkbox" aria-label="' + esc((u.nombre || u.usuario) + ' · ' + (campo === 'docs' ? 'documentación' : 'horas y turnos')) +
+            '" data-pac-u="' + esc(u.usuario) + '" data-pac-c="' + campo + '"' + (u[campo] ? ' checked' : '') + '></td>';
+      };
+      var areasCel;
+      if(u.maestro) areasCel = '<td class="pac-c"><span class="pac-todo">todas</span></td>';
+      else {
+        var marcadas = (u.areas || []).map(function(x){ return String(x).toLowerCase(); });
+        var resumen = u.areasTodas ? 'Todas' : marcadas.length ? marcadas.length + (marcadas.length === 1 ? ' área' : ' áreas') : 'Ninguna';
+        areasCel = '<td class="pac-a"><details' + (PAC.abierto === u.usuario ? ' open' : '') + ' data-pac-det="' + esc(u.usuario) + '">' +
+          '<summary>' + esc(resumen) + '</summary><div class="pac-lista">' +
+          '<label class="pac-todas"><input type="checkbox" data-pac-todas="' + esc(u.usuario) + '"' + (u.areasTodas ? ' checked' : '') + '> Todas las áreas</label>' +
+          PAC_AREAS().map(function(n){
+            return '<label><input type="checkbox" data-pac-area="' + esc(n) + '" data-pac-au="' + esc(u.usuario) + '"' +
+              (u.areasTodas || marcadas.indexOf(n.toLowerCase()) !== -1 ? ' checked' : '') + (u.areasTodas ? ' disabled' : '') + '> ' + esc(n) + '</label>';
+          }).join('') + '</div></details></td>';
+      }
+      return '<tr><td class="pac-n">' + esc(u.nombre || u.usuario) +
+        '<span>' + esc(u.usuario) + (u.maestro ? ' · maestro' : '') + '</span></td>' + chk('docs') + chk('horas') + chk('quincena') + areasCel + '</tr>';
+    }).join('');
+  caja.innerHTML = cab +
+    '<div class="pac-scroll"><table class="pac-tabla"><thead><tr><th>Usuario</th>' +
+    '<th>Documentación del personal<span>crear, modificar y ver</span></th>' +
+    '<th>Horas de áreas y turnos<span>modificar</span></th>' +
+    '<th>Quincena<span>descargar</span></th>' +
+    '<th>Áreas<span>a cuáles entra</span></th></tr></thead><tbody>' + filas + '</tbody></table></div>' +
+    '<div class="pac-pie"><button type="button" class="per-btn fuerte" id="pac-guardar"' + (PAC.guardando ? ' disabled' : '') + '>' +
+      (PAC.guardando ? 'Guardando…' : 'Guardar accesos') + '</button>' +
+    '<span class="pac-aviso">' + esc(PAC.aviso) + '</span></div>';
+  caja.querySelectorAll('[data-pac-u]').forEach(function(c){
+    c.onchange = function(){
+      var u = PAC.usuarios.filter(function(x){ return x.usuario === c.dataset.pacU; })[0];
+      if(u) u[c.dataset.pacC] = c.checked;
+    };
+  });
+  var deU = function(id){ return PAC.usuarios.filter(function(x){ return x.usuario === id; })[0]; };
+  caja.querySelectorAll('[data-pac-det]').forEach(function(d){
+    d.ontoggle = function(){ if(d.open) PAC.abierto = d.dataset.pacDet; else if(PAC.abierto === d.dataset.pacDet) PAC.abierto = ''; };
+  });
+  caja.querySelectorAll('[data-pac-todas]').forEach(function(c){
+    c.onchange = function(){ var u = deU(c.dataset.pacTodas); if(!u) return; u.areasTodas = c.checked; PAC.abierto = u.usuario; pacPintar(); };
+  });
+  caja.querySelectorAll('[data-pac-area]').forEach(function(c){
+    c.onchange = function(){
+      var u = deU(c.dataset.pacAu); if(!u) return;
+      var n = c.dataset.pacArea, l = (u.areas || []).filter(function(x){ return String(x).toLowerCase() !== n.toLowerCase(); });
+      if(c.checked) l.push(n);
+      u.areas = l; PAC.abierto = u.usuario; pacPintar();
+    };
+  });
+  $p('pac-guardar').onclick = pacGuardar;
+}
+function pacGuardar(){
+  var cambios = {};
+  PAC.usuarios.forEach(function(u){
+    if(!u.maestro) cambios[u.usuario] = { docs: !!u.docs, horas: !!u.horas, quincena: !!u.quincena,
+                                          areasTodas: !!u.areasTodas, areas: u.areasTodas ? [] : (u.areas || []) };
+  });
+  PAC.guardando = true; PAC.aviso = ''; pacPintar();
+  authPost('guardarAccesosPersonal', { cambios: cambios }).then(function(d){
+    PAC.guardando = false;
+    PAC.aviso = (d && d.ok) ? 'Accesos guardados.' : 'No se guardó' + (d && d.error ? ' · ' + d.error : '') + '.';
+    pacPintar();
+  }).catch(function(){ PAC.guardando = false; PAC.aviso = 'No contestó el servicio: vuelve a abrir Accesos antes de repetir.'; pacPintar(); });
+}
+
+/* Qué poder exige cada acción del servicio de Personal. Lo automático
+   (armar la semana, traer turnos) no se frena: solo lo que cambia algo
+   a mano. */
+var PER_PODER_DE = {
+  perGuardar:'docs', perDocSubir:'docs', perDocBorrar:'docs', perReincorporar:'docs',
+  perAreaGuardar:'horas', perAreaBorrar:'horas', perCopiarSemana:'horas',
+  perSemanaCuadro:'horas', perSemanaAjustar:'horas', perTurnoEditar:'horas',
+  perExtraGuardar:'horas', perExtraBorrar:'horas', perPlantillaGuardar:'horas', perPlantillaBorrar:'horas',
+  perMover:'horas', perNovedadGuardar:'horas', perNovedadBorrar:'horas'
+};
+var PER_PODER_TXT = { docs:'la documentación del personal', horas:'las horas de áreas y turnos' };
+function perSinPoder(cual){
+  if(perPoder(cual)) return false;
+  alert('No tienes acceso para modificar ' + PER_PODER_TXT[cual] + '. Pídeselo al usuario maestro de Personal.');
+  return true;
 }
 
 function engancharAreas(){
