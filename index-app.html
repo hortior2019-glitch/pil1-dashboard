@@ -9323,6 +9323,16 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #per-mover-modal .rt-left{min-width:0}
 #per-mover-modal .rt-selbar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px;align-items:center}
 #per-mover-modal .rt-mini-der{margin-left:auto}
+#per-mover-modal .rt-mini-agregar{border-color:#1c5636;color:#1c5636;font-size:13px}
+#per-mover-modal .rt-agregar{border:1px solid var(--rule);border-radius:10px;background:#fbfaf6;padding:12px 14px;margin:10px 0}
+#per-mover-modal .rt-ag-fila{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+#per-mover-modal .rt-ag-fila label{display:block;font-size:13px;font-weight:600;color:#3d3d3d;margin-bottom:4px}
+#per-mover-modal .rt-ag-fila select,#per-mover-modal .rt-ag-fila input{font-size:13px;padding:7px 9px;min-width:220px}
+#per-mover-modal .rt-ag-fila .rt-aplicar{width:auto;padding:9px 18px}
+#per-mover-modal .rt-ag-alerta{border:1px solid #e3b4ad;border-left:4px solid #c0392b;background:#fdeceb;
+  padding:9px 12px;border-radius:8px;font-size:13px;color:#4a1a14;line-height:1.5;margin-top:10px}
+#per-mover-modal .rt-ag-libre{border:1px solid var(--rule);border-left:4px solid #1c5636;background:#f2f8f4;
+  padding:9px 12px;border-radius:8px;font-size:13px;color:#1f3a2a;line-height:1.5;margin-top:10px}
 #per-mover-modal .rt-flecha{cursor:default}
 #per-mover-modal .rt-acciones{border:1px solid var(--rule);border-radius:10px;padding:11px;background:var(--white)}
 #per-mover-modal .rt-acc-tit{font-size:10.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;
@@ -46713,11 +46723,12 @@ function hacerMover(boton){
    y enseguida se pide replantear el área en “Editar turnos de la semana”.
    Usa el mismo traslado de siempre (perMover): no hay servicio nuevo.
    ══════════════════════════════════════════════════════════════════ */
-function abrirAgregarTrabajador(area){
+function abrirAgregarTrabajador(area, previo){
   if(perSinPoder('horas')) return;
   if(!area || !areaPorNombre(area)){ alert('No se encontró el área.'); return; }
-  MOVER = { origen: '', destino: area, elegidas: [], efectivo: '', incluirSemana: true,
-            sentido: 'traer', dias: [], agregar: true };
+  previo = previo || {};
+  MOVER = { origen: '', destino: area, elegidas: previo.clave ? [previo.clave] : [], efectivo: previo.fecha || '',
+            incluirSemana: true, sentido: 'traer', dias: [], agregar: true };
 
   var candidatas = P.gente.filter(function(p){
     if(p.activo === false) return false;
@@ -46734,7 +46745,7 @@ function abrirAgregarTrabajador(area){
     '<div class="mv-gente ag-gente" id="ag-gente"></div>' +
     '<div id="ag-estado"></div>' +
     '<label id="ag-fecha-lbl">Fecha de ingreso a laborar</label>' +
-    '<input type="date" id="ag-fecha" value="">' +
+    '<input type="date" id="ag-fecha" value="' + esc(previo.fecha || '') + '">' +
     '<div class="mv-aviso" id="mv-aviso" style="margin-top:12px">Elija a quién y desde qué día.</div>' +
     '<div class="per-error" id="mv-error"></div>' +
     '<div class="per-btns">' +
@@ -46769,7 +46780,7 @@ function abrirAgregarTrabajador(area){
     var otras = P.miembros.filter(function(m){ return m.persona === clave && m.area !== area; });
     if(otras.length){
       caja.innerHTML = '<div class="ag-alerta">⚠ <b>' + esc(p.nombre) + '</b> ya está programado en ' +
-        otras.map(function(m){ return '<b>' + esc(m.area) + '</b> (' + esc(diasDeMiembro(m).join(',')) + ')'; }).join(' y ') +
+        otras.map(function(m){ var d = diasDeMiembro(m).join(','); return '<b>' + esc(m.area) + '</b>' + (d ? ' (' + esc(d) + ')' : ''); }).join(' y ') +
         '. Aclara qué día empezó en <b>' + esc(area) + '</b>: desde ese día deja ' +
         (otras.length === 1 ? 'esa área' : 'esas áreas') + '.</div>';
       lbl.textContent = '¿Qué día empezó en ' + area + '?';
@@ -46795,7 +46806,8 @@ function abrirAgregarTrabajador(area){
   $p('ag-cancelar').onclick = function(){ cerrarMover(); };
   $p('ag-guardar').onclick = function(){ guardarAgregarTrabajador(this, area); };
   pintarGente();
-  try { $p('ag-buscar').focus(); } catch(e){}
+  if(previo.clave){ pintarEstado(); revisar(); }
+  else try { $p('ag-buscar').focus(); } catch(e){}
 }
 
 function guardarAgregarTrabajador(boton, area){
@@ -46969,6 +46981,14 @@ function montarRotador(a, semana){
     visto[x.clave] = 1;
     gente.push({ clave: x.clave, nombre: x.nombre, fuera: true });
   });
+  /* Agregados a mano en esta semana (ingresó y nadie lo puso a tiempo): su
+     fila sale aunque la semana ya haya pasado. Los días antes de su
+     ingreso quedan fuera: no se pueden tocar. */
+  (ROT_AGREGADOS[a.nombre + '|' + semana] || []).forEach(function(x){
+    if(visto[x.clave]) return;
+    visto[x.clave] = 1;
+    gente.push({ clave: x.clave, nombre: x.nombre, fuera: true, desde: x.desde });
+  });
   gente.sort(function(x, y){ return String(x.nombre).localeCompare(String(y.nombre), 'es'); });
 
   /* Si el día tiene turno y además un bloque suelto de horas extra, la
@@ -46999,6 +47019,11 @@ function montarRotador(a, semana){
   gente.forEach(function(p){
     fechasSem.forEach(function(f){
       var id = p.clave + '|' + f;
+      if(!porCelda[id] && p.desde && f < p.desde){
+        porCelda[id] = { persona: p.clave, nombre: p.nombre, fecha: f, turno: 'sin ingresar',
+                         inicio: '', fin: '', almuerzo: 0, antesIngreso: true };
+        return;
+      }
       if(!porCelda[id]) porCelda[id] = { persona: p.clave, nombre: p.nombre, fecha: f,
                                          turno: '', inicio: '', fin: '', almuerzo: 0, vacia: true, fuera: !!p.fuera };
     });
@@ -47041,6 +47066,7 @@ function montarRotador(a, semana){
         '</button><button type="button" class="rt-flecha" data-rtmenu="' + esc(p.clave) + '|' + f + '"' +
         ' title="Elegir a dónde va este día"></button></td>';
       /* Un día de novedad no tiene horas: no se rota, se respeta. */
+      if(t && t.antesIngreso) return '<td class="rt-td"><span class="rt-nov" title="Todavía no había ingresado al área">sin ingresar</span></td>';
       if(!t || !t.inicio) return '<td class="rt-td"><span class="rt-nov" title="Las novedades (incapacidad, permiso, vacaciones) ' +
         'se cambian o se quitan en Colaboradores → Novedad de esta persona.">' + esc((t && t.turno) || 'novedad') + '</span></td>';
       var col = colores[claveColor(t.inicio, t.fin)] || '#e5e7eb';
@@ -47084,6 +47110,7 @@ function montarRotador(a, semana){
     '<div class="rt-ayuda">Toque la celda que quiere cambiar y elija qué hacer. Para cambiar varias a la vez, ' +
       'toque el nombre (toda la persona), el día (toda la columna) o los atajos de arriba. ' +
       'Nada se guarda hasta que revise cómo queda y confirme.</div>' +
+    '<div class="rt-agregar" id="rt-agregar" style="display:none"></div>' +
     '<div class="rt-split sin-acciones">' +
       '<div class="rt-left">' +
         '<div class="rt-selbar">' +
@@ -47091,6 +47118,8 @@ function montarRotador(a, semana){
           '<button type="button" class="rt-mini" data-rtsel="lv">Lun a vie</button>' +
           '<button type="button" class="rt-mini" data-rtsel="finde">Fin de semana</button>' +
           '<button type="button" class="rt-mini" data-rtsel="nada">Quitar marcas</button>' +
+          '<button type="button" class="rt-mini rt-mini-agregar" id="rt-agregar-btn" ' +
+            'title="Alguien que ya trabaja aquí y no aparece en esta semana">+ Agregar trabajador</button>' +
           '<button type="button" class="rt-mini rt-mini-der" id="rt-editar-turnos" ' +
             'title="Agregar, editar o eliminar los turnos fijos del área y sus horas (se guarda)">✎ Turnos del área</button>' +
         '</div>' +
@@ -47142,8 +47171,133 @@ function montarRotador(a, semana){
      área (agregar / editar / eliminar turnos y sus horas), persistente. */
   var btnEdTurnos = $p('rt-editar-turnos');
   if(btnEdTurnos) btnEdTurnos.onclick = function(){ cerrarMover(); abrirArea(a); };
+  if($p('rt-agregar-btn')) $p('rt-agregar-btn').onclick = function(){ rotAbrirAgregar(a, semana); };
   rotRenderParams(ROT.accion);
   rotPintar();
+}
+
+/* ── AGREGAR UN TRABAJADOR A ESTA SEMANA ───────────────────────────
+   Ingresó un día de la semana y el supervisor no lo puso a tiempo: la
+   semana ya estaba armada sin él y, si ya pasó, su fila ni sale.
+     · Es del área: se pide desde qué día; su fila entra al cuadro con su
+       horario del área ya propuesto desde ese día, para revisar y guardar.
+     · Está en otra área: se avisa y se pide qué día empezó aquí; se pasa
+       con el traslado de siempre, que rearma desde ese día.
+     · Suelto: se pide la fecha de ingreso y entra con el mismo traslado. */
+var ROT_AGREGADOS = {};
+function rotAbrirAgregar(a, semana){
+  var caja = $p('rt-agregar');
+  if(!caja || !ROT) return;
+  if(caja.style.display !== 'none'){ caja.style.display = 'none'; return; }
+  var enCuadro = {};
+  ROT.gente.forEach(function(p){ enCuadro[p.clave] = 1; });
+  var delArea = {};
+  miembrosDe(a.nombre).forEach(function(m){ delArea[m.persona] = 1; });
+  var gente = P.gente.filter(function(p){ return p.activo !== false && !enCuadro[p.clave]; })
+    .sort(function(x, y){
+      return (delArea[y.clave] ? 1 : 0) - (delArea[x.clave] ? 1 : 0) ||
+             String(x.nombre).localeCompare(String(y.nombre), 'es');
+    });
+  var hasta = sumarDias(semana, 6);
+  caja.innerHTML =
+    '<div class="rt-ag-fila">' +
+      '<div><label for="rt-ag-quien">¿Quién?</label><select id="rt-ag-quien"><option value="">— Elija —</option>' +
+        gente.map(function(p){
+          var otras = P.miembros.filter(function(m){ return m.persona === p.clave && m.area !== a.nombre; })
+                                .map(function(m){ return m.area; });
+          return '<option value="' + esc(p.clave) + '">' + esc(p.nombre) + ' · ' +
+            (delArea[p.clave] ? 'del área' : otras.length ? esc(otras.join(', ')) : 'sin área') + '</option>';
+        }).join('') + '</select></div>' +
+      '<div><label for="rt-ag-fecha" id="rt-ag-fecha-lbl">Fecha de ingreso a laborar</label>' +
+        '<input type="date" id="rt-ag-fecha" min="' + semana + '" max="' + hasta + '"></div>' +
+      '<button type="button" class="rt-aplicar" id="rt-ag-ok" disabled>Agregar</button>' +
+    '</div>' +
+    '<div id="rt-ag-msg"></div>';
+  caja.style.display = '';
+
+  var revisar = function(){
+    var clave = $p('rt-ag-quien').value, fecha = $p('rt-ag-fecha').value;
+    var msg = $p('rt-ag-msg'), ok = $p('rt-ag-ok'), lbl = $p('rt-ag-fecha-lbl');
+    if(!clave){ msg.innerHTML = ''; ok.disabled = true; lbl.textContent = 'Fecha de ingreso a laborar'; return; }
+    var p = P.gente.filter(function(g){ return g.clave === clave; })[0] || {};
+    var otras = P.miembros.filter(function(m){ return m.persona === clave && m.area !== a.nombre; });
+    if(otras.length){
+      lbl.textContent = '¿Qué día empezó en ' + a.nombre + '?';
+      msg.innerHTML = '<div class="rt-ag-alerta">⚠ <b>' + esc(p.nombre) + '</b> ya está programado en ' +
+        otras.map(function(m){ var d = diasDeMiembro(m).join(','); return '<b>' + esc(m.area) + '</b>' + (d ? ' (' + esc(d) + ')' : ''); }).join(' y ') +
+        '. Aclara qué día empezó en <b>' + esc(a.nombre) + '</b>: desde ese día deja ' +
+        (otras.length === 1 ? 'esa área' : 'esas áreas') + ' y se rearman las dos.</div>';
+      ok.textContent = 'Traer desde ese día';
+    } else if(!delArea[clave]){
+      lbl.textContent = 'Fecha de ingreso a laborar';
+      msg.innerHTML = '<div class="rt-ag-libre"><b>' + esc(p.nombre) + '</b> no está en ninguna área. Solo falta la fecha de ingreso.</div>';
+      ok.textContent = 'Agregar al área';
+    } else {
+      lbl.textContent = '¿Desde qué día trabaja esta semana?';
+      msg.innerHTML = '<div class="rt-ag-libre"><b>' + esc(p.nombre) + '</b> es del área y no aparece en esta semana. ' +
+        'Su fila entra con su horario propuesto desde ese día: revísalo y guarda.</div>';
+      ok.textContent = 'Agregar al cuadro';
+    }
+    ok.disabled = !(fecha && fecha >= semana && fecha <= hasta);
+  };
+  $p('rt-ag-quien').onchange = revisar;
+  $p('rt-ag-fecha').onchange = revisar;
+  $p('rt-ag-fecha').oninput = revisar;
+  $p('rt-ag-ok').onclick = function(){
+    var clave = $p('rt-ag-quien').value, fecha = $p('rt-ag-fecha').value;
+    if(!clave || !fecha) return;
+    /* No es del área: el traslado de siempre, que la pone en el área desde
+       ese día y rearma (conservando lo anterior a esa fecha). */
+    if(!delArea[clave]){ cerrarMover(); abrirAgregarTrabajador(a.nombre, { clave: clave, fecha: fecha }); return; }
+    var p = P.gente.filter(function(g){ return g.clave === clave; })[0] || {};
+    var k = a.nombre + '|' + semana;
+    (ROT_AGREGADOS[k] = ROT_AGREGADOS[k] || []).push({ clave: clave, nombre: p.nombre || clave, desde: fecha });
+    montarRotador(a, semana);
+    rotProponerHorario(a, clave, fecha);
+  };
+}
+
+/* Deja marcada su semana desde el día de ingreso con el horario que tiene
+   en el área (si lo tiene). Sin horario propio, queda marcada para elegir
+   el turno con "Poner a trabajar…". */
+function rotProponerHorario(a, clave, desde){
+  if(!ROT) return;
+  var h = (a.horarios || {})[clave];
+  var dias = h && h.dias ? String(h.dias).split(',') : DIAS_LETRA;
+  var puestos = 0;
+  for(var i = 0; i < 7; i++){
+    var f = sumarDias(ROT.semana, i), id = clave + '|' + f;
+    var t = ROT.celdas[id];
+    if(!t || !t.vacia || f < desde) continue;
+    if(h && h.inicio && h.fin){
+      if(dias.indexOf(DIAS_LETRA[i]) < 0) continue;
+      rotMarcar(id, true, false);
+      ROT.propio[id] = { tipo:'horas', turno: h.nombre || 'Horario', inicio: h.inicio, fin: h.fin,
+                         almuerzo: Number(h.almuerzo) || 0 };
+      puestos++;
+    } else {
+      rotMarcar(id, true, true);
+      puestos++;
+    }
+  }
+  if(!(h && h.inicio && h.fin) && ROT.turnos.length){
+    ROT.accion = 'trabajar'; ROT.param = {};
+    document.querySelectorAll('#rt-panel [data-rtacc]').forEach(function(x){ x.classList.toggle('on', x.dataset.rtacc === 'trabajar'); });
+    rotRenderParams('trabajar');
+  }
+  rotPintar();
+  var p = P.gente.filter(function(g){ return g.clave === clave; })[0] || {};
+  var caja = $p('rt-agregar');
+  if(caja){
+    caja.style.display = '';
+    caja.innerHTML = '<div class="rt-ag-libre"><b>' + esc(p.nombre || clave) + '</b> entró al cuadro desde el ' +
+      esc(fechaCorta(desde)) + '. ' + (h && h.inicio && h.fin
+        ? 'Quedó propuesto su horario del área (' + esc(h.inicio) + '–' + esc(h.fin) + '): cambia lo que haga falta y toca “Revisar y guardar”.'
+        : 'Sus días quedaron marcados: elige el turno o las horas y toca “Revisar y guardar”.') + '</div>';
+  }
+  var fila = document.querySelector('#rt-panel [data-rtfila="' + (window.CSS && CSS.escape ? CSS.escape(clave) : clave) + '"]');
+  if(fila) try { fila.scrollIntoView({ block:'nearest', behavior:'smooth' }); } catch(e){}
+  return puestos;
 }
 
 /* Los parámetros de la acción elegida (minutos, horas, turno, motivo…).
