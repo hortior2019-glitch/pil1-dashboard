@@ -34,6 +34,7 @@
         const b=document.createElement('div');
         b.style.cssText='position:fixed;bottom:0;left:0;right:0;background:#1a5c35;color:#fff;padding:12px 16px;font-size:12px;display:flex;align-items:center;gap:10px;z-index:9999;font-family:sans-serif;border-top:3px solid #8b6914';
         b.innerHTML='<span>📱</span><span>Instalar: toca <strong style="color:#c8a84b">Compartir</strong> → <strong style="color:#c8a84b">"En pantalla de inicio"</strong></span><button onclick="this.parentNode.remove();localStorage.setItem(\'emp_dash_install\',\'1\')" style="margin-left:auto;background:none;border:1px solid rgba(255,255,255,.5);color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;flex-shrink:0">OK</button>';
+        b.classList.add('pwa-instalar');
         document.body.appendChild(b);
       },4000);
     }
@@ -41,6 +42,7 @@
       e.preventDefault();window._dfi=e;
       const btn=document.createElement('button');
       btn.textContent='⬇ Instalar app';
+      btn.className='pwa-instalar';
       btn.style.cssText='position:fixed;bottom:16px;right:16px;background:#1a5c35;color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:12px;font-weight:700;cursor:pointer;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.3);font-family:sans-serif;border:2px solid #8b6914';
       btn.onclick=async()=>{if(!window._dfi)return;window._dfi.prompt();const{outcome}=await window._dfi.userChoice;if(outcome==='accepted')btn.remove();};
       document.body.appendChild(btn);
@@ -4897,6 +4899,19 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
   #panel-certificado .formato-carta .verificacion .qr canvas{width:34mm !important;height:34mm !important;image-rendering:pixelated}
   #panel-certificado .formato-carta .verif-text{max-width:62mm;font-size:11px;color:#6d6d6d;margin-top:2mm;text-align:right}
   #panel-certificado .formato-carta .verif-text b{font-size:15px;letter-spacing:1px;margin-bottom:.5mm}
+  /* Letra más firme en el formato carta: el tablero usa grosor 300 (fina)
+     y el certificado la heredaba; impresa se veía clarita. Aquí va en 400
+     y con tintas más oscuras. Los certificados viejos no cambian. */
+  #panel-certificado .certificate.formato-carta{font-weight:400;color:#1a1a1a}
+  #panel-certificado .formato-carta .cert-body p,
+  #panel-certificado .formato-carta table.cert-table td,
+  #panel-certificado .formato-carta .signature{color:#1a1a1a}
+  #panel-certificado .formato-carta table.cert-table td{border-color:#c9c9c9}
+  #panel-certificado .formato-carta .cf-ci,
+  #panel-certificado .formato-carta .cert-topbar .page{color:#555}
+  #panel-certificado .formato-carta .cf-nit{color:#666}
+  #panel-certificado .formato-carta .signature .firma{color:#555}
+  #panel-certificado .formato-carta .verif-text{color:#444}
 
   /* La hoja acompaña al menú: el menú es mucho más largo que la hoja y,
      al bajar por él, la hoja se iba hacia arriba y quedaba un hueco gris.
@@ -5031,6 +5046,9 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
      tiene nada que hacer. En papel se esconde siempre, se imprima lo que
      se imprima. */
   .barra-movil{display:none !important}
+  /* Ni el botón ni el aviso de "Instalar app" van en el papel. */
+  .pwa-instalar{display:none !important}
+  html.imprimiendo-cert .fuera-de-impresion{display:none !important}
 
   /* El wrapper centra y limita a 1280px: en papel eso deja el
      certificado corrido a un lado y con margenes de mas. */
@@ -6399,7 +6417,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
               </g>
             </pattern>
           </defs>
-          <path d="M0 0H62C40 90 120 170 112 300C104 420 30 470 40 600C50 720 128 790 118 900C112 960 84 1010 92 1056H0Z" fill="#a8d5a2"/>
+          <path d="M0 0H62C40 90 120 170 112 300C104 420 30 470 40 600C50 720 128 790 118 900C112 960 84 1010 92 1056H0Z" fill="#7fbf7a"/>
           <path d="M0 0H62C40 90 120 170 112 300C104 420 30 470 40 600C50 720 128 790 118 900C112 960 84 1010 92 1056H0Z" fill="url(#cfPatron)"/>
         </svg>
       </div>
@@ -45788,6 +45806,15 @@ window.mapaActivar = function(){
     document.title = nombreArchivoCertificado();
     const raiz = document.documentElement;
     raiz.classList.add('imprimiendo-cert');
+    /* En el papel va SOLO el certificado: todo lo que no esté en su camino
+       (avisos flotantes, botones, barras que se agreguen después) se marca
+       y se oculta mientras se imprime. */
+    const fuera = [];
+    for (let n = document.getElementById('certificate'); n && n !== document.body; n = n.parentElement){
+      [].forEach.call(n.parentElement ? n.parentElement.children : [], h => {
+        if (h !== n && !/^(SCRIPT|STYLE|LINK|META)$/.test(h.tagName)){ h.classList.add('fuera-de-impresion'); fuera.push(h); }
+      });
+    }
     /* La marca se quita SOLO cuando la impresion termino. Antes habia un
        setTimeout de 4 s de respaldo y era el error: el dialogo sigue
        abierto mucho mas que eso mientras uno elige impresora o carpeta, la
@@ -45802,6 +45829,7 @@ window.mapaActivar = function(){
       if (listo) return;
       listo = true;
       raiz.classList.remove('imprimiendo-cert');
+      fuera.forEach(h => h.classList.remove('fuera-de-impresion'));
     };
     window.addEventListener('afterprint', limpiar, { once:true });
     try {
