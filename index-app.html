@@ -4056,6 +4056,9 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
     font-size:15px;font-weight:700;padding:14px 12px;letter-spacing:.3px;cursor:pointer}
   #panel-certificado #btnConsultar:hover{background:#256b29}
   #panel-certificado #btnConsultar:focus-visible{outline:3px solid #111;outline-offset:2px}
+  #panel-certificado #certBtnVolverMenu{background:#fff;color:#1f5f25;border:2px solid #1f5f25;border-radius:8px;
+    font-size:14px;font-weight:700;padding:11px 12px;cursor:pointer}
+  #panel-certificado #certBtnVolverMenu:hover{background:#eef6ef}
 
   /* Aviso de datos faltantes antes de guardar (tabla, no texto) */
   .cv-aviso-fondo{position:fixed;inset:0;background:rgba(10,20,14,.55);z-index:14000;display:flex;align-items:center;justify-content:center;padding:16px}
@@ -4870,9 +4873,11 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
   #panel-certificado .formato-carta .cert-topbar{display:grid;grid-template-columns:auto 1fr;
     grid-template-areas:"logo contacto" "acta page";align-items:start}
   #panel-certificado .formato-carta .cert-logo{grid-area:logo;text-align:left}
-  #panel-certificado .formato-carta .cert-logo img{display:block;width:36mm;height:auto;opacity:1;
+  #panel-certificado .cert-logo .cf-logo{display:none}
+  #panel-certificado .formato-carta .cert-logo #imgLogo1,
+  #panel-certificado .formato-carta .cert-logo .fallback-logo{display:none !important}
+  #panel-certificado .formato-carta .cert-logo .cf-logo{display:block;width:36mm;height:auto;opacity:1;
     position:relative;left:-6.5mm;top:-8mm;margin-bottom:-8mm}
-  #panel-certificado .formato-carta .cert-logo .fallback-logo{margin:0}
   #panel-certificado .formato-carta .cf-nit{display:block;font-size:10.5px;color:#9a9a9a;font-weight:700;
     margin-top:-1mm;letter-spacing:.3px}
   #panel-certificado .formato-carta .cf-contacto{grid-area:contacto;display:flex;justify-content:flex-end;gap:9mm;padding-top:9mm}
@@ -4980,6 +4985,14 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
     #panel-certificado table.cert-table tr{ break-inside:avoid; page-break-inside:avoid; }
     #panel-certificado .cert-topbar, #panel-certificado .cert-title{ break-inside:avoid-page; }
     #panel-certificado .signature-row{ break-inside:avoid-page; }
+    /* ⚠ FORMATO VIEJO DE VARIAS HOJAS: EL PIE VA DESPUÉS DEL CONTENIDO.
+       Forzando el alto a hojas completas, los saltos de página (filas que
+       no se parten, la firma que no se separa) agregan espacio que la
+       cuenta no ve: el pie se pasaba a una hoja de más o quedaba partido,
+       el contacto en una hoja y la onda verde en la siguiente. En bloque
+       y sin alto forzado, el pie sigue al contenido y va entero. */
+    #panel-certificado .certificate:not(.formato-carta):not(.una-hoja){display:block;min-height:0 !important}
+    #panel-certificado .certificate:not(.formato-carta):not(.una-hoja) .cert-footer{margin-top:10mm}
     /* Formato carta en papel: sin pie, la franja fixed se repite en cada
        hoja y el texto arranca a 40 mm por la franja. */
     /* Sin pie que bajar al fondo no hace falta forzar el alto a hojas
@@ -6162,7 +6175,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 <div class="app" id="app">
 
   <div class="panel">
-    <button class="btn-list" id="btnConsultar" onclick="abrirExplorador()" style="width:100%;margin-bottom:16px;">🔍 Explorar certificados guardados</button>
+    <button class="btn-list" id="btnConsultar" onclick="abrirExplorador()" style="width:100%;margin-bottom:10px;">🔍 Explorar certificados guardados</button>
+    <button type="button" class="btn-list" id="certBtnVolverMenu" onclick="certVolverAlMenu()" style="display:none;width:100%;margin-bottom:16px;">↩ Volver al menú principal (certificado nuevo)</button>
     <h2>Datos del certificado</h2>
 
     <div class="db-box cert-sec sec-datos" data-sec="1 · Traer los viajes de la base">
@@ -6399,6 +6413,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
         <div class="acta" id="actaBlock">Acta No. <b id="hActa">007-2026</b></div>
         <div class="cert-logo">
           <img id="imgLogo1" src="" alt="Horti Organic">
+          <!-- Logo a color del formato carta (certificados nuevos) -->
+          <img class="cf-logo" src="logo-acceso-directo.png" alt="Horti Organic">
           <div class="fallback-logo" style="display:none;">HORTI<br>ORGANIC</div>
           <div class="nit cf-nit">NIT. 800.135.337-9</div>
         </div>
@@ -46011,6 +46027,41 @@ window.mapaActivar = function(){
     _p1PintarAviso();
   }
 
+  /* ── VOLVER AL MENÚ PRINCIPAL ──────────────────────────────────────
+     Al abrir un certificado guardado el formulario queda con sus datos y,
+     si es viejo, con su formato. Este botón suelta ese certificado y deja
+     el formulario en blanco, con el formato actual (carta), para empezar
+     uno nuevo. No toca nada en la hoja de cálculo. */
+  function certVolverAlMenu(){
+    const $ = id => document.getElementById(id);
+    ['actaNo', 'empresaReceptora', 'nitReceptora', 'empresaOrigen', 'nitOrigen', 'direccionOrigen',
+     'empresaIntermediaria', 'nitIntermediaria', 'telIntermediaria', 'direccionIntermediaria',
+     'periodo', 'descripcionIndividuales', 'cantidadesIndividuales', 'fechasIndividuales'].forEach(id => {
+      const el = $(id); if (el) el.value = '';
+    });
+    if ($('pagina')) $('pagina').value = '1 de 1';
+    if ($('parrafo2')) $('parrafo2').value = $('parrafo2').defaultValue;
+    if ($('tipoParrafo1') && $('tipoParrafo1').value !== 'estandar'){
+      $('tipoParrafo1').value = $('tipoParrafo1').options[0].value;
+      $('tipoParrafo1').dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    $('fechaExpedicion').value = fechaLargaHoy();
+    if ($('imagenReferenciaInput')) $('imagenReferenciaInput').value = '';
+    mostrarImagenReferencia('');
+    certCodigo = '';
+    certFormatoViejo = false;
+    setMateriales([]);
+    _p1Auto = generarParrafo1Texto();
+    $('parrafo1').value = _p1Auto;
+    _p1PintarAviso();
+    renderVerificacion();
+    update();
+    setStatus('Formulario en blanco, formato actual. El certificado que tenías abierto sigue guardado igual.', 'ok');
+    const panel = document.querySelector('#panel-certificado .app > .panel');
+    if (panel) panel.scrollTop = 0;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   // Botón "Rehacer con los datos de arriba": sobrescribe el textarea con el
   // texto sugerido según la plantilla y los campos actuales.
   function regenerarParrafo1(){
@@ -46519,6 +46570,8 @@ window.mapaActivar = function(){
       ? '💾 Guardar sobre este certificado (' + certCodigo + ')'
       : 'Guardar en el sistema';
     if (btnN) btnN.style.display = certCodigo ? 'block' : 'none';
+    const btnV = document.getElementById('certBtnVolverMenu');
+    if (btnV) btnV.style.display = certCodigo ? 'block' : 'none';
 
     if (!certCodigo){
       textoEl.innerHTML = 'Guarda el certificado para generar su código de verificación';
@@ -47422,6 +47475,7 @@ window.mapaActivar = function(){
   window.imprimirCertificado = imprimirCertificado;
   window.guardarImagenEnCertificadoActual = guardarImagenEnCertificadoActual;
   window.guardarCertificado = guardarCertificado;
+  window.certVolverAlMenu = certVolverAlMenu;
   window.cerrarExplorador = cerrarExplorador;
   window.buscarEnIntervalo = buscarEnIntervalo;
   window.aplicarOperacionesSeleccionadas = aplicarOperacionesSeleccionadas;
