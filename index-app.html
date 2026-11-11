@@ -4887,6 +4887,15 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
   #panel-certificado .formato-carta .cf-ci svg{width:8mm;height:8mm;color:#8fc79a;flex-shrink:0}
   #panel-certificado .formato-carta .cert-topbar .acta{grid-area:acta;padding-top:7mm;font-size:11.5px}
   #panel-certificado .formato-carta .cert-topbar .page{grid-area:page;justify-self:end;padding-top:7mm;font-size:11.5px;color:#8d8d8d}
+  /* Número de hoja abajo a la derecha de cada hoja ("Pág. 1 de 5"); lo
+     pone repartirMarcaDeAgua(). El de arriba no se muestra en este formato. */
+  #panel-certificado .formato-carta .cert-topbar .page{visibility:hidden}
+  #panel-certificado .cf-num{display:none}
+  @page carta{size:letter;margin:0;
+    @bottom-right{content:"Pág. " counter(page) " de " counter(pages);font:12px 'Segoe UI',Arial,sans-serif;color:#555;
+      vertical-align:top;padding-right:16mm;margin-top:-9mm;height:9mm}}
+  #panel-certificado .formato-carta .cf-num{display:block;position:absolute;right:16mm;z-index:2;font-size:12px;color:#555;
+    line-height:1;white-space:nowrap;pointer-events:none;font-variant-numeric:tabular-nums}
   #panel-certificado .formato-carta .signature-row td.signature,
   #panel-certificado .formato-carta .signature-row td.verificacion{vertical-align:top}
   #panel-certificado .formato-carta .verificacion-inner,
@@ -5016,6 +5025,17 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
     #panel-certificado .certificate.formato-carta.una-hoja{padding-bottom:12mm}
     #panel-certificado .formato-carta .cf-franja{position:fixed;top:0 !important;left:0;width:40mm;height:279.4mm !important}
     #panel-certificado .formato-carta .cf-franja.copia{display:none !important}
+    /* En papel el número lo pone el navegador en cada hoja (@page carta,
+       abajo a la derecha): cuenta las hojas reales. Los .cf-num son solo
+       para la vista previa. Los fondos van transparentes porque taparían
+       el número, que se pinta debajo del contenido. Cada hoja repite el
+       margen de arriba y de abajo (clone) para que nada pise el número. */
+    #panel-certificado .formato-carta .cf-num{display:none !important}
+    #panel-certificado .certificate.formato-carta{page:carta;background:transparent !important;
+      -webkit-box-decoration-break:clone;box-decoration-break:clone}
+    html.imprimiendo-cert, html.imprimiendo-cert body, html.imprimiendo-cert #dash-app,
+    html.imprimiendo-cert #dash-app > div, html.imprimiendo-cert #panel-certificado,
+    html.imprimiendo-cert #panel-certificado .app, html.imprimiendo-cert #previewWrap{background:transparent !important}
     #panel-certificado .formato-carta .watermark{width:150mm;left:calc(50% + 12mm)}
   }
 
@@ -6416,8 +6436,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
               </g>
             </pattern>
           </defs>
-          <path d="M0 0H84C80 160 76 300 82 440C88 600 106 760 100 900C97 980 92 1030 92 1056H0Z" fill="#7fbf7a"/>
-          <path d="M0 0H84C80 160 76 300 82 440C88 600 106 760 100 900C97 980 92 1030 92 1056H0Z" fill="url(#cfPatron)"/>
+          <path d="M0 0H84C84 140 74 180 74 264C74 360 84 440 84 528C84 616 94 696 94 792C94 876 84 916 84 1056H0Z" fill="#7fbf7a"/>
+          <path d="M0 0H84C84 140 74 180 74 264C74 360 84 440 84 528C84 616 94 696 94 792C94 876 84 916 84 1056H0Z" fill="url(#cfPatron)"/>
         </svg>
       </div>
 
@@ -46110,7 +46130,7 @@ window.mapaActivar = function(){
     const pie = cert.querySelector('.cert-footer');
     let finArriba = 0;
     [].forEach.call(cert.children, el => {
-      if (el === pie || el.classList.contains('watermark') || el.classList.contains('hoja-corte') || el.classList.contains('cf-franja')) return;
+      if (el === pie || el.classList.contains('watermark') || el.classList.contains('hoja-corte') || el.classList.contains('cf-franja') || el.classList.contains('cf-num')) return;
       finArriba = Math.max(finArriba, el.offsetTop + el.offsetHeight);
     });
     /* Lo que ocupa en el papel: lo de arriba, el pie y el relleno de
@@ -46118,7 +46138,9 @@ window.mapaActivar = function(){
     const contenidoPapel = pie
       ? finArriba + pie.offsetHeight + (12 * MMP)
       : cert.scrollHeight;
-    const hojas = Math.max(1, Math.ceil((contenidoPapel - 2) / hojaPapel));
+    /* Formato carta: cada hoja repite 10 mm arriba y 12 mm abajo (clone). */
+    const margenHoja = cert.classList.contains('formato-carta') ? 22 * MMP : 0;
+    const hojas = Math.max(1, Math.ceil((contenidoPapel - margenHoja - 2) / (hojaPapel - margenHoja)));
     /* Alto real del pie en el papel, para reservarle su lugar al fondo
        de la hoja cuando el certificado cabe en una sola (ver .una-hoja). */
     if (pie) cert.style.setProperty('--pie-mm', (pie.offsetHeight / MMP).toFixed(1) + 'mm');
@@ -46134,7 +46156,26 @@ window.mapaActivar = function(){
        final de la última, en milímetros de verdad. */
     cert.style.setProperty('--hojas', hojas);
 
-    cert.querySelectorAll('.watermark.copia, .hoja-corte, .cf-franja.copia').forEach(c => c.remove());
+    cert.querySelectorAll('.watermark.copia, .hoja-corte, .cf-franja.copia, .cf-num').forEach(c => c.remove());
+    /* Formato carta: "Pág. 1 de N" abajo a la derecha de cada hoja, y la
+       casilla Página del menú se llena sola con "1 de N". */
+    const carta = cert.classList.contains('formato-carta');
+    const pagIn = document.getElementById('pagina');
+    if (pagIn){
+      pagIn.readOnly = carta;
+      pagIn.title = carta ? 'Se calcula solo según las hojas del certificado' : '';
+      if (carta && pagIn.value !== '1 de ' + hojas) pagIn.value = '1 de ' + hojas;
+    }
+    if (carta){
+      for (let i = 1; i <= hojas; i++){
+        const n = document.createElement('div');
+        n.className = 'cf-num';
+        n.style.setProperty('--n', i);
+        n.style.top = (hoja * i - 10 * mm) + 'px';
+        n.textContent = 'Pág. ' + i + ' de ' + hojas;
+        cert.appendChild(n);
+      }
+    }
     original.style.top = (hoja / 2) + 'px';
     const franja = cert.querySelector('.cf-franja:not(.copia)');
     if (franja){
@@ -46171,7 +46212,7 @@ window.mapaActivar = function(){
   if (window.MutationObserver){
     const cert = document.getElementById('certificate');
     let _marcaRaf = 0;
-    const propio = n => n.nodeType === 1 && (n.classList.contains('watermark') || n.classList.contains('hoja-corte') || n.classList.contains('cf-franja'));
+    const propio = n => n.nodeType === 1 && (n.classList.contains('watermark') || n.classList.contains('hoja-corte') || n.classList.contains('cf-franja') || n.classList.contains('cf-num'));
     if (cert) new MutationObserver(muts => {
       const ajeno = muts.some(m => m.type === 'characterData' ||
         [].some.call(m.addedNodes, n => !propio(n)) || [].some.call(m.removedNodes, n => !propio(n)));
