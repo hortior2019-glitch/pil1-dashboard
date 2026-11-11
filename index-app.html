@@ -6436,8 +6436,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
               </g>
             </pattern>
           </defs>
-          <path d="M0 0H84C84 140 74 180 74 264C74 360 84 440 84 528C84 616 94 696 94 792C94 876 84 916 84 1056H0Z" fill="#7fbf7a"/>
-          <path d="M0 0H84C84 140 74 180 74 264C74 360 84 440 84 528C84 616 94 696 94 792C94 876 84 916 84 1056H0Z" fill="url(#cfPatron)"/>
+          <path d="M0 0H71C60 90 100 170 96 300C92 420 55 470 60 600C65 720 104 790 99 900C96 960 82 1010 86 1056H0Z" fill="#7fbf7a"/>
+          <path d="M0 0H71C60 90 100 170 96 300C92 420 55 470 60 600C65 720 104 790 99 900C96 960 82 1010 86 1056H0Z" fill="url(#cfPatron)"/>
         </svg>
       </div>
 
@@ -11357,6 +11357,25 @@ async function terminosExigir(r){
   _terminosEnviarPendiente(u);
   return true;
 }
+
+/* ── SESIÓN VIVA MIENTRAS SE TRABAJA ───────────────────────────────
+   El servidor cierra la sesión tras 45 min sin consultarle. Revisar
+   fotos, filtrar o leer no le consulta nada, y al guardar después la
+   sesión ya estaba muerta. Cada 10 min se le avisa que la sesión sigue
+   en uso, solo si en esos 10 min hubo clics o teclas, o si Operaciones
+   tiene cambios por guardar. Si nadie toca nada, vence como siempre. */
+(function () {
+  var actividad = Date.now();
+  ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(function (t) {
+    window.addEventListener(t, function () { actividad = Date.now(); }, { passive: true, capture: true });
+  });
+  setInterval(function () {
+    if (!_authToken) return;
+    var pend = 0;
+    try { pend = window.auditoriaPendientes ? window.auditoriaPendientes() : 0; } catch (e) {}
+    if (Date.now() - actividad < 10 * 60 * 1000 || pend > 0) authPost('sesion', {}).catch(function () {});
+  }, 10 * 60 * 1000);
+})();
 
 function cerrarSesionDash() {
   const t = _authToken;
@@ -36410,7 +36429,12 @@ async function llamar(payload){
       await new Promise(r => setTimeout(r, 800 * (i + 1)));
     }
   }
-  if(json && json.sinSesion){ sesionVencida(); throw new Error('La sesión venció. Vuelva a entrar.'); }
+  if(json && json.sinSesion){
+    sesionVencida();
+    const err = new Error('La sesión venció. Vuelva a entrar.');
+    err.sinSesion = true;
+    throw err;
+  }
   return json;
 }
 
@@ -36515,10 +36539,51 @@ function pintarSesion(){
   q.title = CFG.autor ? ('Usuario: ' + CFG.autor) : '';
 }
 
+/* ── CAMBIOS QUE NO SE PIERDEN ─────────────────────────────────────
+   Antes, si la sesión vencía con cambios por guardar (un lote de
+   colores, por ejemplo), la cola se vaciaba y los cambios se deshacían
+   en pantalla: el usuario creía haber pintado y no quedaba nada.
+   Ahora lo pendiente se guarda en este equipo, a nombre del usuario, y
+   se manda solo apenas vuelva a entrar (pendientesReenviar). */
+const CLAVE_PEND = 'auditoria_pendientes';
+function pendientesGrabar(){
+  try{
+    const previos = pendientesLeer();
+    const nuevos = S.cola.map(x => ({ fila:x.fila, col:x.col, tipo:x.tipo, valor:x.valor }));
+    const mismos = previos && previos.autor === CFG.autor ? previos.cambios : [];
+    const todos = mismos.concat(nuevos);
+    if(!todos.length) return 0;
+    localStorage.setItem(CLAVE_PEND, JSON.stringify({ autor: CFG.autor, fecha: Date.now(), cambios: todos }));
+    return todos.length;
+  }catch(e){ return 0; }
+}
+function pendientesLeer(){
+  try{ return JSON.parse(localStorage.getItem(CLAVE_PEND) || 'null'); }catch(e){ return null; }
+}
+let _reenviando = false;
+async function pendientesReenviar(){
+  const p = pendientesLeer();
+  if(!p || !p.cambios || !p.cambios.length || _reenviando) return;
+  if(p.autor && CFG.autor && p.autor !== CFG.autor) return;   // son de otro usuario: se esperan a él
+  _reenviando = true;
+  try{
+    for(let i = 0; i < p.cambios.length; i += TAM_LOTE){
+      const res = await llamar({ accion:'auditGuardar', autor: p.autor || CFG.autor, cambios: p.cambios.slice(i, i + TAM_LOTE) });
+      if(!res.resultados && res.error) throw new Error(res.error);
+    }
+    localStorage.removeItem(CLAVE_PEND);
+    aviso(p.cambios.length + (p.cambios.length === 1 ? ' cambio que había quedado pendiente ya se guardó' : ' cambios que habían quedado pendientes ya se guardaron') + ' en la hoja.');
+    if(S.cargado) refrescarRecientes();
+  }catch(e){
+    aviso('Hay ' + p.cambios.length + ' cambios guardados en este equipo esperando: ' + e.message, true);
+  }finally{ _reenviando = false; }
+}
+
 function sesionVencida(){
   CFG.token = '';
   grabarCfg();
   S.cargado = false;
+  pendientesGrabar();
   S.cola = [];
   refrescarPendientes();
   mostrarLogin('La sesión venció o no está iniciada. Vuelva a entrar.', 'info');
@@ -37936,6 +38001,19 @@ async function enviarCola(){
        vuelven a mandar solos en unos segundos. Revertirlos hacía creer
        que no se habían guardado cuando muchas veces sí estaban en la
        hoja, y el operario los volvía a hacer. */
+    if(err.sinSesion){
+      /* La hoja rechazó TODO el pedido (no se escribió nada): lo que no se
+         guardó queda en este equipo y se manda al volver a entrar. En
+         pantalla se ve tal como el usuario lo dejó. */
+      S.cola = sinGuardar.concat(S.cola);
+      const n = pendientesGrabar();
+      S.cola = [];
+      estado('err', 'Sesión vencida');
+      aviso('La sesión venció antes de guardar. ' + n + (n === 1 ? ' cambio quedó' : ' cambios quedaron') +
+        ' guardados en este equipo y se mandan solos apenas vuelva a entrar. No los repita.', true);
+      render(); refrescarPendientes();
+      return;
+    }
     const repetible = !sinGuardar.some(x => x.tipo === 'nota');
     if(err.noEsJson && repetible){
       S.cola.unshift.apply(S.cola, sinGuardar);
@@ -40832,6 +40910,10 @@ $('cfgProbar').addEventListener('click', async ()=>{
 window.addEventListener('beforeunload', ev=>{
   if(S.cola.length){ ev.preventDefault(); ev.returnValue = ''; }
 });
+/* Si igual se cierra o se recarga con cambios en cola, quedan en el equipo. */
+window.addEventListener('pagehide', ()=>{ if(S.cola.length) pendientesGrabar(); });
+/* El tablero pregunta esto para mantener viva la sesión mientras haya algo por guardar. */
+window.auditoriaPendientes = function(){ return S.cola.length + (S.enviandoN || 0) + (enviando ? 1 : 0); };
 
 /* ══════════════════════════════════════════════════════════════
    16. ARRANQUE
@@ -40889,6 +40971,7 @@ window.abrirAuditoria = function(){
   const u = _audSesionIndex();
   if(u){ CFG.autor = u.usuario; CFG.nombre = u.nombre; }
   pintarSesion();
+  pendientesReenviar();
   if(_audIniciado){ _audRefrescar(false); return; }
   _audIniciado = true;
   if(!CFG.url || CFG.url.indexOf('/exec') === -1){ $('veloConfig').classList.add('abierto'); return; }
