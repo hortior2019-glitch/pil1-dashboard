@@ -3355,6 +3355,14 @@ td .preop-fotos{margin-top:0;gap:4px;flex-wrap:nowrap}
 #panel-auditoria .pop .mini:hover{background:var(--crema);border-color:var(--verde)}
 
 #panel-auditoria #popFiltro{width:260px}
+#panel-auditoria #popFiltro.con-colores{width:540px;max-width:calc(100vw - 16px)}
+#panel-auditoria #popFiltro .filtro-cols{display:grid;gap:12px}
+#panel-auditoria #popFiltro.con-colores .filtro-cols{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+#panel-auditoria #popFiltro .filtro-bloque{min-width:0}
+#panel-auditoria #popFiltro .filtro-cab{display:flex;align-items:center;gap:6px;margin-bottom:5px}
+#panel-auditoria #popFiltro .filtro-cab b{flex:1;font-size:12px;color:var(--tinta-suave)}
+#panel-auditoria #popFiltro .colores-val{max-height:210px;overflow:auto;border:1px solid var(--linea);border-radius:3px;background:var(--crema);margin-bottom:0}
+@media (max-width:600px){#panel-auditoria #popFiltro.con-colores .filtro-cols{grid-template-columns:minmax(0,1fr)}}
 #panel-auditoria #popFiltro .orden{display:flex;gap:6px;margin-bottom:9px}
 #panel-auditoria #popFiltro .orden button{flex:1}
 #panel-auditoria #popFiltro .corte-sel{
@@ -6631,11 +6639,18 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <button class="mini" data-orden="no">Sin orden</button>
   </div>
   <input class="busca-val" id="filtroBusca" placeholder="Buscar valor…" autocomplete="off">
-  <div class="colores-val" id="filtroColores"></div>
-  <div class="lista-val" id="filtroLista"></div>
+  <!-- Valores y colores por separado, cada uno con su Todos y Ninguno -->
+  <div class="filtro-cols">
+    <div class="filtro-bloque">
+      <div class="filtro-cab"><b>Valores de la celda</b><button class="mini" id="filtroTodo">Todos</button><button class="mini" id="filtroNada">Ninguno</button></div>
+      <div class="lista-val" id="filtroLista"></div>
+    </div>
+    <div class="filtro-bloque" id="filtroColBloque" style="display:none">
+      <div class="filtro-cab"><b>Colores</b><button class="mini" id="colorTodo">Todos</button><button class="mini" id="colorNada">Ninguno</button></div>
+      <div class="colores-val" id="filtroColores"></div>
+    </div>
+  </div>
   <div class="pop-pie">
-    <button class="mini" id="filtroTodo">Todos</button>
-    <button class="mini" id="filtroNada">Ninguno</button>
     <span style="flex:1"></span>
     <button class="mini" id="filtroAplicar" style="background:var(--verde);color:#fff;border-color:var(--verde)">Aplicar</button>
   </div>
@@ -36841,14 +36856,14 @@ function nombreColor(hex){
 }
 function esColPesoNeto(c){ return /^peso\s*neto/i.test(String(S.headers[c] || '').trim()); }
 function pintarFiltroColores(c, filas){
-  const caja = $('filtroColores');
-  if(!esColPesoNeto(c)){ caja.innerHTML = ''; caja.style.display = 'none'; return; }
+  const caja = $('filtroColores'), bloque = $('filtroColBloque');
+  if(!esColPesoNeto(c)){ caja.innerHTML = ''; bloque.style.display = 'none'; $('popFiltro').classList.remove('con-colores'); return; }
+  bloque.style.display = ''; $('popFiltro').classList.add('con-colores');
   const cuenta = new Map([['', 0]]);
   filas.forEach(f=>{ const k = colorCelda(f, c); cuenta.set(k, (cuenta.get(k)||0) + 1); });
   const activos = S.filtroColor[c];
   const orden = [''].concat(Array.from(cuenta.keys()).filter(k=>k).sort((a,b)=>cuenta.get(b)-cuenta.get(a)));
-  caja.style.display = '';
-  caja.innerHTML = '<b>Por color</b>' + orden.map(k=>
+  caja.innerHTML = orden.map(k=>
     '<label><input type="checkbox" value="' + esc(k) + '" ' + ((!activos || activos.has(k)) ? 'checked' : '') + '>' +
     '<i style="background:' + (k ? esc(k) : '#fff') + '"></i><span>' + (k ? nombreColor(k) : 'Blanco / vacío') + '</span>' +
     '<span style="margin-left:auto;color:var(--tinta-suave);font-size:11px">' + cuenta.get(k) + '</span></label>').join('');
@@ -36906,7 +36921,8 @@ function abrirFiltro(c, btn){
   $('filtroBusca').value = '';
 
   const r = btn.getBoundingClientRect();
-  pop.style.left = Math.min(r.left, window.innerWidth - 280) + 'px';
+  const anchoPop = pop.classList.contains('con-colores') ? Math.min(548, window.innerWidth - 16) : 280;
+  pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - anchoPop)) + 'px';
   pop.style.top  = (r.bottom + 4) + 'px';
   pop.classList.add('abierto');
   /* Con los colores el cuadro crece: Aplicar siempre debe quedar a la vista. */
@@ -40600,6 +40616,8 @@ $('filtroNada').addEventListener('click', ()=>{
   $('filtroLista').querySelectorAll('label').forEach(l=>{ if(l.style.display !== 'none') l.querySelector('input').checked = false; });
   clearTimeout(tmpOrdenFiltro); reordenarListaFiltro();
 });
+$('colorTodo').addEventListener('click', ()=>{ $('filtroColores').querySelectorAll('input').forEach(x=>{ x.checked = true; }); });
+$('colorNada').addEventListener('click', ()=>{ $('filtroColores').querySelectorAll('input').forEach(x=>{ x.checked = false; }); });
 $('filtroAplicar').addEventListener('click', aplicarFiltro);
 $('popFiltro').querySelectorAll('[data-orden]').forEach(b=>{
   b.addEventListener('click', ()=>{
