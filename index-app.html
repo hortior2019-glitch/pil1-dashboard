@@ -4865,6 +4865,18 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
       min-height:calc(var(--hojas, 1) * 279.4mm) !important;
       padding:14mm 18mm 12mm 18mm;display:flex;flex-direction:column;overflow:visible;}
     #panel-certificado .hoja-corte{display:none !important;}
+    /* ⚠ CERTIFICADO DE UNA HOJA: EL PIE VA FIJO AL FONDO DE LA HOJA.
+       Forzar el alto a 279,4 mm solo sirve si el diálogo deja el margen
+       en cero. Si queda cualquier margen (Mínimo, Personalizado o con
+       encabezados del navegador), la hoja útil mide menos, el alto
+       forzado ya no cabe y el pie se pasa entero a una segunda hoja.
+       Con position:fixed el pie se pega al fondo de la hoja que haya,
+       sin importar el margen, y el relleno de abajo le reserva su lugar
+       para que el texto no le quede encima. */
+    #panel-certificado .certificate.una-hoja{min-height:0 !important;
+      padding-bottom:calc(var(--pie-mm, 40mm) + 4mm);}
+    #panel-certificado .certificate.una-hoja .cert-footer{position:fixed; left:0; right:0; bottom:0;
+      margin:0;}
     /* UNA MARCA POR HOJA. Con position:absolute la marca quedaba centrada en
        el certificado ENTERO: con tres hojas caia en la segunda, y se iba
        corriendo hacia abajo a medida que crecia la tabla. Un elemento fixed
@@ -4920,6 +4932,9 @@ html.mapa-expandido #salir-solo-panel{top:auto;bottom:16px;right:auto;left:50%;t
      certificado corrido a un lado y con margenes de mas. */
   html.imprimiendo-cert .wrapper{padding:0 !important;margin:0 !important;max-width:none !important}
   html.imprimiendo-cert #panel-certificado.active{margin:0 !important;width:auto !important}
+  /* El certificado de una hoja ya no se estira hasta el fondo: lo que
+     queda debajo es el fondo de la página, que debe ser blanco. */
+  html.imprimiendo-cert body{background:#fff !important}
 
   /* El explorador de guardados no debe salir impreso si quedo abierto. */
   html.imprimiendo-cert .explorer-overlay{display:none !important}
@@ -45817,6 +45832,10 @@ window.mapaActivar = function(){
       ? finArriba + pie.offsetHeight + (12 * MMP)
       : cert.scrollHeight;
     const hojas = Math.max(1, Math.ceil((contenidoPapel - 2) / hojaPapel));
+    /* Alto real del pie en el papel, para reservarle su lugar al fondo
+       de la hoja cuando el certificado cabe en una sola (ver .una-hoja). */
+    if (pie) cert.style.setProperty('--pie-mm', (pie.offsetHeight / MMP).toFixed(1) + 'mm');
+    cert.classList.toggle('una-hoja', hojas === 1);
     cert.classList.remove('midiendo-papel');
 
     /* Y ahora la vista previa, en la escala en que se esté viendo. */
@@ -46494,6 +46513,22 @@ window.mapaActivar = function(){
      la copia al guardar o al borrar. Diez minutos es de sobra. */
   const CERT_FRESCO_MS = 10 * 60 * 1000;
 
+  /* Una tarjeta por código. Antes de la v16 del servicio, guardar dos
+     veces dejaba dos filas con el mismo código (hoy hay 4 casos en la
+     hoja). La hoja no se toca: se muestra solo la PRIMERA fila de cada
+     código, que es la misma que abre el QR y la que editan o borran
+     actualizar y eliminar. */
+  function certSinRepetidos(recs){
+    const vistos = new Set();
+    return (recs || []).filter(r => {
+      const c = String(r.Codigo || '').toUpperCase().replace(/[^A-F0-9]/g, '');
+      if (!c) return true;
+      if (vistos.has(c)) return false;
+      vistos.add(c);
+      return true;
+    });
+  }
+
   async function cargarGuardados(forzar){
     const cont = document.getElementById('listaGuardados');
     const btn = document.getElementById('btnConsultar');
@@ -46521,7 +46556,7 @@ window.mapaActivar = function(){
     const cache = _certLeerCache();
     let desdeCache = false;
     if (!registrosGuardados.length && cache && cache.records.length){
-      registrosGuardados = cache.records.slice().reverse();
+      registrosGuardados = certSinRepetidos(cache.records).reverse();
       desdeCache = true;
     }
     if (registrosGuardados.length){
@@ -46537,7 +46572,7 @@ window.mapaActivar = function(){
 
     try{
       const recs = await certPedirRegistros(true);
-      registrosGuardados = recs.slice().reverse();
+      registrosGuardados = certSinRepetidos(recs).reverse();
       buscador.value = '';
       renderListaGuardados('');
     }catch(err){
@@ -47204,12 +47239,12 @@ window.certificadoAbrirPantallaCompleta = async function(texto){
   const q = (texto || '').toString().trim().toLowerCase();
   try{
     if (!registrosGuardados.length){
-      registrosGuardados = (await certPedirRegistros(false)).slice().reverse();
+      registrosGuardados = certSinRepetidos(await certPedirRegistros(false)).reverse();
     }
   }catch(e){
     // Sin servidor se intenta con la copia guardada en el navegador
     const g = _certLeerCache();
-    if (g && g.records.length) registrosGuardados = g.records.slice().reverse();
+    if (g && g.records.length) registrosGuardados = certSinRepetidos(g.records).reverse();
   }
   if (!registrosGuardados.length) return { ok:false, error:'No se pudieron leer los certificados guardados.' };
 
