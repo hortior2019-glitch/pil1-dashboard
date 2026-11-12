@@ -15661,23 +15661,54 @@ function _vehTieneAlerta(v) {
 /* Si la lista ya se está pidiendo (precarga al iniciar), abrir la pestaña
    no la vuelve a pedir: espera la misma respuesta. */
 let _vehCargaEnCurso = null;
-async function cargarVehiculos(forzar) {
+async function cargarVehiculos(forzar, silencioso) {
   if (typeof VEHICULOS_API !== 'string' || VEHICULOS_API.indexOf('PEGAR') !== -1) return;
-  if (_vehiculosCargados && !forzar) { renderVehiculos(); return; }
+  if (_vehiculosCargados && !forzar) {
+    renderVehiculos();
+    /* Lo que se registró en otro equipo o directo en la hoja no llegaba
+       hasta tocar "Actualizar": al volver a la pestaña con datos de más
+       de 1 min, se piden de nuevo sin borrar lo que se ve. */
+    vehRefrescarSiToca(VEH_AL_VOLVER_MS);
+    return;
+  }
   if (_vehCargaEnCurso && !forzar) {
     if (VEH_VISTA === 'flota') renderFlotaSeguro();
     return _vehCargaEnCurso;
   }
-  _vehCargaEnCurso = _cargarVehiculosImpl(forzar);
+  _vehCargaEnCurso = _cargarVehiculosImpl(forzar, silencioso);
   try { return await _vehCargaEnCurso; } finally { _vehCargaEnCurso = null; }
 }
-async function _cargarVehiculosImpl(forzar) {
+
+/* ── ACTUALIZACIÓN SOLA ──────────────────────────────────────────────
+   Con la pestaña abierta, cada 2 min (y al volver a la ventana tras 1 min)
+   se vuelve a pedir la lista. Si nada cambió no se repinta; si hay un
+   formulario o un cajón abierto, o alguien escribe, se espera. */
+const VEH_REFRESCO_MS = 120000, VEH_AL_VOLVER_MS = 60000;
+let _vehUltimaCarga = 0, _vehUltimoIntento = 0, _vehFirma = '';
+function _vehVisible() {
+  const p = document.getElementById('panel-vehiculos');
+  return !!(p && p.classList.contains('active')) && !document.hidden;
+}
+function _vehOcupado() {
+  if (document.getElementById('veh-modal') || document.getElementById('veh-drawer-ov')) return true;
+  const ae = document.activeElement;
+  return !!(ae && ['INPUT','TEXTAREA','SELECT'].indexOf(ae.tagName) > -1 && ae.closest('#panel-vehiculos'));
+}
+function vehRefrescarSiToca(minimo) {
+  if (!_vehiculosCargados || _vehCargaEnCurso || !_vehVisible() || _vehOcupado()) return;
+  if (Date.now() - _vehUltimaCarga < minimo || Date.now() - _vehUltimoIntento < minimo) return;
+  _vehUltimoIntento = Date.now();
+  cargarVehiculos(true, true).catch(e => console.info('Vehículos · no se pudo actualizar en segundo plano:', e && e.message));
+}
+setInterval(() => vehRefrescarSiToca(VEH_REFRESCO_MS), 15000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) vehRefrescarSiToca(VEH_AL_VOLVER_MS); });
+async function _cargarVehiculosImpl(forzar, silencioso) {
   const cont = document.getElementById('veh-lista');
   if (cont && !_vehiculos.length) cont.innerHTML = '<div class="empty" style="padding:30px">Cargando vehículos...</div>';
   /* LA FLOTA NO QUEDA EN BLANCO. El servicio tarda unos 5 s y la vista
      quedaba vacía hasta tocar "Por vehículo" y volver: ahora dice que
      está cargando y se pinta sola cuando llega. */
-  if (VEH_VISTA === 'flota') renderFlotaSeguro();
+  if (VEH_VISTA === 'flota' && !silencioso) renderFlotaSeguro();
   /* Los viajes internos alimentan un KPI de la ficha, pero se traen de OTRO
      Apps Script: se cargan en segundo plano y NO deben frenar la lista de
      vehículos. Si ese endpoint tarda o falla, la pestaña igual carga; cuando
@@ -15686,6 +15717,12 @@ async function _cargarVehiculosImpl(forzar) {
   const d = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
     body: JSON.stringify({ accion:'listarVehiculos' }) });
   if (d && Array.isArray(d.vehiculos)) {
+    _vehUltimaCarga = Date.now();
+    const firma = JSON.stringify(d);
+    /* En segundo plano: si nada cambió, o el usuario abrió un formulario
+       mientras llegaba la respuesta, no se toca lo que está viendo. */
+    if (silencioso && (firma === _vehFirma || _vehOcupado())) return;
+    _vehFirma = firma;
     _vehiculos = d.vehiculos;
     _mantenimientos = Array.isArray(d.mantenimientos) ? d.mantenimientos : [];
     // Backend v2. Si el Apps Script todavia es v1 estas listas llegan vacias y
@@ -15695,6 +15732,8 @@ async function _cargarVehiculosImpl(forzar) {
     _vehProgramacion = Array.isArray(d.programaciones) ? d.programaciones : [];
     _vehDocumentos   = Array.isArray(d.documentos)     ? d.documentos     : [];
     _vehiculosCargados = true;
+  } else if (silencioso) {
+    return;   // falló en segundo plano: se deja lo que se ve y se reintenta luego
   } else if (cont) {
     cont.innerHTML = '<div class="empty" style="padding:30px;color:var(--red)">No se pudo cargar la lista. Verifica que el Apps Script tenga la acción "listarVehiculos" y vuelve a intentar.</div>';
     const cajaF = document.getElementById('veh-flota');
@@ -19834,6 +19873,7 @@ const VEH_CATEGORIAS = [
   { k:'Minicargador',    pl:'Minicargadores',   horas:true  },
   { k:'Tractor',         pl:'Tractores',        horas:true  },
   { k:'Montacargas',     pl:'Montacargas',      horas:true  },
+  { k:'Equipo de succión', pl:'Equipos de succión', horas:false },
   { k:'Otro',            pl:'Otros',            horas:false }
 ];
 let _vehFotoTmp = '';
