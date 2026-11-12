@@ -1012,7 +1012,7 @@
 <div class="tab-panel" id="panel-combustible">
 
   <div class="notice">
-    Registro de tanqueo. El <strong>horómetro</strong> y el <strong>valor</strong> se digitan dos veces para confirmar;
+    Registro de tanqueo. El <strong>combustible</strong>, el <strong>horómetro</strong> y el <strong>valor</strong> se registran dos veces para confirmar;
     al formulario se envía un solo dato, y únicamente cuando ambas casillas coinciden.
   </div>
 
@@ -1039,6 +1039,17 @@
           <select id="comb-placa"><option value="">Seleccione el equipo…</option></select>
         </div>
       </div>
+      <div class="field-group" style="margin-top:20px">
+        <div class="field">
+          <label>Combustible <span>*</span></label>
+          <select id="comb-tipo" onchange="verificarTipoComb()"><option value="">Seleccione…</option><option value="acpm">ACPM (diésel)</option><option value="corriente">Gasolina corriente</option><option value="extra">Gasolina extra</option></select>
+        </div>
+        <div class="field">
+          <label>Confirme el combustible <span>*</span></label>
+          <select id="comb-tipo2" onchange="verificarTipoComb()"><option value="">Seleccione…</option><option value="acpm">ACPM (diésel)</option><option value="corriente">Gasolina corriente</option><option value="extra">Gasolina extra</option></select>
+        </div>
+      </div>
+      <div class="match-msg" id="comb-tipo-msg"></div>
     </div>
   </div>
 
@@ -1863,6 +1874,26 @@ function setTipoTanqueo(tipo) {
   if (lr) lr.innerHTML = interno ? 'Foto del tanqueo (opcional)' : 'Foto del recibo <span>*</span>';
 }
 
+// El combustible se elige dos veces; se envía solo cuando coinciden.
+const COMB_NOMBRES = { acpm: 'ACPM (diésel)', corriente: 'Gasolina corriente', extra: 'Gasolina extra' };
+function verificarTipoComb() {
+  const a = document.getElementById('comb-tipo'), b = document.getElementById('comb-tipo2');
+  const msg = document.getElementById('comb-tipo-msg');
+  if (!a || !b || !msg) return false;
+  b.classList.remove('campo-nocoincide');
+  msg.className = 'match-msg';
+  if (!a.value || !b.value) { msg.innerHTML = ''; return false; }
+  if (a.value === b.value) {
+    msg.className = 'match-msg ok';
+    msg.innerHTML = '<span class="match-ico">&#10003;</span>El combustible coincide — se enviará ' + COMB_NOMBRES[a.value] + '.';
+    return true;
+  }
+  msg.className = 'match-msg bad';
+  msg.innerHTML = '<span class="match-ico">!</span>El combustible no coincide en las dos casillas.';
+  b.classList.add('campo-nocoincide');
+  return false;
+}
+
 function limpiarCombustible() {
   ['comb-km', 'comb-km2', 'comb-valor', 'comb-valor2', 'comb-pimp', 'comb-pimp2'].forEach(id => {
     const el = document.getElementById(id);
@@ -1872,6 +1903,8 @@ function limpiarCombustible() {
     const el = document.getElementById(id);
     if (el) { el.className = 'match-msg'; el.innerHTML = ''; }
   });
+  ['comb-tipo', 'comb-tipo2'].forEach(id => { const el = document.getElementById(id); if (el) { el.value = ''; el.classList.remove('campo-nocoincide'); } });
+  const tm = document.getElementById('comb-tipo-msg'); if (tm) { tm.className = 'match-msg'; tm.innerHTML = ''; }
   const pl = document.getElementById('comb-placa'); if (pl) pl.value = '';
   const fe = document.getElementById('comb-fecha'); if (fe) fe.value = hoyLocal();
   ['comb-tablero', 'comb-recibo'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
@@ -1893,6 +1926,19 @@ async function submitCombustible() {
   if (!fecha)     { toastMsg('Seleccione la fecha del tanqueo.', true); return; }
   if (!encargado) { toastMsg('No se pudo identificar al encargado. Vuelva a ingresar con su PIN.', true); return; }
   if (!placa)     { toastMsg('Indique la placa o el equipo.', true); return; }
+
+  const combA = document.getElementById('comb-tipo').value;
+  const combB = document.getElementById('comb-tipo2').value;
+  if (!combA || !combB) {
+    toastMsg('Seleccione el combustible en las dos casillas.', true);
+    document.getElementById('comb-tipo').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+  if (!verificarTipoComb()) {
+    toastMsg('El combustible no coincide en las dos casillas.', true);
+    document.getElementById('comb-tipo2').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
 
   if (!fotos.combTablero) {
     toastMsg('Adjunte la foto del tablero (horómetro).', true);
@@ -1958,6 +2004,7 @@ async function submitCombustible() {
     fecha:  fecha,
     encargado: encargado,
     placa:  placa,
+    combustible: combA,   // ya confirmado: acpm | corriente | extra
     km:     Number(km),      // un solo dato, ya confirmado
     /* En bomba: pesos. Interno: pimpinas, y el valor va vacio para no
        sumar pesos que no se pagaron en una bomba. */
