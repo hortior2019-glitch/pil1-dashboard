@@ -1691,6 +1691,27 @@ function resetCombustible() {
   limpiarCombustible();
 }
 
+// ── Precio de referencia del combustible ─────────────────────
+// Lo consulta el teléfono (igual que el tablero) y viaja con el tanqueo.
+// Es el precio que el sistema guardó ese día; aquí no se usa IA.
+const PROXY_PRECIO_URL = 'https://script.google.com/macros/s/AKfycbxcyftycujcphnNvZc1fyfAGSDsu82noAJorGirrskIpHaS4aWQ8CZUPLVJRFJeXP-nkA/exec';
+async function referenciaPrecio(fecha, tipo) {
+  try {
+    const ctl = new AbortController();
+    const reloj = setTimeout(function () { ctl.abort(); }, 8000);
+    const r = await fetch(PROXY_PRECIO_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ secret: 'horti2026-x7k2m9', mode: 'precio_combustible' }), signal: ctl.signal });
+    clearTimeout(reloj);
+    const d = await r.json();
+    const dias = (d.historial || []).filter(function (h) { return h && h.f && h[tipo]; }).map(function (h) { return { f: h.f, v: h[tipo] }; });
+    if (d.precio && d.precio.fecha && d.precio[tipo] && d.precio[tipo].promedio && !dias.some(function (h) { return h.f === d.precio.fecha; }))
+      dias.push({ f: d.precio.fecha, v: d.precio[tipo].promedio });
+    const antes = dias.filter(function (h) { return h.f <= fecha; }).sort(function (a, b) { return a.f < b.f ? -1 : 1; });
+    const uso = antes[antes.length - 1];
+    return uso ? { precio: Math.round(Number(uso.v)), fecha: uso.f } : null;
+  } catch (e) { return null; }   // sin referencia el tanqueo se guarda igual
+}
+
 async function submitCombustible() {
   const fecha     = document.getElementById('comb-fecha').value;
   const encargado = (document.getElementById('comb-encargado').value || nombreUsuario || '').trim();
@@ -1754,6 +1775,7 @@ async function submitCombustible() {
   const ubic = fotos.combTablero.lat ? (fotos.combTablero.lat + ',' + fotos.combTablero.lng)
              : (fotos.combRecibo.lat ? (fotos.combRecibo.lat + ',' + fotos.combRecibo.lng) : '');
 
+  const ref = await referenciaPrecio(fecha, combA);
   const payload = {
     tipo:   'combustible',
     origen: 'volqueta',
@@ -1761,6 +1783,8 @@ async function submitCombustible() {
     encargado: encargado,
     placa:  placa,
     combustible: combA,   // ya confirmado: acpm | corriente | extra
+    ref_precio: ref ? ref.precio : '',
+    ref_fecha:  ref ? ref.fecha : '',
     km:     Number(km),      // un solo dato, ya confirmado
     valor:  Number(val),     // un solo dato, ya confirmado
     foto_tablero:      fotos.combTablero.b64,
