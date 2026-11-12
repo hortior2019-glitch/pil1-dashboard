@@ -2193,6 +2193,28 @@ td .preop-fotos{margin-top:0;gap:4px;flex-wrap:nowrap}
 #panel-cortes .cc-fest .cc-num{color:#8a5a00}
 #panel-cortes .cc-hoy .cc-num{background:var(--navy);color:#fff;border-radius:999px;padding:0 7px}
 #panel-cortes .cc-sel{border-color:var(--navy);background:var(--green-l);box-shadow:0 0 0 2px rgba(26,92,53,.18)}
+/* Alerta de cortes con más de un mes sin factura */
+.cc-alf-fondo{position:fixed;inset:0;background:rgba(10,20,14,.55);z-index:14000;display:flex;align-items:center;justify-content:center;padding:16px}
+.cc-alf{background:#fff;border-radius:12px;max-width:760px;width:100%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.3);font-family:'Source Sans 3','Segoe UI',sans-serif;color:#222}
+.cc-alf h3{margin:0;padding:18px 22px 4px;font-size:18px;color:#a31d12}
+.cc-alf-sub{padding:0 22px 12px;font-size:14px;color:#555}
+.cc-alf-wrap{overflow:auto;padding:0 22px}
+.cc-alf table{width:100%;border-collapse:collapse;font-size:14px}
+.cc-alf th{text-align:left;color:#1a5c35;border-bottom:2px solid #1a5c35;padding:7px 8px;position:sticky;top:0;background:#fff;white-space:nowrap}
+.cc-alf td{border-bottom:1px solid #e6e6e6;padding:8px}
+.cc-alf .cc-alf-n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cc-alf .cc-alf-mal{color:#a31d12;font-weight:700}
+.cc-alf-ir{font:600 13px 'Source Sans 3',sans-serif;padding:6px 12px;border-radius:6px;border:1px solid #1a5c35;background:#fff;color:#1a5c35;cursor:pointer}
+.cc-alf-bot{display:flex;justify-content:flex-end;padding:14px 22px 18px}
+.cc-alf-ok{font:700 14px 'Source Sans 3',sans-serif;padding:10px 18px;border-radius:6px;border:none;background:#1a5c35;color:#fff;cursor:pointer}
+.cc-alf-ok:focus-visible,.cc-alf-ir:focus-visible{outline:3px solid #111;outline-offset:2px}
+/* Día con corte sin factura: amarillo. Corte vencido sin guardar: toda la celda roja. */
+#panel-cortes .cc-dia.cc-d-sinfac{background:#fcefc2;border-color:#b8860b}
+#panel-cortes .cc-dia.cc-d-vencido{background:#f9d3cf;border-color:var(--red)}
+#panel-cortes .cc-dia.cc-d-sinfac:not(.cc-hoy) .cc-num{color:#5e4500}
+#panel-cortes .cc-dia.cc-d-vencido:not(.cc-hoy) .cc-num{color:#7f1810}
+#panel-cortes .cc-dia.cc-sel.cc-d-sinfac,#panel-cortes .cc-dia.cc-sel.cc-d-vencido{box-shadow:0 0 0 2px var(--navy)}
+#panel-cortes .cc-leyenda .cc-ley-dia{width:14px;height:14px;border-radius:4px}
 #panel-cortes .cc-logos{display:flex;align-items:center;flex-wrap:wrap;gap:3px;max-width:100%}
 #panel-cortes .cc-mas{font-size:13px;font-weight:700;color:var(--ink-m)}
 #panel-cortes .cc-logo{position:relative;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:#fff;box-shadow:0 0 0 2px var(--rule);overflow:hidden}
@@ -8126,6 +8148,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
               <span><i class="cc-logo cc-e-guardado"></i>Guardado, faltan facturas</span>
               <span><i class="cc-logo cc-e-vencido"></i>Vencido sin guardar</span>
               <span><i class="cc-logo cc-e-programado"></i>Por llegar</span>
+              <span><i class="cc-ley-dia" style="background:#fcefc2;border:1px solid #b8860b"></i>Día con corte sin factura</span>
+              <span><i class="cc-ley-dia" style="background:#f9d3cf;border:1px solid var(--red)"></i>Corte vencido sin guardar</span>
             </div>
           </div>
           <aside id="cal-cortes-detalle" class="cc-det" aria-live="polite"></aside>
@@ -13839,6 +13863,7 @@ function showPanel(id, el) {
         if (window.dataIngreso) { try { renderCmpChart(window.dataIngreso); } catch(e){} }
       } else if (id === 'cortes') {
         // Si ya pasó el PIN en esta sesión, refresca; si no, muestra el gate
+        try { _ccAlertaPend = true; } catch(e){}
         try { mostrarEstadoPinCorte(); if (_cortePinOk) initCortesProveedores(); } catch(e){}
       } else if (id === 'ProduccionHumus') {
         try { cargarHumusDetalle(); } catch(e) { console.error('cargarHumusDetalle:', e); }
@@ -22906,6 +22931,7 @@ async function _ccCargarOps() {
     console.warn('Calendario de cortes: no se pudo leer ops-materiales.csv', e);
     _ccOpsEstado = 'fallo';
   }
+  try { _cortesPintarProveedores(); } catch (e) { console.warn(e); }
   renderCalendarioCortes();
   try { renderInformeGerencial(); } catch (e) { console.warn(e); }
 }
@@ -23166,6 +23192,7 @@ function renderCalendarioCortes() {
   if (titulo) titulo.textContent = _CC_MESES[_calMes] + ' ' + _calAnio;
   _ccTipIniciar(); _ccTopIniciar();
   _ccMarcarVista(_ccVista);
+  if (_ccAlertaPend) setTimeout(_ccRevisarAlertaFacturas, 0);
 
   if (_ccVista === 'def') { _cdRender(); return; }
   const ocs = _ccOcurrencias();
@@ -23186,6 +23213,8 @@ function renderCalendarioCortes() {
     const lista = porDia[d] || [];
     const cls = ['cc-dia'];
     if (lista.length) cls.push('cc-con');
+    if (lista.some(o => o.estado === 'vencido')) cls.push('cc-d-vencido');
+    else if (lista.some(o => o.estado === 'guardado' || o.estado === 'generado')) cls.push('cc-d-sinfac');
     if (esDomingoOFestivo(ymd)) cls.push('cc-fest');
     if (esMesHoy && d === hoy.getDate()) cls.push('cc-hoy');
     if (_calDiaSel === d) cls.push('cc-sel');
@@ -23202,6 +23231,67 @@ function renderCalendarioCortes() {
   renderListaCortesBase();
   renderDetalleDiaCalendario();
 }
+
+/* ══ ALERTA: CORTES CON MÁS DE UN MES SIN FACTURA ══════════════════════
+   Al entrar a Cortes, cuando ya cargaron calendario, informes y la lista
+   de operaciones: cada corte cuyo cierre pasó hace un mes o más y no
+   tiene todas sus facturas sale en una tabla, para pedirlas. Se mira
+   desde el primer mes con un informe guardado (antes no se usaba el
+   sistema) y hasta 6 meses atrás. */
+let _ccAlertaPend = false;
+function _ccRevisarAlertaFacturas() {
+  if (!_ccAlertaPend) return;
+  if (!_calendarioCargado || !_informesUltimaCarga || _informesCargando) return;
+  if (!_ccOpsEstado || _ccOpsEstado === 'cargando') return;
+  if (!document.querySelector('#panel-cortes.active')) return;
+  if (document.querySelector('.cc-alf-fondo')) return;
+  _ccAlertaPend = false;
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const limite = new Date(hoy); limite.setMonth(limite.getMonth() - 1);
+  let primero = null;
+  (_informesGuardados || []).forEach(inf => {
+    if (!inf || String(inf.id || '').indexOf('__') === 0) return;
+    const ma = _mesAnioDeCard(inf); if (!ma) return;
+    const d = new Date(ma.anio, ma.mes, 1);
+    if (!primero || d < primero) primero = d;
+  });
+  if (!primero) return;
+  const atras = [];
+  for (let k = 6; k >= 1; k--) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() - k, 1);
+    if (d < primero) continue;
+    _cgOcurrencias(d.getMonth(), d.getFullYear()).forEach(o => {
+      if (o.cie <= limite && o.facEsp > 0 && o.facReal < o.facEsp) atras.push(o);
+    });
+  }
+  if (!atras.length) return;
+  atras.sort((a, b) => a.op.localeCompare(b.op, 'es') || a.cie - b.cie);
+  _ccAlertaAtras = atras;
+  const dias = o => Math.round((hoy - o.cie) / 86400000);
+  const fondo = document.createElement('div');
+  fondo.className = 'cc-alf-fondo';
+  fondo.innerHTML = '<div class="cc-alf" role="alertdialog" aria-modal="true" aria-labelledby="ccAlfTit">' +
+    '<h3 id="ccAlfTit">' + atras.length + (atras.length === 1 ? ' corte lleva' : ' cortes llevan') + ' más de un mes sin factura</h3>' +
+    '<div class="cc-alf-sub">Solicita las facturas de estos servicios.</div>' +
+    '<div class="cc-alf-wrap"><table><thead><tr><th>Operación</th><th>Corte</th><th>Estado</th><th class="cc-alf-n">Facturas</th><th class="cc-alf-n">Días</th><th></th></tr></thead><tbody>' +
+    atras.map((o, j) => '<tr><td>' + _ccEsc(o.op) + '</td><td>' + _cobFechaCorta(o.ini) + ' → ' + _cobFechaCorta(o.cie) + '</td>' +
+      '<td>' + (o.inf ? 'Guardado sin factura' : 'Sin guardar') + '</td>' +
+      '<td class="cc-alf-n">' + o.facReal + ' de ' + o.facEsp + '</td><td class="cc-alf-n cc-alf-mal">' + dias(o) + '</td>' +
+      '<td>' + (o.inf ? '<button type="button" class="cc-alf-ir" data-j="' + j + '">Abrir</button>' : '') + '</td></tr>').join('') +
+    '</tbody></table></div>' +
+    '<div class="cc-alf-bot"><button type="button" class="cc-alf-ok">Entendido</button></div></div>';
+  const cerrar = () => { document.removeEventListener('keydown', tecla); fondo.remove(); };
+  const tecla = e => { if (e.key === 'Escape') cerrar(); };
+  document.addEventListener('keydown', tecla);
+  fondo.addEventListener('click', e => {
+    const ir = e.target.closest('.cc-alf-ir');
+    if (ir) { const o = _ccAlertaAtras[+ir.dataset.j]; cerrar(); if (o && o.inf) _ccAbrirInforme(String(o.inf.id)); return; }
+    if (e.target.closest('.cc-alf-ok') || e.target === fondo) cerrar();
+  });
+  document.body.appendChild(fondo);
+  fondo.querySelector('.cc-alf-ok').focus();
+}
+let _ccAlertaAtras = [];
 
 /* ── Indicadores del mes ── */
 function _ccRenderIndicadores(ocs) {
@@ -23278,7 +23368,7 @@ function _ccRenderIndicadores(ocs) {
     g.esp += o.facEsp; g.real += r; g.n++; if (o.inf) g.guard++;
     if (o.cie < hoy) g.faltaV += o.facEsp - r; else g.porVenir += o.facEsp - r;
   });
-  const filas = Object.values(porOp).sort((a, b) => (b.faltaV - a.faltaV) || (b.esp - a.esp) || a.op.localeCompare(b.op, 'es'));
+  const filas = Object.values(porOp).sort((a, b) => a.op.localeCompare(b.op, 'es'));
   const maxE = filas.reduce((m, g) => Math.max(m, g.esp), 0) || 1;
   const g1 = '<section class="cc-g cc-g-ops"><div class="cc-g-cab"><h4>Facturas por operación</h4>' +
       '<span class="cc-g-ley"><i class="cc-l-real"></i>Adjuntas <i class="cc-l-falta"></i>Faltan, corte vencido <i class="cc-l-venir"></i>Por llegar</span></div>' +
@@ -24375,19 +24465,34 @@ function precargarCorteBase(i) {
   setTimeout(() => { const r = document.getElementById('corte-paso2'); if (r) r.scrollIntoView({behavior:'smooth',block:'start'}); }, 100);
 }
 
+/* Selector de proveedor: las operaciones con viajes registrados MÁS todas
+   las de ops-materiales.csv, aunque todavía no tengan viajes. Se vuelve a
+   pintar cuando el csv termina de cargar. */
+function _cortesPintarProveedores() {
+  const sel = document.getElementById('corte-proveedor');
+  if (!sel || !window.dataIngreso) return;
+  const deViajes = window.dataIngreso
+    .map(r => normEmpresa(r['OPERACION']||r['Operacion']||r['operacion']||r['OPERACIÓN']||''))
+    .filter(Boolean);
+  const vistos = new Set(deViajes.map(_ccCompacto));
+  const delCsv = (_ccOps || []).map(o => normEmpresa(o.op))
+    .filter(p => p && !vistos.has(_ccCompacto(p)));
+  const proveedores = [...new Set(deViajes.concat(delCsv))]
+    .sort((a, b) => nombreProveedorInforme(a).localeCompare(nombreProveedorInforme(b), 'es'));
+  const valorActual = sel.value;
+  sel.innerHTML = '<option value="">— Seleccione proveedor —</option>' +
+    proveedores.map(p => `<option value="${p}">${nombreProveedorInforme(p)}</option>`).join('');
+  if (valorActual) sel.value = valorActual;
+}
+
 // Poblar el selector de proveedores cuando hay datos de ingreso
 function initCortesProveedores() {
   // No inicializar ni cargar favoritos hasta que se haya validado el PIN
   if (!_cortePinOk) return;
   const sel = document.getElementById('corte-proveedor');
   if (!sel || !window.dataIngreso) return;
-  const proveedores = [...new Set(window.dataIngreso
-    .map(r => normEmpresa(r['OPERACION']||r['Operacion']||r['operacion']||r['OPERACIÓN']||''))
-    .filter(Boolean))].sort();
-  const valorActual = sel.value;
-  sel.innerHTML = '<option value="">— Seleccione proveedor —</option>' +
-    proveedores.map(p => `<option value="${p}">${nombreProveedorInforme(p)}</option>`).join('');
-  if (valorActual) sel.value = valorActual;
+  if (!_ccOpsEstado) _ccCargarOps();
+  _cortesPintarProveedores();
   // Construir la lista de checkboxes de columnas (una sola vez)
   const cont = document.getElementById('corte-columnas');
   if (cont && !cont.dataset.init) {
