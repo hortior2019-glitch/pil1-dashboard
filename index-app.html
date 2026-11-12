@@ -31654,6 +31654,32 @@ const VOZ_FUENTES = {
     sinFecha:true,
     cargar: async () => { await cargarVehiculos(true); },
     resumen: vozResumenFlota
+  },
+  maquinaria: {
+    label:'Maquinaria amarilla · combustible por operario y turno',
+    panel:'preopequipo',
+    desc:'maquinaria amarilla, cargador, tractor, oruga, excavadora, retroexcavadora, minicargador, equipo pesado, maquinista, tractorista, operador de maquinaria, combustible por operario, gasto por turno, franja, horómetro, quién operaba',
+    obtener: () => (_vozPerIntento && vozArr(() => dataCombustible).length) ? vozArr(() => dataPreopCar) : [],
+    sinFecha:true,
+    cargar: async () => {
+      if (!vozArr(() => dataCombustible).length) dataCombustible = await fetchCSV(SHEETS.combustible);
+      if (!vozArr(() => dataPreopCar).length) dataPreopCar = await fetchCSV(SHEETS.preopCar);
+      if (!vozArr(() => _vehiculos).length) { try { await cargarVehiculos(true); } catch(e){} }
+      await vozPerTraer();
+    },
+    resumen: vozResumenMaquinaria
+  },
+  personal: {
+    label:'Personal · colaboradores, turnos y novedades',
+    panel:'personal',
+    desc:'personal, colaboradores, empleados, trabajadores, equipo, quién trabaja, turnos, horarios, entrada, salida, novedades, incapacidades, vacaciones, permisos, licencias, ausencias, faltas, calamidad, horas extra, traslados, áreas, cargos, maquinistas, tractoristas, conductores, operarios, informe de novedades',
+    obtener: () => _vozPerIntento ? vozArr(() => window.personalLista()) : [],
+    sinFecha:true,
+    cargar: async () => {
+      if (window.personalCargar) await window.personalCargar();
+      await vozPerTraer();
+    },
+    resumen: vozResumenPersonal
   }
 };
 
@@ -31676,6 +31702,9 @@ const VOZ_GLOBALES = [
   { clave:'combustible',     etq:'Combustible y tanqueos',                   get:()=>dataCombustible },
   { clave:'humus',           etq:'Producción de humus',                      get:()=>dataProduccionHumus },
   { clave:'accesos',         etq:'Control de accesos (entradas y salidas)',  get:()=>rawAccesos },
+  { clave:'personal',        etq:'Personal: colaboradores con cargo y área', get:()=>window.personalActivos() },
+  { clave:'novedadesPersonal', etq:'Novedades de Personal: incapacidades, vacaciones, permisos y ausencias', get:()=>window.personalNovedades() },
+  { clave:'turnosPersonal',  etq:'Turnos de Personal por persona y día (área, entrada, salida, horas)', get:()=>(_vozPer ? _vozPer.turnos : []) },
   { clave:'vehiculos',       etq:'Vehículos de la flota (placas, SOAT, tecnomecánica, km)', get:()=>_vehiculos },
   { clave:'mantenimientos',  etq:'Mantenimientos de vehículos: incluye cuáles fueron cambio de aceite, el kilometraje y cuántas fotos tiene cada uno', get:()=>_mantenimientos },
   { clave:'programacion',    etq:'Programación del calendario: qué operación y qué conductor tiene asignado cada vehículo en cada fecha', get:()=>_vehProgramacion },
@@ -33531,8 +33560,9 @@ function vozMeses(){
 }
 /* Cuánto combustible cuesta mover cada tonelada: mes contra mes y placa contra placa. */
 function vozFlotaRinde(comb, viajes, veh, hoy, faltan){
-  const plac = {};
-  veh.forEach(function(v){ const p = _placaNorm(v.placa); if (p) plac[p] = 1; });
+  const plac = {}, maq = vozMaquinasSet();
+  /* La maquinaria amarilla no hace viajes: se mide con su operario y su turno. */
+  veh.forEach(function(v){ const p = _placaNorm(v.placa); if (p && !maq[p]) plac[p] = 1; });
   const m = vozMeses(), o = { n:0, kg:0, c:0, nA:0, kgA:0, cA:0 };
   const pl = {}, hace30 = vozYMD(new Date(Date.now() - 30 * 864e5));
   const de = function(p){ return pl[p] || (pl[p] = { n:0, kg:0, c:0 }); };
@@ -33664,6 +33694,398 @@ function vozRadarConductores(hoy, faltan){
       comp: { quien:{ n:p.c.nombre, foto:p.c.foto }, eA:'Su turno', eB:'Cuándo entran sus viajes', ahora: usual || 'Sin turno', ahoraS: usual ? 'el más común este mes' : 'en Personal este mes', debe: franjaC, debeS: 'la franja de sus viajes', dif: p.fuera + (p.fuera === 1 ? ' viaje fuera del turno' : ' viajes fuera del turno'), a: p.fuera, b: 0 } });
   });
 }
+/* ══════════════════════════════════════════════════════════════
+   MAQUINARIA AMARILLA: COMBUSTIBLE POR OPERARIO Y TURNO
+   Un cargador, un tractor o una excavadora no hacen viajes: su
+   combustible no se compara con Operaciones. Quién operaba sale del
+   preoperacional (1) y su franja y sus horas, del turno en Personal (2).
+   Cada tanqueo paga lo trabajado desde el tanqueo anterior y se reparte
+   entre los turnos de ese tramo por horas de horómetro (o de turno si
+   falta). Solo lee; no cambia ningún dato.
+   ══════════════════════════════════════════════════════════════ */
+const VOZ_MAQ_RE = /cargador|tractor|oruga|excavadora|retro|minicargador|montacarga|bulldozer|buldozer|motoniveladora|compactador|vibro|maquinaria|equipo pesado/i;
+let _vozPer = null, _vozPerIntento = false;
+async function vozPerTraer(){
+  if (!window.personalTurnosTraer){ _vozPerIntento = true; return null; }
+  const d = new Date();
+  const desde = vozYMD(new Date(d.getFullYear(), d.getMonth() - 3, 1)), hasta = vozYMD(new Date(d.getTime() + 14 * 864e5));
+  try { _vozPer = await window.personalTurnosTraer(desde, hasta); } catch(e){}
+  _vozPerIntento = true;
+  return _vozPer;
+}
+function vozUno(x){ return (Math.round(x * 10) / 10).toString().replace('.', ','); }
+function vozMaqTipoTxt(t){ t = String(t || '').trim().toLowerCase(); return t ? t.charAt(0).toUpperCase() + t.slice(1) : 'Equipo'; }
+/* Placas que son maquinaria: por su categoría en Vehículos, por el origen
+   del tanqueo o porque tienen preoperacional de equipo pesado. */
+function vozMaquinasSet(){
+  const s = {};
+  vozArr(function(){ return _vehiculos; }).forEach(function(v){
+    const p = _placaNorm(v.placa); if (!p) return;
+    const c = String(v.categoria || '').trim(), cat = VEH_CATEGORIAS.find(function(x){ return x.k === c; });
+    if ((cat && cat.horas) || VOZ_MAQ_RE.test(c + ' ' + String(v.tipo || ''))) s[p] = 1;
+  });
+  vozArr(function(){ return dataCombustible; }).forEach(function(r){
+    const p = _placaNorm(r['Placa / Equipo'] || r['Placa'] || '');
+    /* Solo placas con letras y números: "Lovol" o "4667.8" son errores de digitación. */
+    if (p && /[A-Z]/.test(p) && /\d/.test(p) && VOZ_MAQ_RE.test(String(r['Origen'] || ''))) s[p] = 1;
+  });
+  vozArr(function(){ return dataPreopCar; }).forEach(function(r){
+    const p = _placaNorm(r['Placa / Referencia'] || '');
+    if (p) s[p] = 1;
+  });
+  return s;
+}
+/* El nombre del preoperacional ("Manuel", "Michael Medina") contra Personal.
+   Si hay varias personas posibles, se queda con la de maquinaria; si sigue
+   habiendo dudas, no adivina. */
+function vozMaqQuien(){
+  const tok = function(x){ return vozNorm(x).split(/\s+/).filter(Boolean); };
+  const gente = vozArr(function(){ return window.personalLista(); }).map(function(p){
+    const ar = vozArr(function(){ return window.personalAreasDe(p.clave); }).join(' ') + ' ' + String(p.cargo || '');
+    return { p:p, t:tok(p.nombre), maq: VOZ_MAQ_RE.test(ar) || /maquin|operador/i.test(ar) };
+  });
+  const memo = {};
+  return function(nombre){
+    const k = vozNorm(nombre);
+    if (k in memo) return memo[k];
+    const t = tok(nombre);
+    let hit = t.length ? gente.filter(function(g){ return t.every(function(w){ return g.t.indexOf(w) !== -1; }); }) : [];
+    if (hit.length > 1){ const m = hit.filter(function(g){ return g.maq; }); if (m.length) hit = m; }
+    if (hit.length > 1){ const a = hit.filter(function(g){ return g.p.activo !== false; }); if (a.length) hit = a; }
+    return (memo[k] = hit.length === 1 ? hit[0].p : null);
+  };
+}
+/* El turno de esa persona a esa hora (o el de la noche anterior). */
+function vozMaqTurnoDe(idx, clave, f, min){
+  const hoyT = idx[clave + '|' + f] || [];
+  if (hoyT.length){
+    const dentro = hoyT.filter(function(t){
+      const a = minutosVoz(t.inicio), b = minutosVoz(t.fin);
+      return b > a ? (min >= a - 90 && min <= b) : (min >= a - 90 || min <= b);
+    });
+    return dentro[0] || hoyT[0];
+  }
+  const dA = new Date(f + 'T00:00:00'); dA.setDate(dA.getDate() - 1);
+  return (idx[clave + '|' + vozYMD(dA)] || []).filter(function(t){
+    return minutosVoz(t.fin) < minutosVoz(t.inicio) && min <= minutosVoz(t.fin);
+  })[0] || null;
+}
+let _vozMaqMemo = null;
+function vozMaqDatos(){
+  if (_vozMaqMemo && Date.now() - _vozMaqMemo.t < 20000 && _vozMaqMemo.per === _vozPer) return _vozMaqMemo.d;
+  const set = vozMaquinasSet(), tipoDe = {}, marcaDe = {};
+  vozArr(function(){ return _vehiculos; }).forEach(function(v){
+    const p = _placaNorm(v.placa); if (p && set[p]) tipoDe[p] = String(v.categoria || v.tipo || '').trim();
+  });
+  const fechaHora = function(ts, f, h){ return (ts && vozYMD(ts) === f) ? ts : new Date(f + 'T' + h); };
+  /* 1. Preoperacionales: quién, qué máquina, cuándo y con qué horómetro. */
+  const preops = [];
+  vozArr(function(){ return dataPreopCar; }).forEach(function(r){
+    const ts = parseDateTime(String(r['Timestamp'] || ''));
+    const f = vozAYMD(String(r['Fecha'] || '')) || (ts ? vozYMD(ts) : '');
+    if (!f) return;
+    preops.push({ ts: fechaHora(ts, f, '06:00:00'), f: f, op: String(r['Operador'] || '').trim(), tipo: getTipoEquipo(r) || 'cargador',
+                  pl: _placaNorm(r['Placa / Referencia'] || ''), marca: String(r['Marca'] || '').trim(), horo: _numComb(r['Horometro']) });
+  });
+  /* 2. Tanqueos de maquinaria. El "kilometraje" de una máquina es su horómetro. */
+  const tanq = [];
+  vozArr(function(){ return dataCombustible; }).forEach(function(r){
+    const pl = _placaNorm(r['Placa / Equipo'] || r['Placa'] || '');
+    if (!pl || !set[pl]) return;
+    const f = _fechaComb(r); if (!f) return;
+    tanq.push({ pl: pl, f: f, ts: fechaHora(parseDateTime(String(r['Timestamp'] || '')), f, '12:00:00'),
+                valor: _numComb(r['Valor tanqueado']), pimp: _numComb(r['Pimpinas']), horo: _numComb(r['Kilometraje']),
+                enc: String(r['Encargado'] || '').trim(), origen: String(r['Origen'] || '').trim().toLowerCase() });
+  });
+  /* Tanqueo interno sin valor: se estima con lo que vale una pimpina en los
+     que traen los dos datos. Queda marcado como estimado. */
+  const precios = tanq.filter(function(x){ return x.valor > 0 && x.pimp > 0; }).map(function(x){ return x.valor / x.pimp; });
+  const precioPimp = precios.length >= 2 ? vozMediana(precios) : 0;
+  tanq.forEach(function(x){ x.est = 0; if (!(x.valor > 0) && x.pimp > 0 && precioPimp){ x.valor = x.pimp * precioPimp; x.est = x.valor; } });
+  tanq.forEach(function(x){ if (!tipoDe[x.pl] && VOZ_MAQ_RE.test(x.origen)) tipoDe[x.pl] = x.origen; });
+  preops.forEach(function(x){ if (x.pl){ if (!tipoDe[x.pl]) tipoDe[x.pl] = x.tipo; if (x.marca) marcaDe[x.pl] = x.marca; } });
+  /* Preoperacionales viejos sin placa: si hay una sola máquina de ese tipo es
+     esa; si hay varias, la de horómetro más parecido en la fecha más cercana. */
+  const lect = {};
+  preops.forEach(function(x){ if (x.pl && x.horo > 0) (lect[x.pl] = lect[x.pl] || []).push({ ts: +x.ts, h: x.horo }); });
+  tanq.forEach(function(x){ if (x.horo > 0) (lect[x.pl] = lect[x.pl] || []).push({ ts: +x.ts, h: x.horo }); });
+  preops.forEach(function(x){
+    if (x.pl) return;
+    const cand = Object.keys(set).filter(function(p){ return vozNorm(tipoDe[p] || '').indexOf(x.tipo) !== -1; });
+    if (cand.length === 1){ x.pl = cand[0]; return; }
+    if (!x.horo) return;
+    let mejor = null;
+    cand.forEach(function(p){
+      const l = (lect[p] || []).slice().sort(function(a, b){ return Math.abs(a.ts - x.ts) - Math.abs(b.ts - x.ts); })[0];
+      if (!l) return;
+      const dias = Math.abs(+x.ts - l.ts) / 864e5, dif = Math.abs(x.horo - l.h);
+      if (dif <= 30 + 14 * dias && (!mejor || dif < mejor.dif)) mejor = { p: p, dif: dif };
+    });
+    if (mejor) x.pl = mejor.p;
+  });
+  /* 3. Turnos: cada preoperacional es un turno de ese operario en esa máquina. */
+  const quien = vozMaqQuien(), idx = {};
+  (_vozPer && _vozPer.turnos || []).forEach(function(t){
+    if (t.inicio && t.fin) (idx[t.persona + '|' + t.fecha] = idx[t.persona + '|' + t.fecha] || []).push(t);
+  });
+  const maquinas = {};
+  const de = function(pl){ return maquinas[pl] || (maquinas[pl] = { pl: pl, tipo: tipoDe[pl] || '', marca: marcaDe[pl] || '', tanq: [], ses: [] }); };
+  const vistos = {};
+  preops.filter(function(x){ return x.pl && set[x.pl]; }).sort(function(a, b){ return a.ts - b.ts; }).forEach(function(x){
+    const k = x.pl + '|' + x.f + '|' + vozNorm(x.op);
+    if (vistos[k]) return;          // el mismo preoperacional enviado dos veces
+    vistos[k] = 1;
+    const per = x.op ? quien(x.op) : null;
+    const min = x.ts.getHours() * 60 + x.ts.getMinutes();
+    const tu = per ? vozMaqTurnoDe(idx, per.clave, x.f, min) : null;
+    de(x.pl).ses.push({ pl: x.pl, ts: x.ts, f: x.f, op: x.op, per: per, horo: x.horo, turno: tu,
+                        franja: tu ? hhmmVoz(tu.inicio) + '–' + hhmmVoz(tu.fin) : '', hT: tu ? (Number(tu.horas) || 0) : 0,
+                        hM: 0, valor: 0, est: 0, cubierta: false });
+  });
+  tanq.forEach(function(x){ de(x.pl).tanq.push(x); });
+  Object.keys(maquinas).forEach(function(pl){
+    const m = maquinas[pl];
+    m.ses.forEach(function(s, i){
+      const n = m.ses[i + 1];
+      if (n && s.horo > 0 && n.horo > 0 && n.ts - s.ts <= 36 * 36e5){
+        const dh = n.horo - s.horo;
+        if (dh > 0 && dh <= 16) s.hM = dh;
+      }
+    });
+    m.tanq.sort(function(a, b){ return a.ts - b.ts; });
+    m.tanq.forEach(function(x, i){
+      const prev = m.tanq[i - 1];
+      if (!prev){ x.sinTramo = true; return; }   // el primero no dice desde cuándo
+      if (!(x.valor > 0)) return;
+      const en = m.ses.filter(function(s){ return s.ts > prev.ts && s.ts <= x.ts; });
+      if (!en.length){ x.sinOp = true; return; }
+      const peso = en.every(function(s){ return s.hM > 0; }) ? function(s){ return s.hM; }
+                 : en.every(function(s){ return s.hT > 0; }) ? function(s){ return s.hT; } : function(){ return 1; };
+      const tot = en.reduce(function(a, s){ return a + peso(s); }, 0);
+      en.forEach(function(s){
+        const parte = x.valor * peso(s) / tot;
+        s.valor += parte; s.cubierta = true;
+        if (x.est) s.est += parte;
+      });
+    });
+  });
+  const d = { maquinas: maquinas, precioPimp: precioPimp };
+  _vozMaqMemo = { t: Date.now(), per: _vozPer, d: d };
+  return d;
+}
+/* Quiénes operaron una máquina entre dos fechas (para leer un tanqueo raro). */
+function vozMaqOperaron(placa, desdeF, hastaF){
+  const m = vozMaqDatos().maquinas[_placaNorm(placa)];
+  if (!m) return '';
+  const n = [];
+  m.ses.forEach(function(s){
+    const nom = s.per ? s.per.nombre : s.op;
+    if (nom && s.f > desdeF && s.f <= hastaF && n.indexOf(nom) === -1) n.push(nom);
+  });
+  return n.length ? vozListaNombres(n) : '';
+}
+/* Lo de un periodo: por máquina, cada operario en cada franja. */
+function vozMaqResumen(desde, hasta){
+  const d = vozMaqDatos(), out = [];
+  Object.keys(d.maquinas).forEach(function(pl){
+    const m = d.maquinas[pl];
+    const tq = m.tanq.filter(function(x){ return x.f >= desde && x.f <= hasta; });
+    const ses = m.ses.filter(function(s){ return s.f >= desde && s.f <= hasta; });
+    if (!tq.length && !ses.length) return;
+    const grupos = {}, sinTurno = {};
+    ses.forEach(function(s){
+      const kp = s.per ? s.per.clave : 'op:' + vozNorm(s.op);
+      if (!s.turno) (sinTurno[kp] = sinTurno[kp] || { n: s.per ? s.per.nombre : (s.op || 'Sin nombre'), per: s.per, foto: s.per ? (s.per.foto || '') : '', dias: {} }).dias[s.f] = 1;
+      if (!s.cubierta) return;   // todavía no se tanquea después de ese turno
+      const k = kp + '|' + (s.franja || '-');
+      const g = grupos[k] || (grupos[k] = { n: s.per ? s.per.nombre : (s.op || 'Sin nombre'), foto: s.per ? (s.per.foto || '') : '', clave: kp,
+                                            franja: s.franja, dias: {}, n_: 0, hT: 0, conT: 0, hM: 0, conM: 0, valor: 0, est: 0 });
+      g.dias[s.f] = 1; g.n_++; g.valor += s.valor; g.est += s.est;
+      if (s.hT > 0){ g.hT += s.hT; g.conT++; }
+      if (s.hM > 0){ g.hM += s.hM; g.conM++; }
+    });
+    const lista = Object.keys(grupos).map(function(k){ const g = grupos[k]; g.nd = Object.keys(g.dias).length; return g; })
+                        .sort(function(a, b){ return b.valor - a.valor; });
+    const suma = function(arr, f){ return arr.reduce(function(a, x){ return a + (f(x) || 0); }, 0); };
+    out.push({ pl: pl, nombre: vozMaqTipoTxt(m.tipo) + ' ' + pl + (m.marca ? ' (' + m.marca + ')' : ''), tq: tq, ses: ses,
+               gasto: suma(tq, function(x){ return x.valor; }), est: suma(tq, function(x){ return x.est; }),
+               pimp: suma(tq, function(x){ return x.pimp; }), sinOp: suma(tq.filter(function(x){ return x.sinOp; }), function(x){ return x.valor; }),
+               grupos: lista, sinTurno: sinTurno });
+  });
+  out.sort(function(a, b){ return b.gasto - a.gasto; });
+  return { maquinas: out, precioPimp: d.precioPimp };
+}
+function vozMaqTasa(g, met){ return met === 'hT' ? g.valor / g.hT : met === 'hM' ? g.valor / g.hM : g.valor / g.nd; }
+function vozMaqLinea(g){
+  let l = g.n + (g.franja ? ', turno ' + g.franja : ', sin turno en Personal') + ': ' + g.nd + (g.nd === 1 ? ' día' : ' días');
+  if (g.hT) l += ', ' + vozUno(g.hT) + ' h de turno';
+  if (g.hM) l += ', ' + vozUno(g.hM) + ' h de horómetro';
+  l += ', ' + vozPesos(g.valor) + ' de combustible' + (g.est ? ' (' + vozPesos(g.est) + ' estimado por pimpinas)' : '');
+  if (g.hT && g.conT === g.n_) l += ', ' + vozPesos(g.valor / g.hT) + ' por hora de turno';
+  if (g.hM && g.conM === g.n_) l += ', ' + vozPesos(g.valor / g.hM) + ' por hora de horómetro';
+  return l + ', ' + vozPesos(g.valor / g.nd) + ' por día';
+}
+function vozMaqTexto(r, etiqueta, desde, hasta){
+  let t = 'MAQUINARIA AMARILLA · combustible por operario y turno (' + etiqueta + '). En cargadores, tractores, orugas y excavadoras NO se compara el combustible con viajes ni con Operaciones: ' +
+          'quién operaba sale del preoperacional y su franja y horas, del turno en Personal. Cada tanqueo paga lo trabajado desde el tanqueo anterior y se reparte entre los turnos de ese tramo por horas de horómetro (o de turno si falta). ' +
+          'Compara a los operarios de una misma máquina, ojalá en la misma franja.\n';
+  if (!_vozPer) t += '  OJO: los turnos de Personal no se pudieron cargar; sin ellos no hay franjas ni horas de turno.\n';
+  if (!r.maquinas.length) return t + '  (sin tanqueos ni preoperacionales de maquinaria en ese periodo)\n';
+  if (r.precioPimp) t += '  Los tanqueos internos sin valor se estiman a ' + vozPesos(r.precioPimp) + ' por pimpina, lo que valen en los que traen los dos datos.\n';
+  r.maquinas.forEach(function(m){
+    t += '  - ' + m.nombre + ': ' + m.tq.length + (m.tq.length === 1 ? ' tanqueo, ' : ' tanqueos, ') + vozPesos(m.gasto) + (m.est ? ' (' + vozPesos(m.est) + ' estimado)' : '') + (m.pimp ? ', ' + vozUno(m.pimp) + ' pimpinas' : '') + '\n';
+    m.grupos.forEach(function(g){ t += '      · ' + vozMaqLinea(g) + '\n'; });
+    if (m.sinOp) t += '      · Sin operario identificado (tramos sin preoperacional): ' + vozPesos(m.sinOp) + '\n';
+    const st = Object.keys(m.sinTurno).map(function(k){ return m.sinTurno[k]; });
+    if (_vozPer && st.length) t += '      · Operó sin turno en Personal: ' + st.map(function(x){ const n = Object.keys(x.dias).length; return x.n + (x.per ? '' : ' (no lo encuentro en Personal)') + ' ' + n + (n === 1 ? ' día' : ' días'); }).join(', ') + '\n';
+  });
+  /* Periodo corto: turno por turno, para "¿quién operó el cargador ayer?". */
+  if (desde && hasta && vozDiasEntre(desde, hasta) <= 7){
+    t += '  Turno por turno según el preoperacional:\n';
+    r.maquinas.forEach(function(m){
+      m.ses.forEach(function(s){
+        t += '    ' + s.f + ' ' + ('0' + s.ts.getHours()).slice(-2) + ':' + ('0' + s.ts.getMinutes()).slice(-2) + ' · ' + m.nombre + ' · ' + (s.per ? s.per.nombre : s.op || 'sin operador') +
+             (s.franja ? ' · turno ' + s.franja : ' · sin turno en Personal') + (s.hM ? ' · ' + vozUno(s.hM) + ' h de horómetro' : '') + (s.cubierta ? ' · ' + vozPesos(s.valor) + ' de combustible' : ' · todavía sin tanqueo que lo cierre') + '\n';
+      });
+    });
+  }
+  return t;
+}
+function vozResumenMaquinaria(f, desde, hasta, etiqueta){
+  let d = desde, h = hasta, et = etiqueta || 'el periodo';
+  if (!d || !h || d < '2001-01-01') { h = vozHoy(); d = vozYMD(new Date(Date.now() - 89 * 864e5)); et = 'últimos 90 días'; }
+  let t = vozMaqTexto(vozMaqResumen(d, h), et, d, h);
+  if (vozDiasEntre(d, h) < 6){
+    const h30 = vozHoy(), d30 = vozYMD(new Date(Date.now() - 29 * 864e5));
+    t += 'Para comparar operarios, los últimos 30 días:\n' + vozMaqTexto(vozMaqResumen(d30, h30), 'últimos 30 días').split('\n').slice(1).join('\n');
+  }
+  return t + '\n';
+}
+/* El radar: mismo equipo y distinto gasto, combustible sin dueño y
+   maquinistas sin turno. Siempre los últimos 30 días. */
+function vozRadarMaquinaria(hoy, faltan){
+  const desde = vozYMD(new Date(new Date(hoy + 'T00:00:00').getTime() - 29 * 864e5));
+  const r = vozMaqResumen(desde, hoy);
+  if (!r.maquinas.length) return '';
+  const sem = vozSemana(hoy), sinTurno = {};
+  const veces = function(x){ return vozUno(x).replace(/,0$/, ''); };
+  r.maquinas.forEach(function(m){
+    const vale = m.grupos.filter(function(g){ return g.nd >= 2 && g.valor > 0; });
+    if (vale.length >= 2){
+      const met = vale.every(function(g){ return g.hT > 0 && g.conT === g.n_; }) ? 'hT'
+                : vale.every(function(g){ return g.hM > 0 && g.conM === g.n_; }) ? 'hM' : 'dia';
+      const tasa = function(g){ return vozMaqTasa(g, met); };
+      const extremos = function(arr){ const s = arr.slice().sort(function(a, b){ return tasa(a) - tasa(b); }); return { bajo: s[0], alto: s[s.length - 1] }; };
+      const porFr = {};
+      vale.forEach(function(g){ if (g.franja) (porFr[g.franja] = porFr[g.franja] || []).push(g); });
+      let par = null;
+      Object.keys(porFr).filter(function(k){ return porFr[k].length >= 2; }).forEach(function(k){
+        const x = extremos(porFr[k]); x.misma = true;
+        if (!par || tasa(x.alto) / tasa(x.bajo) > tasa(par.alto) / tasa(par.bajo)) par = x;
+      });
+      if (!par) par = extremos(vale);
+      const A = par.alto, B = par.bajo;
+      if (A.clave !== B.clave && tasa(B) > 0 && tasa(A) / tasa(B) >= 1.6){
+        const u = met === 'hT' ? ' por hora de turno' : met === 'hM' ? ' por hora de horómetro' : ' por día';
+        const uc = met === 'dia' ? ' / día' : ' / h';
+        const des = function(g){
+          return g.n + ' (' + (g.franja ? 'turno ' + g.franja + ', ' : '') + g.nd + ' días' + (met === 'hT' ? ', ' + vozUno(g.hT) + ' h' : met === 'hM' ? ', ' + vozUno(g.hM) + ' h de horómetro' : '') +
+                 ') gastó ' + vozPesos(g.valor) + ', ' + vozPesos(tasa(g)) + u;
+        };
+        const ra = tasa(A) / tasa(B);
+        faltan.push({ k: ('maq-op-' + m.pl + '-' + sem).slice(0, 72), p: 3.4, tono: 'alerta', tit: 'Mismo equipo, distinto gasto',
+          t: m.nombre + ', últimos 30 días. Así estamos: ' + des(A) + '. Así debería estar: ' + des(B) + '. ' + A.n + ' gasta ' + veces(ra) + ' veces más' + u +
+             (par.misma ? ' en el mismo equipo y la misma franja' : ' en el mismo equipo') + '. Revisen sus tanqueos, el horómetro y cómo opera esos días.',
+          comp: { quien: { n: A.n, foto: A.foto }, eA: 'Con ' + A.n, eB: 'Con ' + B.n, ahora: vozPesos(tasa(A)) + uc, ahoraS: A.nd + ' días' + (A.franja ? ' · ' + A.franja : ''),
+                  debe: vozPesos(tasa(B)) + uc, debeS: B.nd + ' días' + (B.franja ? ' · ' + B.franja : ''), dif: veces(ra) + ' veces el gasto', a: tasa(A), b: tasa(B) } });
+      }
+    }
+    if (m.sinOp > 50000 && m.sinOp >= m.gasto * 0.15){
+      faltan.push({ k: ('maq-sinop-' + m.pl + '-' + sem).slice(0, 72), p: 3, tono: 'pide', tit: 'Combustible sin operario',
+        t: m.nombre + ': de ' + vozPesos(m.gasto) + ' de combustible en 30 días, ' + vozPesos(m.sinOp) + ' cayó en tramos sin preoperacional, así que no se sabe quién operaba. Debería haber un preoperacional por cada turno.',
+        comp: { ahora: vozPesos(m.sinOp), ahoraS: 'sin operario identificado', debe: '$0', debeS: 'cada tanqueo con su operario', dif: 'Falta el preoperacional', a: m.sinOp, b: 0 } });
+    }
+    Object.keys(m.sinTurno).forEach(function(k){
+      const x = m.sinTurno[k], y = sinTurno[k] || (sinTurno[k] = { n: x.n, per: x.per, foto: x.foto, dias: {} });
+      Object.keys(x.dias).forEach(function(f){ y.dias[f] = 1; });
+    });
+  });
+  /* Sin los turnos de Personal todos saldrían "sin turno": no se dice nada. */
+  if (_vozPer && _vozPer.turnos.length){
+    Object.keys(sinTurno).map(function(k){ const x = sinTurno[k]; x.k = k; x.nd = Object.keys(x.dias).length; return x; })
+      .filter(function(x){ return x.nd >= 3; }).sort(function(a, b){ return b.nd - a.nd; }).slice(0, 2).forEach(function(x){
+        faltan.push({ k: ('maq-sinturno-' + sem + '-' + vozNorm(x.n).replace(/\s+/g, '_')).slice(0, 72), p: 2.8, tono: 'pide', tit: x.per ? 'Opera sin turno' : '¿Quién es este operario?',
+          t: x.per
+            ? x.n + ': según el preoperacional operó maquinaria ' + x.nd + ' días en los últimos 30 y esos días no tiene turno en Personal. Sin turno no se sabe su franja ni cuántas horas trabajó, y su gasto no se puede comparar.'
+            : 'El preoperacional dice «' + x.n + '» en ' + x.nd + ' días y no lo encuentro en Personal, o hay más de una persona con ese nombre. Con nombre y apellido en el preoperacional se cruza con su turno.',
+          comp: { quien: { n: x.n, foto: x.foto }, ahora: '0 de ' + x.nd + ' días', ahoraS: 'con turno en Personal', debe: x.nd + ' de ' + x.nd, debeS: 'cada día operado con su turno', dif: x.nd + ' días sin turno', a: 0, b: x.nd } });
+      });
+  }
+  return vozMaqTexto(r, 'últimos 30 días');
+}
+/* PERSONAL para las preguntas: quiénes son, sus turnos, novedades, horas
+   extra y traslados del periodo consultado. */
+function vozResumenPersonal(f, desde, hasta, etiqueta){
+  const est = window.personalEstado ? window.personalEstado() : { cargado: false };
+  let t = '=== PERSONAL (pestaña Personal) ===\n';
+  if (!est.cargado) return t + '(Personal no se pudo cargar en esta sesión' + (est.fallo ? ': ' + est.fallo : '') + ')\n\n';
+  const hoy = vozHoy();
+  let d = desde || hoy, h = hasta || hoy;
+  if (d < '2001-01-01') d = _vozPer ? _vozPer.desde : d;
+  const gente = vozArr(function(){ return window.personalActivos(); });
+  const areaDe = function(p){ return vozArr(function(){ return window.personalAreasDe(p.clave); })[0] || 'sin área'; };
+  const porA = {};
+  gente.forEach(function(p){ const a = areaDe(p); (porA[a] = porA[a] || []).push(p); });
+  t += 'Activos: ' + gente.length + '. Por área: ' + Object.keys(porA).sort().map(function(a){ return a + ' ' + porA[a].length; }).join(', ') + '\n';
+  t += 'Quiénes (nombre · cargo · área): ' + gente.slice(0, 150).map(function(p){ return p.nombre + ' · ' + (p.cargo || 'sin cargo') + ' · ' + areaDe(p); }).join('; ') + '\n';
+  const novs = vozArr(function(){ return window.personalNovedades(); });
+  const enP = novs.filter(function(n){ return (!n.desde || n.desde <= h) && (!n.hasta || n.hasta >= d); })
+                  .sort(function(a, b){ return String(a.desde).localeCompare(String(b.desde)); });
+  const tipos = {};
+  enP.forEach(function(n){ tipos[n.tipo || 'sin tipo'] = (tipos[n.tipo || 'sin tipo'] || 0) + 1; });
+  t += 'NOVEDADES que tocan ' + (etiqueta || 'el periodo') + ' (' + d + ' a ' + h + '): ' + enP.length +
+       (enP.length ? ' · por tipo: ' + Object.keys(tipos).map(function(k){ return k + ' ' + tipos[k]; }).join(', ') : '') + '\n';
+  enP.slice(0, 80).forEach(function(n){
+    t += '  - ' + (n.nombre || n.persona) + ': ' + n.tipo + ' del ' + n.desde + (n.hasta ? ' al ' + n.hasta : ', sin fecha de cierre') + (n.nota ? ' (' + n.nota + ')' : '') + '\n';
+  });
+  const vig = novs.filter(function(n){ return n.desde && n.desde <= hoy && (!n.hasta || n.hasta >= hoy); });
+  t += 'Con novedad vigente HOY: ' + (vig.length ? vig.map(function(n){ return (n.nombre || n.persona) + ' (' + n.tipo + ')'; }).join(', ') : 'nadie') + '\n';
+  if (_vozPer){
+    if (d < _vozPer.desde) t += '(Los turnos cargados empiezan el ' + _vozPer.desde + ')\n';
+    if (_vozPer.fallas && _vozPer.fallas.length) t += '(No se pudieron leer los turnos de: ' + _vozPer.fallas.join(', ') + ')\n';
+    const tr = _vozPer.turnos.filter(function(x){ return x.fecha >= d && x.fecha <= h; });
+    const porArea = {};
+    tr.forEach(function(x){ const a = porArea[x.area] || (porArea[x.area] = { p: {}, n: 0, h: 0 }); a.p[x.persona] = 1; a.n++; a.h += Number(x.horas) || 0; });
+    t += 'TURNOS en el periodo: ' + tr.length + (tr.length ? ' · por área: ' + Object.keys(porArea).sort().map(function(a){
+           return a + ': ' + Object.keys(porArea[a].p).length + ' personas, ' + porArea[a].n + ' turnos, ' + vozUno(porArea[a].h) + ' h'; }).join(' · ') : '') + '\n';
+    if (vozDiasEntre(d, h) <= 2){
+      tr.slice().sort(function(a, b){ return (a.fecha + a.area + a.inicio).localeCompare(b.fecha + b.area + b.inicio); }).slice(0, 160).forEach(function(x){
+        t += '  - ' + x.fecha + ' · ' + x.area + ' · ' + x.nombre + ': ' + hhmmVoz(x.inicio) + '–' + hhmmVoz(x.fin) + (x.turno ? ' (' + x.turno + ')' : '') + '\n';
+      });
+    } else {
+      const pp = {};
+      tr.forEach(function(x){
+        const q = pp[x.persona] || (pp[x.persona] = { n: x.nombre, a: x.area, d: {}, h: 0, fr: {} });
+        q.d[x.fecha] = 1; q.h += Number(x.horas) || 0;
+        const k = hhmmVoz(x.inicio) + '–' + hhmmVoz(x.fin); q.fr[k] = (q.fr[k] || 0) + 1;
+      });
+      Object.keys(pp).map(function(k){ return pp[k]; }).sort(function(a, b){ return (a.a + a.n).localeCompare(b.a + b.n); }).slice(0, 120).forEach(function(q){
+        const fr = Object.keys(q.fr).sort(function(a, b){ return q.fr[b] - q.fr[a]; })[0];
+        t += '  - ' + q.n + ' (' + q.a + '): ' + Object.keys(q.d).length + ' días, ' + vozUno(q.h) + ' h, turno más común ' + fr + '\n';
+      });
+    }
+  } else t += 'TURNOS: no se pudieron cargar en esta sesión.\n';
+  const r = window.personalResumenAsesor ? window.personalResumenAsesor() : null;
+  if (r && r.extras){
+    const x = r.extras;
+    const top = Object.keys(x.porPersona).sort(function(a, b){ return x.porPersona[b] - x.porPersona[a]; }).slice(0, 8);
+    t += 'HORAS EXTRA de este mes: ' + vozUno(x.mes) + ' h (mes pasado a la misma fecha: ' + vozUno(x.mesAntMismaFecha) + ' h) · sin aprobar: ' + vozUno(x.porAprobar) + ' h' +
+         (top.length ? ' · quiénes más: ' + top.map(function(k){ return k + ' ' + vozUno(x.porPersona[k]) + ' h'; }).join(', ') : '') + '\n';
+  }
+  const tras = vozArr(function(){ return window.personalTraslados(); }).filter(function(x){ const e = String(x.efectivo || '').slice(0, 10); return e >= d && e <= h; });
+  if (tras.length) t += 'TRASLADOS en el periodo: ' + tras.slice(0, 40).map(function(x){ return x.nombre + ' de ' + x.desde + ' a ' + x.hacia + ' (' + x.efectivo + ')'; }).join('; ') + '\n';
+  return t + '\n';
+}
 function hhmmVoz(h){ const m = String(h || '').match(/^(\d{1,2}):(\d{2})/); return m ? Number(m[1]) + ':' + m[2] : String(h || ''); }
 function minutosVoz(h){ const m = String(h || '').match(/^(\d{1,2}):(\d{2})/); return m ? Number(m[1]) * 60 + Number(m[2]) : 0; }
 
@@ -33730,9 +34152,11 @@ function vozRadarFlota(hoy, faltan){
     const kmNormal = kms.length >= 3 ? vozMediana(kms) : 0;
     /* Lo que hizo entre un tanqueo y el anterior, para que el valor se lea
        junto al trabajo y no solo. */
-    const deLaPlaca = viajesTodos.filter(function(y){ return y.pl === pl; });
+    const esMaq = !!vozMaquinasSet()[_placaNorm(pl)];
+    const deLaPlaca = esMaq ? [] : viajesTodos.filter(function(y){ return y.pl === pl; });
     rec.forEach(function(x, i){
       const prev = rec[i + 1];
+      if (esMaq){ x._v = null; x._ops = prev ? vozMaqOperaron(pl, prev.fecha, x.fecha) : ''; return; }
       if (!prev){ x._v = null; return; }
       const tr = deLaPlaca.filter(function(y){ return y.f > prev.fecha && y.f <= x.fecha; });
       x._v = tr.length; x._kg = tr.reduce(function(a, y){ return a + y.kg; }, 0);
@@ -33753,6 +34177,7 @@ function vozRadarFlota(hoy, faltan){
         if (!anomalos.peor || de > anomalos.peor.de) anomalos.peor = { pl: pl, tipo: v.tipo || '', valor: x.valor, normal: tqNormal, de: de };
         raros.push({ f: x.fecha, orden: de, tit: 'Este tanqueo es muy alto',
           t: cuando + '. Así debería estar: esta placa tanquea normalmente ' + vozPesos(tqNormal) + '. Son ' + vozPesos(de) + ' de más por revisar.' + kmTxt +
+             (x._ops ? ' Desde el tanqueo anterior lo operó ' + x._ops + '.' : '') +
              (x._v !== null ? ' Desde el tanqueo anterior hizo ' + x._v + (x._v === 1 ? ' viaje' : ' viajes') + ' y movió ' + vozTon(x._kg || 0) + (vNormal ? '; normalmente son ' + vozNum(vNormal) + '.' + (x._v >= vNormal * 1.5 ? ' Más trabajo explica parte del valor.' : ' El trabajo no explica ese valor.') : '.') : ''),
           comp: { ahora: vozPesos(x.valor), ahoraS: 'tanqueó el ' + fechaDe(x.fecha), debe: vozPesos(tqNormal), debeS: 'lo que tanquea normalmente', dif: vozPesos(de) + ' de más por revisar', a: x.valor, b: tqNormal } });
       } else if (bajo){
@@ -33903,6 +34328,9 @@ const VOZ_SOLUCIONES = [
   [/^(tq-sinkm|veh-sintq|veh-tqviejo)/, 'vehiculos', 'Vehículos Carga', 'El formulario de tanqueo ya pide kilometraje y foto del recibo. No falta el sistema: falta el dato.'],
   [/^tq-raro/, 'vehiculos', 'Vehículos Carga', 'La ficha del vehículo en Vehículos Carga ya guarda cada tanqueo con sus fotos. Ahí se confronta sin tener que preguntarle a nadie.'],
   [/^mant-sinvalor/, 'vehiculos', 'Vehículos Carga', 'En Vehículos Carga el mantenimiento ya tiene su costo. Registrarlo en cero solo me hace sospechar a mí.'],
+  [/^maq-sinop/, 'preopequipo', 'Preop. Equipo Pesado', 'El preoperacional ya pide operador y placa. Uno por turno, y el combustible deja de ser de nadie.'],
+  [/^maq-sinturno/, 'personal', 'Personal', 'En Personal, Áreas y turnos, se arma el turno del maquinista. Sin turno, sus horas no existen para el sistema.'],
+  [/^maq-op/, 'preopequipo', 'Preop. Equipo Pesado', 'Preop. Equipo Pesado tiene cada turno con su operador y su horómetro. Ahí se ve qué pasó esos días, sin preguntarle a nadie.'],
   [/^per-cond/, 'personal', 'Personal', 'En Personal, Áreas y turnos, ya se ajusta el horario de cada conductor. Armen la próxima semana mirando a qué horas entran los viajes.'],
   [/^mant-atraso/, 'vehiculos', 'Vehículos Carga', 'La ficha del vehículo ya muestra el próximo mantenimiento. Programen la entrada antes de que el carro se quede en plena operación.'],
   [/^per-sinarea/, 'personal', 'Personal', 'En Personal, Áreas y turnos, ya se arma el equipo de cada área. Son personas que hoy no le responden a ninguna.'],
@@ -34056,6 +34484,7 @@ function vozRadarAsesor(){
   let t = '=== RADAR OPERATIVO YA CALCULADO (cifras de base, para contexto) ===\n';
   try { t += vozRadarHumus(hoy, faltan); } catch(e){}
   try { t += vozRadarFlota(hoy, faltan); } catch(e){}
+  try { t += vozRadarMaquinaria(hoy, faltan); } catch(e){}
   try { t += vozRadarPersonal(hoy, faltan); } catch(e){}
   try { vozRadarConductores(hoy, faltan); } catch(e){}
   try { t += vozRadarDotacion(hoy, faltan); } catch(e){}
@@ -35302,6 +35731,10 @@ async function vozInfTraerDatos(){
       vozTrazaTraer(),
       vozReferenciasTexto().catch(function(){}),
       Promise.resolve().then(function(){ return window.personalConductoresTraer ? window.personalConductoresTraer() : null; }).then(function(x){ _vozCond = x; }).catch(function(){}),
+      Promise.resolve().then(async function(){
+        if (!vozArr(function(){ return dataPreopCar; }).length) dataPreopCar = await fetchCSV(SHEETS.preopCar);
+        await vozPerTraer();
+      }).catch(function(){}),
       paso('Personal', async function(){
         if (window.personalCargar && window.personalResumenAsesor && !window.personalResumenAsesor().cargado) await window.personalCargar();
         return !!(window.personalResumenAsesor && window.personalResumenAsesor().cargado);
@@ -48206,6 +48639,37 @@ window.personalConductoresTraer = function(){
     });
   });
 };
+/* Los turnos de TODAS las áreas en un rango, para el asistente. Solo lee. */
+var PER_TURNOS_CACHE = {};
+window.personalTurnosTraer = function(desde, hasta){
+  var k = desde + '|' + hasta, c = PER_TURNOS_CACHE[k];
+  if(c && Date.now() - c.t < 600000) return Promise.resolve(c.d);
+  return Promise.resolve(P.cargado ? null : cargar()).then(function(){
+    var areas = (P.areas || []).map(function(a){ return String(a.nombre || '').trim(); }).filter(Boolean);
+    return Promise.all(areas.map(function(a){
+      return pedir({ accion:'perTurnosRango', area:a, desde:desde, hasta:hasta }, 40).catch(function(){ return { turnos:[], fallo:true }; });
+    })).then(function(rs){
+      var turnos = [], fallas = [];
+      rs.forEach(function(r, i){
+        if(r.fallo) fallas.push(areas[i]);
+        (r.turnos || []).forEach(function(t){ turnos.push(t); });
+      });
+      var d = { desde:desde, hasta:hasta, turnos:turnos, fallas:fallas };
+      if(!fallas.length) PER_TURNOS_CACHE[k] = { t:Date.now(), d:d };
+      return d;
+    });
+  });
+};
+/* Las áreas de una persona: la escrita en su ficha y las del equipo armado. */
+window.personalAreasDe = function(clave){
+  var p = window.personalPorClave(clave), a = [];
+  if(p && String(p.area || '').trim()) a.push(String(p.area).trim());
+  areasDeLaPersona(clave).forEach(function(x){ if(x && a.indexOf(x) === -1) a.push(x); });
+  return a;
+};
+window.personalNovedades = function(){ return (P.novedades || []).slice(); };
+window.personalTraslados = function(){ return (P.traslados || []).slice(); };
+window.personalEstado = function(){ return { cargado: !!P.cargado, fallo: P.fallo || '' }; };
 /* Resumen de Personal para el asistente asesor: solo lee lo que ya está
    cargado (gente, novedades y horas extra del tablero), no pide nada. */
 window.personalResumenAsesor = function(){
