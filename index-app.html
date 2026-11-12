@@ -10807,6 +10807,9 @@ const PESTANAS_CONTROLABLES = [
   // "voz" no es una pestaña del nav: controla el botón flotante del
   // Asistente de Voz. Se administra desde acá igual que las demás.
   { id:'voz',             label:'🎙 Asistente de Voz' },
+  // Tampoco es pestaña: el asistente de este usuario conversa con Claude.
+  // Sin marcar (por defecto), conversa con Gemini y tiene tope diario.
+  { id:'voz-premium',     label:'⭐ Asistente · Premium', porDefecto:false },
   // "precios" tampoco es una pestaña: deja ver los valores en pesos (botón $
   // de Ingreso por Cliente). Por defecto NADIE lo tiene salvo los admins:
   // hay que marcarlo a propósito.
@@ -32584,7 +32587,15 @@ function vozConstruirContexto(claves, desde, hasta, etiqueta, pregunta, extras){
   return ctx;
 }
 
+/* Premium: marcado en Permisos (los admins siempre). Conversa con Claude. */
+function vozEsPremium(){
+  const u = _usuarioActual;
+  if (!u) return false;
+  if (u.admin || esAdminDash(u.usuario)) return true;
+  return (_permisosConfig[u.usuario] || []).includes('voz-premium');
+}
 async function vozProxy(body){
+  if (body && (body.mode === 'plan' || body.mode === 'answer')) body = Object.assign({ premium: vozEsPremium() }, body);
   const res = await fetch(VOZ_PROXY_URL, {
     method:'POST',
     headers:{ 'Content-Type':'text/plain;charset=utf-8' },
@@ -35910,7 +35921,7 @@ async function vozConsultar(pregunta, opts){
     }
   } catch(err){
     try { if (window.cargaLiberar) window.cargaLiberar(); } catch(e){}
-    vozBurbuja('assistant', 'No pude completar la consulta: ' + err.message);
+    vozBurbuja('assistant', /no podemos continuar/i.test(err.message) ? err.message : 'No pude completar la consulta: ' + err.message);
     vozSetEstado('','Pregúntame por cualquier fecha o pestaña');
   } finally {
     _vozOcupado = false;
@@ -39083,6 +39094,15 @@ function pintarMotorIA(r){
   else if(e.ok){ txt = 'Lee: Gemini'; cls = 'gemini'; det = 'Gemini (' + (e.modelo || 'gemini') + ') leyó bien la última foto' + (cuando ? ' · ' + cuando : '') + '. Claude queda de respaldo.'; }
   else if(e.texto){ txt = 'Lee: Claude · Gemini falla'; cls = 'claude'; det = 'La última vez Gemini falló: ' + e.texto + (cuando ? ' (' + cuando + ')' : '') + '. Esa foto la leyó Claude.'; }
   else { txt = 'Gemini listo'; cls = 'gemini'; det = 'Gemini está configurado; todavía no leyó ninguna foto con esta versión.'; }
+  /* Si la primera clave de Google no está leyendo, sigue la segunda
+     (GEMINI_API_KEY_2): si su última lectura salió bien, lee ella. */
+  const g2 = g.respaldo;
+  if(cls === 'claude' && g2 && g2.clave && !g2.apagado && !g2.pausaHoy && g2.estado && g2.estado.ok){
+    txt = txt.replace('Lee: Claude', 'Lee: Gemini (clave 2)').replace('· Gemini en pausa', '· clave 1 en pausa').replace('· Gemini falla', '· clave 1 falla');
+    cls = 'gemini';
+    det = det.replace(' Esa foto la leyó Claude.', '');
+    det += ' La segunda clave de Google (' + (g2.estado.modelo || 'gemini') + ') leyó bien. Claude queda de último respaldo.';
+  }
   /* Si Gemini no está leyendo, el segundo en la fila es OpenRouter (gratis):
      si su última lectura salió bien, es él quien lee, no Claude. */
   const o = r.openrouter;
