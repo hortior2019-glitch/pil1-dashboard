@@ -8456,11 +8456,9 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <div class="veh-vistas">
     <button type="button" class="veh-vt on" data-vehvista="flota">Flota</button>
     <button type="button" class="veh-vt" data-vehvista="uno">Por vehículo</button>
-    <button type="button" class="veh-vt" data-vehvista="comb">Precio del combustible</button>
   </div>
 
   <div id="veh-flota"></div>
-  <div id="veh-comb" style="display:none"></div>
 
   <!-- Maestro-detalle: la lista elige, el tablero de la derecha muestra.
        Cambiar de vehículo no hace perder de vista a los demás. -->
@@ -15920,39 +15918,37 @@ function _vehCombHtml(d, buscando){
     '<div class="vc-fuentes"><h4>Fuentes</h4>' + listaF +
     '<p class="vc-nota">El promedio sale de lo que reportan estas fuentes. Es una referencia: el valor real es el del recibo de cada tanqueo.</p></div></div>';
 }
+function _vehCombPoner(html){ var c = document.getElementById('veh-comb'); if (c) c.innerHTML = html; }
 async function vehCombPintar(forzar){
-  var caja = document.getElementById('veh-comb');
-  if (!caja) return;
-  if (_vehComb && !forzar && Date.now() - _vehCombT < 30 * 60000){ caja.innerHTML = _vehCombHtml(_vehComb); return; }
-  if (_vehCombCargando) return;
+  if (!document.getElementById('veh-comb')) return;
+  if (_vehComb && !forzar && (_vehCombCargando || Date.now() - _vehCombT < 30 * 60000)){ _vehCombPoner(_vehCombHtml(_vehComb, _vehCombCargando)); return; }
+  if (_vehCombCargando){ _vehCombPoner(_vehCombHtml(_vehComb, true)); return; }
   _vehCombCargando = true;
-  if (!_vehComb) caja.innerHTML = '<div class="fl-card"><div class="fl-vacio" style="padding:30px;text-align:center"><span class="spinner"></span> Consultando el precio del día…</div></div>';
+  if (!_vehComb) _vehCombPoner('<div class="fl-card"><div class="fl-vacio" style="padding:30px;text-align:center"><span class="spinner"></span> Consultando el precio del combustible…</div></div>');
   try {
-    var d = forzar ? null : await vozProxy({ mode:'precio_combustible' });
-    if (d){ _vehComb = d; _vehCombT = Date.now(); caja.innerHTML = _vehCombHtml(d); }
+    var d = forzar ? null : await window.vozProxy({ mode:'precio_combustible' });
+    if (d){ _vehComb = d; _vehCombT = Date.now(); _vehCombPoner(_vehCombHtml(d)); }
     if (forzar || !d.precio || d.precio.fecha !== _flHoy()){
-      caja.innerHTML = _vehCombHtml(_vehComb, true);
-      var x = await vozProxy({ mode:'precio_combustible', actualizar:true, forzar: !!forzar });
+      _vehCombPoner(_vehCombHtml(_vehComb, true));
+      var x = await window.vozProxy({ mode:'precio_combustible', actualizar:true, forzar: !!forzar });
       _vehComb = x; _vehCombT = Date.now();
-      caja.innerHTML = _vehCombHtml(x);
     }
   } catch(e){
     /* Un proxy sin publicar contesta como si fuera una pregunta. */
     if (/Falta la pregunta/.test(String(e && e.message))) e = new Error('falta publicar el nuevo código del asistente (Codigo-proxy-horti-voz.gs)');
-    caja.innerHTML = _vehComb ? _vehCombHtml(_vehComb)
-      : '<div class="fl-card"><div class="fl-vacio" style="padding:24px">No pude consultar el precio: ' + _flEsc(e.message || e) + '</div></div>';
-  } finally { _vehCombCargando = false; }
+    if (!_vehComb) _vehComb = { precio: { error: (e && e.message) || String(e) } };
+  } finally {
+    _vehCombCargando = false;
+    if (_vehComb) _vehCombPoner(_vehCombHtml(_vehComb));
+  }
 }
 
 function verVistaVeh(cual){
   VEH_VISTA = cual;
   var flota = document.getElementById('veh-flota');
   var split = document.getElementById('veh-split');
-  var comb = document.getElementById('veh-comb');
   if(flota) flota.style.display = cual === 'flota' ? '' : 'none';
-  if(split) split.style.display = cual === 'uno' ? '' : 'none';
-  if(comb) comb.style.display = cual === 'comb' ? '' : 'none';
-  if(cual === 'comb') vehCombPintar();
+  if(split) split.style.display = cual === 'flota' ? 'none' : '';
   document.querySelectorAll('#panel-vehiculos [data-vehvista]').forEach(function(b){
     b.classList.toggle('on', b.dataset.vehvista === cual);
   });
@@ -32800,6 +32796,8 @@ async function vozProxy(body){
   if (data.error) throw new Error(data.error);
   return data;
 }
+/* La pestaña Precio del combustible (fuera de este bloque) también lo usa. */
+window.vozProxy = vozProxy;
 
 /* Plan de respaldo si la IA no logra armar el plan: por palabras clave */
 function vozPlanFallback(pregunta){
@@ -59565,6 +59563,8 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
     var etA = rango + ' ' + MES[hoy.getMonth()].toLowerCase(), etB = rango + ' ' + MES[ant.getMonth()].toLowerCase();
     var e = cxEfectos(cm, av, sel.horas);
     var ico = (typeof ICO_VF !== 'undefined' && ICO_VF.comb) ? ICO_VF.comb : '';
+    /* El precio del día se pinta cuando el cuadro ya está en pantalla. */
+    setTimeout(function(){ if (typeof vehCombPintar === 'function') vehCombPintar(); }, 0);
     return '<div class="cx">' +
       '<div class="cx-enc"><div class="cx-band"><div><h3 class="cx-h">Combustible · ' + esc(sel.nom) + '</h3><div class="cx-hsub">Costo de operación · ' + esc(etA) + ' contra ' + esc(etB) + '</div></div>' +
         '<button type="button" class="cb-hist" onclick="verHistorialCategoria(\'' + _escAttrVeh(sel.k) + '\',\'' + _escAttrVeh(sel.nom) + '\')">' + ico + 'Historial</button></div>' +
@@ -59574,6 +59574,7 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
       '<div class="hx-card" style="margin-bottom:14px"><div class="hx-cab"><div><div class="hx-tit">Gasto y costo por placa</div><div class="cx-ley"><span><i style="background:#17201b"></i>' + esc(etA) + '</span><span><i style="background:#c3c9c4"></i>' + esc(etB) + '</span></div></div>' +
         seg('cxOrden', [['gasto','Mayor gasto'],['costo', sel.horas ? 'Mayor $ / tanqueo' : 'Mayor $ / T'],['cambio','Más subió'],['mant','Mayor mantenimiento']], CX.orden) + '</div>' +
         '<div class="hx-esc">' + cxPlacas(sel, cm.dia, sel.horas, etA, etB) + '</div></div>' +
+      '<div id="veh-comb" style="margin-bottom:14px"></div>' +
       '<div class="hx-g hx-g-11">' +
         '<div class="hx-card"><div class="hx-tit">Variación del periodo</div><div class="cx-ley"><span><i style="background:#17201b"></i>' + esc(etA) + '</span><span><i style="background:#c3c9c4"></i>' + esc(etB) + '</span></div>' + cxMetricas(cm, av, sel.horas, cxDatosPlacas(dela, cm.dia).reduce(function(t, r){ t.a += r.ma; t.b += r.mb; return t; }, { a:0, b:0 })) + '</div>' +
         '<div class="hx-card"><div class="hx-tit">Causas de la variación del gasto</div><div class="hx-sub" style="margin-bottom:8px">' +
