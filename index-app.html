@@ -36027,7 +36027,7 @@ document.getElementById('voz-informes').addEventListener('click', function(ev){
   }
 });
 /* "Ahora no": se calla, se recoge y el informe queda para la próxima
-   entrada, sin gastar uno de los 2 del día. */
+   entrada, sin gastar el del día. */
 document.getElementById('voz-ahora-no').addEventListener('click', function(){
   _vozPospuesto = true;
   const a = vozUsuarioAsesor();
@@ -36353,13 +36353,30 @@ async function vozAvisoLogin(a){
   if (!vozUsuarioAsesor()) return;
   await vozPresentarSaludo(a, await pTexto, nov);
 }
-/* Máximo 2 informes hablados al iniciar sesión, por usuario y por día.
-   Después del segundo, al entrar el asistente queda callado y a la mano. */
-const VOZ_INFORMES_DIA = 2;
+/* Un informe hablado al iniciar sesión, por usuario y por día. Después,
+   al entrar el asistente queda callado y a la mano. */
+const VOZ_INFORMES_DIA = 1;
 function vozInformesClave(a){ return 'hortiVozInformesDia|' + vozNorm(a.usuario || a.nombre) + '|' + vozHoy(); }
 function vozInformesHoy(a){ try { return parseInt(localStorage.getItem(vozInformesClave(a)), 10) || 0; } catch(e){ return 0; } }
 function vozContarInforme(a){ try { localStorage.setItem(vozInformesClave(a), String(vozInformesHoy(a) + 1)); } catch(e){} }
 function vozBienvenidaClave(a){ return 'hortiVozBienvenida|' + vozNorm(a.usuario || a.nombre) + '|' + vozHoy(); }
+/* Un solo informe hablado al día, y es de un área (no el general): el
+   frente con más alertas sin contar; si empatan, rota por día y no repite
+   el área de ayer. Sale del radar, sin gastar IA. */
+function vozAreaAyerClave(a){ return 'hortiVozAreaInforme|' + vozNorm(a.usuario || a.nombre); }
+function vozElegirArea(a){
+  const dichos = _vozDichos || {};
+  let ayer = '';
+  try { ayer = (JSON.parse(localStorage.getItem(vozAreaAyerClave(a)) || 'null') || {}).id || ''; } catch(e){}
+  const areas = _vozInfLista.filter(function(r){ return ['clientes','humus','flota','personal','dotacion'].indexOf(r.id) !== -1; });
+  if (!areas.length) return null;
+  const orden = ['clientes','humus','flota','personal','dotacion'], dia = vozInfDia();
+  const nota = function(r){ return r.tramos.filter(function(x){ return x.tono === 'alerta' && x.k && !dichos[x.k]; }).length; };
+  return areas.slice().sort(function(x, y){
+    return ((x.id === ayer) - (y.id === ayer)) || (nota(y) - nota(x)) ||
+           (((orden.indexOf(x.id) - dia) % 5 + 5) % 5 - ((orden.indexOf(y.id) - dia) % 5 + 5) % 5);
+  })[0];
+}
 async function vozBienvenida(){
   const a = vozUsuarioAsesor();
   if (!a || _vozBienvenidaHecha) return;
@@ -36367,69 +36384,12 @@ async function vozBienvenida(){
   _vozBienvenidaHecha = true;
   try { await vozAvisoLogin(a); } catch(e){}
   if (!vozUsuarioAsesor()) return;
-  if (_vozPospuesto){ _vozPospuesto = false; vozAgendarProximoInforme(a); return; }
-  try { if (sessionStorage.getItem(vozBienvenidaClave(a))) { vozAgendarProximoInforme(a); return; } } catch(e){}
-  if (vozInformesHoy(a) >= VOZ_INFORMES_DIA) { vozAgendarProximoInforme(a); return; }
+  if (_vozPospuesto){ _vozPospuesto = false; return; }
+  try { if (sessionStorage.getItem(vozBienvenidaClave(a))) return; } catch(e){}
+  if (vozInformesHoy(a) >= VOZ_INFORMES_DIA) return;
 
-  /* Primero, el informe que quedó listo: se busca mientras se espera el
-     primer toque de la persona, sin esperar a que lleguen los datos. */
-  const pInforme = vozLeerInformeListo(a);
-  if (navigator.userActivation && !navigator.userActivation.hasBeenActive){
-    await new Promise(function(ok){
-      const ya = function(){ document.removeEventListener('pointerdown', ya, true); document.removeEventListener('keydown', ya, true); ok(); };
-      document.addEventListener('pointerdown', ya, true);
-      document.addEventListener('keydown', ya, true);
-    });
-    await vozEsperar(300);
-  }
-  const inf = await pInforme;
-  if (!vozUsuarioAsesor()) return;
-  if (inf && !inf.hablado && (inf.pospuesto || Date.now() - (inf.generado || 0) < VOZ_INFORME_VIGENCIA)){
-    try { sessionStorage.setItem(vozBienvenidaClave(a), '1'); } catch(e){}
-    vozContarInforme(a);
-    try { await vozDecirInformeListo(a, inf, { sinSaludo:true }); } catch(e){}
-    vozAgendarProximoInforme(a);
-    return;
-  }
-  /* El primer ingreso del día siempre trae informe: si el último ya se dijo,
-     se presenta el panorama de hoy, que sale del radar sin gastar IA. */
-  if (inf && inf.hablado && vozInformesHoy(a) === 0 && !_vozNovDichas){
-    const ing0 = VOZ_FUENTES.ingreso;
-    for (let i = 0; i < 120 && !ing0.obtener().length; i++) await vozEsperar(500);
-    if (!vozUsuarioAsesor()) return;
-    await vozInfTraerDatos();
-    vozInfActualizar();
-    const rep = _vozInfLista.find(function(r){ return r.id === 'panorama'; });
-    if (rep){
-      try { sessionStorage.setItem(vozBienvenidaClave(a), '1'); } catch(e){}
-      vozContarInforme(a);
-      if (!vozOverlay.classList.contains('voz-abierto')) vozAbrir({ colapsado: true });
-      vozOverlay.classList.add('voz-intervencion');
-      _vozOcupado = true;
-      try {
-        await vozInfPresentar(rep);
-        if (_vozPospuesto){ _vozPospuesto = false; vozAgendarProximoInforme(a); return; }
-        if (rep.completo) vozChulear(a, rep.tramos.map(function(t){ return t.k; }).filter(Boolean));
-      } finally {
-        _vozOcupado = false;
-        vozOverlay.classList.remove('voz-intervencion');
-        vozInfBoton();
-      }
-      vozAgendarProximoInforme(a);
-      return;
-    }
-  }
-  /* Ya se dijo el último y el próximo aún no está: basta con el aviso. */
-  if (inf && inf.hablado && (_vozNovDichas || Date.now() - (inf.generado || 0) < 4 * 3600e3)){
-    try { sessionStorage.setItem(vozBienvenidaClave(a), '1'); } catch(e){}
-    vozAgendarProximoInforme(a);
-    return;
-  }
-
-  /* Sin informe listo (primera vez o muy viejo): se arma en vivo. */
   const ing = VOZ_FUENTES.ingreso;
   for (let i = 0; i < 120 && !ing.obtener().length; i++) await vozEsperar(500);
-
   if (navigator.userActivation && !navigator.userActivation.hasBeenActive){
     await new Promise(function(ok){
       const ya = function(){ document.removeEventListener('pointerdown', ya, true); document.removeEventListener('keydown', ya, true); ok(); };
@@ -36438,22 +36398,26 @@ async function vozBienvenida(){
     });
     await vozEsperar(300);
   }
-  if (!vozUsuarioAsesor()) return;   // cerró sesión mientras tanto
+  if (!vozUsuarioAsesor()) return;
+  await vozInfTraerDatos();
+  vozInfActualizar();
+  const rep = vozElegirArea(a);
+  if (!rep) return;
   try { sessionStorage.setItem(vozBienvenidaClave(a), '1'); } catch(e){}
   vozContarInforme(a);
-
-  const hoy = vozHoy(), d = new Date();
-  const plan = { fuentes:['ingreso'], panel:'clientes', desde: vozYMD(new Date(d.getFullYear(), d.getMonth(), 1)),
-                 hasta: hoy, etiqueta:'este mes' };
-  /* La pantalla de carga se sostiene hasta 15 s más mientras la IA arma
-     el informe: así el tablero se abre justo cuando empieza a hablar. */
-  try { if (window.cargaRetener) window.cargaRetener(15000); } catch(e){}
+  try { localStorage.setItem(vozAreaAyerClave(a), JSON.stringify({ id: rep.id, f: vozHoy() })); } catch(e){}
   if (!vozOverlay.classList.contains('voz-abierto')) vozAbrir({ colapsado: true });
-  vozConsultar('Acabo de entrar al sistema y ya me saludaste: no saludes de nuevo. Cuéntame solo lo NUEVO: ' +
-               'los hallazgos nuevos más importantes (humus, costo por kilómetro de la flota, personal y horas extra, clientes, novedades del sector), ' +
-               'contrastando con las referencias del mercado si las hay, y si detectas vacíos de información pide que alimenten el sistema. ' +
-               'Corto, sin repetir lo que ya me contaste. Puedes cerrar con una pregunta amable.', { plan: plan, silenciosa: true })
-    .then(function(){ vozAgendarProximoInforme(a); });
+  vozOverlay.classList.add('voz-intervencion');
+  _vozOcupado = true;
+  try {
+    await vozInfPresentar(rep);
+    if (_vozPospuesto){ _vozPospuesto = false; return; }
+    if (rep.completo) vozChulear(a, rep.tramos.map(function(t){ return t.k; }).filter(Boolean));
+  } finally {
+    _vozOcupado = false;
+    vozOverlay.classList.remove('voz-intervencion');
+    vozInfBoton();
+  }
 }
 
 /* ── Ciclo principal: pregunta → plan → ejecución → respuesta ── */
