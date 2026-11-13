@@ -2240,6 +2240,14 @@ td .preop-fotos{margin-top:0;gap:4px;flex-wrap:nowrap}
 .cc-alf-bot{display:flex;justify-content:flex-end;padding:14px 22px 18px}
 .cc-alf-ok{font:700 14px 'Source Sans 3',sans-serif;padding:10px 18px;border-radius:6px;border:none;background:#1a5c35;color:#fff;cursor:pointer}
 .cc-alf-ok:focus-visible,.cc-alf-ir:focus-visible{outline:3px solid #111;outline-offset:2px}
+.cc-alf:focus{outline:none}
+.cc-alf-asis{margin:4px 22px 12px;padding:10px 14px;border-left:4px solid #1a5c35;background:#f1f6f2;border-radius:0 8px 8px 0}
+.cc-alf-asis-nom{display:block;font-size:13px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:#1a5c35;margin-bottom:3px}
+.cc-alf-asis p{margin:0;font-size:14px;line-height:1.45;color:#222}
+.cc-alf-gen{background:#1a5c35;color:#fff}
+.cc-alf-ir:disabled,.cc-alf-ok:disabled{opacity:.45;cursor:not-allowed}
+.cc-alf-bot{align-items:center;gap:12px}
+.cc-alf-espera{flex:1;font-size:13px;color:#555}
 /* Día con corte sin factura: amarillo. Corte vencido sin guardar: toda la celda roja. */
 #panel-cortes .cc-dia.cc-d-sinfac{background:#fcefc2;border-color:#b8860b}
 #panel-cortes .cc-dia.cc-d-vencido{background:#f9d3cf;border-color:var(--red)}
@@ -13898,7 +13906,6 @@ function showPanel(id, el) {
         if (window.dataIngreso) { try { renderCmpChart(window.dataIngreso); } catch(e){} }
       } else if (id === 'cortes') {
         // Si ya pasó el PIN en esta sesión, refresca; si no, muestra el gate
-        try { _ccAlertaPend = true; } catch(e){}
         try { mostrarEstadoPinCorte(); if (_cortePinOk) initCortesProveedores(); } catch(e){}
       } else if (id === 'ProduccionHumus') {
         try { cargarHumusDetalle(); } catch(e) { console.error('cargarHumusDetalle:', e); }
@@ -22560,6 +22567,10 @@ async function verificarPinCorte() {
 
   if (valido) {
     _cortePinOk = true;
+    /* El recordatorio de cortes sale una vez, al pasar el PIN (no en cada
+       entrada a la pestaña). Si el PIN se puso en otra pestaña, sale la
+       primera vez que se abre Cortes. */
+    _ccAlertaPend = true;
     const gate = document.getElementById('corte-pin-gate');
     const cont = document.getElementById('corte-contenido-protegido');
     if (gate) gate.style.display = 'none';
@@ -23428,30 +23439,95 @@ function _ccRevisarAlertaFacturas() {
   atras.sort((a, b) => a.op.localeCompare(b.op, 'es') || a.cie - b.cie);
   _ccAlertaAtras = atras;
   const dias = o => Math.round((hoy - o.cie) / 86400000);
+  /* Sin generar: no hay corte. Generado sin guardar: está armado pero no se
+     guardó. Guardado sin factura: falta adjuntarla. */
+  const guardado = o => !!(o.inf && !o.inf.esFavoritoSinInforme);
+  const estadoTxt = o => !o.inf ? 'Sin generar' : (guardado(o) ? 'Guardado sin factura' : 'Generado sin guardar');
+  const nGen = atras.filter(o => !o.inf).length, nAbr = atras.length - nGen;
+  /* El Asistente Horti presenta la tabla. No se cierra con Escape ni
+     tocando afuera: hay que tocar Recibido (o actuar sobre un corte), y
+     los botones se activan cuando termina la introducción. */
+  const intro = 'Soy el Asistente Horti. Antes de trabajar en Cortes te recuerdo lo pendiente: ' +
+    (atras.length === 1 ? 'un corte lleva' : atras.length + ' cortes llevan') + ' más de un mes sin factura. ' +
+    (nGen ? 'Los que no se han generado tienen el botón Generar: te lleva a ese periodo con las fechas sugeridas, y tú eliges las columnas o cambias las fechas. ' : '') +
+    (nAbr ? 'Los que ya se generaron tienen el botón Abrir: abre ese corte para que adjuntes la factura. ' : '') +
+    'Cuando lo leas, toca Recibido.';
   const fondo = document.createElement('div');
   fondo.className = 'cc-alf-fondo';
-  fondo.innerHTML = '<div class="cc-alf" role="alertdialog" aria-modal="true" aria-labelledby="ccAlfTit">' +
+  fondo.innerHTML = '<div class="cc-alf" role="alertdialog" aria-modal="true" aria-labelledby="ccAlfTit" aria-describedby="ccAlfIntro">' +
     '<h3 id="ccAlfTit">' + atras.length + (atras.length === 1 ? ' corte lleva' : ' cortes llevan') + ' más de un mes sin factura</h3>' +
-    '<div class="cc-alf-sub">Solicita las facturas de estos servicios.</div>' +
+    '<div class="cc-alf-asis"><span class="cc-alf-asis-nom">Asistente Horti</span><p id="ccAlfIntro">' + _ccEsc(intro) + '</p></div>' +
     '<div class="cc-alf-wrap"><table><thead><tr><th>Operación</th><th>Corte</th><th>Estado</th><th class="cc-alf-n">Facturas</th><th class="cc-alf-n">Días</th><th></th></tr></thead><tbody>' +
     atras.map((o, j) => '<tr><td>' + _ccEsc(o.op) + '</td><td>' + _cobFechaCorta(o.ini) + ' → ' + _cobFechaCorta(o.cie) + '</td>' +
-      '<td>' + (o.inf ? 'Guardado sin factura' : 'Sin guardar') + '</td>' +
+      '<td>' + estadoTxt(o) + '</td>' +
       '<td class="cc-alf-n">' + o.facReal + ' de ' + o.facEsp + '</td><td class="cc-alf-n cc-alf-mal">' + dias(o) + '</td>' +
-      '<td>' + (o.inf ? '<button type="button" class="cc-alf-ir" data-j="' + j + '">Abrir</button>' : '') + '</td></tr>').join('') +
+      '<td>' + (o.inf
+        ? '<button type="button" class="cc-alf-ir" data-j="' + j + '" disabled>Abrir</button>'
+        : '<button type="button" class="cc-alf-ir cc-alf-gen" data-j="' + j + '" disabled>Generar</button>') + '</td></tr>').join('') +
     '</tbody></table></div>' +
-    '<div class="cc-alf-bot"><button type="button" class="cc-alf-ok">Entendido</button></div></div>';
-  const cerrar = () => { document.removeEventListener('keydown', tecla); fondo.remove(); };
-  const tecla = e => { if (e.key === 'Escape') cerrar(); };
-  document.addEventListener('keydown', tecla);
+    '<div class="cc-alf-bot"><span class="cc-alf-espera" aria-live="polite">Escucha la introducción…</span><button type="button" class="cc-alf-ok" disabled>Recibido</button></div></div>';
+  let listo = false;
+  const cerrar = () => { try { vozCallar(); } catch (e) {} fondo.remove(); };
+  const habilitar = () => {
+    if (listo || !fondo.isConnected) return;
+    listo = true;
+    fondo.querySelectorAll('button').forEach(b => { b.disabled = false; });
+    const es = fondo.querySelector('.cc-alf-espera'); if (es) es.textContent = '';
+    fondo.querySelector('.cc-alf-ok').focus();
+  };
   fondo.addEventListener('click', e => {
+    if (!listo) return;
     const ir = e.target.closest('.cc-alf-ir');
-    if (ir) { const o = _ccAlertaAtras[+ir.dataset.j]; cerrar(); if (o && o.inf) _ccAbrirInforme(String(o.inf.id)); return; }
-    if (e.target.closest('.cc-alf-ok') || e.target === fondo) cerrar();
+    if (ir) {
+      const o = _ccAlertaAtras[+ir.dataset.j]; cerrar();
+      if (o) { if (o.inf) _ccAlfAbrir(o); else _ccAlfGenerar(o); }
+      return;
+    }
+    if (e.target.closest('.cc-alf-ok')) cerrar();
   });
   document.body.appendChild(fondo);
-  fondo.querySelector('.cc-alf-ok').focus();
+  fondo.querySelector('.cc-alf').setAttribute('tabindex', '-1');
+  fondo.querySelector('.cc-alf').focus();
+  /* La introducción se habla si el usuario tiene el asistente; los botones
+     se activan al terminar (mínimo 6 s, máximo 40 s por si la voz falla). */
+  const minimo = new Promise(r => setTimeout(r, 6000));
+  let voz = Promise.resolve();
+  try { if (vozUsuarioPermitido() && typeof vozHablarYa === 'function') voz = Promise.resolve(vozHablarYa(intro)).catch(() => {}); } catch (e) {}
+  Promise.race([Promise.all([minimo, voz]), new Promise(r => setTimeout(r, 40000))]).then(habilitar);
 }
 let _ccAlertaAtras = [];
+
+/* Generar desde la tabla: deja el Paso 1 con la operación y las fechas
+   sugeridas de ese periodo; columnas y fechas quedan para la persona. */
+function _ccAlfGenerar(o) {
+  if (_corteEnfocado) { _corteEnfocado = null; renderInformesGuardados(); }
+  const m = _calMes, a = _calAnio;
+  _calMes = o.cie.getMonth(); _calAnio = o.cie.getFullYear();
+  try { _ccGenerar(o.i, o.dia); }
+  finally { _calMes = m; _calAnio = a; try { renderCalendarioCortes(); } catch (e) {} }
+}
+
+/* Abrir desde la tabla: igual que "Usar / Editar" de la tarjeta, pero con
+   las fechas de ese corte, y la lista queda en su mes para volver a él. */
+function _ccAlfAbrir(o) {
+  const it = o.inf; if (!it) return;
+  const ma = _mesAnioDeCard(it);
+  if (ma) { _resumenMes = ma.mes; _resumenAnio = ma.anio; _resumenVerTodos = false; }
+  _corteEnfocado = null;
+  const f = it.favIndex >= 0 ? (_cortesFavoritosCache || [])[it.favIndex] : null;
+  const fechas = _parsePeriodoTexto(it.periodo);
+  if (f) {
+    _aplicarFav(f, fechas ? fechas.ini : f.ini, fechas ? fechas.cie : f.cie);
+    enfocarCorte(f.prov, f.nombre);
+  } else if (!it.esFavoritoSinInforme) {
+    aplicarInformeOrfano(String(it.id));
+  } else return;
+  setTimeout(() => {
+    const h = guardado(it) ? (document.getElementById('inf-facturas-lista') || document.getElementById('corte-informe')) : document.getElementById('corte-informe');
+    if (h) h.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 450);
+  function guardado(x) { return !x.esFavoritoSinInforme; }
+}
 
 /* ── Indicadores del mes ── */
 function _ccRenderIndicadores(ocs) {
@@ -26173,7 +26249,9 @@ function mostrarTodosLosCortes() {
   // Guardar automáticamente el corte que se estaba editando antes de volver a la lista
   const hayInforme = document.getElementById('inf-nombre');
   if (_corteEnfocado && hayInforme && window._corteActual) {
-    guardarInformeCorte();
+    /* Si el guardado falla, igual se sale del corte: antes un error aquí
+       dejaba la pantalla trabada en el corte abierto. */
+    try { guardarInformeCorte(); } catch (e) { console.error('guardarInformeCorte:', e); }
   }
   _corteEnfocado = null;
 
@@ -26309,7 +26387,7 @@ function _parsePeriodoTexto(periodo) {
 // Reabre un informe SIN favorito vinculado para poder editarlo: reconstruye Paso 1 y la tarifa
 // a partir de los propios datos guardados en el informe (operación, periodo, precios).
 function aplicarInformeOrfano(id) {
-  const inf = (_informesGuardados||[]).find(i => i.id === id);
+  const inf = (_informesGuardados||[]).find(i => String(i.id) === String(id));
   if (!inf) { alert('No se encontró este corte.'); return; }
   const fechas = _parsePeriodoTexto(inf.periodo);
   if (!fechas) { alert('No se pudo interpretar el periodo de este corte para reabrirlo.'); return; }
