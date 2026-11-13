@@ -2242,14 +2242,7 @@ td .preop-fotos{margin-top:0;gap:4px;flex-wrap:nowrap}
 .cc-alf-ok:focus-visible,.cc-alf-ir:focus-visible{outline:3px solid #111;outline-offset:2px}
 .cc-alf:focus{outline:none}
 .cc-alf-asis{margin:4px 22px 12px;padding:10px 14px;border-left:4px solid #1a5c35;background:#f1f6f2;border-radius:0 8px 8px 0;display:flex;gap:12px;align-items:flex-start}
-.cc-alf-mun{flex:none;width:60px;height:60px;animation:ccMunFlota 3.2s ease-in-out infinite}
-.cc-alf-mun .cc-mun-boca,.cc-alf-mun .cc-mun-ojos{transform-box:fill-box;transform-origin:center}
-.cc-alf-mun .cc-mun-ojos{animation:ccMunParpa 4.5s infinite}
-.cc-alf-mun.cc-habla .cc-mun-boca{animation:ccMunBoca .26s ease-in-out infinite alternate}
-@keyframes ccMunFlota{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
-@keyframes ccMunParpa{0%,93%,100%{transform:scaleY(1)}96%{transform:scaleY(.1)}}
-@keyframes ccMunBoca{from{transform:scaleY(.35)}to{transform:scaleY(1.15)}}
-@media (prefers-reduced-motion:reduce){.cc-alf-mun,.cc-alf-mun *{animation:none!important}}
+.cc-alf-mun{flex:none;display:block;width:84px;height:88px;margin:-4px 0 -6px}
 .cc-alf-chico{max-width:520px}
 .cc-alf-cifras{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:0 22px}
 .cc-alf-cifras div{border:1px solid #e1e6e2;border-radius:8px;padding:10px 12px}
@@ -23461,22 +23454,23 @@ function _ccRevisarAlertaFacturas() {
   _ccAlfTabla(atras, claveRec);
 }
 
-/* Muñequito del Asistente Horti: mueve la boca mientras habla. */
-const _CC_MUNECO = '<svg class="cc-alf-mun" viewBox="0 0 64 64" aria-hidden="true">' +
-  '<path d="M32 12C29 5 23 3 18 5c2 6 8 8 14 7z" fill="#5fa86f"/><path d="M32 12c3-6 9-8 14-6-2 6-8 8-14 6z" fill="#3f8a52"/>' +
-  '<line x1="32" y1="11" x2="32" y2="17" stroke="#2d6b3d" stroke-width="2" stroke-linecap="round"/>' +
-  '<circle cx="32" cy="38" r="22" fill="#1a5c35"/><circle cx="32" cy="38" r="17" fill="#eef6f0"/>' +
-  '<g class="cc-mun-ojos"><circle cx="25" cy="35" r="2.7" fill="#16261b"/><circle cx="39" cy="35" r="2.7" fill="#16261b"/></g>' +
-  '<circle cx="20.5" cy="42" r="2.3" fill="#f0ad9b" opacity=".8"/><circle cx="43.5" cy="42" r="2.3" fill="#f0ad9b" opacity=".8"/>' +
-  '<ellipse class="cc-mun-boca" cx="32" cy="45" rx="5" ry="3" fill="#a8432f"/></svg>';
+/* El muñequito es el mismo del Asistente Horti (hortiCaraSVG). */
+function _ccMuneco() {
+  let cara = '';
+  try { cara = window.hortiCaraSVG(); } catch (e) {}
+  return '<span class="cc-alf-mun" aria-hidden="true">' + cara + '</span>';
+}
 
-/* Habla con la voz del asistente y anima el muñequito; avisa al terminar. */
+/* Habla con la voz del asistente: saluda al empezar y mueve la boca
+   mientras habla, como en su panel. Avisa al terminar. */
 function _ccAlfHablar(fondo, texto) {
   const m = fondo.querySelector('.cc-alf-mun');
-  if (m) m.classList.add('cc-habla');
+  const svg = m && m.querySelector('.hcara');
+  if (svg) { svg.setAttribute('data-gesto', 'saluda'); setTimeout(() => svg.removeAttribute('data-gesto'), 1600); }
+  if (m) m.classList.add('hc-habla');
   let p;
   try { p = Promise.resolve(vozHablarYa(texto)); } catch (e) { p = Promise.resolve(); }
-  return p.catch(() => {}).then(() => { if (m) m.classList.remove('cc-habla'); });
+  return p.catch(() => {}).then(() => { if (m) m.classList.remove('hc-habla'); });
 }
 
 /* Ya recibido: solo el resumen. */
@@ -23491,7 +23485,7 @@ function _ccAlfResumen(atras) {
   fondo.className = 'cc-alf-fondo';
   fondo.innerHTML = '<div class="cc-alf cc-alf-chico" role="dialog" aria-modal="true" aria-labelledby="ccAlfTit" tabindex="-1">' +
     '<h3 id="ccAlfTit">Cortes pendientes</h3>' +
-    '<div class="cc-alf-asis">' + _CC_MUNECO + '<div><span class="cc-alf-asis-nom">Asistente Horti</span><p>' + _ccEsc(txt) + '</p></div></div>' +
+    '<div class="cc-alf-asis">' + _ccMuneco() + '<div><span class="cc-alf-asis-nom">Asistente Horti</span><p>' + _ccEsc(txt) + '</p></div></div>' +
     (atras.length ? '<div class="cc-alf-cifras">' +
       '<div><b>' + atras.length + '</b><span>Cortes</span></div>' +
       '<div><b>' + nGen + '</b><span>Faltan generar</span></div>' +
@@ -23533,7 +23527,7 @@ function _ccAlfTabla(atras, claveRec) {
   fondo.className = 'cc-alf-fondo';
   fondo.innerHTML = '<div class="cc-alf" role="alertdialog" aria-modal="true" aria-labelledby="ccAlfTit" aria-describedby="ccAlfIntro">' +
     '<h3 id="ccAlfTit">' + atras.length + (atras.length === 1 ? ' corte lleva' : ' cortes llevan') + ' más de un mes sin factura</h3>' +
-    '<div class="cc-alf-asis">' + _CC_MUNECO + '<div><span class="cc-alf-asis-nom">Asistente Horti</span><p id="ccAlfIntro">' +
+    '<div class="cc-alf-asis">' + _ccMuneco() + '<div><span class="cc-alf-asis-nom">Asistente Horti</span><p id="ccAlfIntro">' +
       _ccEsc(forzada ? intro : 'Generar te lleva a ese periodo con las fechas sugeridas; Abrir abre el corte para adjuntar la factura.') + '</p></div></div>' +
     '<div class="cc-alf-wrap"><table><thead><tr><th>Operación</th><th>Corte</th><th>Estado</th><th class="cc-alf-n">Facturas</th><th class="cc-alf-n">Días</th><th></th></tr></thead><tbody>' +
     atras.map((o, j) => '<tr><td>' + _ccEsc(o.op) + '</td><td>' + _cobFechaCorta(o.ini) + ' → ' + _cobFechaCorta(o.cie) + '</td>' +
