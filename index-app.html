@@ -51303,7 +51303,7 @@ function montarRotador(a, semana){
       var hpR = cerrado ? numeroHoras(t.bloques ? rotHorasBloques(t.bloques) : (t.horas || horasTurno(t.inicio, t.fin, t.almuerzo))) : '';
       return '<td class="rt-td"><button type="button" class="rt-cel" data-rt="' + esc(p.clave) + '|' + f + '"' +
         ' style="--c:' + col + '">' +
-        '<span class="rt-t">' + esc(t.turno) + '</span>' +
+        '<span class="rt-t">' + esc(nombreVisibleTurno(t, a)) + '</span>' +
         (t.bloques || [t]).map(function(b){
           return '<span class="rt-h">' + (b.inicio ? esc(b.inicio) : 'por definir') + '–' + (b.fin ? esc(b.fin) : 'por definir') + '</span>';
         }).join('') +
@@ -56429,7 +56429,7 @@ function tablaSemana(turnos, semana, ausentes){
         (festTrab ? ' fest-trab' : '') +
         (tocado ? ' tocado' : '') + (t0 && t0.previa ? ' previa' : '') + '"' +
         (pinta ? ' style="background:' + (festTrab ? '#d32f2f' : pinta) + '"' : '') + datos +
-        (t0 ? ' title="' + esc(t0.turno) + (t0.ajuste ? ' · ' + esc(t0.ajuste) : '') + (festTrab ? ' · trabajó en festivo (HE)' : '') + '"'
+        (t0 ? ' title="' + esc(nombreVisibleTurno(t0)) + (nombreVisibleTurno(t0) !== t0.turno ? ' · turno asignado: ' + esc(t0.turno) : '') + (t0.ajuste ? ' · ' + esc(t0.ajuste) : '') + (festTrab ? ' · trabajó en festivo (HE)' : '') + '"'
             : (festLibre ? ' title="Festivo: no viene, la jornada se paga"' : '')) + '>' + esquinas +
         (hoy.length
           ? hoy.map(function(t){
@@ -56455,7 +56455,7 @@ function tablaSemana(turnos, semana, ausentes){
                   '</span>'
                 : '';
               return (htxt ? '<span class="hs" data-turno="' + esc(t.turno) + '">' + htxt + '</span>' : '') +
-                     '<span class="nt">' + esc(t.turno) + '</span>' + pie;
+                     '<span class="nt">' + esc(nombreVisibleTurno(t)) + '</span>' + pie;
             }).join('') + (festTrab ? '<span class="he-fest">HE · festivo</span>' : '')
           : (festLibre ? '<span class="nt">festivo</span><span class="fest-sub">jornada pagada</span>'
                        : '<span class="nt">descanso</span>')) + '</td>';
@@ -56530,7 +56530,7 @@ function desglosePersona(clave, nombre, semana, turnos){
         (esExtra || vf ? '' : tiraExtra('antes', exA, t)) +
         '<div class="tu">' +
           (vf ? '' : '<span class="hs" data-turno="' + esc(t.turno) + '">' + (t.inicio ? esc(t.inicio) : '<span class="pp-pd">por definir</span>') + '–' + (t.fin ? esc(t.fin) : '<span class="pp-pd">por definir</span>') + '</span>') +
-          '<span class="nt">' + esc(t.turno) + '</span>' +
+          '<span class="nt">' + esc(nombreVisibleTurno(t)) + '</span>' +
           (vf ? '<span class="nt-sub">valor fijo</span>' : '') + justif + '</div>' +
         (esExtra || vf ? '' : tiraExtra('despues', exD, t)) +
       '</div>';
@@ -56590,6 +56590,48 @@ function baseDelTurno(t){
   var ef = esp.filter(function(e){ return e.fecha === t.fecha; })[0] ||
            esp.filter(function(e){ return !e.fecha && e.dia === letra; })[0];
   return ef ? { inicio: ef.inicio, fin: ef.fin } : { inicio: tt.inicio, fin: tt.fin };
+}
+/* EL NOMBRE QUE SE VE EN LA CELDA. Al mover o personalizar un día, el
+   turno conserva el nombre con que nació ("Mañana") aunque las horas ya
+   sean otras (13:00–01:00). Se muestra entonces el nombre de las horas:
+     · turno fijo, valor fijo u hora extra: su nombre, siempre;
+     · horas iguales a las de su turno (o a las de otro turno del área):
+       el nombre de ese turno;
+     · si no, las franjas que cubre — Mañana 06–14, Tarde 14–22,
+       Noche 22–06 (Madrugada si es la de 00–06 con que arranca) —.
+       Cuenta la franja principal y las que lleven 3 h o más:
+       "Tarde a noche", "Madrugada a tarde".
+   Solo cambia lo que se ve: lo guardado sigue igual. */
+var FRANJAS_NOMBRE = [['Madrugada', -120, 360], ['Mañana', 360, 840], ['Tarde', 840, 1320],
+                      ['Noche', 1320, 1800], ['Mañana', 1800, 2280], ['Tarde', 2280, 2760]];
+function nombreVisibleTurno(t, a){
+  var nom = String((t && t.turno) || '');
+  if(!t || !t.inicio || !t.fin || t.fijo || nom === 'Hora extra' || /valor fijo/i.test(String(t.nota || ''))) return nom;
+  a = a || areaPorNombre(AREA_VIENDO);
+  var lista = (a && a.turnos) || [];
+  var s = minutosDe(hhmm(t.inicio)), e = minutosDe(hhmm(t.fin));
+  var igual = function(x){
+    var esp = x.especiales || [], b = x;
+    if(t.fecha){
+      var d = new Date(t.fecha + 'T00:00:00');
+      var letra = DIAS_LETRA[(d.getDay() + 6) % 7];
+      b = esp.filter(function(q){ return q.fecha === t.fecha; })[0] ||
+          esp.filter(function(q){ return !q.fecha && q.dia === letra; })[0] || x;
+    }
+    return b.inicio && b.fin && minutosDe(hhmm(b.inicio)) === s && minutosDe(hhmm(b.fin)) === e;
+  };
+  var suyo = lista.filter(function(x){ return x.nombre === nom; })[0];
+  if(suyo && (suyo.fijo || igual(suyo))) return nom;
+  var otro = lista.filter(function(x){ return x.nombre && x.nombre !== nom && !x.fijo && igual(x); })[0];
+  if(otro) return otro.nombre;
+  if(e <= s) e += 1440;
+  var tramos = FRANJAS_NOMBRE.map(function(f){
+    return { n: f[0], m: Math.max(0, Math.min(e, f[2]) - Math.max(s, f[1])) };
+  }).filter(function(f){ return f.m > 0; });
+  if(!tramos.length) return nom;
+  var mayor = Math.max.apply(null, tramos.map(function(f){ return f.m; }));
+  var van = tramos.filter(function(f){ return f.m >= 180 || f.m === mayor; });
+  return van.length === 1 ? van[0].n : van[0].n + ' a ' + van[van.length - 1].n.toLowerCase();
 }
 function minutosAntes(base, real){
   var d = (minutosDe(base) - minutosDe(real) + 1440) % 1440;
