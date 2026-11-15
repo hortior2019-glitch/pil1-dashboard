@@ -744,6 +744,15 @@
   #login-cargando.viendose{animation:none}
 }
 
+  /* ¿Kilómetros u horas? — sale del equipo; se puede cambiar a mano */
+  .u-seg { display: flex; gap: 8px; flex-wrap: wrap; }
+  .u-opt {
+    flex: 1 1 140px; padding: 11px 12px; border: 1.5px solid var(--border); border-radius: 8px;
+    background: #fff; color: var(--text-muted); font-family: 'Barlow', sans-serif; font-weight: 700;
+    font-size: 14px; letter-spacing: .03em; cursor: pointer;
+  }
+  .u-opt.on { border-color: var(--green-dark); background: var(--green-light); color: var(--green-dark); }
+  .u-nota { font-size: 13px; color: var(--text-muted); margin-top: 6px; min-height: 1em; }
 </style>
 </head>
 <body>
@@ -949,11 +958,11 @@
   <div class="card">
     <div class="card-header">
       <div class="step-badge">2</div>
-      <div class="card-title">Kilometraje del tablero</div>
+      <div class="card-title" id="u-tit">Kilometraje del tablero</div>
     </div>
     <div class="card-body">
       <div class="field">
-        <label>Foto del tablero (kilometraje) <span>*</span></label>
+        <label id="u-foto">Foto del tablero (kilometraje) <span>*</span></label>
         <div class="foto-controls">
           <button type="button" class="btn-cam" onclick="abrirCamara('comb-tablero-preview','combTablero')">Tomar foto</button>
           <input type="file" id="comb-tablero" accept="image/*" capture="environment"
@@ -962,15 +971,24 @@
         <div id="comb-tablero-preview" class="foto-preview"></div>
       </div>
 
+      <div class="field" style="margin-top:20px">
+        <label>Este equipo se mide en</label>
+        <div class="u-seg" role="group" aria-label="Unidad del tablero">
+          <button type="button" class="u-opt" data-u="km" onclick="setUnidad('km', true)">Kilómetros</button>
+          <button type="button" class="u-opt" data-u="h" onclick="setUnidad('h', true)">Horas (horómetro)</button>
+        </div>
+        <div class="u-nota" id="u-nota"></div>
+      </div>
+
       <div class="field-group" style="margin-top:20px">
         <div class="field">
-          <label>Kilometraje <span>*</span></label>
-          <input type="number" id="comb-km" inputmode="numeric" autocomplete="off"
+          <label id="u-l1">Kilometraje (km) <span>*</span></label>
+          <input type="text" id="comb-km" inputmode="numeric" autocomplete="off"
                  placeholder="Ej: 125000" oninput="verificarPar('km')">
         </div>
         <div class="field">
-          <label>Confirme el kilometraje <span>*</span></label>
-          <input type="number" id="comb-km2" inputmode="numeric" autocomplete="off"
+          <label id="u-l2">Confirme el kilometraje <span>*</span></label>
+          <input type="text" id="comb-km2" inputmode="numeric" autocomplete="off"
                  placeholder="Repita el kilometraje" onpaste="return false" oninput="verificarPar('km')">
         </div>
       </div>
@@ -1615,6 +1633,92 @@ function exigirFotosMalos() {
 
 // "$ 120.000" -> "120000"
 function soloDigitos(v) { return (v == null ? '' : v).toString().replace(/\D/g, ''); }
+/* El horómetro lleva decimales (4523,5 horas): se acepta coma o punto. */
+function numHorometro(v) {
+  let s = (v == null ? '' : v).toString().trim().replace(/\s/g, '').replace(',', '.').replace(/[^0-9.]/g, '');
+  const i = s.indexOf('.');
+  if (i > -1) s = s.slice(0, i + 1) + s.slice(i + 1).replace(/\./g, '');
+  if (s === '' || s === '.') return '';
+  const n = Number(s);
+  return isNaN(n) ? '' : String(n);
+}
+
+// ── ¿KILÓMETROS U HORAS? ─────────────────────────────────────
+/* Una volqueta se mide en kilómetros; el cargador, el tractor y la demás
+   maquinaria, en horas de horómetro. La unidad sale sola del equipo
+   elegido: su categoría en Vehículos del tablero, o si es una de las
+   máquinas de referencia. Si el sistema no lo sabe, queda la de esta app
+   y se puede cambiar a mano con los dos botones. */
+const MAQUINAS_FIJAS = ['MI754090', 'MA659176', 'CLG8200'];
+const CATS_HORAS = /cargador|retroexcavadora|excavadora|minicargador|tractor|montacargas|oruga/i;
+const VEH_CAT_URL = 'https://script.google.com/macros/s/AKfycbwf1gu_r2HhyzrtFhYJUjcnu4e5Naksauk-Cn1nplh94rKH_Ha3dhTtiDqmPZzRhDEB/exec?accion=categorias';
+const UNIDAD_DEFECTO = 'km';
+let catPlacas = {};
+try { catPlacas = JSON.parse(localStorage.getItem('cat_placas_v1') || '{}') || {}; } catch (e) {}
+let unidadComb = UNIDAD_DEFECTO, unidadAMano = false;
+
+function placaNorm(p) { return String(p || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+
+function unidadDeEquipo(valor) {
+  const p = placaNorm(valor);
+  if (!p) return { u: UNIDAD_DEFECTO, por: '' };
+  if (MAQUINAS_FIJAS.indexOf(p) > -1) return { u: 'h', por: 'máquina de referencia' };
+  const c = catPlacas[p];
+  if (c) return { u: CATS_HORAS.test(c) ? 'h' : 'km', por: 'categoría en Vehículos: ' + c };
+  const sel = document.getElementById('comb-placa');
+  const op = sel && sel.selectedOptions && sel.selectedOptions[0];
+  if (CATS_HORAS.test((op ? op.textContent : '') + ' ' + valor)) return { u: 'h', por: 'nombre del equipo' };
+  return { u: UNIDAD_DEFECTO, por: '' };
+}
+
+function pintarUnidad() {
+  const h = unidadComb === 'h';
+  const pon = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+  pon('u-tit', h ? 'Horómetro del tablero' : 'Kilometraje del tablero');
+  pon('u-foto', 'Foto del tablero (' + (h ? 'horómetro' : 'kilometraje') + ') <span>*</span>');
+  pon('u-l1', (h ? 'Horómetro (horas)' : 'Kilometraje (km)') + ' <span>*</span>');
+  pon('u-l2', (h ? 'Confirme el horómetro' : 'Confirme el kilometraje') + ' <span>*</span>');
+  const a = document.getElementById('comb-km'), b = document.getElementById('comb-km2');
+  if (a) { a.inputMode = h ? 'decimal' : 'numeric'; a.placeholder = h ? 'Ej: 4523,5' : 'Ej: 125000'; }
+  if (b) { b.inputMode = h ? 'decimal' : 'numeric'; b.placeholder = h ? 'Repita el horómetro' : 'Repita el kilometraje'; }
+  document.querySelectorAll('.u-opt').forEach(x => {
+    const on = x.dataset.u === unidadComb;
+    x.classList.toggle('on', on); x.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+}
+
+function setUnidad(u, aMano, por) {
+  unidadComb = u === 'h' ? 'h' : 'km';
+  unidadAMano = !!aMano;
+  pintarUnidad();
+  const nota = document.getElementById('u-nota');
+  if (nota) nota.textContent = aMano ? 'Cambiado a mano.' : (por ? 'Según ' + por + '.' : '');
+  verificarPar('km');
+}
+
+function unidadPorEquipo(valor) { const r = unidadDeEquipo(valor); setUnidad(r.u, false, r.por); }
+
+document.addEventListener('change', e => { if (e.target && e.target.id === 'comb-placa') unidadPorEquipo(e.target.value); });
+document.addEventListener('input',  e => { if (e.target && e.target.id === 'comb-placa' && e.target.tagName === 'INPUT') unidadPorEquipo(e.target.value); });
+
+async function cargarCategorias() {
+  try {
+    const ctl = new AbortController();
+    const reloj = setTimeout(() => ctl.abort(), 10000);
+    const r = await fetch(VEH_CAT_URL, { signal: ctl.signal });
+    clearTimeout(reloj);
+    const d = await r.json();
+    if (!d || !d.categorias) return;
+    catPlacas = {};
+    Object.keys(d.categorias).forEach(k => { if (d.categorias[k]) catPlacas[placaNorm(k)] = d.categorias[k]; });
+    try { localStorage.setItem('cat_placas_v1', JSON.stringify(catPlacas)); } catch (e) {}
+    const sel = document.getElementById('comb-placa');
+    if (sel && sel.value && !unidadAMano) unidadPorEquipo(sel.value);
+  } catch (e) { /* sin conexión: queda lo guardado o la unidad de esta app */ }
+}
+pintarUnidad();
+cargarCategorias();
+
 
 // Da formato de pesos mientras se escribe: 120000 -> "$ 120.000"
 function formatearPesos(input) {
@@ -1628,15 +1732,16 @@ function verificarPar(campo) {
   const b   = document.getElementById('comb-' + campo + '2');
   const msg = document.getElementById('comb-' + campo + '-msg');
   if (!a || !b || !msg) return false;
-  const va = soloDigitos(a.value), vb = soloDigitos(b.value);
+  const leer = (campo === 'km' && unidadComb === 'h') ? numHorometro : soloDigitos;
+  const va = leer(a.value), vb = leer(b.value);
   a.classList.remove('campo-nocoincide');
   b.classList.remove('campo-nocoincide');
   msg.className = 'match-msg';
   if (!va || !vb) { msg.innerHTML = ''; return false; }
-  const etiqueta = campo === 'km' ? 'El kilometraje' : 'El valor';
+  const etiqueta = campo === 'km' ? (unidadComb === 'h' ? 'El horómetro' : 'El kilometraje') : 'El valor';
   if (va === vb) {
     const txt = campo === 'km'
-      ? Number(va).toLocaleString('es-CO') + ' km'
+      ? Number(va).toLocaleString('es-CO', { maximumFractionDigits: 1 }) + (unidadComb === 'h' ? ' h' : ' km')
       : '$ ' + Number(va).toLocaleString('es-CO');
     msg.className = 'match-msg ok';
     msg.innerHTML = '<span class="match-ico">&#10003;</span>' + etiqueta + ' coincide — se enviará ' + txt + '.';
@@ -1680,6 +1785,7 @@ function limpiarCombustible() {
   ['comb-tipo', 'comb-tipo2'].forEach(id => { const el = document.getElementById(id); if (el) { el.value = ''; el.classList.remove('campo-nocoincide'); } });
   const tm = document.getElementById('comb-tipo-msg'); if (tm) { tm.className = 'match-msg'; tm.innerHTML = ''; }
   const pl = document.getElementById('comb-placa'); if (pl) pl.value = '';
+  setUnidad(UNIDAD_DEFECTO, false);
   const fe = document.getElementById('comb-fecha'); if (fe) fe.value = hoyLocal();
   ['comb-tablero', 'comb-recibo'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   ['comb-tablero-preview', 'comb-recibo-preview'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
@@ -1734,21 +1840,24 @@ async function submitCombustible() {
     return;
   }
 
+  const enHoras = unidadComb === 'h';
+  const nomU = enHoras ? 'horómetro' : 'kilometraje';
   if (!fotos.combTablero) {
-    toastMsg('Adjunte la foto del tablero (kilometraje).', true);
+    toastMsg('Adjunte la foto del tablero (' + nomU + ').', true);
     document.getElementById('comb-tablero').scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
 
-  const km  = soloDigitos(document.getElementById('comb-km').value);
-  const km2 = soloDigitos(document.getElementById('comb-km2').value);
+  const leerU = enHoras ? numHorometro : soloDigitos;
+  const km  = leerU(document.getElementById('comb-km').value);
+  const km2 = leerU(document.getElementById('comb-km2').value);
   if (!km || !km2) {
-    toastMsg('Digite el kilometraje en las dos casillas.', true);
+    toastMsg('Digite el ' + nomU + ' en las dos casillas.', true);
     document.getElementById('comb-km').scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
   if (!verificarPar('km')) {
-    toastMsg('El kilometraje no coincide en las dos casillas.', true);
+    toastMsg('El ' + nomU + ' no coincide en las dos casillas.', true);
     document.getElementById('comb-km2').scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
@@ -1785,7 +1894,8 @@ async function submitCombustible() {
     combustible: combA,   // ya confirmado: acpm | corriente | extra
     ref_precio: ref ? ref.precio : '',
     ref_fecha:  ref ? ref.fecha : '',
-    km:     Number(km),      // un solo dato, ya confirmado
+    km:     Number(km),      // un solo dato, ya confirmado (km u horas)
+    unidad: unidadComb,      // 'km' volqueta | 'h' maquinaria: el horómetro va en su propia columna
     valor:  Number(val),     // un solo dato, ya confirmado
     foto_tablero:      fotos.combTablero.b64,
     foto_tablero_mime: fotos.combTablero.mime,

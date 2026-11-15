@@ -2775,6 +2775,26 @@ td .preop-fotos{margin-top:0;gap:4px;flex-wrap:nowrap}
   border:1px solid var(--vg);font-family:'Source Sans 3',sans-serif;transition:.16s}
 #panel-vehiculos .vf-btn:hover{border-color:#c2c8c3;background:#fbfbfa}
 #panel-vehiculos .vf-btn:active{transform:translateY(1px)}
+/* Mantenimiento: tipo, foto de factura y aviso de lo que falta */
+.vm-et{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:6px}
+.vm-tipos{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.vm-tipo{display:flex;gap:8px;align-items:flex-start;padding:10px 12px;border:1.5px solid var(--rule);border-radius:8px;cursor:pointer;background:var(--white)}
+.vm-tipo:has(input:checked){border-color:var(--navy);background:var(--green-l)}
+.vm-tipo input{margin-top:3px;accent-color:var(--navy);width:16px;height:16px;flex-shrink:0}
+.vm-tipo b{display:block;font-size:14px;color:var(--ink)}
+.vm-tipo small{display:block;font-size:13px;color:var(--ink-m);line-height:1.3}
+.vm-chip{font-size:13px;font-weight:700;padding:1px 9px;border-radius:10px}
+.vm-chip-preventivo{background:#e8f5ee;color:#1a5c35}
+.vm-chip-correctivo{background:#f5e8e8;color:#8b1a1a}
+.vm-chip-predictivo{background:#e6eef7;color:#1f4f82}
+.vm-falta{outline:2px solid var(--red);outline-offset:4px;border-radius:4px}
+.vm-faltan{border:1.5px solid var(--red);background:var(--red-l);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--ink)}
+.vm-faltan b{color:var(--red)}
+.vm-faltan ul{margin:4px 0 8px 18px;padding:0}
+.vm-faltan li{margin:2px 0}
+.vm-faltan-acc{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.vm-faltan-acc button{padding:8px 14px;font-size:13px;font-weight:700;border-radius:6px;cursor:pointer;border:1px solid var(--navy);background:var(--navy);color:#fff}
+.vm-faltan-acc button.sec{background:var(--white);color:var(--ink-m);border-color:var(--rule)}
 #panel-vehiculos .vf-btn:focus-visible{outline:2px solid var(--vok);outline-offset:2px}
 #panel-vehiculos .vf-btn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.9;
   stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
@@ -11949,6 +11969,17 @@ let currentFilter = 'hoy'; // Filtro de periodo activo ('hoy','semana','mes','to
 */
 let dataIngreso = [], dataSolicitudes = [], dataHE = [], dataPreopVol = [], dataPreopCar = [], dataViajes = [], dataProduccionHumus = [];
 let dataCombustible = [];   // hoja "Combustible": tanqueos por placa
+/* La maquinaria guarda su lectura en la columna 'Horometro' (horas) y deja
+   'Kilometraje' vacío. Aquí, en memoria, la lectura queda en 'Kilometraje'
+   para que todos los cálculos de tramos y rendimiento sigan iguales; la
+   unidad (km u horas) la dice el equipo al mostrarla (_uVeh). */
+function _normComb(rows){
+  (rows || []).forEach(function(r){
+    var h = r['Horometro'] != null ? r['Horometro'] : r['Horómetro'];
+    if(h != null && String(h).trim() !== '' && !String(r['Kilometraje'] || '').trim()){ r['Kilometraje'] = h; r._horas = true; }
+  });
+  return rows;
+}
 /* Se enciende cuando el backend de recepción niega la lectura de ingreso por
    falta de sesión. Sirve para que el estado final NO tape esa advertencia con
    el mensaje verde de "actualizado": si está en true, dataIngreso quedó vacío
@@ -13747,7 +13778,7 @@ async function loadAllData() {
   // mientras el gid no este configurado la URL responde con error.
   try {
     if (SHEETS.combustible.indexOf('PEGAR_GID') === -1) {
-      dataCombustible = await fetchCSV(SHEETS.combustible);
+      dataCombustible = _normComb(await fetchCSV(SHEETS.combustible));
     }
   } catch(e) { console.error('Combustible (no bloqueante):', e); }
   /* Ya llegó (o falló): la tabla de la flota deja de decir "Cargando". */
@@ -17004,7 +17035,7 @@ function renderFlota(){
             return '<tr><td>' + _flEsc(_fmtFechaVeh(x.fecha)) +
                 (x.hora ? ' <em>' + _flEsc(x.hora) + '</em>' : '') + '</td>' +
               '<td>' + _miniPlaca(x.placa) + '<span>' + _flEsc(x.placa) + '</span></td>' +
-              '<td>' + (x.km ? fmt(x.km) + ' km' : '—') + '</td>' +
+              '<td>' + (x.km ? _fmtLect(x.km, _uVeh(x.placa)) : '—') + '</td>' +
               '<td class="fl-num">' + _fmtPesos(x.valor) + '</td>' +
               '<td class="fl-foto">' + _fotoComb(x.fotoTablero, x.placa + ' · horómetro') + '</td>' +
               '<td class="fl-foto">' + _fotoComb(x.fotoRecibo, x.placa + ' · recibo') + '</td></tr>';
@@ -17857,7 +17888,7 @@ function renderVehiculos() {
       ${foto}
       <span style="min-width:0">
         <span class="vfila-placa" style="display:block">${_escVeh(v.placa||'—')}</span>
-        <span class="vfila-km" style="display:block">${fmt(k.km)} km</span>
+        <span class="vfila-km" style="display:block">${_fmtLect(k.km, _uVeh(v))}</span>
       </span>
       <span class="vfila-score">
         <span class="vfila-pct" style="background:${fondo};border-color:${borde};color:${est.color}">${est.pct === null ? '–' : est.pct + '%'}</span>
@@ -17937,7 +17968,7 @@ function renderFichaVehiculo(placa) {
         <div class="vf-id">
           <div class="vf-rot">Placa</div>
           <div class="vf-placa">${_escVeh(v.placa||'—')}</div>
-          <div class="vf-km-hdr">${fmt(m.km)} km</div>
+          <div class="vf-km-hdr">${_fmtLect(m.km, _uVeh(v))}</div>
         </div>
         <div class="vf-estado">
           ${dona}
@@ -17956,7 +17987,7 @@ function renderFichaVehiculo(placa) {
     <div class="vf-kpis">
       ${_vfKpi('comb', 'Último tanqueo', m.ultTanqueo ? _fmtPesos(m.ultTanqueo.valor) : '—',
           m.gastoPorKm !== null
-            ? `<span class="vf-ctx">≈ ${_fmtPesos(Math.round(m.gastoPorKm * 100) / 100)} / km</span><span class="vf-ctx">${m.nTanqueos} tanqueo${m.nTanqueos!==1?'s':''}</span>`
+            ? `<span class="vf-ctx">≈ ${_fmtPesos(Math.round(m.gastoPorKm * 100) / 100)} / ${_uVeh(v) === 'h' ? 'hora' : 'km'}</span><span class="vf-ctx">${m.nTanqueos} tanqueo${m.nTanqueos!==1?'s':''}</span>`
             : sd)}
       ${_vfKpi('insp', 'Inspección', m.pctBuenos !== null ? m.pctBuenos.toFixed(1).replace('.', ',') + '%' : '—',
           m.inspTotal ? `<span class="vf-ctx vf-pos">${m.inspBuenos} de ${m.inspTotal} buenas</span>` : sd)}
@@ -18018,8 +18049,8 @@ function renderFichaVehiculo(placa) {
           ${_vfSpark(m.serieGasto, '#2e8b45')}
         </div>
         <div class="vf-an">
-          <div class="vf-an-rot">${ICO_VF.km}KM entre tanqueos</div>
-          <div class="vf-an-val">${m.kmEntreTanqueos !== null ? fmt(m.kmEntreTanqueos) + ' km' : '—'}</div>
+          <div class="vf-an-rot">${ICO_VF.km}${_uVeh(v) === 'h' ? 'Horas' : 'KM'} entre tanqueos</div>
+          <div class="vf-an-val">${m.kmEntreTanqueos !== null ? _fmtLect(m.kmEntreTanqueos, _uVeh(v)) : '—'}</div>
           <div class="vf-an-pie">${m.kmEntreTanqueos !== null ? _vfTend(m.tendKm, false) : sd}</div>
           ${_vfSpark(m.serieKm, '#2e8b45')}
         </div>
@@ -18031,9 +18062,9 @@ function renderFichaVehiculo(placa) {
         </div>
         <div class="vf-an">
           <div class="vf-an-rot">${ICO_VF.cal}Próximo mantenimiento</div>
-          <div class="vf-an-val">${m.kmProxMant !== null ? (m.kmProxMant > 0 ? 'En ' + fmt(m.kmProxMant) + ' km' : 'Vencido') : '—'}</div>
+          <div class="vf-an-val">${m.kmProxMant !== null ? (m.kmProxMant > 0 ? 'En ' + _fmtLect(m.kmProxMant, _uVeh(v)) : 'Vencido') : '—'}</div>
           <div class="vf-an-pie">${m.kmIntervaloMant !== null
-              ? `<span class="vf-ctx">cada ${fmt(m.kmIntervaloMant)} km en promedio</span>`
+              ? `<span class="vf-ctx">cada ${_fmtLect(m.kmIntervaloMant, _uVeh(v))} en promedio</span>`
               : sd}</div>
           ${m.avanceMantKm !== null ? `<div class="vf-prog"><span style="width:${m.avanceMantKm.toFixed(0)}%;background:${m.avanceMantKm >= 100 ? 'var(--red)' : m.avanceMantKm >= 80 ? '#d4a017' : '#2e8b45'}"></span></div>` : ''}
         </div>
@@ -18079,7 +18110,7 @@ function renderFichaVehiculo(placa) {
       <button class="vf-btn pri" onclick="abrirFormMantenimiento('${pl}')">${ICO_VF.mas}Mantenimiento</button>
       <button class="vf-btn" onclick="verHistorialCombustible('${pl}')">${ICO_VF.comb}Historial de tanqueos</button>
       <button class="vf-btn" onclick="verDocumentosVehiculo('${pl}')">${ICO_VF.doc}Documentos (${m.nDocs})</button>
-      <button class="vf-btn" onclick="abrirFormKm('${pl}')">${ICO_VF.km}Actualizar KM</button>
+      <button class="vf-btn" onclick="abrirFormKm('${pl}')">${ICO_VF.km}${_uVeh(v) === 'h' ? 'Actualizar horómetro' : 'Actualizar KM'}</button>
       <button class="vf-btn sec" onclick="abrirCalendarioProgramacion('${pl}')">${ICO_VF.cal}Programar</button>
       <button class="vf-btn sec" onclick="verHistorialVehiculo('${pl}')">${ICO_VF.llave}Historial mant. (${m.nMants})</button>
       <button class="vf-btn sec" onclick="verPreoperacionalesVehiculo('${pl}')">${ICO_VF.lupa}Inspecciones (${m.nInspecciones})</button>
@@ -18172,7 +18203,7 @@ function _kmVehiculo(v) {
     const t = (combDeVehiculo(v.placa) || [])[0];   // el mas reciente
     if (t && Number(t.km) > 0) return { km: Number(t.km), origen: 'tanqueo', fecha: t.fecha || '' };
   } catch (e) {}
-  const propio = parseInt(v.km, 10) || 0;
+  const propio = Number(v.km) || 0;
   return { km: propio, origen: propio ? 'ficha' : 'sin dato', fecha: '' };
 }
 
@@ -19312,9 +19343,11 @@ function _rpNovedades(placa) {
       <div style="display:flex;align-items:baseline;gap:7px;flex-wrap:wrap">
         <span style="font-size:13px;font-weight:700;color:var(--ink)">${_escVeh(m.titulo || '—')}</span>
         ${aceite ? '<span style="font-size:8.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--gold-l);color:var(--gold);padding:2px 7px;border-radius:10px">Aceite</span>' : ''}
-        ${m.km ? `<span style="font-size:11px;color:var(--ink-m);font-weight:600">${fmt(parseInt(m.km, 10) || 0)} km</span>` : ''}
+        ${m.tipo ? _chipTipoMant(m.tipo) : ''}
+        ${m.km ? `<span style="font-size:11px;color:var(--ink-m);font-weight:600">${_fmtLect(m.km, _uVeh(m.placa))}</span>` : ''}
         ${Number(m.valor) ? `<span style="font-size:11px;font-weight:700;color:var(--green)">$ ${fmt(Number(m.valor))}</span>` : ''}
         ${m.factura ? `<span style="font-size:10.5px;color:var(--ink-l)">factura ${_escVeh(m.factura)}</span>` : ''}
+        ${m.fotoFactura ? `<button type="button" onclick="abrirFotoBaucher('${_escAttrVeh(m.fotoFactura)}','Factura · ${_escAttrVeh(m.titulo||'')}')" style="font-size:13px;font-weight:700;color:var(--navy);background:none;border:1px solid var(--rule);border-radius:10px;padding:1px 9px;cursor:zoom-in">Ver factura</button>` : ''}
         <span style="margin-left:auto;font-size:11px;color:var(--ink-l);white-space:nowrap">${_fmtFechaVeh(m.fecha)}</span>
       </div>
       ${m.descripcion ? `<div style="font-size:11.5px;color:var(--ink-m);margin-top:3px;line-height:1.4">${_escVeh(m.descripcion)}</div>` : ''}
@@ -19389,9 +19422,9 @@ function verReporteVehiculo(placa) {
         ${_rpBanda('Información general')}
         <div style="border:1.5px solid var(--rule);border-radius:10px;padding:6px 14px 10px">
           ${_rpFila('documentos', 'Placa', _escVeh(v.placa))}
-          ${(function(){ const k=_kmVehiculo(v); return _rpFila('mantenimiento', 'Kilometraje',
-              fmt(k.km) + ' km' + (k.origen==='tanqueo' ? ' · del tanqueo del ' + _fmtFechaVeh(k.fecha) : '')); })()}
-          ${_rpFila('programacion', 'Km actualizado', v.kmActualizado ? _fmtFechaVeh(v.kmActualizado) : '—')}
+          ${(function(){ const k=_kmVehiculo(v), u=_uVeh(v); return _rpFila('mantenimiento', u === 'h' ? 'Horómetro' : 'Kilometraje',
+              _fmtLect(k.km, u) + (k.origen==='tanqueo' ? ' · del tanqueo del ' + _fmtFechaVeh(k.fecha) : '')); })()}
+          ${_rpFila('programacion', _uVeh(v) === 'h' ? 'Horómetro actualizado' : 'Km actualizado', v.kmActualizado ? _fmtFechaVeh(v.kmActualizado) : '—')}
           ${_rpFila('combustible', 'Último tanqueo', ultComb ? _fmtPesos(ultComb.valor) + ' · ' + _fmtFechaVeh(ultComb.fecha) : 'sin registros')}
           ${_rpFila('preop', 'Última inspección', u ? _fmtFechaVeh(u.fecha) + (u.conductor ? ' · ' + _escVeh(u.conductor) : '') : 'sin registros')}
         </div>
@@ -19618,8 +19651,8 @@ function bloqueCombustibleVehiculo(placa) {
           '</span>' +
         '</div>' +
         '<div style="font-size:12px;color:var(--ink-m);margin-top:4px">' +
-          fmt(Math.round(u.km)) + ' km' +
-          (u.kmRecorridos ? ' <span style="background:var(--green-l);color:var(--green);font-weight:700;padding:2px 7px;border-radius:10px;font-size:11px;margin-left:4px">+' + fmt(u.kmRecorridos) + ' km recorridos</span>' : '') +
+          _fmtLect(u.km, _uVeh(placa)) +
+          (u.kmRecorridos ? ' <span style="background:var(--green-l);color:var(--green);font-weight:700;padding:2px 7px;border-radius:10px;font-size:11px;margin-left:4px">+' + _fmtLect(u.kmRecorridos, _uVeh(placa)) + (_uVeh(placa) === 'h' ? ' trabajadas' : ' recorridos') + '</span>' : '') +
         '</div>' +
         (u.encargado ? '<div style="font-size:12px;color:var(--ink-l);margin-top:3px">' + _escVeh(u.encargado) + '</div>' : '') +
       '</div>' +
@@ -19726,6 +19759,8 @@ function renderHistorialCombustible() {
   var gasto = filas.reduce(function (s, x) { return s + x.valor; }, 0);
   var kmTot = filas.reduce(function (s, x) { return s + (x.kmRecorridos || 0); }, 0);
   var conKm = filas.filter(function (x) { return x.kmRecorridos; }).length;
+  /* La unidad la pone el equipo: una categoría es toda de una clase. */
+  var uM = _uVeh(_combPlacaModal || (filas[0] || {}).placa || '');
 
   if (kpis) {
     kpis.innerHTML =
@@ -19735,8 +19770,8 @@ function renderHistorialCombustible() {
         '<div style="font-size:10px;color:var(--ink-l);margin-top:3px">' + filas.length + ' tanqueo' + (filas.length !== 1 ? 's' : '') + '</div>' +
       '</div>' +
       '<div style="background:var(--white);padding:12px 14px">' +
-        '<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">Km recorridos</div>' +
-        '<div style="font-family:\'Libre Baskerville\',serif;font-size:22px;font-weight:700;color:var(--ink);line-height:1">' + fmt(Math.round(kmTot)) + '</div>' +
+        '<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">' + (uM === 'h' ? 'Horas trabajadas' : 'Km recorridos') + '</div>' +
+        '<div style="font-family:\'Libre Baskerville\',serif;font-size:22px;font-weight:700;color:var(--ink);line-height:1">' + _fmtLect(kmTot, uM) + '</div>' +
         '<div style="font-size:10px;color:var(--ink-l);margin-top:3px">sobre ' + conKm + ' tramo' + (conKm !== 1 ? 's' : '') + ' medible' + (conKm !== 1 ? 's' : '') + '</div>' +
       '</div>';
   }
@@ -19747,16 +19782,16 @@ function renderHistorialCombustible() {
     tabla.innerHTML = filas.length
       ? '<table class="tbl"><thead><tr>' +
           '<th>Fecha</th>' + (conPlaca ? '<th>Placa</th>' : '') +
-          '<th>Encargado</th><th style="text-align:right">Kilometraje</th>' +
-          '<th style="text-align:right">Km recorridos</th><th style="text-align:right">Valor</th>' +
+          '<th>Encargado</th><th style="text-align:right">' + (uM === 'h' ? 'Horómetro' : 'Kilometraje') + '</th>' +
+          '<th style="text-align:right">' + (uM === 'h' ? 'Horas trabajadas' : 'Km recorridos') + '</th><th style="text-align:right">Valor</th>' +
           '<th style="text-align:center">Tablero</th><th style="text-align:center">Recibo</th></tr></thead><tbody>' +
         filas.map(function (x) {
           return '<tr>' +
             '<td style="white-space:nowrap">' + _fmtFechaVeh(x.fecha) + (x.hora ? ' <span style="color:var(--ink-l);font-size:11px">' + x.hora + '</span>' : '') + '</td>' +
             (conPlaca ? '<td style="white-space:nowrap;font-weight:700">' + _escVeh(x.placa.toUpperCase()) + '</td>' : '') +
             '<td>' + (_escVeh(x.encargado) || '—') + '</td>' +
-            '<td style="text-align:right">' + fmt(Math.round(x.km)) + '</td>' +
-            '<td style="text-align:right;font-weight:700;color:' + (x.kmRecorridos ? 'var(--green)' : 'var(--ink-l)') + '">' + (x.kmRecorridos ? fmt(x.kmRecorridos) : '—') + '</td>' +
+            '<td style="text-align:right">' + (x.km ? _fmtLect(x.km, _uVeh(x.placa)) : '—') + '</td>' +
+            '<td style="text-align:right;font-weight:700;color:' + (x.kmRecorridos ? 'var(--green)' : 'var(--ink-l)') + '">' + (x.kmRecorridos ? _fmtLect(x.kmRecorridos, _uVeh(x.placa)) : '—') + '</td>' +
             '<td style="text-align:right;font-weight:700;color:var(--navy)">' + _fmtPesos(x.valor) + '</td>' +
             '<td style="text-align:center">' + _fotoComb(x.fotoTablero, x.placa + ' · tablero') + '</td>' +
             '<td style="text-align:center">' + _fotoComb(x.fotoRecibo, x.placa + ' · recibo') + '</td>' +
@@ -19781,8 +19816,10 @@ function exportarCombustibleExcel() {
       'Placa / Equipo': x.placa,
       'Origen': x.origen,
       'Encargado': x.encargado,
-      'Kilometraje': Math.round(x.km),
-      'Km recorridos': x.kmRecorridos || '',
+      'Kilometraje': _uVeh(x.placa) === 'h' ? '' : Math.round(x.km),
+      'Km recorridos': _uVeh(x.placa) === 'h' ? '' : (x.kmRecorridos || ''),
+      'Horómetro (h)': _uVeh(x.placa) === 'h' ? Math.round(x.km * 10) / 10 : '',
+      'Horas trabajadas': _uVeh(x.placa) === 'h' ? (x.kmRecorridos ? Math.round(x.kmRecorridos * 10) / 10 : '') : '',
       'Valor tanqueado': Math.round(x.valor),
       'Foto tablero': x.fotoTablero,
       'Foto recibo': x.fotoRecibo,
@@ -19796,7 +19833,7 @@ function exportarCombustibleExcel() {
   datos.push({});
   datos.push({
     'Fecha': 'TOTAL',
-    'Km recorridos': kmTot || '',
+    [_uVeh(_combPlacaModal || (filas[0] || {}).placa || '') === 'h' ? 'Horas trabajadas' : 'Km recorridos']: kmTot ? Math.round(kmTot * 10) / 10 : '',
     'Valor tanqueado': Math.round(gasto)
   });
 
@@ -20016,7 +20053,7 @@ function bloquePreopVehiculo(placa) {
         <div><span style="font-size:22px;font-weight:800;color:var(--green);line-height:1">${u.buenos}</span>
           <span style="font-size:12px;color:var(--ink-m);margin-left:4px">buenos</span></div>
         ${u.conductor ? `<div style="font-size:13px;color:var(--ink-m);align-self:center">${u.conductor}</div>` : ''}
-        ${u.km ? `<div style="font-size:13px;color:var(--ink-m);align-self:center">${u.km} km</div>` : ''}
+        ${u.km ? `<div style="font-size:13px;color:var(--ink-m);align-self:center">${u.km} ${_uVeh(placa) === 'h' ? 'h' : 'km'}</div>` : ''}
       </div>
 
       <!-- Termometro: aprovecha el espacio horizontal libre de la tarjeta -->
@@ -20143,6 +20180,42 @@ const VEH_CATEGORIAS = [
   { k:'Equipo de succión', pl:'Equipos de succión', horas:false },
   { k:'Otro',            pl:'Otros',            horas:false }
 ];
+/* ¿Km u horas? Sale de la categoría del equipo. Si no tiene categoría,
+   de sus tanqueos: si alguno trae horómetro o viene del preoperacional
+   del cargador/tractor, es maquinaria. Recibe el vehículo o su placa. */
+let _uVehCache = { n: -1, set: {} };
+function _uVeh(x){
+  var v = (x && typeof x === 'object') ? x
+        : (_vehiculos || []).find(function(y){ return _placaNorm(y.placa) === _placaNorm(x); });
+  var c = VEH_CATEGORIAS.find(function(y){ return y.k === _flCatDe(v); });
+  if (c) return c.horas ? 'h' : 'km';
+  var lista = (typeof dataCombustible !== 'undefined' ? dataCombustible : []) || [];
+  if (_uVehCache.n !== lista.length){
+    var set = {};
+    lista.forEach(function(r){
+      if (r._horas || /cargador|tractor/i.test(String(r['Origen'] || '')))
+        set[_placaNorm(r['Placa / Equipo'] || r['Placa'] || '')] = 1;
+    });
+    _uVehCache = { n: lista.length, set: set };
+  }
+  return _uVehCache.set[_placaNorm(v ? v.placa : x)] ? 'h' : 'km';
+}
+/* Una lectura con su unidad: 128.500 km · 4.523,5 h */
+function _fmtLect(n, u){
+  n = Number(n) || 0;
+  return u === 'h'
+    ? (Math.round(n * 10) / 10).toLocaleString('es-CO', { maximumFractionDigits: 1 }) + ' h'
+    : fmt(Math.round(n)) + ' km';
+}
+/* Lee lo que se digita: 4523,5 o 4523.5 o 128.500 */
+function _leerLect(t){
+  var s = String(t == null ? '' : t).trim().replace(/\s/g, '');
+  if (!s) return NaN;
+  if (/^\d{1,3}([.,]\d{3})+$/.test(s)) s = s.replace(/[.,]/g, '');
+  else s = s.replace(',', '.');
+  var n = parseFloat(s.replace(/[^0-9.]/g, ''));
+  return isFinite(n) ? Math.round(n * 10) / 10 : NaN;
+}
 let _vehFotoTmp = '';
 function abrirFormVehiculo(placa) {
   const v = placa ? _vehiculos.find(x => (x.placa||'').toUpperCase() === placa.toUpperCase()) : null;
@@ -20173,8 +20246,8 @@ function abrirFormVehiculo(placa) {
         </div>
       </div>
       <div>
-        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Kilometraje ${v?'(solo se edita desde "Actualizar km")':'inicial'}</label>
-        <input id="vf-km" type="number" min="0" value="${v?(v.km||0):''}" ${v?'readonly':''} placeholder="0" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:15px;border:1px solid var(--rule);border-radius:4px;${v?'background:var(--s2);color:var(--ink-l)':''}">
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">${v ? (_uVeh(v) === 'h' ? 'Horómetro (solo se edita desde "Actualizar horómetro")' : 'Kilometraje (solo se edita desde "Actualizar km")') : 'Kilometraje inicial (horómetro en maquinaria)'}</label>
+        <input id="vf-km" type="text" inputmode="decimal" value="${v?(v.km||0):''}" ${v?'readonly':''} placeholder="0" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:15px;border:1px solid var(--rule);border-radius:4px;${v?'background:var(--s2);color:var(--ink-l)':''}">
       </div>
       <div>
         <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Foto del vehículo ${v&&v.foto?'(deja vacío para conservar la actual)':''}</label>
@@ -20248,7 +20321,7 @@ async function guardarVehiculo(esEdicion) {
   const placa = ((document.getElementById('vf-placa')||{}).value||'').trim().toUpperCase();
   const soat  = (document.getElementById('vf-soat')||{}).value || '';
   const tecno = (document.getElementById('vf-tecno')||{}).value || '';
-  const km    = parseInt((document.getElementById('vf-km')||{}).value, 10) || 0;
+  const km    = _leerLect((document.getElementById('vf-km')||{}).value) || 0;
   const categoria = (document.getElementById('vf-cat')||{}).value || '';
   const err   = document.getElementById('vf-error');
   const btn   = document.getElementById('vf-guardar');
@@ -20273,10 +20346,11 @@ function abrirFormKm(placa) {
   const v = _vehiculos.find(x => (x.placa||'').toUpperCase() === placa.toUpperCase());
   if (!v) return;
   const actual = _kmVehiculo(v).km;   // parte del ultimo tanqueo si lo hay
+  const u = _uVeh(v), nom = u === 'h' ? 'horómetro' : 'kilometraje';
   _modalVeh(`
-    <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">Actualizar kilometraje · ${v.placa}</div>
-    <div style="font-size:12px;color:var(--ink-l);margin-bottom:16px">Kilometraje actual registrado: <strong style="color:var(--ink)">${fmt(actual)} km</strong>. El nuevo valor no puede ser menor.</div>
-    <input id="vk-km" type="number" min="${actual}" value="${actual}" style="width:100%;box-sizing:border-box;padding:10px 12px;font-size:17px;font-weight:700;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif">
+    <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">Actualizar ${nom} · ${v.placa}</div>
+    <div style="font-size:13px;color:var(--ink-l);margin-bottom:16px">${u === 'h' ? 'Horómetro' : 'Kilometraje'} actual registrado: <strong style="color:var(--ink)">${_fmtLect(actual, u)}</strong>. El nuevo valor no puede ser menor.</div>
+    <input id="vk-km" type="text" inputmode="decimal" value="${String(actual).replace('.', ',')}" style="width:100%;box-sizing:border-box;padding:10px 12px;font-size:17px;font-weight:700;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif">
     <div id="vk-error" style="display:none;font-size:12px;color:var(--red);font-weight:600;margin-top:8px"></div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
       <button onclick="_cerrarModalVeh()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Cancelar</button>
@@ -20285,12 +20359,13 @@ function abrirFormKm(placa) {
 }
 
 async function guardarKmVehiculo(placa, actual) {
-  const nuevo = parseInt((document.getElementById('vk-km')||{}).value, 10);
+  const nuevo = _leerLect((document.getElementById('vk-km')||{}).value);
   const err = document.getElementById('vk-error');
   const btn = document.getElementById('vk-guardar');
+  const u = _uVeh(placa);
   if (isNaN(nuevo)) { if (err) { err.textContent = 'Escribe un número válido.'; err.style.display='block'; } return; }
   if (nuevo < actual) {
-    if (err) { err.textContent = 'El kilometraje no puede ser menor al último registrado (' + fmt(actual) + ' km).'; err.style.display='block'; }
+    if (err) { err.textContent = 'El ' + (u === 'h' ? 'horómetro' : 'kilometraje') + ' no puede ser menor al último registrado (' + _fmtLect(actual, u) + ').'; err.style.display='block'; }
     return;
   }
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
@@ -20309,6 +20384,80 @@ async function guardarKmVehiculo(placa, actual) {
 /* Fotos elegidas para el mantenimiento que se está cargando.
    v3: antes era una sola imagen, ahora se admiten varias. */
 let _mantFotosTmp = [];
+/* La foto de la factura va en su propio campo, aparte de la evidencia. */
+let _mantFacturaTmp = '';
+const MANT_TIPOS = [
+  { k:'preventivo', n:'Preventivo', d:'Programado, antes de que falle' },
+  { k:'correctivo', n:'Correctivo', d:'Reparar una falla o daño' },
+  { k:'predictivo', n:'Predictivo', d:'Por medición o diagnóstico' }
+];
+function _chipTipoMant(t) {
+  const x = MANT_TIPOS.find(y => y.k === String(t || '').toLowerCase());
+  return x ? `<span class="vm-chip vm-chip-${x.k}">${x.n}</span>` : '';
+}
+async function _previewFacturaMant(input) {
+  const f = input.files && input.files[0];
+  _mantFacturaTmp = f ? await _comprimirImagenVeh(f) : '';
+  const prev = document.getElementById('vm-ffact-prev');
+  if (prev) prev.innerHTML = _mantFacturaTmp
+    ? `<div style="position:relative;display:inline-block"><img src="${_mantFacturaTmp}" alt="Factura" style="width:110px;height:82px;object-fit:cover;border-radius:4px;border:1px solid var(--rule);display:block">
+        <button type="button" onclick="_quitarFacturaMant()" title="Quitar la foto de la factura" style="position:absolute;top:-7px;right:-7px;width:22px;height:22px;border-radius:50%;background:var(--red);color:#fff;border:2px solid var(--white);cursor:pointer;font-size:13px;line-height:1;padding:0;font-weight:700">×</button></div>`
+    : '';
+  _mantRevisarFaltan();
+}
+function _quitarFacturaMant() {
+  _mantFacturaTmp = '';
+  const i = document.getElementById('vm-ffact'); if (i) i.value = '';
+  const prev = document.getElementById('vm-ffact-prev'); if (prev) prev.innerHTML = '';
+  _mantRevisarFaltan();
+}
+
+/* ── ANTES DE GUARDAR: ¿QUÉ FALTA? ─────────────────────────────────
+   Obligatorios (no deja guardar): fecha, tipo y título.
+   Los demás se recuerdan con su nombre; se puede completar o guardar así. */
+function _mantFaltantes() {
+  const val = id => ((document.getElementById(id) || {}).value || '').trim();
+  const enH = !!document.querySelector('#vm-km-caja[data-u="h"]');
+  const oblig = [], sug = [];
+  if (!val('vm-fecha'))  oblig.push(['vm-fecha-caja', 'Fecha']);
+  if (!document.querySelector('input[name="vm-tipo"]:checked')) oblig.push(['vm-tipo-caja', 'Tipo de mantenimiento']);
+  if (!val('vm-titulo')) oblig.push(['vm-titulo-caja', 'Título']);
+  if (!(_leerLect(val('vm-km')) > 0)) sug.push(['vm-km-caja', enH ? 'Horómetro' : 'Kilometraje']);
+  if (!(parseInt(val('vm-valor'), 10) > 0)) sug.push(['vm-valor-caja', 'Valor']);
+  if (!val('vm-factura')) sug.push(['vm-factura-caja', 'N.º de factura']);
+  if (!_mantFacturaTmp) sug.push(['vm-ffact-caja', 'Foto de la factura']);
+  if (!_mantFotosTmp.length) sug.push(['vm-foto-caja', 'Evidencia fotográfica']);
+  return { oblig, sug };
+}
+/* Pinta el aviso. Solo se muestra después del primer intento de guardar;
+   de ahí en adelante se actualiza a medida que se completa. */
+function _mantRevisarFaltan(placa) {
+  const caja = document.getElementById('vm-faltan');
+  if (!caja || caja.dataset.activo !== '1') return null;
+  const f = _mantFaltantes();
+  document.querySelectorAll('.vm-falta').forEach(el => el.classList.remove('vm-falta'));
+  f.oblig.concat(f.sug).forEach(x => { const el = document.getElementById(x[0]); if (el) el.classList.add('vm-falta'); });
+  const lista = arr => arr.map(x => `<li>${x[1]}</li>`).join('');
+  const pl = placa || caja.dataset.placa || '';
+  if (!f.oblig.length && !f.sug.length) { caja.hidden = true; caja.innerHTML = ''; return f; }
+  caja.hidden = false;
+  caja.innerHTML = f.oblig.length
+    ? `<b>Falta para poder guardar:</b><ul>${lista(f.oblig)}</ul>` +
+      (f.sug.length ? `<b>También falta:</b><ul>${lista(f.sug)}</ul>` : '')
+    : `<b>Te falta:</b><ul>${lista(f.sug)}</ul>
+       <div class="vm-faltan-acc">
+         <button type="button" onclick="_mantIrAFalta()">Completar</button>
+         <button type="button" class="sec" onclick="guardarMantenimiento('${_escAttrVeh(pl)}', true)">Guardar así</button>
+       </div>`;
+  return f;
+}
+function _mantIrAFalta() {
+  const el = document.querySelector('.vm-falta');
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const i = el.querySelector('input:not([type=checkbox]),textarea');
+  if (i) setTimeout(() => i.focus(), 300);
+}
 
 /* esAceite = true abre el formulario ya marcado como cambio de aceite,
    con el título sugerido. Se usa desde el botón del bloque de aceite. */
@@ -20317,17 +20466,25 @@ function abrirFormMantenimiento(placa, esAceite) {
   const hoy = new Date();
   const hoyStr = hoy.getFullYear()+'-'+String(hoy.getMonth()+1).padStart(2,'0')+'-'+String(hoy.getDate()).padStart(2,'0');
   const vehiculo = _vehiculos.find(v => _placaNorm(v.placa) === _placaNorm(placa));
-  const kmActual = vehiculo ? (parseInt(vehiculo.km, 10) || 0) : 0;
+  const kmActual = vehiculo ? (_kmVehiculo(vehiculo).km || 0) : 0;
+  const uM = _uVeh(vehiculo || placa), enH = uM === 'h';
   const marcarAceite = esAceite === true;
+  _mantFacturaTmp = '';
   _modalVeh(`
     <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">${marcarAceite ? 'Registrar cambio de aceite' : 'Nuevo mantenimiento'} · ${placa}</div>
     <div style="font-size:12px;color:var(--ink-l);margin-bottom:16px">Queda guardado en el historial del vehículo.</div>
     <div style="display:flex;flex-direction:column;gap:12px">
-      <div>
-        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Fecha</label>
+      <div id="vm-fecha-caja">
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Fecha *</label>
         <input id="vm-fecha" type="date" value="${hoyStr}" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px">
       </div>
-      <div>
+      <div id="vm-tipo-caja">
+        <div class="vm-et">Tipo de mantenimiento *</div>
+        <div class="vm-tipos" role="radiogroup" aria-label="Tipo de mantenimiento">
+          ${MANT_TIPOS.map(t => `<label class="vm-tipo"><input type="radio" name="vm-tipo" value="${t.k}" ${marcarAceite && t.k === 'preventivo' ? 'checked' : ''}><span><b>${t.n}</b><small>${t.d}</small></span></label>`).join('')}
+        </div>
+      </div>
+      <div id="vm-titulo-caja">
         <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Título *</label>
         <input id="vm-titulo" value="${marcarAceite ? 'Cambio de aceite' : ''}" placeholder="Ej. Cambio de aceite y filtros" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif">
       </div>
@@ -20342,30 +20499,35 @@ function abrirFormMantenimiento(placa, esAceite) {
         </label>
         <div style="font-size:10.5px;color:var(--ink-m);margin-top:4px;margin-left:24px">Marcarlo lo destaca en el bloque "Último cambio de aceite" de la tarjeta.</div>
       </div>
-      <div id="vm-km-caja">
-        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Kilometraje al momento del mantenimiento</label>
-        <input id="vm-km" type="number" min="0" step="1" value="${kmActual || ''}" placeholder="Ej. 128500" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif">
-        <div style="font-size:10.5px;color:var(--ink-l);margin-top:4px">Sirve para saber cuántos km lleva recorridos desde el último cambio. Km actual del vehículo: ${kmActual ? fmt(kmActual) : 'sin registrar'}.</div>
+      <div id="vm-km-caja" data-u="${uM}">
+        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">${enH ? 'Horómetro al momento del mantenimiento (horas)' : 'Kilometraje al momento del mantenimiento'}</label>
+        <input id="vm-km" type="text" inputmode="decimal" value="${kmActual ? String(kmActual).replace('.', ',') : ''}" placeholder="${enH ? 'Ej. 4523,5' : 'Ej. 128500'}" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif">
+        <div style="font-size:13px;color:var(--ink-l);margin-top:4px">${enH ? 'Sirve para saber cuántas horas lleva trabajadas desde el último cambio. Horómetro actual: ' : 'Sirve para saber cuántos km lleva recorridos desde el último cambio. Km actual del vehículo: '}${kmActual ? _fmtLect(kmActual, uM) : 'sin registrar'}.</div>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <div style="flex:1;min-width:150px">
+        <div id="vm-valor-caja" style="flex:1;min-width:150px">
           <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Valor del mantenimiento</label>
           <input id="vm-valor" type="number" min="0" step="1000" placeholder="Ej. 450000" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif">
           <div id="vm-valor-txt" style="font-size:10.5px;color:var(--ink-l);margin-top:4px">En pesos, sin puntos.</div>
         </div>
-        <div style="flex:1;min-width:150px">
+        <div id="vm-factura-caja" style="flex:1;min-width:150px">
           <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">N.º de factura</label>
           <input id="vm-factura" type="text" placeholder="Ej. FV-10482" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:14px;border:1px solid var(--rule);border-radius:4px;font-family:'Source Sans 3',sans-serif">
-          <div style="font-size:10.5px;color:var(--ink-l);margin-top:4px">La foto de la factura va abajo, con la evidencia.</div>
         </div>
       </div>
-      <div>
-        <label style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);display:block;margin-bottom:4px">Evidencia fotográfica</label>
-        <input id="vm-foto" type="file" accept="image/*" multiple onchange="_previewFotosMant(this)" style="font-size:12px">
-        <div style="font-size:10.5px;color:var(--ink-l);margin-top:4px">Podés elegir varias a la vez, o ir agregándolas de a una.</div>
+      <div id="vm-ffact-caja">
+        <div class="vm-et">Foto de la factura</div>
+        <input id="vm-ffact" type="file" accept="image/*" onchange="_previewFacturaMant(this)" style="font-size:13px">
+        <div id="vm-ffact-prev" style="margin-top:8px"></div>
+      </div>
+      <div id="vm-foto-caja">
+        <div class="vm-et">Evidencia fotográfica del trabajo</div>
+        <input id="vm-foto" type="file" accept="image/*" multiple onchange="_previewFotosMant(this)" style="font-size:13px">
+        <div style="font-size:13px;color:var(--ink-l);margin-top:4px">Podés elegir varias a la vez, o ir agregándolas de a una.</div>
         <div id="vm-foto-prev" style="margin-top:8px"></div>
       </div>
-      <div id="vm-error" style="display:none;font-size:12px;color:var(--red);font-weight:600"></div>
+      <div id="vm-error" style="display:none;font-size:13px;color:var(--red);font-weight:600"></div>
+      <div id="vm-faltan" class="vm-faltan" role="alert" hidden></div>
     </div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
       <button onclick="_cerrarModalVeh()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Cancelar</button>
@@ -20406,6 +20568,7 @@ function _pintarFotosMant() {
       </div>`).join('') +
     '</div>' +
     `<div style="font-size:11px;color:var(--ink-m);margin-top:6px;font-weight:600">${_mantFotosTmp.length} foto${_mantFotosTmp.length !== 1 ? 's' : ''} lista${_mantFotosTmp.length !== 1 ? 's' : ''} para subir</div>`;
+  _mantRevisarFaltan();
 }
 
 function _quitarFotoMant(i) {
@@ -20424,19 +20587,35 @@ function _toggleKmAceite() {
   caja.style.borderRadius = chk.checked ? '4px' : '';
 }
 
-async function guardarMantenimiento(placa) {
+/* Mientras el aviso de faltantes está a la vista, se actualiza solo. */
+document.addEventListener('input',  e => { if (e.target && /^vm-/.test(e.target.id || e.target.name || '')) _mantRevisarFaltan(); });
+document.addEventListener('change', e => { if (e.target && /^vm-/.test(e.target.id || e.target.name || '')) _mantRevisarFaltan(); });
+
+async function guardarMantenimiento(placa, guardarAsi) {
   const titulo = ((document.getElementById('vm-titulo')||{}).value||'').trim();
   const desc   = ((document.getElementById('vm-desc')||{}).value||'').trim();
   const fecha  = (document.getElementById('vm-fecha')||{}).value || '';
   const err    = document.getElementById('vm-error');
   const btn    = document.getElementById('vm-guardar');
-  if (!titulo) { if (err) { err.textContent = 'El título es obligatorio.'; err.style.display='block'; } return; }
+  const tipo   = ((document.querySelector('input[name="vm-tipo"]:checked')||{}).value || '');
+  if (err) err.style.display = 'none';
+
+  /* Antes de enviar: dice qué falta y cuál. Lo obligatorio frena; lo
+     demás se recuerda y se puede guardar así a propósito. */
+  const aviso = document.getElementById('vm-faltan');
+  if (aviso) { aviso.dataset.activo = '1'; aviso.dataset.placa = placa; }
+  const f = _mantRevisarFaltan(placa) || { oblig: [], sug: [] };
+  if (f.oblig.length || (f.sug.length && !guardarAsi)) {
+    if (aviso) aviso.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return;
+  }
 
   const esAceite = !!(document.getElementById('vm-aceite')||{}).checked;
   const kmTxt = ((document.getElementById('vm-km')||{}).value || '').trim();
-  const km = kmTxt === '' ? '' : (parseInt(kmTxt, 10) || 0);
+  const kmL = _leerLect(kmTxt);
+  const km = kmTxt === '' || isNaN(kmL) ? '' : kmL;
 
-  const n = _mantFotosTmp.length;
+  const n = _mantFotosTmp.length + (_mantFacturaTmp ? 1 : 0);
   if (btn) { btn.disabled = true; btn.textContent = n ? ('Subiendo ' + n + ' foto' + (n !== 1 ? 's' : '') + '...') : 'Guardando...'; }
   const autor = (window._usuarioActual && _usuarioActual.nombre) || '';
 
@@ -20445,7 +20624,8 @@ async function guardarMantenimiento(placa) {
   const factura = ((document.getElementById('vm-factura')||{}).value || '').trim();
 
   const cuerpo = JSON.stringify({ accion:'guardarMantenimiento', placa, fecha, titulo, descripcion: desc,
-                                  fotos: _mantFotosTmp, esAceite, km, valor, factura, autor });
+                                  fotos: _mantFotosTmp, esAceite, km, valor, factura, autor,
+                                  tipo, fotoFactura: _mantFacturaTmp || '' });
   const kb = Math.round(cuerpo.length / 1024);
 
   /* Se envia con fetch directo y NO con fetchJSONTolerante.
@@ -20481,6 +20661,7 @@ async function guardarMantenimiento(placa) {
     return;
   }
   _mantFotosTmp = [];
+  _mantFacturaTmp = '';
   _cerrarModalVeh();
   await cargarVehiculos(true);
 }
@@ -20511,7 +20692,13 @@ function verHistorialVehiculo(placa) {
         </div>
         <div style="font-size:11px;color:var(--ink-l)">${_fmtFechaVeh(m.fecha)}${m.autor?' · '+_escVeh(m.autor):''}</div>
       </div>
-      ${m.km ? `<div style="font-size:11.5px;color:var(--ink-m);margin-top:4px;font-weight:600">${fmt(parseInt(m.km,10)||0)} km</div>` : ''}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:5px">
+        ${_chipTipoMant(m.tipo)}
+        ${m.km ? `<span style="font-size:13px;color:var(--ink-m);font-weight:600">${_fmtLect(m.km, _uVeh(placa))}</span>` : ''}
+        ${Number(m.valor) ? `<span style="font-size:13px;font-weight:700;color:var(--green)">${_fmtPesos(Number(m.valor))}</span>` : ''}
+        ${m.factura ? `<span style="font-size:13px;color:var(--ink-l)">factura ${_escVeh(m.factura)}</span>` : ''}
+        ${m.fotoFactura ? `<button type="button" onclick="abrirFotoBaucher('${_escAttrVeh(m.fotoFactura)}','Factura · ${_escAttrVeh(m.titulo||'')}')" style="font-size:13px;font-weight:700;color:var(--navy);background:none;border:1px solid var(--rule);border-radius:10px;padding:1px 9px;cursor:zoom-in">Ver factura</button>` : ''}
+      </div>
       ${m.descripcion?`<div style="font-size:12px;color:var(--ink-m);margin-top:5px;white-space:pre-wrap">${_escVeh(m.descripcion)}</div>`:''}
       ${galeria}
     </div>`;
@@ -32126,7 +32313,7 @@ const VOZ_FUENTES = {
     desc:'combustible, tanqueos, galones, diesel, gasto de gasolina por placa',
     obtener: () => vozArr(() => dataCombustible),
     fecha:   vozFechaGenerica,
-    cargar: async () => { dataCombustible = await fetchCSV(SHEETS.combustible); }
+    cargar: async () => { dataCombustible = _normComb(await fetchCSV(SHEETS.combustible)); }
   },
   horasExtras: {
     label:'Horas Extras',
@@ -32187,7 +32374,7 @@ const VOZ_FUENTES = {
     obtener: () => (_vozPerIntento && vozArr(() => dataCombustible).length) ? vozArr(() => dataPreopCar) : [],
     sinFecha:true,
     cargar: async () => {
-      if (!vozArr(() => dataCombustible).length) dataCombustible = await fetchCSV(SHEETS.combustible);
+      if (!vozArr(() => dataCombustible).length) dataCombustible = _normComb(await fetchCSV(SHEETS.combustible));
       if (!vozArr(() => dataPreopCar).length) dataPreopCar = await fetchCSV(SHEETS.preopCar);
       if (!vozArr(() => _vehiculos).length) { try { await cargarVehiculos(true); } catch(e){} }
       await vozPerTraer();
@@ -36283,7 +36470,7 @@ async function vozInfTraerDatos(){
       }),
       paso('Combustible', async function(){
         const d = await fetchCSV(SHEETS.combustible);
-        if (d && d.length){ dataCombustible = d; return true; }
+        if (d && d.length){ dataCombustible = _normComb(d); return true; }
       }),
       paso('Vehículos', async function(){
         await vozAsegurarDatos(['vehiculos']);
