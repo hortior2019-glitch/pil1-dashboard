@@ -16512,9 +16512,9 @@ function _flUltimosTanqueos(n){
     if(!pl || !dela[pl]) return;
     var f = _fechaComb(r);
     if(!f) return;
-    var val = _numComb(r['Valor tanqueado']);
-    if(!(val > 0)) return;
-    out.push({ placa: pl, fecha: f, hora: _horaComb(r), valor: val,
+    var val = _numComb(r['Valor tanqueado']), pimp = _numComb(r['Pimpinas']);
+    if(!(val > 0) && !(pimp > 0)) return;
+    out.push({ placa: pl, fecha: f, hora: _horaComb(r), valor: val, pimp: pimp,
                km: _numComb(r['Kilometraje']),
                fotoTablero: (r['Foto tablero'] || '').toString().trim(),
                fotoRecibo: (r['Foto recibo'] || '').toString().trim(),
@@ -17036,7 +17036,7 @@ function renderFlota(){
                 (x.hora ? ' <em>' + _flEsc(x.hora) + '</em>' : '') + '</td>' +
               '<td>' + _miniPlaca(x.placa) + '<span>' + _flEsc(x.placa) + '</span></td>' +
               '<td>' + (x.km ? _fmtLect(x.km, _uVeh(x.placa)) : '—') + '</td>' +
-              '<td class="fl-num">' + _fmtPesos(x.valor) + '</td>' +
+              '<td class="fl-num">' + _valorTanq(x) + '</td>' +
               '<td class="fl-foto">' + _fotoComb(x.fotoTablero, x.placa + ' · horómetro') + '</td>' +
               '<td class="fl-foto">' + _fotoComb(x.fotoRecibo, x.placa + ' · recibo') + '</td></tr>';
           }).join('') +
@@ -19551,6 +19551,8 @@ function combDeVehiculo(placa) {
         encargado: (r['Encargado'] || '').toString().trim(),
         km: _numComb(r['Kilometraje']),
         valor: _numComb(r['Valor tanqueado']),
+        pimp: _numComb(r['Pimpinas']),
+        interno: /interno/i.test(String(r['Tipo tanqueo'] || '')),
         fotoTablero: (r['Foto tablero'] || '').toString().trim(),
         fotoRecibo: (r['Foto recibo'] || '').toString().trim(),
         ubicacion: (r['Ubicación'] || r['Ubicacion'] || '').toString().trim()
@@ -19577,6 +19579,14 @@ function _diasDesde(fechaISO) {
   if (!d) return null;
   var hoy = new Date();
   return Math.floor((new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+}
+
+/* Tanqueo en bomba: pesos. Tanqueo interno (combustible de la planta):
+   no hay valor, va en pimpinas. Ninguno de los dos se queda por fuera. */
+function _valorTanq(x) {
+  if (x && x.valor > 0) return _fmtPesos(x.valor);
+  if (x && x.pimp > 0) return x.pimp.toLocaleString('es-CO', { maximumFractionDigits: 1 }) + (x.pimp === 1 ? ' pimpina' : ' pimpinas');
+  return '—';
 }
 
 function _fmtPesos(n) {
@@ -19643,7 +19653,8 @@ function bloqueCombustibleVehiculo(placa) {
       '</div>' +
       '<div style="flex:1;min-width:180px">' +
         '<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">' +
-          '<span style="font-family:\'Libre Baskerville\',serif;font-size:20px;font-weight:800;color:var(--gold)">' + _fmtPesos(u.valor) + '</span>' +
+          '<span style="font-family:\'Libre Baskerville\',serif;font-size:20px;font-weight:800;color:var(--gold)">' + _valorTanq(u) + '</span>' +
+          (!(u.valor > 0) && u.pimp > 0 ? '<span style="font-size:13px;color:var(--ink-m)">tanqueo interno</span>' : '') +
           // El punto de color resume, sin leer, si el equipo lleva mucho sin tanquear
           '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:' + colorDias + '">' +
             '<span style="width:7px;height:7px;border-radius:50%;background:' + colorDias + ';display:inline-block"></span>' +
@@ -19767,7 +19778,10 @@ function renderHistorialCombustible() {
       '<div style="background:var(--white);padding:12px 14px">' +
         '<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">Gasto acumulado</div>' +
         '<div style="font-family:\'Libre Baskerville\',serif;font-size:22px;font-weight:700;color:var(--navy);line-height:1">' + _fmtPesos(gasto) + '</div>' +
-        '<div style="font-size:10px;color:var(--ink-l);margin-top:3px">' + filas.length + ' tanqueo' + (filas.length !== 1 ? 's' : '') + '</div>' +
+        '<div style="font-size:13px;color:var(--ink-l);margin-top:3px">' + filas.length + ' tanqueo' + (filas.length !== 1 ? 's' : '') +
+          (function(){ var ni = filas.filter(function (x) { return !(x.valor > 0) && x.pimp > 0; });
+            var p = ni.reduce(function (s, x) { return s + x.pimp; }, 0);
+            return ni.length ? ' · ' + ni.length + ' interno' + (ni.length !== 1 ? 's' : '') + ' (' + p.toLocaleString('es-CO') + ' pimpina' + (p !== 1 ? 's' : '') + ', sin valor)' : ''; })() + '</div>' +
       '</div>' +
       '<div style="background:var(--white);padding:12px 14px">' +
         '<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">' + (uM === 'h' ? 'Horas trabajadas' : 'Km recorridos') + '</div>' +
@@ -19792,7 +19806,7 @@ function renderHistorialCombustible() {
             '<td>' + (_escVeh(x.encargado) || '—') + '</td>' +
             '<td style="text-align:right">' + (x.km ? _fmtLect(x.km, _uVeh(x.placa)) : '—') + '</td>' +
             '<td style="text-align:right;font-weight:700;color:' + (x.kmRecorridos ? 'var(--green)' : 'var(--ink-l)') + '">' + (x.kmRecorridos ? _fmtLect(x.kmRecorridos, _uVeh(x.placa)) : '—') + '</td>' +
-            '<td style="text-align:right;font-weight:700;color:var(--navy)">' + _fmtPesos(x.valor) + '</td>' +
+            '<td style="text-align:right;font-weight:700;color:var(--navy)">' + _valorTanq(x) + (!(x.valor > 0) && x.pimp > 0 ? '<div style="font-size:13px;font-weight:400;color:var(--ink-l)">interno</div>' : '') + '</td>' +
             '<td style="text-align:center">' + _fotoComb(x.fotoTablero, x.placa + ' · tablero') + '</td>' +
             '<td style="text-align:center">' + _fotoComb(x.fotoRecibo, x.placa + ' · recibo') + '</td>' +
           '</tr>';
@@ -19820,7 +19834,9 @@ function exportarCombustibleExcel() {
       'Km recorridos': _uVeh(x.placa) === 'h' ? '' : (x.kmRecorridos || ''),
       'Horómetro (h)': _uVeh(x.placa) === 'h' ? Math.round(x.km * 10) / 10 : '',
       'Horas trabajadas': _uVeh(x.placa) === 'h' ? (x.kmRecorridos ? Math.round(x.kmRecorridos * 10) / 10 : '') : '',
-      'Valor tanqueado': Math.round(x.valor),
+      'Valor tanqueado': x.valor > 0 ? Math.round(x.valor) : '',
+      'Pimpinas': x.pimp > 0 ? x.pimp : '',
+      'Tipo tanqueo': (!(x.valor > 0) && x.pimp > 0) || x.interno ? 'interno' : 'bomba',
       'Foto tablero': x.fotoTablero,
       'Foto recibo': x.fotoRecibo,
       'Ubicación': x.ubicacion
