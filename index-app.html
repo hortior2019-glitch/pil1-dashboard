@@ -19584,7 +19584,7 @@ function _diasDesde(fechaISO) {
 /* Tanqueo en bomba: pesos. Tanqueo interno (combustible de la planta):
    no hay valor, va en pimpinas. Ninguno de los dos se queda por fuera. */
 function _valorTanq(x) {
-  if (x && x.valor > 0) return _fmtPesos(x.valor);
+  if (x && x.valor > 0) return _fmtPesos(x.valor) + (x.pimp > 0 ? ' · ' + x.pimp.toLocaleString('es-CO', { maximumFractionDigits: 1 }) + ' pimp.' : '');
   if (x && x.pimp > 0) return x.pimp.toLocaleString('es-CO', { maximumFractionDigits: 1 }) + (x.pimp === 1 ? ' pimpina' : ' pimpinas');
   return '—';
 }
@@ -19654,7 +19654,7 @@ function bloqueCombustibleVehiculo(placa) {
       '<div style="flex:1;min-width:180px">' +
         '<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">' +
           '<span style="font-family:\'Libre Baskerville\',serif;font-size:20px;font-weight:800;color:var(--gold)">' + _valorTanq(u) + '</span>' +
-          (!(u.valor > 0) && u.pimp > 0 ? '<span style="font-size:13px;color:var(--ink-m)">tanqueo interno</span>' : '') +
+          ((u.interno || u.pimp > 0) ? '<span style="font-size:13px;color:var(--ink-m)">tanqueo interno</span>' : '') +
           // El punto de color resume, sin leer, si el equipo lleva mucho sin tanquear
           '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:' + colorDias + '">' +
             '<span style="width:7px;height:7px;border-radius:50%;background:' + colorDias + ';display:inline-block"></span>' +
@@ -19779,9 +19779,9 @@ function renderHistorialCombustible() {
         '<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">Gasto acumulado</div>' +
         '<div style="font-family:\'Libre Baskerville\',serif;font-size:22px;font-weight:700;color:var(--navy);line-height:1">' + _fmtPesos(gasto) + '</div>' +
         '<div style="font-size:13px;color:var(--ink-l);margin-top:3px">' + filas.length + ' tanqueo' + (filas.length !== 1 ? 's' : '') +
-          (function(){ var ni = filas.filter(function (x) { return !(x.valor > 0) && x.pimp > 0; });
-            var p = ni.reduce(function (s, x) { return s + x.pimp; }, 0);
-            return ni.length ? ' · ' + ni.length + ' interno' + (ni.length !== 1 ? 's' : '') + ' (' + p.toLocaleString('es-CO') + ' pimpina' + (p !== 1 ? 's' : '') + ', sin valor)' : ''; })() + '</div>' +
+          (function(){ var ni = filas.filter(function (x) { return x.interno || x.pimp > 0; });
+            var p = ni.reduce(function (s, x) { return s + (x.pimp || 0); }, 0);
+            return ni.length ? ' · ' + ni.length + ' interno' + (ni.length !== 1 ? 's' : '') + ' (' + p.toLocaleString('es-CO') + ' pimpina' + (p !== 1 ? 's' : '') + ')' : ''; })() + '</div>' +
       '</div>' +
       '<div style="background:var(--white);padding:12px 14px">' +
         '<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-l);margin-bottom:3px">' + (uM === 'h' ? 'Horas trabajadas' : 'Km recorridos') + '</div>' +
@@ -19806,7 +19806,7 @@ function renderHistorialCombustible() {
             '<td>' + (_escVeh(x.encargado) || '—') + '</td>' +
             '<td style="text-align:right">' + (x.km ? _fmtLect(x.km, _uVeh(x.placa)) : '—') + '</td>' +
             '<td style="text-align:right;font-weight:700;color:' + (x.kmRecorridos ? 'var(--green)' : 'var(--ink-l)') + '">' + (x.kmRecorridos ? _fmtLect(x.kmRecorridos, _uVeh(x.placa)) : '—') + '</td>' +
-            '<td style="text-align:right;font-weight:700;color:var(--navy)">' + _valorTanq(x) + (!(x.valor > 0) && x.pimp > 0 ? '<div style="font-size:13px;font-weight:400;color:var(--ink-l)">interno</div>' : '') + '</td>' +
+            '<td style="text-align:right;font-weight:700;color:var(--navy)">' + _valorTanq(x) + ((x.interno || x.pimp > 0) ? '<div style="font-size:13px;font-weight:400;color:var(--ink-l)">interno</div>' : '') + '</td>' +
             '<td style="text-align:center">' + _fotoComb(x.fotoTablero, x.placa + ' · tablero') + '</td>' +
             '<td style="text-align:center">' + _fotoComb(x.fotoRecibo, x.placa + ' · recibo') + '</td>' +
           '</tr>';
@@ -19836,7 +19836,7 @@ function exportarCombustibleExcel() {
       'Horas trabajadas': _uVeh(x.placa) === 'h' ? (x.kmRecorridos ? Math.round(x.kmRecorridos * 10) / 10 : '') : '',
       'Valor tanqueado': x.valor > 0 ? Math.round(x.valor) : '',
       'Pimpinas': x.pimp > 0 ? x.pimp : '',
-      'Tipo tanqueo': (!(x.valor > 0) && x.pimp > 0) || x.interno ? 'interno' : 'bomba',
+      'Tipo tanqueo': (x.interno || x.pimp > 0) ? 'interno' : 'bomba',
       'Foto tablero': x.fotoTablero,
       'Foto recibo': x.fotoRecibo,
       'Ubicación': x.ubicacion
@@ -59071,6 +59071,7 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
 .cx-l{display:block;height:7px;background:#f3f4f1;border-radius:2px;overflow:hidden}
 .cx-l i{display:block;height:100%;border-radius:0 2px 2px 0}
 .cx-c b{font-weight:700;text-align:right;line-height:1.15}
+.cx-tab .cx-tab-int{display:block;font-size:13px;font-style:normal;font-weight:600;color:#6b5410;margin-top:2px}
 .cx-c .cx-pimp{display:block;font-size:13px;font-weight:600;color:#6b5410;white-space:nowrap}
 .cx-c em{font-style:normal;color:#5b625e;text-align:right;font-size:11.5px;line-height:1.15}
 .cx-det{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;background:#f3f7f4;padding:9px 12px 12px;min-width:660px;box-sizing:border-box}
@@ -59821,7 +59822,8 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
       var val = _numComb(r['Valor tanqueado']);
       var pl = (r['Placa / Equipo'] || r['Placa'] || r['PLACA'] || r['placa'] || '').toString().trim().toUpperCase();
       if(!primera || iso < primera) primera = iso;
-      if(pl && dela[pl]) (tan[pl] = tan[pl] || []).push({ iso:iso, val:val, pimp:_numComb(r['Pimpinas']) });
+      if(pl && dela[pl]) (tan[pl] = tan[pl] || []).push({ iso:iso, val:val, pimp:_numComb(r['Pimpinas']),
+        interno: /interno/i.test(String(r['Tipo tanqueo'] || '')) || _numComb(r['Pimpinas']) > 0 });
     });
     _idx = { a:ing, b:com, na:ing.length, nb:com.length, via:via, tan:tan, primera:primera };
     return _idx;
@@ -60009,7 +60011,7 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
     var pQ = cm.n > 0 ? cm.gasto / cm.n : null, pQA = cm.nAnt > 0 ? cm.gastoAnt / cm.nAnt : null;
     var ORO = '#8b6914', VER = '#1a5c35', AZU = '#2f6690';
     return cxFila('Combustible', cm.gasto, cm.gastoAnt, pesos, 'neutro', ORO) +
-      cxFila((mant.ia || mant.ib) ? 'Tanqueos en bomba' : 'Tanqueos', cm.n, cm.nAnt, n0, 'neutro', ORO, 5) +
+      cxFila('Tanqueos', cm.n + (mant.sa || 0), cm.nAnt + (mant.sb || 0), n0, 'neutro', ORO, 5) +
       /* Internos: combustible de la planta, en pimpinas y sin valor en pesos. */
       ((mant.ia || mant.ib) ? cxFila('Tanqueos internos', mant.ia, mant.ib, n0, 'neutro', ORO, 5) +
         cxFila('Pimpinas', mant.pa, mant.pb, n0, 'neutro', ORO, 5) : '') +
@@ -60112,18 +60114,17 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
     var ix = indice(), ks = mesesAtras(2), ka = ks[1], kb = ks[0];
     return Object.keys(dela).map(function(pl){
       var r = { pl:pl, a:0, b:0, na:0, nb:0, bt:0, nbt:0, ta:0, tb:0, tbt:0, ma:0, mb:0, nma:0, nmb:0, mbt:0, nmbt:0,
-                ia:0, ib:0, pa:0, pb:0 };
+                ia:0, ib:0, pa:0, pb:0, sa:0, sb:0 };
       (ix.tan[pl] || []).forEach(function(x){
-        /* Tanqueo interno (combustible de la planta): no tiene pesos, va en
-           pimpinas. No suma al gasto ni al $ / tanqueo, pero se cuenta y se ve. */
-        if(!(x.val > 0)){
-          if(!(x.pimp > 0)) return;
-          var ki = x.iso.slice(0, 7), di = +x.iso.slice(8);
-          if(ki === ka){ r.ia++; r.pa += x.pimp; }
-          else if(ki === kb && di <= dia){ r.ib++; r.pb += x.pimp; }
-          return;
-        }
         var k = x.iso.slice(0, 7), d = +x.iso.slice(8);
+        /* Tanqueo interno (combustible de la planta, en pimpinas): se cuenta
+           aparte. Si trae valor, suma al gasto como cualquiera; si no lo
+           trae (sa/sb), igual cuenta como tanqueo. */
+        if(x.interno){
+          if(k === ka){ r.ia++; r.pa += x.pimp || 0; if(!(x.val > 0)) r.sa++; }
+          else if(k === kb && d <= dia){ r.ib++; r.pb += x.pimp || 0; if(!(x.val > 0)) r.sb++; }
+        }
+        if(!(x.val > 0)) return;
         if(k === ka){ r.a += x.val; r.na++; }
         else if(k === kb){ r.bt += x.val; r.nbt++; if(d <= dia){ r.b += x.val; r.nb++; } }
       });
@@ -60161,12 +60162,13 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
       return (y.a - x.a) || (y.ta - x.ta);
     });
     var mxC = Math.max.apply(null, filas.map(function(r){ return Math.max(r.a, r.b); }).concat([1]));
-    var mxQ = Math.max.apply(null, filas.map(function(r){ return horas ? Math.max(r.na + r.ia, r.nb + r.ib) : Math.max(r.ta, r.tb); }).concat([1]));
+    var mxQ = Math.max.apply(null, filas.map(function(r){ return horas ? Math.max(r.na + r.sa, r.nb + r.sb) : Math.max(r.ta, r.tb); }).concat([1]));
     /* Pesos y, si hubo tanqueo interno, sus pimpinas al lado. */
     var txtC = function(v, p){ return corto(v) + (p > 0 ? ' <small class="cx-pimp">+' + n0(p) + ' pimp.</small>' : ''); };
-    var txtQ = function(n, i){ return String(n + i) + (i > 0 ? ' <small class="cx-pimp">' + i + ' int.</small>' : ''); };
-    var tipC = function(r){ return (r.ia || r.ib) ? tip(r.pl + ' · combustible', pesos(r.a), ['En bomba: ' + r.na + (r.na === 1 ? ' tanqueo' : ' tanqueos'),
-      'Internos: ' + r.ia + ' con ' + n0(r.pa) + ' pimpinas (sin valor en pesos)', 'Mismos días antes: ' + r.ib + ' internos, ' + n0(r.pb) + ' pimpinas']) : ''; };
+    var txtQ = function(n, s, i){ return String(n + s) + (i > 0 ? ' <small class="cx-pimp">' + i + ' int.</small>' : ''); };
+    var tipC = function(r){ return (r.ia || r.ib) ? tip(r.pl + ' · combustible', pesos(r.a), [
+      'En bomba: ' + (r.na + r.sa - r.ia) + ' · internos: ' + r.ia + ' (' + n0(r.pa) + ' pimpinas)',
+      'Mismos días antes: ' + (r.nb + r.sb - r.ib) + ' en bomba · ' + r.ib + ' internos (' + n0(r.pb) + ' pimpinas)']) : ''; };
     var mxU = Math.max.apply(null, filas.map(function(r){ return Math.max(r.ua || 0, r.ub || 0); }).concat([1]));
     /* El mantenimiento no es parejo como el combustible: un arreglo del 23
        no cae en "los mismos días" y la columna quedaba en blanco aunque el
@@ -60189,7 +60191,7 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
         '<span class="cx-id"><span class="cx-foto">' + _miniPlaca(r.pl) + '</span><span class="cx-nom"><b>' + esc(r.pl) + '</b>' + (cond ? '<em>' + esc(cond.nombre) + '</em>' : '') + '</span></span>' +
         '<span' + tipC(r) + '>' + cxCelda(r.a, r.b, mxC, ORO, txtC(r.a, r.pa), txtC(r.b, r.pb)) + '</span>' +
         '<span' + (r.nma || r.nmb || r.nmbt ? tip(r.pl + ' · mantenimiento', pesos(r.ma), [r.nma + (r.nma === 1 ? ' registro' : ' registros') + ' este mes', r.nmb + (r.nmb === 1 ? ' registro' : ' registros') + ' en los mismos días', mesB + ' completo: ' + pesos(r.mbt) + ' · ' + r.nmbt + (r.nmbt === 1 ? ' registro' : ' registros')]) : '') + '>' + cxCelda(r.ma, r.mbV, mxM, '#5b6b7a', txtM(r.ma, r.nma), txtMB(r)) + '</span>' +
-        (horas ? '<span' + tipC(r) + '>' + cxCelda(r.na + r.ia, r.nb + r.ib, mxQ, VER, txtQ(r.na, r.ia), txtQ(r.nb, r.ib)) + '</span>'
+        (horas ? '<span' + tipC(r) + '>' + cxCelda(r.na + r.sa, r.nb + r.sb, mxQ, VER, txtQ(r.na, r.sa, r.ia), txtQ(r.nb, r.sb, r.ib)) + '</span>'
                : cxCelda(r.ta, r.tb, mxQ, VER, n0(r.ta) + ' T', n0(r.tb) + ' T')) +
         cxCelda(r.ua || 0, r.ub || 0, mxU, AZU, r.ua !== null ? corto(r.ua) : '—', r.ub !== null ? corto(r.ub) : '—') +
         dl + '</button>' +
@@ -60214,8 +60216,10 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
     var sel = cats.filter(function(c){ return c.k === CX.cat; })[0];
     var tabs = cats.map(function(c){
       var cm = _flCombMeses(_flPlacasCat(c.k)), p = pctDe(cm.gasto, cm.gastoAnt), on = c.k === CX.cat;
+      var int_ = cxDatosPlacas(_flPlacasCat(c.k), cm.dia).reduce(function(t, r){ t.n += r.ia; t.p += r.pa; return t; }, { n:0, p:0 });
       return '<button type="button" role="tab" class="cx-tab' + (on ? ' on' : '') + '" aria-selected="' + on + '" data-hx="cxCat" data-v="' + esc(c.k) + '">' +
-        '<span>' + esc(c.nom) + '</span><b>' + pesos(cm.gasto) + '</b><em>' + (p === null ? 'sin gasto en esos días' : signo(p) + ' contra los mismos días') + '</em></button>';
+        '<span>' + esc(c.nom) + '</span><b>' + pesos(cm.gasto) + '</b><em>' + (p === null ? 'sin gasto en esos días' : signo(p) + ' contra los mismos días') + '</em>' +
+        (int_.n ? '<em class="cx-tab-int">' + int_.n + (int_.n === 1 ? ' interno' : ' internos') + ' · ' + n0(int_.p) + ' pimpinas</em>' : '') + '</button>';
     }).join('');
     var dela = _flPlacasCat(sel.k), cm = _flCombMeses(dela), av = _flAvanceMes(dela), hoy = new Date();
     var ant = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
@@ -60236,7 +60240,7 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
         '<div class="hx-esc">' + cxPlacas(sel, cm.dia, sel.horas, etA, etB) + '</div></div>' +
       '<div id="veh-comb" style="margin-bottom:14px"></div>' +
       '<div class="hx-g hx-g-11">' +
-        '<div class="hx-card"><div class="hx-tit">Variación del periodo</div><div class="cx-ley"><span><i style="background:#17201b"></i>' + esc(etA) + '</span><span><i style="background:#c3c9c4"></i>' + esc(etB) + '</span></div>' + cxMetricas(cm, av, sel.horas, cxDatosPlacas(dela, cm.dia).reduce(function(t, r){ t.a += r.ma; t.b += r.mb; t.ia += r.ia; t.ib += r.ib; t.pa += r.pa; t.pb += r.pb; return t; }, { a:0, b:0, ia:0, ib:0, pa:0, pb:0 })) + '</div>' +
+        '<div class="hx-card"><div class="hx-tit">Variación del periodo</div><div class="cx-ley"><span><i style="background:#17201b"></i>' + esc(etA) + '</span><span><i style="background:#c3c9c4"></i>' + esc(etB) + '</span></div>' + cxMetricas(cm, av, sel.horas, cxDatosPlacas(dela, cm.dia).reduce(function(t, r){ t.a += r.ma; t.b += r.mb; t.ia += r.ia; t.ib += r.ib; t.pa += r.pa; t.pb += r.pb; t.sa += r.sa; t.sb += r.sb; return t; }, { a:0, b:0, ia:0, ib:0, pa:0, pb:0, sa:0, sb:0 })) + '</div>' +
         '<div class="hx-card"><div class="hx-tit">Causas de la variación del gasto</div><div class="hx-sub" style="margin-bottom:8px">' +
           (e ? 'De ' + corto(cm.gastoAnt) + ' a ' + corto(cm.gasto) + ': efecto ' + (e.porT ? 'de la carga y del costo por tonelada' : 'de los tanqueos y de su valor promedio') : 'Cantidad y precio unitario') + '</div><div data-cx="cascada"></div></div>' +
         '<div class="hx-card"><div class="hx-tit">Gasto acumulado frente al mes anterior</div><div class="hx-sub" style="margin-bottom:8px">Combustible acumulado día a día</div><div data-cx="acum"></div>' +
