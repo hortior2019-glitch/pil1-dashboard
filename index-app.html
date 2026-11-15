@@ -561,6 +561,20 @@ body:has(#carga-tab.visible) #voz-overlay,body:has(#carga-tab.visible) #voz-fab{
 /* "Ahora no": solo aparece cuando el asistente interviene por su cuenta */
 #voz-ahora-no{display:none;flex:none;margin:0 auto 10px;padding:6px 16px;border:1px solid var(--rule);border-radius:7px;background:var(--white);color:var(--ink-m);font-family:'Source Sans 3',sans-serif;font-size:12px;font-weight:700;cursor:pointer;transition:background .18s var(--voz-suave)}
 #voz-ahora-no:hover{background:var(--rule-l)}
+/* Entre informe e informe: Continuar o Ahora no */
+#voz-seguir{display:none;flex:none;flex-direction:column;gap:8px;margin:8px 0 12px;padding:12px 14px;border:1px solid var(--rule);border-radius:10px;background:var(--white);box-shadow:0 6px 18px rgba(0,0,0,.08)}
+#voz-seguir.vseg-on{display:flex}
+#voz-seguir .vseg-txt{font-family:'Source Sans 3',sans-serif;font-size:14px;line-height:1.35;color:var(--ink);font-weight:600}
+#voz-seguir .vseg-bot{display:flex;gap:8px;flex-wrap:wrap}
+#voz-seguir button{flex:1 1 120px;padding:9px 14px;border-radius:8px;font-family:'Source Sans 3',sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:background .18s var(--voz-suave),transform .12s var(--voz-suave)}
+#voz-seguir button:active{transform:scale(.97)}
+#voz-seguir .vseg-si{border:1px solid var(--navy);background:var(--navy);color:#fff}
+#voz-seguir .vseg-si:hover{filter:brightness(1.12)}
+#voz-seguir .vseg-no{border:1px solid var(--rule);background:var(--white);color:var(--ink-m)}
+#voz-seguir .vseg-no:hover{background:var(--rule-l)}
+#voz-seguir button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+#voz-overlay.voz-colapsado #voz-seguir{display:none}
+#voz-overlay.voz-inf-detalle:not(.voz-colapsado) #voz-seguir{margin:8px 12px 12px 92px}
 #voz-overlay.voz-intervencion #voz-ahora-no{display:block}
 
 /* Vista de informes: el robot queda fijo arriba y los informes corren debajo */
@@ -32137,6 +32151,10 @@ window.addEventListener('focus', function(){ cscRefrescarSiToca(CSC_AL_VOLVER_MS
       <div id="voz-statusText">Pregúntame por cualquier fecha o pestaña</div>
       <button id="voz-ahora-no" title="Guardar este informe para tu próxima entrada">Ahora no</button>
       <div id="voz-informes" role="tabpanel" aria-labelledby="voz-tab-informes"></div>
+      <div id="voz-seguir" role="group" aria-label="¿Seguir con los informes?">
+        <span class="vseg-txt"></span>
+        <div class="vseg-bot"><button type="button" class="vseg-si">Continuar</button><button type="button" class="vseg-no">Ahora no</button></div>
+      </div>
       <div id="voz-acciones"></div>
       <div id="voz-panel"></div>
     </div>
@@ -32462,7 +32480,9 @@ function vozGlobal(clave){
    así el asistente sabe qué puede llegar a mirar y nunca dice "no tengo
    acceso" a algo que en realidad está cargado. */
 function vozInventario(){
-  let t = '=== TODO LO QUE PODÉS CONSULTAR (datos cargados en el sistema) ===\n';
+  let t = '=== TODO LO QUE PODÉS CONSULTAR (datos cargados en el sistema) ===\n' +
+          'Tienes acceso de LECTURA a la pestaña Personal: colaboradores, cargos, áreas, turnos y horarios, novedades, horas extra y traslados. ' +
+          'Nunca digas que no tienes acceso a Personal. Si un dato puntual de Personal no vino aquí, di cuál falta.\n';
   VOZ_GLOBALES.forEach(function(g){
     const v = vozGlobal(g.clave);
     t += '- ' + g.clave + ': ' + g.etq + ' — ' + (v ? v.length : 0) + ' registro(s)\n';
@@ -32733,6 +32753,16 @@ function vozLimpiarAcciones(){ document.getElementById('voz-acciones').innerHTML
 let _vozFuentesFallidas = {};
 
 /* Carga las fuentes que hagan falta, aunque nunca se haya abierto esa pestaña */
+/* Personal entra siempre que la pregunta toque gente, turnos u horarios, o
+   maquinaria y combustible (el operario y su turno salen de Personal). Así
+   el asistente no usa los horarios y a la vez dice que no tiene acceso. */
+const VOZ_PER_RE = /personal|colaborador|emplead|trabajador|operari|operador|maquinist|tractorist|conductor|turno|horario|jornada|novedad|incapacid|vacacion|permiso|horas? extra/i;
+function vozPlanConPersonal(plan, pregunta){
+  if (!plan || !Array.isArray(plan.fuentes)) return;
+  const toca = plan.fuentes.some(function(k){ return ['maquinaria','combustible','preopEquipo','horasExtras','accesos','vehiculos'].indexOf(k) !== -1; }) ||
+               VOZ_PER_RE.test(pregunta || '');
+  if (toca && plan.fuentes.indexOf('personal') === -1) plan.fuentes.push('personal');
+}
 async function vozAsegurarDatos(claves){
   for (let i=0;i<claves.length;i++){
     const clave = claves[i];
@@ -33931,6 +33961,7 @@ function vozAbrir(opts){
   if (!opts.colapsado) setTimeout(function(){ vozInput.focus(); }, 260);
 }
 function vozCerrarPanel(){
+  if (typeof _vozSeguirOk === 'function') _vozSeguirOk(false);
   if (vozOverlay.classList.contains('voz-visible') && window.hortiSonido) window.hortiSonido('cerrar');
   vozOverlay.classList.remove('voz-visible');
   vozFab.classList.remove('voz-fundido');
@@ -34309,8 +34340,36 @@ function vozViajes(){
       const d = parseDateTime(String(getMarcaTemporal(r)));
       if (!d || isNaN(d.getTime())) return;
       out.push({ f: vozYMD(d), h: d.getHours() * 60 + d.getMinutes(), pl: (getPlacaReg(r) || '').toString().toUpperCase().trim(), kg: getPesoNeto(r) || 0,
-                 cond: String(r['CONDUCTOR - PRIME NOMBRE Y PRIMER APELLIDO'] || r['CONDUCTOR'] || '').trim() });
+                 cond: String(r['CONDUCTOR - PRIMER NOMBRE Y PRIMER APELLIDO'] || r['CONDUCTOR - PRIME NOMBRE Y PRIMER APELLIDO'] || r['CONDUCTOR'] || '').trim() });
     } catch(e){}
+  });
+  /* Viajes internos (app de ingreso v28): placa, conductor y hora de salida,
+     sin peso. Cuentan como viaje de esa placa y de ese conductor. */
+  vozArr(function(){ return _vint; }).forEach(function(v){
+    const f = String(v.fs || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(f)) return;
+    const m = String(v.hs || '').match(/^(\d{1,2}):(\d{2})/);
+    out.push({ f: f, h: m ? +m[1] * 60 + +m[2] : 0, pl: String(v.placa || '').toUpperCase().trim(), kg: 0,
+               cond: String(v.conductor || '').trim(), interno: true });
+  });
+  /* Quién manejaba según el preoperacional: el último hecho a esa placa antes
+     del viaje, hasta que el siguiente conductor hace el suyo (máximo 24 h).
+     Sirve cuando el registro no trae el conductor o no se reconoce. */
+  const pre = {};
+  vozArr(function(){ return dataPreopVol; }).forEach(function(r){
+    const pl = _placaNorm(r['Placa'] || r['placa'] || ''), c = String(r['Conductor'] || r['conductor'] || '').trim();
+    const ts = parseDateTime(String(r['Timestamp'] || ''));
+    if (!pl || !c || !ts || isNaN(ts.getTime())) return;
+    (pre[pl] = pre[pl] || []).push({ t: ts.getTime(), c: c });
+  });
+  Object.keys(pre).forEach(function(p){ pre[p].sort(function(a, b){ return a.t - b.t; }); });
+  out.forEach(function(x){
+    const l = pre[_placaNorm(x.pl)];
+    if (!l) return;
+    const t = new Date(x.f + 'T00:00:00').getTime() + x.h * 6e4;
+    let ult = null;
+    for (let i = 0; i < l.length && l[i].t <= t; i++) ult = l[i];
+    if (ult && t - ult.t <= 24 * 36e5) x.condPreop = ult.c;
   });
   return out;
 }
@@ -34327,10 +34386,12 @@ function vozFlotaRinde(comb, viajes, veh, hoy, faltan){
   veh.forEach(function(v){ const p = _placaNorm(v.placa); if (p && !maq[p]) plac[p] = 1; });
   const m = vozMeses(), o = { n:0, kg:0, c:0, nA:0, kgA:0, cA:0 };
   const pl = {}, hace30 = vozYMD(new Date(Date.now() - 30 * 864e5));
-  const de = function(p){ return pl[p] || (pl[p] = { n:0, kg:0, c:0 }); };
+  const de = function(p){ return pl[p] || (pl[p] = { n:0, kg:0, c:0, ni:0 }); };
   viajes.forEach(function(x){
     const n = _placaNorm(x.pl);
     if (!plac[n]) return;
+    /* Los internos no traen peso: no entran al costo por tonelada. */
+    if (x.interno){ if (x.f >= hace30) de(n).ni++; return; }
     if (x.f >= m.ini && x.f <= m.hoy){ o.n++; o.kg += x.kg; }
     if (x.f >= m.iniA && x.f <= m.corteA){ o.nA++; o.kgA += x.kg; }
     if (x.f >= hace30){ const q = de(n); q.n++; q.kg += x.kg; }
@@ -34356,7 +34417,7 @@ function vozFlotaRinde(comb, viajes, veh, hoy, faltan){
   const med = vozMediana(Object.keys(pl).filter(function(p){ return pl[p].kg > 0 && pl[p].c > 0 && pl[p].n >= 3; }).map(function(p){ return pl[p].c / (pl[p].kg / 1000); }));
   const cuenta = Object.keys(pl).filter(function(p){ return pl[p].kg > 0 && pl[p].c > 0 && pl[p].n >= 3; }).length;
   const sem = vozSemana(hoy);
-  Object.keys(pl).filter(function(p){ return pl[p].c > 0 && !pl[p].n; }).sort(function(a, b){ return pl[b].c - pl[a].c; }).slice(0, 2).forEach(function(p){
+  Object.keys(pl).filter(function(p){ return pl[p].c > 0 && !pl[p].n && !pl[p].ni; }).sort(function(a, b){ return pl[b].c - pl[a].c; }).slice(0, 2).forEach(function(p){
     faltan.push({ k:'veh-sinviaje-' + p + '-' + sem, p:3, tono:'alerta', tit:'Tanqueó y no tiene viajes',
       t: p + ': en 30 días tanqueó ' + vozPesos(pl[p].c) + ' y no tiene viajes registrados. Debería verse el viaje que justifica ese combustible, o quedar anotado en qué trabajó.',
       comp: { eA:'Cómo estamos', eB:'Cómo debería estar', ahora: '0 viajes', ahoraS: vozPesos(pl[p].c) + ' en 30 días', debe: 'Viajes registrados', debeS: 'o la labor en que trabajó', dif: 'Sin viajes que respalden el combustible', a: pl[p].c, b: 0 } });
@@ -34366,7 +34427,7 @@ function vozFlotaRinde(comb, viajes, veh, hoy, faltan){
       .sort(function(a, b){ return pl[b].c / pl[b].kg - pl[a].c / pl[a].kg; }).slice(0, 2).forEach(function(p){
         const v = pl[p].c / (pl[p].kg / 1000);
         faltan.push({ k:'veh-carot-' + p + '-' + sem, p:3, tono:'alerta', tit:'Mueve poco para lo que tanquea',
-          t: p + ': en 30 días hizo ' + pl[p].n + ' viajes y movió ' + vozTon(pl[p].kg) + ' con ' + vozPesos(pl[p].c) + ' de combustible, ' + vozPesos(v) + ' por tonelada. Así debería estar: la flota va en ' + vozPesos(med) + ' por tonelada.',
+          t: p + ': en 30 días hizo ' + pl[p].n + ' viajes' + (pl[p].ni ? ' (más ' + pl[p].ni + ' internos, sin peso)' : '') + ' y movió ' + vozTon(pl[p].kg) + ' con ' + vozPesos(pl[p].c) + ' de combustible, ' + vozPesos(v) + ' por tonelada. Así debería estar: la flota va en ' + vozPesos(med) + ' por tonelada.',
           comp: { ahora: vozPesos(v) + ' por t', ahoraS: pl[p].n + ' viajes · ' + vozTon(pl[p].kg), debe: vozPesos(med) + ' por t', debeS: 'lo normal en la flota', dif: 'Revisar sus rutas y su carga', a: v, b: med } });
       });
   }
@@ -34410,8 +34471,7 @@ function vozRadarConductores(hoy, faltan){
     });
   };
   viajes.forEach(function(x){
-    if (!x.cond) return;
-    const c = quien(x.cond);
+    const c = (x.cond ? quien(x.cond) : null) || (x.condPreop ? quien(x.condPreop) : null);
     if (!c) return;
     const p = de(c);
     if (x.f >= m.ini && x.f <= m.hoy){
@@ -34690,7 +34750,9 @@ function vozMaqLinea(g){
 function vozMaqTexto(r, etiqueta, desde, hasta){
   let t = 'MAQUINARIA AMARILLA · combustible por operario y turno (' + etiqueta + '). En cargadores, tractores, orugas y excavadoras NO se compara el combustible con viajes ni con Operaciones: ' +
           'quién operaba sale del preoperacional y su franja y horas, del turno en Personal. Cada tanqueo paga lo trabajado desde el tanqueo anterior y se reparte entre los turnos de ese tramo por horas de horómetro (o de turno si falta). ' +
-          'Compara a los operarios de una misma máquina, ojalá en la misma franja.\n';
+          'Compara a los operarios de una misma máquina, ojalá en la misma franja. ' +
+          'Gastar más por hora NO prueba desperdicio: ese operario pudo producir más (más viajes cargados, más material movido). El sistema todavía no registra la productividad por turno. ' +
+          'Cuando compares operarios, plantea las dos posibilidades (gasta de más, o rinde más) y recomienda registrar la productividad en el preoperacional (viajes cargados o toneladas movidas por turno) para sacar el costo por tonelada.\n';
   if (!_vozPer) t += '  OJO: los turnos de Personal no se pudieron cargar; sin ellos no hay franjas ni horas de turno.\n';
   if (!r.maquinas.length) return t + '  (sin tanqueos ni preoperacionales de maquinaria en ese periodo)\n';
   if (r.precioPimp) t += '  Los tanqueos internos sin valor se estiman a ' + vozPesos(r.precioPimp) + ' por pimpina, lo que valen en los que traen los dos datos.\n';
@@ -34756,10 +34818,12 @@ function vozRadarMaquinaria(hoy, faltan){
         };
         const ra = tasa(A) / tasa(B);
         faltan.push({ k: ('maq-op-' + m.pl + '-' + sem).slice(0, 72), p: 3.4, tono: 'alerta', tit: 'Mismo equipo, distinto gasto',
-          t: m.nombre + ', últimos 30 días. Así estamos: ' + des(A) + '. Así debería estar: ' + des(B) + '. ' + A.n + ' gasta ' + veces(ra) + ' veces más' + u +
-             (par.misma ? ' en el mismo equipo y la misma franja' : ' en el mismo equipo') + '. Revisen sus tanqueos, el horómetro y cómo opera esos días.',
+          t: m.nombre + ', últimos 30 días. ' + des(A) + '. ' + des(B) + '. ' + A.n + ' gasta ' + veces(ra) + ' veces más' + u +
+             (par.misma ? ' en el mismo equipo y la misma franja' : ' en el mismo equipo') + '. Eso no prueba que gaste de más: puede que ' + A.n +
+             ' rinda más que ' + B.n + ', con más viajes cargados o más material movido en esas horas. Hoy el sistema no registra cuánto produce cada turno. ' +
+             'Si en el preoperacional se anotan los viajes cargados o las toneladas movidas, se compara el costo por tonelada y se sabe quién es más productivo. Mientras tanto, revisen sus tanqueos y el horómetro.',
           comp: { quien: { n: A.n, foto: A.foto }, eA: 'Con ' + A.n, eB: 'Con ' + B.n, ahora: vozPesos(tasa(A)) + uc, ahoraS: A.nd + ' días' + (A.franja ? ' · ' + A.franja : ''),
-                  debe: vozPesos(tasa(B)) + uc, debeS: B.nd + ' días' + (B.franja ? ' · ' + B.franja : ''), dif: veces(ra) + ' veces el gasto', a: tasa(A), b: tasa(B) } });
+                  debe: vozPesos(tasa(B)) + uc, debeS: B.nd + ' días' + (B.franja ? ' · ' + B.franja : ''), dif: veces(ra) + ' veces el gasto · falta medir lo producido', a: tasa(A), b: tasa(B) } });
       }
     }
     if (m.sinOp > 50000 && m.sinOp >= m.gasto * 0.15){
@@ -34790,7 +34854,7 @@ function vozRadarMaquinaria(hoy, faltan){
 function vozResumenPersonal(f, desde, hasta, etiqueta){
   const est = window.personalEstado ? window.personalEstado() : { cargado: false };
   let t = '=== PERSONAL (pestaña Personal) ===\n';
-  if (!est.cargado) return t + '(Personal no se pudo cargar en esta sesión' + (est.fallo ? ': ' + est.fallo : '') + ')\n\n';
+  if (!est.cargado && !vozArr(function(){ return window.personalActivos(); }).length) return t + '(Personal no se pudo cargar en esta sesión' + (est.fallo ? ': ' + est.fallo : '') + ')\n\n';
   const hoy = vozHoy();
   let d = desde || hoy, h = hasta || hoy;
   if (d < '2001-01-01') d = _vozPer ? _vozPer.desde : d;
@@ -36505,6 +36569,10 @@ async function vozInfTraerDatos(){
         if (!vozArr(function(){ return dataPreopCar; }).length) dataPreopCar = await fetchCSV(SHEETS.preopCar);
         await vozPerTraer();
       }).catch(function(){}),
+      Promise.resolve().then(async function(){
+        if (!vozArr(function(){ return dataPreopVol; }).length) dataPreopVol = await fetchCSV(SHEETS.preopVol);
+        if (typeof _cargarViajesInternosDatos === 'function') await _cargarViajesInternosDatos();
+      }).catch(function(){}),
       paso('Personal', async function(){
         if (window.personalCargar && window.personalResumenAsesor && !window.personalResumenAsesor().cargado) await window.personalCargar();
         return !!(window.personalResumenAsesor && window.personalResumenAsesor().cargado);
@@ -36897,7 +36965,7 @@ async function vozSaludoIA(a, conteo, nov){
   const pedido = 'Saluda por su nombre a ' + a.nombre + ', que acaba de entrar al sistema. Tono cálido, risueño pero serio, ' +
     'con un toque personal que cambie cada vez: el momento del día, el día de la semana o lo que traen las novedades. ' +
     'Máximo 2 frases: el saludo y cuántos informes tiene preparados y cuántos ha visto. ' +
-    (nov.lineas.length ? 'Termina dando paso a las novedades, sin contarlas ni dar sus cifras.' : 'No menciones novedades.') +
+    'No cuentes lo que traen los informes ni las novedades, y no le preguntes nada: la invitación a verlos se agrega aparte.' +
     ' Nada de cifras que no estén en los datos.';
   try {
     const r = await Promise.race([
@@ -36971,7 +37039,64 @@ async function vozAvisoLogin(a){
     await vozEsperar(300);
   }
   if (!vozUsuarioAsesor()) return;
-  await vozPresentarSaludo(a, await pTexto, nov);
+  /* Solo el saludo y cuántos hay. Los informes salen uno por uno, si la
+     persona quiere: Continuar o Ahora no. */
+  const hayInf = (_vozInfLista || []).some(function(r){ return r && r.tramos && r.tramos.length; });
+  const invita = hayInf ? (c.vistos >= c.hay ? ' Si quieres repasarlos, da clic en Continuar; si no, en Ahora no.'
+                                             : ' Si quieres ver los informes, da clic en Continuar; si no, en Ahora no.') : '';
+  const sinNov = { tramos: [], lineas: [], claves: [], fig: nov.fig, texto: '', extra: nov.extra };
+  await vozPresentarSaludo(a, (await pTexto) + invita, sinNov);
+  if (!hayInf || !vozUsuarioAsesor()) return;
+  const si = await vozPreguntarSeguir(c.vistos >= c.hay ? '¿Quieres repasar tus informes?' : '¿Quieres ver tus informes?');
+  if (!si){ vozSeguirNo(); return; }
+  await vozRecorrerInformes(a);
+}
+/* La pregunta entre informes. Se responde con Continuar o Ahora no; si se
+   cierra el asistente, cuenta como Ahora no. */
+var _vozSeguirOk = null;
+function vozPreguntarSeguir(texto, decir){
+  const caja = document.getElementById('voz-seguir');
+  if (_vozSeguirOk) _vozSeguirOk(false);
+  caja.querySelector('.vseg-txt').textContent = texto;
+  caja.classList.add('vseg-on');
+  vozSetEstado('', texto);
+  if (decir) { try { vozHablarYa(texto); } catch(e){} }
+  try { caja.scrollIntoView({ block:'nearest' }); caja.querySelector('.vseg-si').focus({ preventScroll:true }); } catch(e){}
+  return new Promise(function(ok){
+    _vozSeguirOk = function(si){
+      _vozSeguirOk = null;
+      caja.classList.remove('vseg-on');
+      ok(!!si);
+    };
+  });
+}
+document.querySelector('#voz-seguir .vseg-si').addEventListener('click', function(){ if (_vozSeguirOk){ vozCallar(); _vozSeguirOk(true); } });
+document.querySelector('#voz-seguir .vseg-no').addEventListener('click', function(){ if (_vozSeguirOk){ vozCallar(); _vozSeguirOk(false); } });
+function vozSeguirNo(){
+  vozSetEstado('', 'Listo. Tus informes quedan en la pestaña Informes.');
+  vozCerrarPanel();
+}
+/* Uno por uno: primero el área del día, luego los que no ha visto. Al
+   terminar cada uno pregunta si sigue con el próximo. */
+async function vozRecorrerInformes(a){
+  const lista = (_vozInfLista || []).filter(function(r){ return r && r.tramos && r.tramos.length; });
+  let cola = lista.filter(function(r){ return !vozInfEsVisto(r); });
+  if (!cola.length) cola = lista.slice();
+  const area = vozElegirArea(a);
+  const ia = area ? cola.indexOf(area) : -1;
+  if (ia > 0){ cola.splice(ia, 1); cola.unshift(area); }
+  for (let i = 0; i < cola.length; i++){
+    if (!vozUsuarioAsesor() || !vozOverlay.classList.contains('voz-abierto')) return;
+    const r = cola[i];
+    _vozInfVer = r; _vozInfI = 0;
+    if (area && r.id === area.id) { try { localStorage.setItem(vozAreaAyerClave(a), JSON.stringify({ id: r.id, f: vozHoy() })); } catch(e){} }
+    await vozInfTocar(r);
+    if (!vozOverlay.classList.contains('voz-abierto')) return;
+    if (i === cola.length - 1) break;
+    const si = await vozPreguntarSeguir('Sigue ' + cola[i + 1].titulo + '. ¿Deseas continuar con el próximo informe?', true);
+    if (!si){ vozSeguirNo(); return; }
+  }
+  vozSetEstado('', 'Esos son todos tus informes. Pregúntame lo que quieras.');
 }
 /* Un informe hablado al iniciar sesión, por usuario y por día. Después,
    al entrar el asistente queda callado y a la mano. */
@@ -37003,6 +37128,9 @@ async function vozBienvenida(){
   if (vozFab.classList.contains('voz-oculto')) return;   // sin permiso de asistente
   _vozBienvenidaHecha = true;
   try { await vozAvisoLogin(a); } catch(e){}
+  /* Ningún informe sale solo: se ven desde la pregunta de la bienvenida o
+     desde la pestaña Informes. */
+  return;
   if (!vozUsuarioAsesor()) return;
   if (_vozPospuesto){ _vozPospuesto = false; return; }
   try { if (sessionStorage.getItem(vozBienvenidaClave(a))) return; } catch(e){}
@@ -37061,6 +37189,7 @@ async function vozConsultar(pregunta, opts){
   try {
     // 1. La IA arma el plan (qué datos, qué fecha, qué pestaña)
     const plan = opts.plan || await vozPedirPlan(pregunta);
+    vozPlanConPersonal(plan, pregunta);
     const etiqueta = vozEtiquetaRango(plan.desde, plan.hasta, plan.etiqueta);
 
     /* ── FASE 1: UBICAR, SIN MOVER EL DASHBOARD ──
