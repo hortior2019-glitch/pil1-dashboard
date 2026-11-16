@@ -35081,6 +35081,37 @@ function vozRadarFlota(hoy, faltan){
           comp: { ahora: vozNum(x.kmRecorridos) + uK, ahoraS: (enH ? 'trabajadas' : 'recorridos') + ' con ese tanqueo', debe: (enH ? 'unas ' : 'unos ') + vozNum(kmNormal) + uK, debeS: enH ? 'lo que trabaja normalmente' : 'lo que recorre normalmente', dif: 'Revisar el ' + lec, a: x.kmRecorridos, b: kmNormal } });
       }
     });
+    /* Tanqueo contra tanqueo: lo que se tanqueó y lo que alcanzó (km u horas
+       desde el tanqueo anterior). Dos tanqueos seguidos con un costo por km
+       muy distinto dejan ver el error más fácil que cualquier promedio. */
+    const tramos = rec.filter(function(x){ return x.valor > 0 && x.kmRecorridos; });
+    let par = null;
+    for (let i = 0; i + 1 < rec.length; i++){
+      const B = rec[i], A = rec[i + 1];      // A es el anterior, B el siguiente
+      if (!(A.valor > 0 && A.kmRecorridos && B.valor > 0 && B.kmRecorridos)) continue;
+      const ca = A.valor / A.kmRecorridos, cb = B.valor / B.kmRecorridos;
+      const r = Math.max(ca, cb) / Math.min(ca, cb);
+      if (r >= 2 && (!par || r > par.r)) par = { A: A, B: B, r: r };
+    }
+    if (par){
+      const A = par.A, B = par.B, hecho = enH ? ' trabajadas' : ' recorridos';
+      const caro = A.valor / A.kmRecorridos > B.valor / B.kmRecorridos ? A : B, bar = caro === A ? B : A;
+      const parecido = Math.abs(A.valor - B.valor) <= Math.max(A.valor, B.valor) * .25;
+      const lado = function(x){ return 'el ' + fechaDe(x.fecha) + ' tanqueó ' + vozPesos(x.valor) + ' para ' + vozNum(x.kmRecorridos) + uK + hecho; };
+      const veces = vozUno(par.r).replace(/,0$/, '');
+      faltan.add('tq-tramo-' + pl + '-' + A.fecha + '-' + B.fecha,
+        pl + ': tanqueo contra tanqueo. ' + lado(A).charAt(0).toUpperCase() + lado(A).slice(1) + '; ' + lado(B) + '. ' +
+        (parecido ? 'Casi el mismo valor, y uno rindió ' + veces + ' veces más que el otro. ' : 'El del ' + fechaDe(caro.fecha) + ' sale ' + veces + ' veces más caro por ' + (enH ? 'hora' : 'kilómetro') + '. ') +
+        vozInfVar(['¿Cuál ' + (enH ? 'horómetro' : 'kilometraje') + ' está mal anotado, o adónde se fue el combustible del ' + fechaDe(caro.fecha) + '?',
+                   'Uno de los dos números miente: o el ' + (enH ? 'horómetro' : 'kilometraje') + ', o el tanque. ¿Cuál?',
+                   '¿Qué pasó entre el ' + fechaDe(A.fecha) + ' y el ' + fechaDe(B.fecha) + ' para que el mismo vehículo rinda tan distinto?'], A.kmRecorridos) +
+        ' Se confirma con las fotos del tablero de esos dos tanqueos.', 3.2);
+      faltan[faltan.length - 1].tit = 'Tanqueo contra tanqueo';
+      faltan[faltan.length - 1].comp = {
+        ahora: vozPesos(caro.valor) + ' · ' + vozNum(caro.kmRecorridos) + uK, ahoraS: 'tanqueo del ' + fechaDe(caro.fecha),
+        debe: vozPesos(bar.valor) + ' · ' + vozNum(bar.kmRecorridos) + uK, debeS: 'tanqueo del ' + fechaDe(bar.fecha),
+        dif: veces + ' veces el costo por ' + (enH ? 'hora' : 'km'), a: caro.valor / caro.kmRecorridos, b: bar.valor / bar.kmRecorridos };
+    }
     const ult = rec[0] ? rec[0].fecha : '';
     const tipoV = vozTipoVeh(v);
     let l = '  - ' + pl + (tipoV ? ' (' + tipoV + ')' : '') + ': ' + rec.length + ' tanqueos, ' + vozPesos(valor) + ' en combustible';
@@ -35090,6 +35121,8 @@ function vozRadarFlota(hoy, faltan){
     l += ' · mantenimiento 90 días: ' + vozPesos(costoMant) + ' en ' + mm.length + ' registro(s)';
     if (km && (valor + costoMant)) l += ' · costo total por ' + (enH ? 'hora' : 'km') + ': ' + vozPesos((valor + costoMant) / km);
     if (ult) l += ' · último tanqueo ' + ult + ' (hace ' + vozDiasEntre(ult, hoy) + ' días)';
+    if (tramos.length >= 2) l += ' · tanqueo a tanqueo (valor → ' + (enH ? 'horas trabajadas' : 'km recorridos') + ' desde el anterior): ' +
+      tramos.slice(0, 6).reverse().map(function(x){ return x.fecha.slice(5) + ' ' + vozPesos(x.valor) + ' → ' + vozNum(x.kmRecorridos) + uK; }).join('; ');
     t += l + '\n';
     raros.sort(function(p, q){ return q.orden - p.orden; });
     raros.slice(0, 3).forEach(function(x){
@@ -35520,7 +35553,7 @@ function vozInstruccionAsesor(a){
     'Eres curioso: puedes cerrar con UNA pregunta amable y útil sobre el dato más llamativo, como quien ofrece ayuda (por ejemplo, si quiere que revises a ese cliente o que compares con otro periodo).\n' +
     'No te limites a los volúmenes: revisa el RADAR OPERATIVO (producción de humus parada o por debajo, costo de cada vehículo por kilómetro sumando combustible y mantenimiento, horas extra y novedades del personal) y elige lo más llamativo.\n' +
     'Sé suspicaz: un vacío de datos no es buena noticia. Si el radar lista VACÍOS DE INFORMACIÓN, menciona el más importante y pide con amabilidad que alimenten el sistema con ese dato.\n' +
-    'No mires el combustible solo: crúzalo con los viajes, el peso movido y el horario de los conductores. Compara este mes contra el mes pasado a la misma fecha y cierra con un objetivo claro para el mes, sacado de esas mismas cifras. En combustible, lo primero es el valor total del tanqueo contra lo que esa placa tanquea normalmente; el costo por 100 km es secundario. Si hay REFERENCIAS DEL MERCADO, contrasta con ellas, por ejemplo cuántos galones serían ese tanqueo al precio de referencia, y explícalo de forma que enseñe, aclarando que la referencia es aproximada. Internet es apoyo, nunca tu argumento principal ni tu excusa: tu criterio sale de las cifras del sistema; la referencia solo confirma o contrasta. Cuando venga al caso, suma una novedad útil del sector.\n' +
+    'No mires el combustible solo: crúzalo con los viajes, el peso movido y el horario de los conductores. Compara este mes contra el mes pasado a la misma fecha y cierra con un objetivo claro para el mes, sacado de esas mismas cifras. En combustible, lo primero es el valor total del tanqueo contra lo que esa placa tanquea normalmente; el costo por 100 km es secundario. Lo más revelador es comparar tanqueo contra tanqueo de la misma placa: cuánto tanqueó y cuántos km (u horas, en maquinaria) le alcanzaron, frente al tanqueo de al lado; úsalo antes que cualquier promedio por km o por hora. Si hay REFERENCIAS DEL MERCADO, contrasta con ellas, por ejemplo cuántos galones serían ese tanqueo al precio de referencia, y explícalo de forma que enseñe, aclarando que la referencia es aproximada. Internet es apoyo, nunca tu argumento principal ni tu excusa: tu criterio sale de las cifras del sistema; la referencia solo confirma o contrasta. Cuando venga al caso, suma una novedad útil del sector.\n' +
     'Varía tus informes: no abras siempre con el ingreso de material ni repitas la estructura de los informes anteriores; sigue la sección VARIEDAD.\n' +
     'Todo el dinero del sistema está en pesos colombianos: nunca digas dólares. Los valores en pesos que puedes decir son los que ya están en el sistema (combustible, mantenimientos) y los de las referencias. Nunca inventes tarifas de clientes: el impacto en facturación lo expresas en toneladas, viajes y porcentajes.\n\n';
 }
