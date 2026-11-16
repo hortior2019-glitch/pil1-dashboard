@@ -731,6 +731,27 @@ body:has(#carga-tab.visible) #voz-overlay,body:has(#carga-tab.visible) #voz-fab{
 .vinf-cuenta{flex:1;min-width:0;text-align:center;font-size:11.5px;font-weight:700;color:var(--ink-m);font-variant-numeric:tabular-nums}
 .vinf-play{flex:none;display:flex;align-items:center;gap:5px;height:34px;padding:0 11px;border:none;border-radius:8px;background:var(--navy);color:#fff;font-family:'Source Sans 3',sans-serif;font-size:12px;font-weight:700;cursor:pointer}
 .vinf-play:disabled{opacity:.5;cursor:default}
+/* Preguntas sobre el informe: por texto o con el micrófono abierto */
+.vinf-charla{flex:0 1 auto;max-height:26%;overflow-y:auto;padding:4px 2px 0 84px;display:flex;flex-direction:column;gap:5px}
+.vinf-charla:empty{display:none}
+.vinf-q,.vinf-r{max-width:100%;padding:6px 9px;border-radius:9px;font-size:13.5px;line-height:1.36;color:var(--ink)}
+.vinf-q{align-self:flex-end;background:var(--rule-l)}
+.vinf-r{align-self:flex-start;background:rgba(232,245,238,.9);border:1px solid #d9dfd3}
+.vinf-r.vinf-pensando{color:var(--ink-m);font-style:italic}
+.vinf-preg{flex:none;display:flex;align-items:center;gap:6px;margin:0;padding:2px 0 4px 84px}
+.vinf-preg input{flex:1;min-width:0;height:36px;padding:0 10px;border:1px solid var(--rule);border-radius:8px;background:var(--white);font-family:'Source Sans 3',sans-serif;font-size:13.5px;color:var(--ink)}
+.vinf-preg input:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+.vinf-mic,.vinf-enviar{flex:none;height:36px;display:flex;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;font-family:'Source Sans 3',sans-serif;font-size:13px;font-weight:700}
+.vinf-mic{width:36px;border:1px solid var(--rule);background:var(--white);color:var(--ink-m);transition:background .18s var(--voz-suave),color .18s var(--voz-suave)}
+.vinf-mic svg{width:17px;height:17px}
+.vinf-mic[aria-pressed="true"]{background:var(--navy);border-color:var(--navy);color:#fff;animation:vinf-late 1.6s ease-in-out infinite}
+.vinf-enviar{padding:0 11px;border:1px solid var(--navy);background:var(--white);color:var(--navy)}
+.vinf-mic:focus-visible,.vinf-enviar:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.vinf-oye{flex:none;padding:0 2px 6px 84px;font-size:13px;line-height:1.3;color:var(--ink-m)}
+.vinf-oye:empty{display:none}
+@keyframes vinf-late{50%{box-shadow:0 0 0 4px var(--rule)}}
+@media (max-width:480px){.vinf-charla,.vinf-preg,.vinf-oye{padding-left:72px}}
+@media (prefers-reduced-motion:reduce){.vinf-mic[aria-pressed="true"]{animation:none}}
 .vinf-volver:focus-visible,.vinf-paso:focus-visible,.vinf-play:focus-visible,.vinf-fila:focus-visible,.voz-tab:focus-visible,#voz-ahora-no:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 
 /* Figuras: cada una entra a su manera. Solo se anima el "desde"; sin
@@ -33967,6 +33988,7 @@ function vozCerrarPanel(){
   vozFab.classList.remove('voz-fundido');
   vozQuitarFocos();
   vozInfParar();
+  if (_vozInfMic) vozInfMicPoner(false);
   vozOverlay.classList.remove('voz-intervencion', 'voz-sup');
   vozCallar();
   setTimeout(function(){
@@ -34438,13 +34460,14 @@ let _vozCond = null;
 function vozRadarConductores(hoy, faltan){
   const d = _vozCond;
   if (!d || !d.conductores.length || !d.turnos.length) return;
-  const tok = function(s){ return vozNorm(s).split(/\s+/).filter(Boolean); };
+  const tok = vozTokNombre;
   const gente = d.conductores.map(function(c){ return { c:c, t:tok(c.nombre) }; });
   const memo = {};
   const quien = function(n){
     if (memo[n] !== undefined) return memo[n];
     const t = tok(n);
-    const hit = t.length >= 2 ? gente.filter(function(g){ return t.every(function(x){ return g.t.indexOf(x) !== -1; }); }) : [];
+    let hit = t.length >= 2 ? gente.filter(function(g){ return t.every(function(x){ return g.t.indexOf(x) !== -1; }); }) : [];
+    if (!hit.length && t.length >= 2) hit = gente.filter(function(g){ return vozMismoNombre(t, g.t); });
     return (memo[n] = hit.length === 1 ? hit[0].c : null);
   };
   const m = vozMeses(), viajes = vozViajes(), por = {};
@@ -34560,8 +34583,20 @@ function vozMaquinasSet(){
 /* El nombre del preoperacional ("Manuel", "Michael Medina") contra Personal.
    Si hay varias personas posibles, se queda con la de maquinaria; si sigue
    habiendo dudas, no adivina. */
+/* Partes de un nombre, sin lo que cambia al escribirlo: h, y/i, v/b, z/s
+   y letras dobles. Así «Anthony Lopez» y «LOPEZ ANTONY» son la misma persona. */
+function vozTokNombre(x){
+  return vozNorm(x).replace(/[^a-z ]+/g, ' ').split(/\s+/).map(function(w){
+    return w.replace(/h/g, '').replace(/y/g, 'i').replace(/v/g, 'b').replace(/z/g, 's').replace(/(.)\1+/g, '$1');
+  }).filter(Boolean);
+}
+/* Todas las partes de uno están en el otro (si el más corto tiene al menos dos). */
+function vozMismoNombre(t, g){
+  const dentro = function(a, b){ return a.length >= 2 && a.every(function(w){ return b.indexOf(w) !== -1; }); };
+  return dentro(t, g) || dentro(g, t);
+}
 function vozMaqQuien(){
-  const tok = function(x){ return vozNorm(x).split(/\s+/).filter(Boolean); };
+  const tok = vozTokNombre;
   const gente = vozArr(function(){ return window.personalLista(); }).map(function(p){
     const ar = vozArr(function(){ return window.personalAreasDe(p.clave); }).join(' ') + ' ' + String(p.cargo || '');
     return { p:p, t:tok(p.nombre), maq: VOZ_MAQ_RE.test(ar) || /maquin|operador/i.test(ar) };
@@ -34572,6 +34607,7 @@ function vozMaqQuien(){
     if (k in memo) return memo[k];
     const t = tok(nombre);
     let hit = t.length ? gente.filter(function(g){ return t.every(function(w){ return g.t.indexOf(w) !== -1; }); }) : [];
+    if (!hit.length) hit = gente.filter(function(g){ return vozMismoNombre(t, g.t); });
     if (hit.length > 1){ const m = hit.filter(function(g){ return g.maq; }); if (m.length) hit = m; }
     if (hit.length > 1){ const a = hit.filter(function(g){ return g.p.activo !== false; }); if (a.length) hit = a; }
     return (memo[k] = hit.length === 1 ? hit[0].p : null);
@@ -34819,9 +34855,11 @@ function vozRadarMaquinaria(hoy, faltan){
         const ra = tasa(A) / tasa(B);
         faltan.push({ k: ('maq-op-' + m.pl + '-' + sem).slice(0, 72), p: 3.4, tono: 'alerta', tit: 'Mismo equipo, distinto gasto',
           t: m.nombre + ', últimos 30 días. ' + des(A) + '. ' + des(B) + '. ' + A.n + ' gasta ' + veces(ra) + ' veces más' + u +
-             (par.misma ? ' en el mismo equipo y la misma franja' : ' en el mismo equipo') + '. Eso no prueba que gaste de más: puede que ' + A.n +
-             ' rinda más que ' + B.n + ', con más viajes cargados o más material movido en esas horas. Hoy el sistema no registra cuánto produce cada turno. ' +
-             'Si en el preoperacional se anotan los viajes cargados o las toneladas movidas, se compara el costo por tonelada y se sabe quién es más productivo. Mientras tanto, revisen sus tanqueos y el horómetro.',
+             (par.misma ? ' en el mismo equipo y la misma franja' : ' en el mismo equipo') + '. ' +
+             vozInfVar(['¿Será que ' + A.n + ' gasta más porque trabaja más, o ese combustible se está yendo para otro lado? Vale la pena confirmarlo.',
+                        '¿' + A.n + ' mueve más material que ' + B.n + ', o hay combustible que no llega a la máquina? Es una pregunta incómoda, pero sale barata de contestar.',
+                        'O ' + A.n + ' rinde más, o algo no cuadra con ese combustible. ¿Cuál de las dos? Hoy nadie lo puede decir con datos.'], m.pl.length) +
+             ' Para salir de la duda: anoten en el preoperacional los viajes cargados o las toneladas movidas, y crucen sus tanqueos con el horómetro.',
           comp: { quien: { n: A.n, foto: A.foto }, eA: 'Con ' + A.n, eB: 'Con ' + B.n, ahora: vozPesos(tasa(A)) + uc, ahoraS: A.nd + ' días' + (A.franja ? ' · ' + A.franja : ''),
                   debe: vozPesos(tasa(B)) + uc, debeS: B.nd + ' días' + (B.franja ? ' · ' + B.franja : ''), dif: veces(ra) + ' veces el gasto · falta medir lo producido', a: tasa(A), b: tasa(B) } });
       }
@@ -34963,12 +35001,14 @@ function vozRadarFlota(hoy, faltan){
       if (x.kmRecorridos && x.valor){ km += x.kmRecorridos; porKm.push(x.valor / x.kmRecorridos); }
     });
     const med = vozMediana(porKm);
+    /* Cargadores y tractores se miden por horómetro: horas, no kilómetros. */
+    const enH = _uVeh(v) === 'h' || !!vozMaquinasSet()[_placaNorm(pl)], uK = enH ? ' horas' : ' km';
     totFlota.mant += costoMant;
     if (valor) totFlota.placas.push({ n:pl, v:valor });
     rec.forEach(function(x){
       if (!x.kmRecorridos || !x.valor || !med) return;
       const c = x.valor / x.kmRecorridos;
-      if (c >= med * 0.4 && c <= med * 1.8){ totFlota.km += x.kmRecorridos; totFlota.gasto += x.valor; }
+      if (!enH && c >= med * 0.4 && c <= med * 1.8){ totFlota.km += x.kmRecorridos; totFlota.gasto += x.valor; }
     });
     /* La referencia es lo que esta placa tanquea normalmente: la mediana de
        sus propios tanqueos. Con menos de 3 no hay con qué comparar. */
@@ -34995,7 +35035,7 @@ function vozRadarFlota(hoy, faltan){
       const kmRaro = !alto && !bajo && kmNormal && x.kmRecorridos && (x.kmRecorridos > kmNormal * 1.8 || x.kmRecorridos < kmNormal * .4);
       if (!alto && !bajo && !kmRaro) return;
       const cuando = 'el ' + fechaDe(x.fecha) + ' tanqueó ' + vozPesos(x.valor);
-      const kmTxt = (x.kmRecorridos && kmNormal) ? ' Con ese tanqueo recorrió ' + vozNum(x.kmRecorridos) + ' km; normalmente recorre unos ' + vozNum(kmNormal) + ' km.' : '';
+      const kmTxt = (x.kmRecorridos && kmNormal) ? ' Con ese tanqueo ' + (enH ? 'trabajó ' : 'recorrió ') + vozNum(x.kmRecorridos) + uK + '; normalmente ' + (enH ? 'trabaja unas ' : 'recorre unos ') + vozNum(kmNormal) + uK + '.' : '';
       anomalos.n++; anomalos.placas[pl] = 1;
       if (alto){
         const de = x.valor - tqNormal;
@@ -35013,18 +35053,19 @@ function vozRadarFlota(hoy, faltan){
           comp: { ahora: vozPesos(x.valor), ahoraS: 'tanqueó el ' + fechaDe(x.fecha), debe: vozPesos(tqNormal), debeS: 'lo que tanquea normalmente', dif: 'Revisar el valor registrado', a: x.valor, b: tqNormal } });
       } else {
         anomalos.km++;
-        raros.push({ f: x.fecha, orden: -1, tit: 'Este kilometraje no cuadra',
-          t: cuando + ', un valor normal, pero el kilometraje dice ' + vozNum(x.kmRecorridos) + ' km. Así debería estar: esta placa recorre unos ' + vozNum(kmNormal) + ' km por tanqueo. Revisen el kilometraje.',
-          comp: { ahora: vozNum(x.kmRecorridos) + ' km', ahoraS: 'recorridos con ese tanqueo', debe: 'unos ' + vozNum(kmNormal) + ' km', debeS: 'lo que recorre normalmente', dif: 'Revisar el kilometraje', a: x.kmRecorridos, b: kmNormal } });
+        const lec = enH ? 'horómetro' : 'kilometraje';
+        raros.push({ f: x.fecha, orden: -1, tit: 'Este ' + lec + ' no cuadra',
+          t: cuando + ', un valor normal, pero el ' + lec + ' dice ' + vozNum(x.kmRecorridos) + uK + '. Así debería estar: ' + (enH ? 'esta máquina trabaja unas ' : 'esta placa recorre unos ') + vozNum(kmNormal) + uK + ' por tanqueo. Revisen el ' + lec + '.',
+          comp: { ahora: vozNum(x.kmRecorridos) + uK, ahoraS: (enH ? 'trabajadas' : 'recorridos') + ' con ese tanqueo', debe: (enH ? 'unas ' : 'unos ') + vozNum(kmNormal) + uK, debeS: enH ? 'lo que trabaja normalmente' : 'lo que recorre normalmente', dif: 'Revisar el ' + lec, a: x.kmRecorridos, b: kmNormal } });
       }
     });
     const ult = rec[0] ? rec[0].fecha : '';
     let l = '  - ' + pl + (v.tipo ? ' (' + v.tipo + ')' : '') + ': ' + rec.length + ' tanqueos, ' + vozPesos(valor) + ' en combustible';
     if (tqNormal) l += ', tanqueo normal ' + vozPesos(tqNormal);
-    if (km) l += ', ' + Math.round(km) + ' km medidos, ' + vozPesos(med * 100) + ' por 100 km (mediana)';
-    else if (rec.length) l += ', SIN kilometrajes que permitan medir el rendimiento';
+    if (km) l += ', ' + Math.round(km) + (enH ? ' horas de horómetro medidas, ' : ' km medidos, ') + vozPesos(med * 100) + ' por 100' + uK + ' (mediana)';
+    else if (rec.length) l += enH ? ', SIN horómetros que permitan medir el rendimiento' : ', SIN kilometrajes que permitan medir el rendimiento';
     l += ' · mantenimiento 90 días: ' + vozPesos(costoMant) + ' en ' + mm.length + ' registro(s)';
-    if (km && (valor + costoMant)) l += ' · costo total por km: ' + vozPesos((valor + costoMant) / km);
+    if (km && (valor + costoMant)) l += ' · costo total por ' + (enH ? 'hora' : 'km') + ': ' + vozPesos((valor + costoMant) / km);
     if (ult) l += ' · último tanqueo ' + ult + ' (hace ' + vozDiasEntre(ult, hoy) + ' días)';
     t += l + '\n';
     raros.sort(function(p, q){ return q.orden - p.orden; });
@@ -35043,8 +35084,8 @@ function vozRadarFlota(hoy, faltan){
     let mx = null;
     try { mx = _vfMetricas(v); } catch(e){}
     if (mx && mx.kmProxMant !== null && mx.kmProxMant < 0 && mx.kmIntervaloMant){
-      faltan.add('mant-atraso-' + pl + '-' + vozSemana(hoy), pl + ': mantenimiento atrasado. Así estamos: lleva ' + vozNum(mx.kmDesdeMant) + ' km desde el último. Así debería estar: esta placa entra cada ' + vozNum(mx.kmIntervaloMant) + ' km, según su propio historial. Va pasada ' + vozNum(-mx.kmProxMant) + ' km.', 3);
-      faltan[faltan.length - 1].comp = { ahora: vozNum(mx.kmDesdeMant) + ' km', ahoraS: 'desde el último mantenimiento', debe: vozNum(mx.kmIntervaloMant) + ' km', debeS: 'su intervalo según su historial', dif: 'Pasada ' + vozNum(-mx.kmProxMant) + ' km', a: mx.kmDesdeMant, b: mx.kmIntervaloMant };
+      faltan.add('mant-atraso-' + pl + '-' + vozSemana(hoy), pl + ': mantenimiento atrasado. Así estamos: lleva ' + vozNum(mx.kmDesdeMant) + uK + ' desde el último. Así debería estar: ' + (enH ? 'esta máquina' : 'esta placa') + ' entra cada ' + vozNum(mx.kmIntervaloMant) + uK + ', según su propio historial. Va pasada ' + vozNum(-mx.kmProxMant) + uK + '.', 3);
+      faltan[faltan.length - 1].comp = { ahora: vozNum(mx.kmDesdeMant) + uK, ahoraS: 'desde el último mantenimiento', debe: vozNum(mx.kmIntervaloMant) + uK, debeS: 'su intervalo según su historial', dif: 'Pasada ' + vozNum(-mx.kmProxMant) + uK, a: mx.kmDesdeMant, b: mx.kmIntervaloMant };
       faltan[faltan.length - 1].tit = 'Mantenimiento atrasado';
     } else if (mx && mx.kmProxMant === null && mx.diasProxMant !== null && mx.diasProxMant < 0){
       faltan.add('mant-atraso-' + pl + '-' + vozSemana(hoy), pl + ': mantenimiento atrasado. Así estamos: lleva ' + vozNum(mx.diasSinMant) + ' días desde el último. Así debería estar: esta placa entra cada ' + vozNum(mx.intervaloMant) + ' días, según su propio historial. Va pasada ' + vozNum(-mx.diasProxMant) + ' días.', 3);
@@ -35209,10 +35250,10 @@ function vozInvLista(){
   try { return window.cscInventario ? window.cscInventario() : []; } catch(e){ return []; }
 }
 const VOZ_DOT_FAMILIAS = [
-  { id:'pala', n:'Palas', fem:true, re:/^palas?\b/, para:'operarios', ask:'¿Alcanzan? ¿Quién trabaja sin pala?' },
-  { id:'carretilla', n:'Carretillas', fem:true, re:/^carretilla/, para:'operarios', ask:'¿Con qué mueven material en las demás áreas?' },
-  { id:'radio', n:'Radios', re:/^radio/, para:'personas', ask:'¿Quién los tiene y quién queda sin comunicación?' },
-  { id:'termometro', n:'Termómetros y sensores', re:/termometro|sensor(es)? de temperatura/, para:'operarios', ask:'¿Quién mide la temperatura de las pilas y dónde queda anotado?' }
+  { id:'pala', n:'Palas', fem:true, re:/^palas?\b/, para:'operarios', ask:['¿Alcanzan? ¿Quién trabaja sin pala?', '¿Las demás palas están en otro lado o es que no existen?', '¿Se comparten entre turnos o alguien espera a que se desocupe una?'] },
+  { id:'carretilla', n:'Carretillas', fem:true, re:/^carretilla/, para:'operarios', ask:['¿Con qué mueven material en las demás áreas?', '¿Será que alcanzan, o es que la gente ya se acostumbró a cargar a mano?', '¿Cuántas están dañadas y siguen contando como buenas?'] },
+  { id:'radio', n:'Radios', re:/^radio/, para:'personas', ask:['¿Quién los tiene y quién queda sin comunicación?', '¿Los radios duermen en la planta o se van para la casa con alguien?', '¿Quién responde si uno se pierde?'] },
+  { id:'termometro', n:'Termómetros y sensores', re:/termometro|sensor(es)? de temperatura/, para:'operarios', ask:['¿Quién mide la temperatura de las pilas y dónde queda anotado?', '¿Se mide todos los días o solo cuando alguien se acuerda?', '¿Si una pila se calienta de más, quién se entera primero?'] }
 ];
 /* Dotación que no aparece en el inventario. Que no aparezca no significa
    que no exista: por eso se pregunta. */
@@ -35223,7 +35264,9 @@ function vozRadarDotacion(hoy, faltan){
   let r = null;
   try { r = window.personalResumenAsesor ? window.personalResumenAsesor() : null; } catch(e){}
   if (!inv.length || !r || !r.cargado) return '';
-  const sem = vozSemana(hoy), personas = vozArr(function(){ return window.personalActivos(); });
+  /* Las claves cambian con las cifras y con el mes: lo mismo no se vuelve a
+     contar cada semana, solo cuando cambia o al mes siguiente. */
+  const sem = vozSemana(hoy), mes = hoy.slice(0, 7), personas = vozArr(function(){ return window.personalActivos(); });
   const operarios = personas.filter(function(p){ return /^operario$/i.test(String(p.cargo || '').trim()); }).length;
   const conteo = { operarios: operarios, personas: personas.length };
   const nom = function(i){ return vozNorm(String(i.item || '')).trim(); };
@@ -35238,8 +35281,8 @@ function vozRadarDotacion(hoy, faltan){
       : (lug.length === 1 ? (n === 1 ? 'Está en ' : (fa.fem ? 'Todas están en ' : 'Todos están en ')) + lug[0]
                           : (fa.fem ? 'Repartidas: ' : 'Repartidos: ') + lug.map(function(u){ return u + ' ' + ub[u]; }).join(', '));
     t += '  ' + fa.n + ': ' + n + ' para ' + m + ' ' + fa.para + ' · ' + donde + '\n';
-    faltan.push({ k:'dot-' + fa.id + '-' + sem, p:2, tono:'pide', tit: fa.n + ' contra ' + fa.para,
-      t: fa.n + ': hay ' + n + ' para ' + m + ' ' + fa.para + '. ' + donde + '. ' + fa.ask,
+    faltan.push({ k:'dot-' + fa.id + '-' + mes + '-' + n + 'de' + m, p:2, tono:'pide', tit: fa.n + ' contra ' + fa.para,
+      t: fa.n + ': hay ' + n + ' para ' + m + ' ' + fa.para + '. ' + donde + '. ' + vozInfVar(fa.ask, n),
       fig:{ t:'paralelo', cosa:fa.id, n:n, m:m, ec:fa.n.toLowerCase(), ep:fa.para } });
   });
   const areas = vozArr(function(){ return window.personalAreas(); }).map(function(a){
@@ -35248,18 +35291,18 @@ function vozRadarDotacion(hoy, faltan){
              a: inv.filter(function(i){ return vozNorm(String(i.ubicacion || '')).trim() === u; }).length };
   }).filter(function(a){ return a.p; }).sort(function(a, b){ return b.p - a.p; });
   const sinNada = areas.filter(function(a){ return !a.a; });
-  if (sinNada.length) faltan.push({ k:'dot-areas-' + sem, p:2, tono:'pide', tit:'Áreas con gente y sin inventario',
+  if (sinNada.length) faltan.push({ k:'dot-areas-' + mes + '-' + sinNada.length, p:2, tono:'pide', tit:'Áreas con gente y sin inventario',
     t: sinNada.length + ' áreas con personal no tienen ningún artículo registrado: ' + sinNada.slice(0, 5).map(function(a){ return a.n + ' (' + a.p + ')'; }).join(', ') + '. ¿Con qué están trabajando?',
     fig:{ t:'faltantes', items:sinNada.slice(0, 8).map(function(a){ return String(a.n).slice(0, 14) + ' · ' + a.p; }) } });
   const porAsignar = inv.filter(function(i){ return /por asignar/i.test(i.ubicacion || ''); }).length;
-  if (porAsignar) faltan.push({ k:'dot-porasignar-' + sem, p:2, tono:'pide', tit:'¿Dónde están estos artículos?',
+  if (porAsignar) faltan.push({ k:'dot-porasignar-' + mes + '-' + porAsignar, p:2, tono:'pide', tit:'¿Dónde están estos artículos?',
     t: porAsignar + ' de ' + inv.length + ' artículos siguen en Por asignar. Sin lugar no se puede saber quién responde por ellos.',
     fig:{ t:'ubicados', n:inv.length, m:porAsignar } });
   const epp = VOZ_DOT_EPP.filter(function(e){ return !inv.some(function(i){ return e[1].test(nom(i)); }); }).map(function(e){ return e[0]; });
   /* Ni un solo elemento de protección: los seis primeros de la lista. */
   const sinEpp = VOZ_DOT_EPP.slice(0, 6).every(function(e){ return epp.indexOf(e[0]) !== -1; });
   const otros = epp.filter(function(e){ return e === 'Extintores' || e === 'Botiquín'; });
-  if (epp.length) faltan.push({ k:'dot-epp-' + sem, p:3, tono:'pide', tit: sinEpp ? personas.length + ' personas y ningún EPP registrado' : 'Esto no aparece en el inventario',
+  if (epp.length) faltan.push({ k:'dot-epp-' + mes + '-' + epp.length, p:3, tono:'pide', tit: sinEpp ? personas.length + ' personas y ningún EPP registrado' : 'Esto no aparece en el inventario',
     t: (sinEpp ? 'Veo ' + personas.length + ' personas y ni un solo EPP de dotación certificado en el sistema. Los felicito si lo tienen, pero no tienen control sobre esta información: dependen 100 % de su contador, pudiendo saberlo ya.' +
                  (otros.length ? ' Tampoco aparecen ' + otros.join(' ni ').toLowerCase() + '.' : '')
                : 'No encuentro en el inventario: ' + epp.join(', ').toLowerCase() + '. ¿No hay, o no se han registrado?') + ' ' + vozInfApoyo('dotacion'),
@@ -35281,7 +35324,7 @@ function vozRadarDotacion(hoy, faltan){
   }
   const activos = inv.filter(function(i){ return i.categoria === 'AF'; });
   const conMant = activos.filter(function(i){ return i.mantUltimo; }).length;
-  if (activos.length && conMant < activos.length) faltan.push({ k:'dot-mant-' + sem, p:2, tono:'pide', tit:'Mantenimiento sin registro',
+  if (activos.length && conMant < activos.length) faltan.push({ k:'dot-mant-' + mes + '-' + conMant + 'de' + activos.length, p:2, tono:'pide', tit:'Mantenimiento sin registro',
     t: 'De ' + activos.length + ' activos fijos, ' + conMant + ' tienen mantenimiento registrado. ¿Nadie les ha hecho mantenimiento o no se está anotando?',
     fig:{ t:'numero', v:conMant + ' de ' + activos.length, e:'activos con mantenimiento registrado', caida:true } });
   inv.filter(function(i){ return Number(i.minimo) > 0 && Number(i.stock) <= Number(i.minimo); }).slice(0, 2).forEach(function(i){
@@ -35450,6 +35493,7 @@ function vozInstruccionAsesor(a){
     'Nunca le reclames a la persona, no la culpes, no le exijas explicaciones ni le preguntes cómo lo va a recuperar o compensar. ' +
     'Si algo va por debajo, dilo con claridad y su impacto en la facturación, por ejemplo: este mes vamos 100 toneladas y el mes pasado a esta fecha íbamos 120, son 20 toneladas por debajo, vale la pena revisarlo.\n' +
     'Si un cliente bajó o dejó de traer material, nómbralo y señálalo como algo para tener en el radar. Si algo subió, reconócelo en media frase.\n' +
+    'Cuando un dato admite dos lecturas (por ejemplo, alguien gasta más que otro), no lo afirmes como culpa ni lo dejes en un "puede ser" tibio: plantea la pregunta incómoda que pone a pensar, con la explicación inocente y la sospechosa lado a lado, y remata con qué hay que confirmar y dónde. Hazlo con tus propias palabras y cambia la forma cada vez; nunca uses una fórmula fija.\n' +
     'Eres curioso: puedes cerrar con UNA pregunta amable y útil sobre el dato más llamativo, como quien ofrece ayuda (por ejemplo, si quiere que revises a ese cliente o que compares con otro periodo).\n' +
     'No te limites a los volúmenes: revisa el RADAR OPERATIVO (producción de humus parada o por debajo, costo de cada vehículo por kilómetro sumando combustible y mantenimiento, horas extra y novedades del personal) y elige lo más llamativo.\n' +
     'Sé suspicaz: un vacío de datos no es buena noticia. Si el radar lista VACÍOS DE INFORMACIÓN, menciona el más importante y pide con amabilidad que alimenten el sistema con ese dato.\n' +
@@ -35960,11 +36004,19 @@ function vozInfBase(id){
    por placa y lo que ya dice la apertura no se vuelve a decir. */
 function vozInfHallazgosTema(tema, hall){
   const vistos = {};
-  return hall.filter(function(h){
+  let lista = hall.filter(function(h){
     if (!tema.re.test(h.k) || /^(ing-mes|cli-baja|he-sube)/.test(h.k)) return false;
     if (h.k.indexOf('tq-raro') === 0){ const pl = h.k.split('-')[2]; if (vistos[pl]) return false; vistos[pl] = 1; }
     return true;
-  }).slice(0, tema.id === 'dotacion' ? 10 : (tema.id === 'flota' ? 10 : (tema.id === 'personal' ? 7 : VOZ_INF_MAX_TRAMOS))).map(vozInfTramo).map(function(t){
+  });
+  /* Inventario: lo que ya se contó no se repite. Sin nada nuevo, solo lo
+     contado hace más tiempo, para no recitar la misma lista. */
+  if (tema.id === 'dotacion'){
+    const dichos = _vozDichos || {};
+    const nuevos = lista.filter(function(h){ return !dichos[h.k]; });
+    lista = nuevos.length ? nuevos : lista.slice().sort(function(a, b){ return String(dichos[a.k]).localeCompare(String(dichos[b.k])); }).slice(0, 1);
+  }
+  return lista.slice(0, tema.id === 'dotacion' ? 10 : (tema.id === 'flota' ? 10 : (tema.id === 'personal' ? 7 : VOZ_INF_MAX_TRAMOS))).map(vozInfTramo).map(function(t){
     if (t.sol){ if (vistos['s:' + t.sol.id]) t.sol = null; else vistos['s:' + t.sol.id] = 1; }
     return t;
   });
@@ -36174,6 +36226,7 @@ function vozInfConteo(){
 function vozInfPintarLista(){
   const caja = document.getElementById('voz-informes');
   _vozInfVer = null;
+  if (_vozInfMic) vozInfMicPoner(false);
   vozOverlay.classList.remove('voz-inf-detalle');
   if (!_vozInfHora){
     caja.innerHTML = '<div class="vinf-nota">Confirmando los datos con el servidor…</div>';
@@ -36492,9 +36545,20 @@ function vozInfPintarInforme(r, i){
     '<div class="vinf-cab"><button class="vinf-volver" title="Volver a los informes" aria-label="Volver a los informes">' + ico('<path d="M15 5l-7 7 7 7"/>') + '</button>' +
     '<div class="vinf-tit">' + vozEsc(r.titulo) + '<span class="vinf-fecha">' + vozEsc(r.fecha) + '</span></div></div>' +
     '<div class="vinf-escena"></div><div class="vinf-narra" aria-live="polite"></div>' +
+    '<div class="vinf-charla" aria-live="polite"></div>' +
     '<div class="vinf-ctrl"><button class="vinf-paso" data-p="-1" aria-label="Anterior">' + ico('<path d="M15 5l-7 7 7 7"/>') + '</button>' +
     '<span class="vinf-cuenta"></span><button class="vinf-paso" data-p="1" aria-label="Siguiente">' + ico('<path d="M9 5l7 7-7 7"/>') + '</button>' +
-    '<button class="vinf-play"></button></div>';
+    '<button class="vinf-play"></button></div>' +
+    (!vozInfPuedeCharlar() ? '' : '<form class="vinf-preg" autocomplete="off">' +
+      (vozRec ? '<button type="button" class="vinf-mic" aria-pressed="false" aria-label="Micrófono abierto">' +
+        ico('<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/>') + '</button>' : '') +
+      '<input type="text" class="vinf-q-in" placeholder="Pregúntame sobre este informe" aria-label="Pregunta sobre este informe" enterkeyhint="send">' +
+      '<button type="submit" class="vinf-enviar">Preguntar</button></form>') +
+    '<div class="vinf-oye" aria-live="polite"></div>';
+  if (r !== _vozInfCharlaDe){ _vozInfCharla = []; _vozInfCola = []; _vozInfCharlaDe = r; }
+  vozInfPintarCharla();
+  vozInfPintarMic();
+  if (_vozInfMic) vozInfOye('Micrófono abierto: pregunta cuando quieras.');
   vozInfIr(_vozInfI);
 }
 /* Dibuja una escena: se pinta de nuevo para que su figura vuelva a entrar. */
@@ -36514,6 +36578,165 @@ function vozInfIr(i){
   document.querySelector('.vinf-paso[data-p="1"]').disabled = _vozInfI === r.tramos.length - 1;
   if (_vozInfI === r.tramos.length - 1) vozInfMarcar(r);
   vozInfBoton();
+}
+/* ── Preguntas sobre el informe ──
+   Sobre el informe abierto se pregunta escribiendo o con el micrófono
+   abierto, y se responde ahí mismo: no pasa a la conversación ni mueve
+   el tablero. Si estaba presentando, se detiene, responde y retoma la
+   misma escena. Lo que el asistente dice no se toma como pregunta. */
+let _vozInfCharla = [], _vozInfCharlaDe = null, _vozInfCola = [], _vozInfRespondiendo = false;
+let _vozInfMic = false, _vozInfMicFallas = 0, _vozInfEco = '', _vozInfEcoT = 0;
+function vozInfPintarCharla(){
+  const c = document.querySelector('#voz-informes .vinf-charla');
+  if (!c) return;
+  c.innerHTML = _vozInfCharla.map(function(x){
+    return '<div class="vinf-q">' + vozEsc(x.q) + '</div>' +
+      '<div class="vinf-r' + (x.r == null ? ' vinf-pensando' : '') + '">' + vozEsc(x.r == null ? 'Pensando…' : x.r) + '</div>';
+  }).join('');
+  c.scrollTop = c.scrollHeight;
+}
+/* Preguntar sobre el informe es usar el asistente: hace falta su permiso (base o premium). */
+function vozInfPuedeCharlar(){
+  try { return !!(vozUsuarioPermitido() || vozEsPremium()); } catch(e){ return false; }
+}
+function vozInfOye(txt){
+  const o = document.querySelector('#voz-informes .vinf-oye');
+  if (o) o.textContent = txt || '';
+}
+function vozInfPintarMic(){
+  const b = document.querySelector('#voz-informes .vinf-mic');
+  if (!b) return;
+  b.setAttribute('aria-pressed', _vozInfMic ? 'true' : 'false');
+  b.title = _vozInfMic ? 'Cerrar el micrófono' : 'Abrir el micrófono para preguntar hablando';
+}
+/* Habla y recuerda qué dijo, para no confundir su propia voz con una pregunta. */
+function vozInfDecir(texto){
+  _vozInfEco = texto;
+  clearTimeout(_vozInfEcoT);
+  return Promise.resolve(vozHablarYa(texto)).then(function(){
+    _vozInfEcoT = setTimeout(function(){ _vozInfEco = ''; }, 2500);
+  });
+}
+function vozInfEsEco(t){
+  if (!_vozInfEco) return false;
+  const pal = function(x){ return vozNorm(x).replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(function(w){ return w.length > 2; }); };
+  const w = pal(t), ref = pal(_vozInfEco);
+  if (!w.length) return true;
+  /* Es eco si repite seguido un pedazo de lo dicho (4 palabras, o toda la frase si es más corta). */
+  let mejor = 0;
+  for (let i = 0; i < ref.length; i++) for (let j = 0; j < w.length; j++){
+    let k = 0;
+    while (i + k < ref.length && j + k < w.length && ref[i + k] === w[j + k]) k++;
+    if (k > mejor) mejor = k;
+  }
+  return mejor >= Math.min(4, w.length);
+}
+/* Espera, pero corta apenas llega una pregunta. */
+function vozInfPausa(ms){
+  return new Promise(function(ok){
+    const fin = Date.now() + ms;
+    const t = setInterval(function(){ if (_vozInfCola.length || Date.now() >= fin){ clearInterval(t); ok(); } }, 120);
+  });
+}
+function vozInfOyendo(){
+  return _vozInfMic && vozOverlay.classList.contains('voz-inf-detalle') && vozOverlay.classList.contains('voz-abierto');
+}
+function vozInfEscuchar(){
+  if (!vozRec || vozEscuchando || !vozInfOyendo()) return;
+  try { vozRec.lang = vozIdiomaActual().lang; } catch(e){}
+  _vozEscuchaAuto = false;
+  try { vozRec.start(); } catch(e){}
+}
+function vozInfMicPoner(si, aviso){
+  if (si && !vozInfPuedeCharlar()) return;
+  if (si && !vozRec){ vozInfOye('Este navegador no deja usar el micrófono. Escribe tu pregunta.'); return; }
+  if (si && !window.isSecureContext){ vozInfOye('El micrófono solo funciona con la página abierta en https://.'); return; }
+  _vozInfMic = !!si;
+  _vozInfMicFallas = 0;
+  vozInfPintarMic();
+  vozInfOye(si ? 'Micrófono abierto: pregunta cuando quieras.' : (aviso || ''));
+  if (vozEscuchando){ try { vozRec.abort(); } catch(e){} }   // al cerrarse la escucha, si sigue abierto, vuelve a abrir
+  else if (si) vozInfEscuchar();
+}
+function vozInfOidoParcial(t){ if (!vozInfEsEco(t)) vozInfOye('Te escucho: ' + t); }
+function vozInfOido(t){
+  _vozInfMicFallas = 0;
+  vozInfOye('Micrófono abierto: pregunta cuando quieras.');
+  if (!vozInfEsEco(t)) vozInfPreguntar(t);
+}
+function vozInfMicError(cod, msg){
+  if (cod === 'no-speech' || cod === 'aborted') return;   // se vuelve a abrir solo
+  if (cod === 'not-allowed' || cod === 'service-not-allowed' || cod === 'audio-capture' || ++_vozInfMicFallas > 3)
+    vozInfMicPoner(false, msg || 'No se pudo usar el micrófono.');
+}
+function vozInfPreguntar(q){
+  q = String(q || '').trim();
+  if (!q || !_vozInfVer || !vozInfPuedeCharlar()) return;
+  _vozInfCola.push(q);
+  if (_vozInfSonando){ vozCallar(); return; }   // la presentación responde y retoma
+  vozInfAtender();
+}
+async function vozInfAtender(){
+  if (_vozInfRespondiendo) return;
+  _vozInfRespondiendo = true;
+  try { while (_vozInfCola.length) await vozInfResponder(_vozInfCola.shift()); }
+  finally { _vozInfRespondiendo = false; }
+}
+function vozInfContextoPregunta(rep){
+  const t = rep.tramos[_vozInfI];
+  const antes = _vozInfCharla.slice(0, -1).filter(function(x){ return x.r; });
+  return 'INSTRUCCIÓN: La persona está viendo en el asistente el informe "' + rep.titulo + '" (' + (rep.fecha || '') + ') y te pregunta sobre él. ' +
+    'Responde en 1 a 4 frases cortas, conversando, sin repetir el informe completo. Básate en el informe y en los datos de abajo; ' +
+    'habla como un asesor con carácter: si un dato tiene dos lecturas, en vez de afirmar o suavizar, plantea la pregunta que pone a pensar y di qué confirmar; ' +
+    'si la respuesta no está ahí, dilo claro y di en qué pestaña mirarla. No inventes cifras, nombres ni fechas. No cambies de pestaña.\n\n' +
+    'INFORME QUE ESTÁ VIENDO:\n' + rep.tramos.map(function(x, i){
+      return (i + 1) + '. ' + (x.tit ? x.tit + ': ' : '') + (x.habla || x.dice || '') + (x.sol ? ' Salida: ' + x.sol.texto : '');
+    }).join('\n') +
+    (t ? '\n\nESCENA EN PANTALLA: ' + (_vozInfI + 1) + '. ' + (t.tit || rep.titulo) : '') +
+    (antes.length ? '\n\nLO QUE YA PREGUNTÓ SOBRE ESTE INFORME:\n' + antes.map(function(x){ return 'P: ' + x.q + '\nR: ' + x.r; }).join('\n') : '') +
+    '\n\nDATOS DEL TABLERO:\n';
+}
+async function vozInfResponder(q){
+  const rep = _vozInfVer;
+  if (!rep) return;
+  const item = { q: q, r: null };
+  _vozInfCharla.push(item);
+  _vozInfCharla = _vozInfCharla.slice(-6);
+  vozInfPintarCharla();
+  vozSetEstado('thinking', 'Pensando…');
+  let txt = '';
+  try {
+    let datos = '';
+    try {
+      const plan = await vozPedirPlan(q);
+      vozPlanConPersonal(plan, q);
+      /* Solo datos de las pestañas que esta persona puede ver. */
+      const asesor = !!vozUsuarioAsesor();
+      plan.fuentes = (plan.fuentes || []).filter(function(k){
+        const p = VOZ_FUENTES[k] && VOZ_FUENTES[k].panel;
+        if (!p) return asesor;
+        const tab = document.querySelector('.nav-tab[data-panel="' + p + '"]');
+        return !!tab && tab.style.display !== 'none';
+      });
+      if (plan.fuentes.length){
+        await Promise.race([vozAsegurarDatos(plan.fuentes), vozEsperar(15000)]);
+        datos = vozConstruirContexto(plan.fuentes, plan.desde, plan.hasta, vozEtiquetaRango(plan.desde, plan.hasta, plan.etiqueta), q, plan.extras);
+      }
+    } catch(e){}
+    const idioma = vozIdiomaActual();
+    const r = await vozProxy({ mode:'answer', question: q, context: vozInfContextoPregunta(rep) + datos,
+                               idioma: idioma.lang, idiomaNombre: idioma.nombre, narrado: true, panelPorDefecto: rep.panel || '' });
+    const seg = Array.isArray(r.segmentos) ? r.segmentos.filter(function(x){ return x && x.dice; }) : [];
+    txt = (seg.length ? seg.map(function(x){ return x.dice; }).join(' ') : String(r.answer || '')).trim() || 'No encontré cómo responder eso.';
+  } catch(err){
+    txt = 'No pude responder: ' + ((err && err.message) || err);
+  }
+  item.r = txt;
+  if (_vozInfVer !== rep || !vozOverlay.classList.contains('voz-abierto')) return;
+  vozInfPintarCharla();
+  vozSetEstado('speaking', 'Respondiendo…');
+  await vozInfDecir(txt);
+  vozSetEstado('', 'Pregúntame por cualquier fecha o pestaña');
 }
 function vozInfBoton(){
   const b = document.querySelector('#voz-informes .vinf-play');
@@ -36589,7 +36812,7 @@ async function vozInfTraerDatos(){
   vozInfActualizar();
 }
 function vozInfVista(si){
-  if (!si) vozInfParar();
+  if (!si){ vozInfParar(); if (_vozInfMic) vozInfMicPoner(false); }
   vozOverlay.classList.toggle('voz-vista-informes', !!si);
   if (!si) vozOverlay.classList.remove('voz-inf-detalle');
   else if (_vozInfVer) vozOverlay.classList.add('voz-inf-detalle');
@@ -36639,23 +36862,34 @@ async function vozInfPresentar(rep, desde){
         }
       }
       /* El mínimo deja ver la figura y el gesto aunque el equipo no tenga voz. */
-      await Promise.all([vozHablarYa(texto), vozEsperar(2600)]);
+      await Promise.all([vozInfDecir(texto), vozInfPausa(2600)]);
+      if (_vozInfCola.length && turno === _vozInfTurno){
+        await vozInfAtender();
+        if (turno === _vozInfTurno){ i--; continue; }   // retoma la misma escena
+      }
       /* Primero el problema, y aparte la salida: ahí el robot cambia de ánimo. */
       if (t.sol && turno === _vozInfTurno){
         const caja = document.querySelector('.vinf-sol');
         if (caja) caja.classList.add('vinf-sol-on');
         if (window.hortiGestos) window.hortiGestos.tono('bien');
         dicho += ' ' + t.sol.texto;
-        await Promise.all([vozHablarYa(t.sol.texto), vozEsperar(2200)]);
+        await Promise.all([vozInfDecir(t.sol.texto), vozInfPausa(2200)]);
+        if (_vozInfCola.length && turno === _vozInfTurno) await vozInfAtender();
       }
     }
     rep.completo = turno === _vozInfTurno;
+    if (rep.completo && vozInfPuedeCharlar()){
+      if (!_vozInfMic) vozInfOye('¿Te quedó alguna duda? Escríbela o abre el micrófono.');
+      const inp = document.querySelector('#voz-informes .vinf-q-in');
+      if (inp && !matchMedia('(pointer:coarse)').matches) inp.focus({ preventScroll: true });
+    }
   } finally {
     if (window.hortiGestos) window.hortiGestos.tono(null);
     _vozInfSonando = false;
     if (rep.recorrido) vozQuitarFocos();
     vozSetEstado('', 'Pregúntame por cualquier fecha o pestaña');
     vozInfBoton();
+    if (_vozInfCola.length) setTimeout(vozInfAtender, 0);
   }
   return dicho;
 }
@@ -36714,6 +36948,17 @@ document.getElementById('voz-informes').addEventListener('click', function(ev){
     else if (_vozInfVer) vozInfTocar(_vozInfVer);
   }
 });
+document.getElementById('voz-informes').addEventListener('submit', function(ev){
+  ev.preventDefault();
+  const inp = ev.target.querySelector('.vinf-q-in');
+  if (!inp) return;
+  const q = inp.value;
+  inp.value = '';
+  vozInfPreguntar(q);
+});
+document.getElementById('voz-informes').addEventListener('click', function(ev){
+  if (ev.target.closest('.vinf-mic')) vozInfMicPoner(!_vozInfMic);
+});
 /* "Ahora no": se calla, se recoge y el informe queda para la próxima
    entrada, sin gastar el del día. */
 document.getElementById('voz-ahora-no').addEventListener('click', function(){
@@ -36763,11 +37008,19 @@ function vozSupPanelActivo(){
   const p = document.querySelector('.panel.active');
   return p ? p.id.replace(/^panel-/, '') : '';
 }
+function vozSupKVistas(u){ try { return JSON.parse(localStorage.getItem('hortiVozSupK|' + vozSupId(u))) || {}; } catch(e){ return {}; } }
+function vozSupKMarcar(u, rep){
+  const v = vozSupKVistas(u), hoy = vozHoy();
+  rep.tramos.forEach(function(x){ if (x.k) v[x.k] = hoy; });
+  Object.keys(v).forEach(function(k){ if (vozDiasEntre(v[k], hoy) > 45) delete v[k]; });
+  try { localStorage.setItem('hortiVozSupK|' + vozSupId(u), JSON.stringify(v)); } catch(e){}
+}
 function vozSupInforme(panel){
   const cfg = VOZ_SUP_PANEL[panel];
   const base = cfg && _vozInfLista.find(function(r){ return r.id === cfg.tema; });
   if (!base) return null;
-  const t = base.tramos.filter(function(x){ return x.fig.t !== 'cierre' && x.fig.t !== 'traza' && (cfg.re ? (x.k && cfg.re.test(x.k)) : true); }).slice(0, cfg.tema === 'flota' ? 11 : (cfg.tema === 'personal' ? 8 : VOZ_SUP_MAX));
+  const u = vozSupUsuario(), visto = (u && cfg.tema === 'dotacion') ? vozSupKVistas(u) : {};
+  const t = base.tramos.filter(function(x){ return x.fig.t !== 'cierre' && x.fig.t !== 'traza' && !(x.k && visto[x.k]) && (cfg.re ? (x.k && cfg.re.test(x.k)) : true); }).slice(0, cfg.tema === 'flota' ? 11 : (cfg.tema === 'personal' ? 8 : VOZ_SUP_MAX));
   if (!t.some(function(x){ return x.k; })) return null;
   const c = vozInfCierre(t, cfg.tema);
   const tr = c ? t.concat(c) : t;
@@ -36887,6 +37140,7 @@ async function vozSupRevisar(panel){
     const rep = vozSupInforme(panel);
     if (!rep) return;
     vozSupVer(u, panel);
+    if (VOZ_SUP_PANEL[panel].tema === 'dotacion') vozSupKMarcar(u, rep);
     try { localStorage.setItem(vozSupRepClave(u, panel), JSON.stringify(rep)); } catch(e){}
     if (!primera) await vozSupBloqueo({ tit:'Un momento, por favor', minimo:2600, tope:7000,
       txt:'Revisé ' + cfg.etq + ' y tengo ' + rep.n + (rep.n === 1 ? ' observación' : ' observaciones') + ' para ti.' });
@@ -37360,11 +37614,13 @@ if (VozSR){
   vozRec.lang = 'es-CO';
   vozRec.interimResults = true;
   vozRec.continuous = false;
-  vozRec.onstart = function(){ vozEscuchando = true; vozMicBtn.classList.add('voz-on'); vozSetEstado('listening','Escuchando…'); };
+  vozRec.onstart = function(){ vozEscuchando = true; vozMicBtn.classList.add('voz-on'); if (!vozInfOyendo()) vozSetEstado('listening','Escuchando…'); };
   vozRec.onresult = function(ev){
     let t = '';
     for (let i=0;i<ev.results.length;i++) t += ev.results[i][0].transcript;
-    if (ev.results[ev.results.length-1].isFinal){ _vozEscuchaAuto = false; vozRec.stop(); vozConsultar(t); }
+    const inf = vozInfOyendo();
+    if (ev.results[ev.results.length-1].isFinal){ _vozEscuchaAuto = false; vozRec.stop(); if (inf) vozInfOido(t); else vozConsultar(t); }
+    else if (inf) vozInfOidoParcial(t);
     else vozStatus.textContent = t;
   };
   /* Antes todo error decía "No te escuché bien", incluso cuando el
@@ -37386,6 +37642,7 @@ if (VozSR){
     const cod = (ev && ev.error) || '';
     console.info('Asistente de voz · error del reconocimiento:', cod, ev && ev.message);
     vozEscuchando = false; vozMicBtn.classList.remove('voz-on');
+    if (vozInfOyendo()){ vozInfMicError(cod, VOZ_ERRORES[cod]); return; }
     /* Si la escucha la abrió el asistente y nadie habló, no es un error */
     if (_vozEscuchaAuto && (cod === 'no-speech' || cod === 'aborted')){
       _vozEscuchaAuto = false;
@@ -37405,8 +37662,11 @@ if (VozSR){
     vozSetEstado('', VOZ_ERRORES[cod] || 'No te escuché bien, probá de nuevo');
   };
   vozRec.onend   = function(){ vozEscuchando = false; vozMicBtn.classList.remove('voz-on');
+    if (vozInfOyendo()){ setTimeout(vozInfEscuchar, 250); return; }
     if (vozOrbWrap.className.indexOf('voz-listening') !== -1) vozSetEstado('','Pregúntame por cualquier fecha o pestaña'); };
   vozMicBtn.addEventListener('click', function(){
+    /* Con un informe abierto, el micrófono del robot también pregunta sobre el informe. */
+    if (vozOverlay.classList.contains('voz-inf-detalle')){ vozInfMicPoner(!_vozInfMic); return; }
     _vozEscuchaAuto = false;
     if (vozEscuchando){ vozRec.stop(); return; }
     vozCallar();
