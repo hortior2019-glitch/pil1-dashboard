@@ -32678,9 +32678,10 @@ function vozResumenFlota(fuente, desde, hasta, etiqueta){
     placas: veh.map(function(v){ return (v.placa||'').toString().toUpperCase().trim(); }).filter(Boolean) };
   out += 'Total de vehículos: ' + veh.length + '\n';
   out += 'Con documentos por vencer o vencidos: ' + alerta.length + '\n';
-  out += 'PLACA | SOAT | TECNOMECANICA | KM\n';
+  out += vozNotaFlotaTipos();
+  out += 'PLACA | TIPO | SOAT | TECNOMECANICA | KM\n';
   veh.slice(0, 40).forEach(function(v){
-    out += (v.placa||'-') + ' | ' + (v.soat||'-') + ' | ' + (v.tecno||'-') + ' | ' + (v.km||'-') + '\n';
+    out += (v.placa||'-') + ' | ' + (vozTipoVeh(v)||'-') + ' | ' + (v.soat||'-') + ' | ' + (v.tecno||'-') + ' | ' + (v.km||'-') + '\n';
   });
   // Último cambio de aceite por vehículo, con km recorridos desde entonces
   out += '\nULTIMO CAMBIO DE ACEITE POR VEHICULO:\n';
@@ -34283,13 +34284,34 @@ function vozRefFuente(d, h){
 function vozRefFila(d, h, etq){
   return { e: etq || d.dato, s: vozRefFuente(d, h), v: String(d.valor) + (d.unidad ? ' ' + d.unidad : '') };
 }
+/* Las volquetas de la flota son doble troque; la única sencilla es QVK124.
+   El asistente dice el tipo exacto y compara solo contra referencias de ese tipo. */
+const VOZ_VOLQ_SENCILLAS = ['QVK124'];
+function vozTipoVeh(v){
+  if (!v) return '';
+  const base = String(v.categoria || v.tipo || '').trim();
+  const t = (base + ' ' + String(v.tipo || '')).trim();
+  if (!/volq/i.test(t)) return String(v.tipo || base);
+  return VOZ_VOLQ_SENCILLAS.indexOf(_placaNorm(v.placa)) !== -1 ? 'Volqueta sencilla' : 'Volqueta doble troque';
+}
+function vozNotaFlotaTipos(){
+  return 'TIPOS DE LA FLOTA PROPIA: todas las volquetas son doble troque, salvo ' + VOZ_VOLQ_SENCILLAS.join(', ') +
+    ' que es sencilla. Nunca llames sencilla a otra volqueta, y si una referencia del mercado es de otro tipo de volqueta, no la uses para comparar.\n';
+}
 function vozEduCombustible(peor){
   const h = vozRefHoja('combustible');
   if (!h) return null;
   const blob = function(d){ return vozNorm(d.dato + ' ' + (d.unidad || '')); };
   const acpm = h.datos.find(function(d){ const b = blob(d); return /acpm|diesel/.test(b) && /gal/.test(b) && !/km|rendim/.test(b) && vozRefNum(d.valor) > 1000; });
   const tipo = peor ? vozNorm(peor.tipo).split(/\s+/).find(function(p){ return /volqueta|camioneta|nhr|npr|camion|pick/.test(p); }) : '';
-  const rend = tipo ? h.datos.find(function(d){ const b = blob(d); return b.indexOf(tipo) !== -1 && /km.*gal|rendim/.test(b); }) : null;
+  const doble = peor && /doble/i.test(peor.tipo), sencilla = peor && /sencilla/i.test(peor.tipo);
+  const rend = tipo ? h.datos.find(function(d){
+    const b = blob(d);
+    if (b.indexOf(tipo) === -1 || !/km.*gal|rendim/.test(b)) return false;
+    if (doble) return /doble|troque|6x4|dobletroque/.test(b) && !/sencill/.test(b);
+    if (sencilla) return /sencill|4x2/.test(b) && !/doble|troque/.test(b);
+    return true;
+  }) : null;
   const filas = [];
   let dice = 'Contraste con internet, aproximado. ';
   if (acpm){
@@ -35040,7 +35062,7 @@ function vozRadarFlota(hoy, faltan){
       if (alto){
         const de = x.valor - tqNormal;
         anomalos.altos++; anomalos.real += x.valor; anomalos.normal += tqNormal;
-        if (!anomalos.peor || de > anomalos.peor.de) anomalos.peor = { pl: pl, tipo: v.tipo || '', valor: x.valor, normal: tqNormal, de: de };
+        if (!anomalos.peor || de > anomalos.peor.de) anomalos.peor = { pl: pl, tipo: vozTipoVeh(v), valor: x.valor, normal: tqNormal, de: de };
         raros.push({ f: x.fecha, orden: de, tit: 'Este tanqueo es muy alto',
           t: cuando + '. Así debería estar: esta placa tanquea normalmente ' + vozPesos(tqNormal) + '. Son ' + vozPesos(de) + ' de más por revisar.' + kmTxt +
              (x._ops ? ' Desde el tanqueo anterior lo operó ' + x._ops + '.' : '') +
@@ -35060,7 +35082,8 @@ function vozRadarFlota(hoy, faltan){
       }
     });
     const ult = rec[0] ? rec[0].fecha : '';
-    let l = '  - ' + pl + (v.tipo ? ' (' + v.tipo + ')' : '') + ': ' + rec.length + ' tanqueos, ' + vozPesos(valor) + ' en combustible';
+    const tipoV = vozTipoVeh(v);
+    let l = '  - ' + pl + (tipoV ? ' (' + tipoV + ')' : '') + ': ' + rec.length + ' tanqueos, ' + vozPesos(valor) + ' en combustible';
     if (tqNormal) l += ', tanqueo normal ' + vozPesos(tqNormal);
     if (km) l += ', ' + Math.round(km) + (enH ? ' horas de horómetro medidas, ' : ' km medidos, ') + vozPesos(med * 100) + ' por 100' + uK + ' (mediana)';
     else if (rec.length) l += enH ? ', SIN horómetros que permitan medir el rendimiento' : ', SIN kilometrajes que permitan medir el rendimiento';
@@ -35443,7 +35466,7 @@ async function vozReferenciasTexto(){
     if ((h.alertas || []).length) t += '   Señales a vigilar: ' + h.alertas.slice(0, 5).join(' | ') + '\n';
     if ((h.novedades || []).length) t += '   Novedades de la semana: ' + h.novedades.slice(0, 3).join(' | ') + '\n';
   });
-  return t + '\n';
+  return t + vozNotaFlotaTipos() + '\n';
 }
 
 /* Para no repetir el mismo informe: se recuerdan los últimos informes
@@ -35497,7 +35520,7 @@ function vozInstruccionAsesor(a){
     'Eres curioso: puedes cerrar con UNA pregunta amable y útil sobre el dato más llamativo, como quien ofrece ayuda (por ejemplo, si quiere que revises a ese cliente o que compares con otro periodo).\n' +
     'No te limites a los volúmenes: revisa el RADAR OPERATIVO (producción de humus parada o por debajo, costo de cada vehículo por kilómetro sumando combustible y mantenimiento, horas extra y novedades del personal) y elige lo más llamativo.\n' +
     'Sé suspicaz: un vacío de datos no es buena noticia. Si el radar lista VACÍOS DE INFORMACIÓN, menciona el más importante y pide con amabilidad que alimenten el sistema con ese dato.\n' +
-    'No mires el combustible solo: crúzalo con los viajes, el peso movido y el horario de los conductores. Compara este mes contra el mes pasado a la misma fecha y cierra con un objetivo claro para el mes, sacado de esas mismas cifras. En combustible, lo primero es el valor total del tanqueo contra lo que esa placa tanquea normalmente; el costo por 100 km es secundario. Si hay REFERENCIAS DEL MERCADO, contrasta con ellas, por ejemplo cuántos galones serían ese tanqueo al precio de referencia, y explícalo de forma que enseñe, aclarando que la referencia es aproximada. Cuando venga al caso, suma una novedad útil del sector.\n' +
+    'No mires el combustible solo: crúzalo con los viajes, el peso movido y el horario de los conductores. Compara este mes contra el mes pasado a la misma fecha y cierra con un objetivo claro para el mes, sacado de esas mismas cifras. En combustible, lo primero es el valor total del tanqueo contra lo que esa placa tanquea normalmente; el costo por 100 km es secundario. Si hay REFERENCIAS DEL MERCADO, contrasta con ellas, por ejemplo cuántos galones serían ese tanqueo al precio de referencia, y explícalo de forma que enseñe, aclarando que la referencia es aproximada. Internet es apoyo, nunca tu argumento principal ni tu excusa: tu criterio sale de las cifras del sistema; la referencia solo confirma o contrasta. Cuando venga al caso, suma una novedad útil del sector.\n' +
     'Varía tus informes: no abras siempre con el ingreso de material ni repitas la estructura de los informes anteriores; sigue la sección VARIEDAD.\n' +
     'Todo el dinero del sistema está en pesos colombianos: nunca digas dólares. Los valores en pesos que puedes decir son los que ya están en el sistema (combustible, mantenimientos) y los de las referencias. Nunca inventes tarifas de clientes: el impacto en facturación lo expresas en toneladas, viajes y porcentajes.\n\n';
 }
@@ -36685,7 +36708,15 @@ async function vozInfAtender(){
 function vozInfContextoPregunta(rep){
   const t = rep.tramos[_vozInfI];
   const antes = _vozInfCharla.slice(0, -1).filter(function(x){ return x.r; });
-  return 'INSTRUCCIÓN: La persona está viendo en el asistente el informe "' + rep.titulo + '" (' + (rep.fecha || '') + ') y te pregunta sobre él. ' +
+  const a = vozUsuarioAsesor();
+  return (a ? vozInstruccionAsesor(a) : '') +
+    '=== CARÁCTER AL RESPONDER (prioridad sobre el estilo neutro) ===\n' +
+    'Eres un asesor financiero picante, con criterio propio, en todo momento: no un lector de datos. ' +
+    'Tu fuerza son las cifras del sistema; las referencias de internet son apoyo secundario: úsalas solo si suman, nunca para escudarte ni para empezar la respuesta, y nunca te quites autoridad con frases como "según internet" o "solo puedo ver". ' +
+    'Si la persona trae una teoría, ponla a prueba: busca en los datos el punto de quiebre, y si una cifra verificable la contradice, dilo de frente con esa cifra; si los datos la respaldan, dilo igual de claro. ' +
+    'Si el dato que la confirmaría no está en el sistema, dilo sin rodeos, di cuál falta y lánzale la pregunta que la pone a pensar. ' +
+    'Toma posición y sostenla con números; nada de respuestas tibias. Nunca inventes cifras.\n\n' +
+    'INSTRUCCIÓN: La persona está viendo en el asistente el informe "' + rep.titulo + '" (' + (rep.fecha || '') + ') y te pregunta sobre él. ' +
     'Responde en 1 a 4 frases cortas, conversando, sin repetir el informe completo. Básate en el informe y en los datos de abajo; ' +
     'habla como un asesor con carácter: si un dato tiene dos lecturas, en vez de afirmar o suavizar, plantea la pregunta que pone a pensar y di qué confirmar; ' +
     'si la respuesta no está ahí, dilo claro y di en qué pestaña mirarla. No inventes cifras, nombres ni fechas. No cambies de pestaña.\n\n' +
