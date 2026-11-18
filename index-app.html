@@ -8018,7 +8018,24 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-cartera .car-kpi[aria-pressed="false"] .val{color:var(--car-ink2)}
 #panel-cartera .car-kpi .pie{font-size:13px;color:var(--car-mute);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 #panel-cartera .chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font:700 12px 'Source Sans 3',sans-serif;background:var(--rule-l);color:var(--car-ink2);white-space:nowrap}
+#panel-cartera .chip.t1{background:#fbefd6;color:#7a5410}
 #panel-cartera .chip.t2{background:var(--orange-l);color:var(--orange)}
+/* Antigüedad por tramo: cuatro columnas que se leen solas */
+#panel-cartera .car-tramos{padding:18px 20px;margin-bottom:16px}
+#panel-cartera .tr-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+#panel-cartera .tr-col{all:unset;box-sizing:border-box;display:flex;flex-direction:column;gap:6px;padding:14px 14px 12px;border:1px solid var(--rule);border-radius:12px;cursor:pointer;font-family:'Source Sans 3',sans-serif;background:var(--white)}
+#panel-cartera .tr-col:hover{background:var(--s2)}
+#panel-cartera .tr-col:focus-visible{outline:2px solid var(--car-pag);outline-offset:2px}
+#panel-cartera .tr-col[aria-pressed="true"]{background:var(--sel-bg);box-shadow:inset 0 0 0 1px var(--sel-ring)}
+#panel-cartera .tr-tit{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:var(--car-ink)}
+#panel-cartera .tr-tit i{width:12px;height:12px;border-radius:3px;flex-shrink:0}
+#panel-cartera .tr-val{font-family:'Libre Baskerville',Georgia,serif;font-size:clamp(22px,2.2vw,30px);font-weight:700;color:var(--car-ink);letter-spacing:-.02em;line-height:1.15}
+#panel-cartera .tr-bar{height:10px;border-radius:5px;background:var(--car-line);overflow:hidden}
+#panel-cartera .tr-bar span{display:block;height:100%;border-radius:5px}
+#panel-cartera .tr-pie{display:flex;justify-content:space-between;font-size:13px;color:var(--car-ink2)}
+#panel-cartera .tr-pie b{color:var(--car-ink)}
+#panel-cartera .tr-filtro{display:inline-flex;align-items:center;gap:6px;margin-left:8px;text-transform:none;letter-spacing:0;font-weight:600}
+@media(max-width:900px){#panel-cartera .tr-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 #panel-cartera .chip.t3{background:var(--red-l);color:var(--red)}
 
 /* Antigüedad en espejo */
@@ -8134,7 +8151,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     cobrar: { nombre:'Por cobrar', quien:'Cliente',   quienes:'clientes',    color:'var(--car-cob)', sel:'var(--car-cob-l)', ring:'rgba(45,138,78,.28)', accion:'Cobrar' },
     pagar:  { nombre:'Por pagar',  quien:'Proveedor', quienes:'proveedores', color:'var(--car-pag)', sel:'var(--car-pag-l)', ring:'rgba(62,99,221,.28)', accion:'Ver' }
   };
-  let datos = null, lado = 'cobrar', cargando = false, error = '', abiertos = {}, orden = 'total';
+  let datos = null, lado = 'cobrar', cargando = false, error = '', abiertos = {}, orden = 'total', tramoSel = '';
 
   const $c = id => document.getElementById(id);
   const esc = x => String(x == null ? '' : x).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -8149,7 +8166,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   const pct = (v, t) => !t ? '—' : (v / t < .001 && v > 0 ? '<0,1%' : Math.round(v / t * 100) + '%');
   const tramoDe = d => d == null ? null : d <= 30 ? 'd0_30' : d <= 60 ? 'd31_60' : d <= 90 ? 'd61_90' : 'd90_mas';
   const chipDias = d => d == null ? '<span class="chip">—</span>' :
-    '<span class="chip' + (d > 90 ? ' t3' : d > 60 ? ' t2' : '') + '">' + d + ' d</span>';
+    '<span class="chip' + (d > 90 ? ' t3' : d > 60 ? ' t2' : d > 30 ? ' t1' : '') + '">' + d + ' d</span>';
   const hace = iso => {
     if (!iso) return '';
     const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
@@ -8269,6 +8286,20 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
         '<div class="esp-tramo"><i style="background:' + t.color + '"></i>' + t.lbl + '</div>' + barra('pagar', t) + '</div>').join('') +
       '</div>';
 
+    /* 2b. Por tramo, del lado elegido: monto, % y cuántos terceros.
+       Clic en un tramo filtra la tabla a quienes tienen saldo en él. */
+    h += '<div class="car-card car-tramos"><div class="car-h">' + L.nombre + ' por antigüedad' +
+      (tramoSel ? '<button type="button" class="accion tr-filtro" data-car-tramo="">Quitar filtro ✕</button>' : '') + '</div><div class="tr-grid">' +
+      TRAMOS.map(t => {
+        const v = g.edades[t.k] || 0, n = g.porTercero.filter(x => x._ed[t.k] > 0).length;
+        return '<button type="button" class="tr-col" data-car-tramo="' + t.k + '" aria-pressed="' + (tramoSel === t.k) + '" data-tip="<b>' + pesos(v) + '</b>' +
+          n + ' ' + L.quienes + ' con saldo de ' + t.largo + '. Clic para verlos en la tabla.">' +
+          '<span class="tr-tit"><i style="background:' + t.color + '"></i>' + t.largo.charAt(0).toUpperCase() + t.largo.slice(1) + '</span>' +
+          '<span class="tr-val num">' + mill(v) + '</span>' +
+          '<span class="tr-bar"><span style="width:' + (g.total ? v / g.total * 100 : 0) + '%;background:' + t.color + '"></span></span>' +
+          '<span class="tr-pie num"><b>' + pct(v, g.total) + '</b><span>' + n + ' ' + L.quienes + '</span></span></button>';
+      }).join('') + '</div></div>';
+
     /* 3. Atención (+90 días) y concentración, del lado elegido */
     const q = ($c('car-buscar').value || '').trim().toLowerCase();
     const urg = g.porTercero.filter(t => t._ed.d90_mas > 0).sort((a, b) => b._ed.d90_mas - a._ed.d90_mas);
@@ -8296,12 +8327,15 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 
     /* 4. Tabla completa */
     let filas = q ? g.porTercero.filter(t => String(t.tercero || '').toLowerCase().indexOf(q) !== -1) : g.porTercero.slice();
+    if (tramoSel) filas = filas.filter(t => t._ed[tramoSel] > 0);
     if (orden === 'dias') filas.sort((a, b) => (b.masViejo || 0) - (a.masViejo || 0));
     else if (orden === 'd90') filas.sort((a, b) => b._ed.d90_mas - a._ed.d90_mas || b.total - a.total);
     else filas.sort((a, b) => b.total - a.total);
     const th = (k, txt, cls, tip) => '<th class="' + (cls || '') + '"' + (orden === k ? ' aria-sort="descending"' : '') + (tip ? ' data-tip="' + tip + '"' : '') +
       '><button type="button" data-car-orden="' + k + '">' + txt + '</button></th>';
-    h += '<div class="car-card car-tabla"><table><thead><tr><th>' + L.quien + (q ? ' · ' + filas.length : '') + '</th>' +
+    const trSel = TRAMOS.find(x => x.k === tramoSel);
+    h += '<div class="car-card car-tabla" id="car-tabla"><table><thead><tr><th>' + L.quien + (q || trSel ? ' · ' + filas.length : '') +
+      (trSel ? ' · con saldo de ' + trSel.largo : '') + '</th>' +
       '<th class="num col-movil-no">Docs</th>' + th('dias', 'Más antiguo', 'num', 'Días desde la fecha del documento más antiguo') +
       th('d90', '+90 días', 'num col-movil-no') + th('total', 'Saldo', 'num') + '</tr></thead><tbody>';
     if (!filas.length) h += '<tr><td colspan="5" class="vacio">' + (q ? 'Nadie coincide con “' + esc(q) + '”.' : 'Sin saldos abiertos.') + '</td></tr>';
@@ -8350,8 +8384,16 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 
   panelEl.addEventListener('click', function(e){
     const b = e.target.closest('[data-car-lado]');
-    if (b) { lado = b.getAttribute('data-car-lado'); ocultarTip(); return pintar(); }
+    if (b) { lado = b.getAttribute('data-car-lado'); tramoSel = ''; ocultarTip(); return pintar(); }
     if (e.target.closest('#car-recargar,[data-car-recargar]')) return pedir();
+    const tr = e.target.closest('[data-car-tramo]');
+    if (tr) {
+      const k = tr.getAttribute('data-car-tramo');
+      tramoSel = (k && tramoSel !== k) ? k : '';
+      ocultarTip(); pintar();
+      if (tramoSel) { const tb = $c('car-tabla'); if (tb) tb.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+      return;
+    }
     const o = e.target.closest('[data-car-orden]');
     if (o) { orden = o.getAttribute('data-car-orden'); return pintar(); }
     const ir = e.target.closest('[data-car-ir]');
