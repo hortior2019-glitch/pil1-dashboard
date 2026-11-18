@@ -8025,6 +8025,43 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-cartera .car-filtro i{width:9px;height:9px;border-radius:2px}
 #panel-cartera .esp-fila.fuera{opacity:.3}
 #panel-cartera .car-dos.uno{grid-template-columns:1fr}
+/* Indicadores: una tarjeta, celdas separadas por líneas finas a cualquier ancho */
+#panel-cartera .car-inds{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:1px;background:var(--car-line);overflow:hidden;margin-bottom:16px}
+#panel-cartera .ind{background:var(--white);padding:14px 16px;display:flex;flex-direction:column;gap:3px;min-width:0;outline:none}
+#panel-cartera .ind:focus-visible{box-shadow:inset 0 0 0 2px var(--car-pag)}
+#panel-cartera .ind-l{font-size:13px;font-weight:600;color:var(--car-ink2);display:flex;align-items:center;gap:6px}
+#panel-cartera .ind-v{font-size:26px;font-weight:700;color:var(--car-ink);letter-spacing:-.02em;line-height:1.15}
+#panel-cartera .ind-s{font-size:13px;color:var(--car-mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#panel-cartera .ind.ojo .ind-v{color:#7a5410}
+#panel-cartera .ind.mal .ind-v{color:var(--red)}
+#panel-cartera .ind.ojo .ind-l::after,#panel-cartera .ind.mal .ind-l::after{content:'';width:7px;height:7px;border-radius:50%;background:var(--car-t1)}
+#panel-cartera .ind.mal .ind-l::after{background:var(--car-t3)}
+/* Saldo por mes del documento + cruce de cuentas */
+#panel-cartera .car-mes-fila{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px;margin-bottom:16px}
+#panel-cartera .car-mes-fila>.car-card{padding:18px 20px}
+#panel-cartera .mes-graf{display:flex;align-items:flex-end;gap:6px;height:190px;padding-top:22px;border-bottom:1px solid var(--rule)}
+#panel-cartera .mes-col{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;position:relative;cursor:default}
+#panel-cartera .mes-col .b{width:100%;max-width:44px;border-radius:4px 4px 0 0;min-height:2px;transition:opacity .15s}
+#panel-cartera .mes-graf:hover .mes-col .b{opacity:.55}
+#panel-cartera .mes-graf .mes-col:hover .b{opacity:1}
+#panel-cartera .mes-col .et{position:absolute;font-size:12px;font-weight:700;color:var(--car-ink);white-space:nowrap;transform:translateY(-100%);padding-bottom:3px}
+#panel-cartera .mes-ejes{display:flex;gap:6px;margin-top:6px}
+#panel-cartera .mes-ejes span{flex:1;min-width:0;text-align:center;font-size:12px;color:var(--car-mute);white-space:nowrap;overflow:hidden}
+#panel-cartera .ley{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--car-ink2);margin-top:10px}
+#panel-cartera .ley i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:baseline}
+#panel-cartera .cruce li{grid-template-columns:minmax(0,1fr) auto}
+/* Filtro dentro de la tabla */
+#panel-cartera .tab-cab{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 16px 10px}
+#panel-cartera .tab-cab .car-h{margin:0}
+@media(max-width:1100px){#panel-cartera .car-inds{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:900px){#panel-cartera .car-mes-fila{grid-template-columns:1fr}}
+@media(max-width:700px){
+  #panel-cartera .car-inds{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #panel-cartera .ind-v{font-size:22px}
+  #panel-cartera .mes-graf{gap:3px;height:160px}
+  #panel-cartera .mes-ejes{gap:3px}
+  #panel-cartera .mes-ejes span{font-size:11px}
+}
 #panel-cartera .chip.t1{background:#fbefd6;color:#7a5410}
 #panel-cartera .chip.t2{background:var(--orange-l);color:var(--orange)}
 /* Antigüedad por tramo: cuatro columnas que se leen solas */
@@ -8306,6 +8343,34 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
       (neta < 0 ? '' : '+') + mill(neta) + '</div>' +
       '<span class="pie">cobrar − pagar · ' + (P.total ? (C.total / P.total).toLocaleString('es-CO', { maximumFractionDigits: 2 }) + '×' : '—') + '</span></div></div></div>';
 
+    /* 1b. Indicadores del lado elegido (respetan el filtro de antigüedad).
+       Solo los que salen honestos de estos datos: no hay ventas ni pagos
+       en el período, así que DSO/DPO y rotación no se calculan. */
+    const docsL = [];
+    g.porTercero.forEach(t => t.docs.forEach(d => docsL.push(d)));
+    const conDias = docsL.filter(d => d.dias != null);
+    const sd = conDias.reduce((a, d) => a + (d.saldo || 0), 0);
+    const edadProm = sd ? Math.round(conDias.reduce((a, d) => a + (d.saldo || 0) * d.dias, 0) / sd) : null;
+    const m30 = conDias.filter(d => d.dias > 30).reduce((a, d) => a + (d.saldo || 0), 0);
+    const may = g.porTercero[0];
+    const top5v = g.porTercero.slice(0, 5).reduce((a, t) => a + t.total, 0);
+    const ticket = docsL.length ? g.total / docsL.length : 0;
+    const tono = (v, a, b) => v == null ? '' : v >= b ? ' mal' : v >= a ? ' ojo' : '';
+    const ind = (lbl, val, sub, tip, cls) => '<div class="ind' + (cls || '') + '" tabindex="0" data-tip="' + tip + '">' +
+      '<span class="ind-l">' + lbl + '</span><span class="ind-v num">' + val + '</span><span class="ind-s num">' + sub + '</span></div>';
+    h += '<div class="car-card car-inds">' +
+      ind('Edad promedio', edadProm == null ? '—' : edadProm + ' d', 'ponderada por saldo',
+        '<b>' + (edadProm == null ? '—' : edadProm + ' días') + '</b>Días promedio de los documentos abiertos; pesan más los de mayor saldo. Más de 45 días se marca en amarillo y más de 75 en rojo.', tono(edadProm, 45, 75)) +
+      ind('Más de 30 días', pct(m30, sd), mill(m30),
+        '<b>' + pesos(m30) + '</b>Parte del saldo con más de 30 días desde la fecha del documento.', tono(sd ? m30 / sd * 100 : null, 40, 60)) +
+      ind('Mayor ' + L.quien.toLowerCase(), may ? pct(may.total, g.total) : '—', may ? esc(may.tercero) : '—',
+        '<b>' + (may ? pesos(may.total) : '—') + '</b>' + (may ? esc(may.tercero) + '. ' : '') + 'Cuánto del total depende de un solo tercero.', tono(may && g.total ? may.total / g.total * 100 : null, 20, 35)) +
+      ind('Top 5', pct(top5v, g.total), mill(top5v), '<b>' + pesos(top5v) + '</b>Lo que suman los 5 mayores saldos.', '') +
+      ind('Ticket promedio', mill(ticket), 'por documento', '<b>' + pesos(ticket) + '</b>Saldo promedio de cada documento abierto.', '') +
+      ind('Documentos', docsL.length.toLocaleString('es-CO'), g.porTercero.length + ' ' + L.quienes,
+        '<b>' + docsL.length + ' documentos abiertos</b>De ' + g.porTercero.length + ' ' + L.quienes + '.', '') +
+      '</div>';
+
     /* 2. Antigüedad en espejo, misma escala para los dos lados */
     const max = Math.max(1, ...TRAMOS.map(t => Math.max(C.edades[t.k] || 0, P.edades[t.k] || 0)));
     const barra = (k, t) => {
@@ -8335,6 +8400,54 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
           '<span class="tr-pie num"><b>' + pct(v, gTodo.total) + '</b><span>' + n + ' ' + L.quienes + '</span></span></button>';
       }).join('') + '</div></div>';
 
+    /* 2c. Saldo pendiente por mes del documento: cuánto de cada mes sigue
+       sin cerrarse. Últimos 12 meses y, aparte, todo lo anterior. */
+    const hoyD = new Date(), MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    const claves = [];
+    for (let i = 11; i >= 0; i--) { const d = new Date(hoyD.getFullYear(), hoyD.getMonth() - i, 1); claves.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')); }
+    const porMes = {}; claves.concat(['antes']).forEach(k => porMes[k] = { v: 0, n: 0 });
+    docsL.forEach(d => {
+      const m = String(d.fecha || '').slice(0, 7);
+      const k = porMes[m] ? m : (/^\d{4}-\d{2}$/.test(m) && m < claves[0] ? 'antes' : null);
+      if (!k) return;
+      porMes[k].v += d.saldo || 0; porMes[k].n++;
+    });
+    const orden13 = ['antes'].concat(claves);
+    const maxMes = Math.max(1, ...orden13.map(k => porMes[k].v));
+    const kMax = orden13.reduce((a, k) => porMes[k].v > porMes[a].v ? k : a, orden13[0]);
+    const colorMes = k => {
+      if (k === 'antes') return 'var(--car-t3)';
+      const p = k.split('-'), mid = new Date(+p[0], +p[1] - 1, 15);
+      const t = TRAMOS.find(x => x.k === tramoDe(Math.max(0, Math.floor((hoyD - mid) / 864e5))));
+      return t ? t.color : 'var(--car-t0)';
+    };
+    const nomMes = k => { if (k === 'antes') return 'Antes'; const p = k.split('-'); return MESES[+p[1] - 1] + (p[1] === '01' ? ' ' + p[0].slice(2) : ''); };
+    h += '<div class="car-mes-fila"><div class="car-card"><div class="car-h" data-tip="Saldo que sigue abierto, agrupado por el mes de la fecha del documento. El color indica en qué tramo de antigüedad cae ese mes.">' +
+      L.nombre + ' según mes del documento</div><div class="mes-graf" role="img" aria-label="Saldo pendiente por mes">' +
+      orden13.map(k => {
+        const x = porMes[k], hgt = x.v / maxMes * 100;
+        return '<div class="mes-col" data-tip="<b>' + pesos(x.v) + '</b>' + (k === 'antes' ? 'Documentos de antes de ' + nomMes(claves[0]) : nomMes(k) + ' ' + k.slice(0, 4)) + ' · ' + x.n + ' documentos">' +
+          (k === kMax && x.v ? '<span class="et num" style="bottom:' + hgt + '%">' + mill(x.v) + '</span>' : '') +
+          '<div class="b" style="height:' + hgt + '%;background:' + colorMes(k) + '"></div></div>';
+      }).join('') + '</div><div class="mes-ejes">' + orden13.map(k => '<span>' + nomMes(k) + '</span>').join('') + '</div>' +
+      '<div class="ley">' + TRAMOS.map(t => '<span><i style="background:' + t.color + '"></i>' + t.largo + '</span>').join('') + '</div></div>';
+
+    /* 2d. Cruce de cuentas: terceros que son cliente y proveedor a la vez. */
+    const mapP = {}; V.pagar.porTercero.forEach(t => mapP[t.terceroId] = t);
+    const cruce = V.cobrar.porTercero.filter(t => mapP[t.terceroId]).map(t => ({
+      id: t.terceroId, nom: t.tercero, c: t.total, p: mapP[t.terceroId].total, min: Math.min(t.total, mapP[t.terceroId].total)
+    })).sort((a, b) => b.min - a.min);
+    const totCruce = cruce.reduce((a, x) => a + x.min, 0);
+    h += '<div class="car-card"><div class="car-h" data-tip="Terceros que nos deben y a los que también les debemos. Lo compensable es el menor de los dos saldos: se podría cruzar con un acuerdo entre las partes.">Cruce de cuentas</div>' +
+      (cruce.length ? '<ul class="lista cruce">' + cruce.slice(0, 6).map(x =>
+        '<li data-tip="<b>' + pesos(x.min) + ' compensables</b>Nos debe ' + pesos(x.c) + ' · le debemos ' + pesos(x.p) + '"><div style="min-width:0"><div class="nom">' + esc(x.nom) + '</div>' +
+        '<div class="sub num"><span style="color:var(--car-cob)">●</span> ' + mill(x.c) + ' &nbsp;<span style="color:var(--car-pag)">●</span> ' + mill(x.p) + '</div></div>' +
+        '<span class="mon num">' + mill(x.min) + '</span>' +
+        '<span class="trk"><span style="width:' + (x.min / cruce[0].min * 100) + '%;background:var(--car-ink2)"></span></span></li>').join('') + '</ul>' +
+        '<div class="nota num">' + cruce.length + (cruce.length === 1 ? ' tercero · ' : ' terceros · ') + mill(totCruce) + ' compensables</div>'
+        : '<div class="vacio">Ningún tercero es cliente y proveedor a la vez' + (trSel ? ' en este tramo' : '') + '.</div>') +
+      '</div></div>';
+
     /* 3. Atención (+90 días) y concentración, del lado elegido */
     const q = ($c('car-buscar').value || '').trim().toLowerCase();
     const urg = g.porTercero.filter(t => t._ed.d90_mas > 0).sort((a, b) => b._ed.d90_mas - a._ed.d90_mas);
@@ -8361,7 +8474,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
         '<span class="mon num" data-tip="<b>' + pesos(t.total) + '</b>' + t.docs.length + ' documentos abiertos">' + mill(t.total) + '</span>' +
         '<span class="pct num">' + pct(t.total, g.total) + '</span>' +
         '<span class="trk"><span style="width:' + (t.total / top[0].total * 100) + '%;background:' + L.color + '"></span></span></li>').join('') + '</ul>' +
-        '<div class="nota num">Los 5 mayores son el ' + pct(top5, g.total) + ' del total</div>'
+        (g.porTercero.length > 5 ? '<div class="nota num">Los 5 mayores son el ' + pct(top5, g.total) + ' del total</div>' : '')
         : '<div class="vacio">Sin saldos abiertos.</div>') + '</div></div>';
 
     /* 4. Tabla completa */
@@ -8371,7 +8484,11 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     else filas.sort((a, b) => b.total - a.total);
     const th = (k, txt, cls, tip) => '<th class="' + (cls || '') + '"' + (orden === k ? ' aria-sort="descending"' : '') + (tip ? ' data-tip="' + tip + '"' : '') +
       '><button type="button" data-car-orden="' + k + '">' + txt + '</button></th>';
-    h += '<div class="car-card car-tabla" id="car-tabla"><table><thead><tr><th>' + L.quien + (q || trSel ? ' · ' + filas.length : '') +
+    h += '<div class="car-card car-tabla" id="car-tabla"><div class="tab-cab"><div class="car-h">Detalle por ' + L.quien.toLowerCase() + '</div>' +
+      '<div class="car-filtro" role="group" aria-label="Filtrar la tabla por antigüedad">' +
+      [{ k: '', lbl: 'Todos' }].concat(TRAMOS.map(t => ({ k: t.k, lbl: t.lbl, c: t.color }))).map(x =>
+        '<button type="button" data-car-tramo="' + x.k + '" aria-pressed="' + (tramoSel === x.k) + '">' + (x.c ? '<i style="background:' + x.c + '"></i>' : '') + x.lbl + '</button>').join('') +
+      '</div></div><table><thead><tr><th>' + L.quien + (q || trSel ? ' · ' + filas.length : '') +
       (trSel ? ' · con saldo de ' + trSel.largo : '') + '</th>' +
       '<th class="num col-movil-no">Docs</th>' + th('dias', 'Más antiguo', 'num', 'Días desde la fecha del documento más antiguo') +
       th('d90', '+90 días', 'num col-movil-no') + th('total', 'Saldo', 'num') + '</tr></thead><tbody>';
