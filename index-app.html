@@ -6260,6 +6260,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <div class="nav-tab" data-panel="dalas" onclick="showPanel('dalas',this)"><span class="nav-lbl">Dalas_Solutions</span></div>
   <div class="nav-sep"></div>
   <div class="nav-tab" data-panel="catalogo" onclick="showPanel('catalogo',this)"><span class="nav-lbl">Catálogo de Precios</span></div>
+  <div class="nav-tab" data-panel="cartera" data-admin-only="1" onclick="showPanel('cartera',this)" style="display:none"><span class="nav-lbl">Cartera</span></div>
   <div class="nav-sep"></div>
   <div class="nav-tab" data-panel="accesos" onclick="showPanel('accesos',this)"><span class="nav-lbl">Control Accesos</span></div>
   <div class="nav-tab" data-panel="permisos" data-admin-only="1" onclick="showPanel('permisos',this)" style="display:none"><span class="nav-lbl">Permisos</span></div>
@@ -7967,6 +7968,226 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 
 
 </div>
+<!--
+  ═══════════════════════════════════════════════════════════
+  PANEL: CARTERA (solo admins) · World Office, solo lectura
+  - Cuentas por cobrar (clientes) y por pagar (proveedores)
+  - Datos del servicio Codigo-world-office.gs (se actualiza solo cada 6 h)
+  - La antigüedad se cuenta desde la fecha del documento: World Office
+    no entrega la fecha de vencimiento por la API.
+  ═══════════════════════════════════════════════════════════
+-->
+<style>
+#panel-cartera .car-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+#panel-cartera .car-seg{display:inline-flex;border:1px solid var(--rule);border-radius:8px;overflow:hidden;background:var(--white)}
+#panel-cartera .car-seg button{border:0;background:transparent;padding:9px 18px;font:700 13px 'Source Sans 3',sans-serif;color:var(--ink-m);cursor:pointer;letter-spacing:.3px}
+#panel-cartera .car-seg button[aria-pressed="true"]{background:var(--green-l);color:var(--green);box-shadow:inset 0 0 0 1px rgba(26,92,53,.25)}
+#panel-cartera .car-buscar{flex:1;min-width:180px;max-width:320px;padding:9px 12px;border:1px solid var(--rule);border-radius:8px;font:14px 'Source Sans 3',sans-serif;background:var(--white);color:var(--ink)}
+#panel-cartera .car-estado{font-size:13px;color:var(--ink-m);display:flex;align-items:center;gap:7px;margin-left:auto}
+#panel-cartera .car-punto{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0}
+#panel-cartera .car-punto.viejo{background:var(--gold)}
+#panel-cartera .car-btn{padding:8px 14px;border:1px solid var(--rule);border-radius:8px;background:var(--white);font:700 12px 'Source Sans 3',sans-serif;color:var(--ink-m);cursor:pointer;letter-spacing:.5px;text-transform:uppercase}
+#panel-cartera .car-btn:hover{background:var(--s2)}
+#panel-cartera .kpi-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+#panel-cartera .kpi-val{font-size:clamp(28px,3.6vw,44px);letter-spacing:-1px;white-space:nowrap}
+#panel-cartera .car-edades{margin-bottom:24px}
+#panel-cartera .car-barra{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--rule-l);gap:2px}
+#panel-cartera .car-barra span{display:block;height:100%;min-width:0}
+#panel-cartera .car-ley{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:12px}
+#panel-cartera .car-ley div{font-size:13px;color:var(--ink-m)}
+#panel-cartera .car-ley b{display:block;font-size:17px;color:var(--ink);font-variant-numeric:tabular-nums;margin-top:2px}
+#panel-cartera .car-ley i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:baseline}
+#panel-cartera .tbl{font-size:14px}
+#panel-cartera .tbl td{color:var(--ink);font-weight:400}
+#panel-cartera .tbl th{font-size:12px}
+#panel-cartera .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+#panel-cartera tr.car-fila{cursor:pointer}
+#panel-cartera tr.car-fila td:first-child::before{content:'▸';display:inline-block;width:16px;color:var(--ink-l);transition:transform .15s}
+#panel-cartera tr.car-fila.abierta td:first-child::before{transform:rotate(90deg)}
+#panel-cartera tr.car-det td{background:var(--s2);padding:0 12px 10px 40px}
+#panel-cartera .car-det-t{width:100%;border-collapse:collapse;font-size:13px}
+#panel-cartera .car-det-t td{padding:6px 8px;border-bottom:1px solid var(--rule-l);background:transparent;color:var(--ink-m)}
+#panel-cartera .car-chip{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700;background:var(--rule-l);color:var(--ink-m)}
+#panel-cartera .car-chip.t61{background:var(--orange-l);color:var(--orange)}
+#panel-cartera .car-chip.t90{background:var(--red-l);color:var(--red)}
+#panel-cartera .car-aviso{padding:18px 22px;font-size:14px;color:var(--ink-m)}
+@media(max-width:700px){
+  #panel-cartera .car-ley{grid-template-columns:repeat(2,1fr)}
+  #panel-cartera .kpi-grid{grid-template-columns:1fr}
+  #panel-cartera .kpi-val{font-size:34px}
+  #panel-cartera .car-estado{margin-left:0;width:100%}
+  #panel-cartera .col-movil-no{display:none}
+}
+</style>
+<div class="panel" id="panel-cartera">
+  <div class="sec-hdr">
+    <div class="sec-title">Cartera</div>
+    <div class="sec-sub">World Office · cuentas por cobrar y por pagar</div>
+  </div>
+  <div class="car-top">
+    <div class="car-seg" role="group" aria-label="Tipo de cartera">
+      <button type="button" data-car-tipo="cobrar" aria-pressed="true">Por cobrar</button>
+      <button type="button" data-car-tipo="pagar" aria-pressed="false">Por pagar</button>
+    </div>
+    <input class="car-buscar" id="car-buscar" type="search" placeholder="Buscar cliente o proveedor" aria-label="Buscar tercero">
+    <div class="car-estado" id="car-estado"></div>
+    <button type="button" class="car-btn" id="car-recargar">Recargar</button>
+  </div>
+  <div id="car-cuerpo"><div class="card car-aviso">Cargando cartera…</div></div>
+</div>
+<script>
+(function(){
+  const CARTERA_API = 'https://script.google.com/macros/s/AKfycbwFK2kpgz3zZwSdkjNiLxETMEJ-TvtPlzYPEhvUcMcpZx4mdJTrSyK5pl0b0LUI4Aoc/exec';
+  const TRAMOS = [
+    { k:'d0_30',   lbl:'0 a 30 días',   color:'var(--ink-l)' },
+    { k:'d31_60',  lbl:'31 a 60 días',  color:'var(--gold)' },
+    { k:'d61_90',  lbl:'61 a 90 días',  color:'var(--orange)' },
+    { k:'d90_mas', lbl:'Más de 90 días', color:'var(--red)' }
+  ];
+  let datos = null, tipo = 'cobrar', cargando = false, abiertos = {};
+
+  const $c = id => document.getElementById(id);
+  const esc = x => String(x == null ? '' : x).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const pesos = n => '$' + Math.round(n || 0).toLocaleString('es-CO');
+  const corto = n => {
+    const a = Math.abs(n || 0);
+    if (a >= 1e9) return '$' + (n / 1e9).toLocaleString('es-CO', { maximumFractionDigits: 1 }) + ' mil M';
+    if (a >= 1e6) return '$' + (n / 1e6).toLocaleString('es-CO', { maximumFractionDigits: 1 }) + ' M';
+    return pesos(n);
+  };
+  const hace = iso => {
+    if (!iso) return '';
+    const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (m < 60) return 'hace ' + Math.max(m, 1) + ' min';
+    const h = Math.round(m / 60);
+    return h < 48 ? 'hace ' + h + ' h' : 'hace ' + Math.round(h / 24) + ' días';
+  };
+  const chip = d => d == null ? '—' :
+    '<span class="car-chip' + (d > 90 ? ' t90' : d > 60 ? ' t61' : '') + '">' + d + ' d</span>';
+
+  async function pedir(){
+    if (cargando) return;
+    cargando = true;
+    pintarEstado();
+    try {
+      const res = await fetch(CARTERA_API, {
+        method: 'POST', redirect: 'follow',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ accion: 'cartera', token: (typeof _authToken !== 'undefined' && _authToken) || '' })
+      });
+      const txt = await res.text();
+      let j; try { j = JSON.parse(txt); } catch (e) { throw new Error('El servicio no respondió bien. Intenta de nuevo.'); }
+      if (!j.ok) throw new Error(j.error || 'No se pudo consultar');
+      datos = j;
+    } catch (e) {
+      datos = { ok: false, error: e.message || String(e) };
+    } finally {
+      cargando = false;
+      pintar();
+    }
+  }
+
+  function pintarEstado(){
+    const el = $c('car-estado');
+    if (!el) return;
+    if (cargando) { el.innerHTML = 'Consultando…'; return; }
+    if (datos && datos.ok && datos.listo) {
+      const viejo = datos.actualizado && (Date.now() - new Date(datos.actualizado).getTime()) > 8 * 3600e3;
+      el.innerHTML = '<span class="car-punto' + (viejo ? ' viejo' : '') + '"></span>Actualizado ' + esc(hace(datos.actualizado));
+      el.title = datos.actualizado ? new Date(datos.actualizado).toLocaleString('es-CO') : '';
+    } else el.innerHTML = '';
+  }
+
+  function pintar(){
+    pintarEstado();
+    const cuerpo = $c('car-cuerpo');
+    if (!cuerpo) return;
+    if (!datos) { cuerpo.innerHTML = '<div class="card car-aviso">Cargando cartera…</div>'; return; }
+    if (!datos.ok) {
+      cuerpo.innerHTML = '<div class="card car-aviso" style="border-left:3px solid var(--red)"><b>No se pudo traer la cartera.</b> ' + esc(datos.error) + '</div>';
+      return;
+    }
+    if (!datos.listo) {
+      const st = datos.estado || {};
+      const paso = st.error ? 'Error en World Office: ' + esc(st.error)
+        : st.fase === 'saldos' ? 'Consultando saldos de cada tercero…'
+        : st.fase === 'docs' ? 'Reuniendo clientes y proveedores de las facturas…'
+        : 'Esperando la primera consulta (corre cada 10 minutos).';
+      cuerpo.innerHTML = '<div class="card car-aviso"><b>La primera carga de World Office está en curso.</b><br>' + paso +
+        '<br><span style="color:var(--ink-l)">Vuelve en unos minutos y pulsa Recargar.</span></div>';
+      return;
+    }
+    const g = datos[tipo] || { total: 0, items: 0, porTercero: [], edades: {} };
+    const q = ($c('car-buscar').value || '').trim().toLowerCase();
+    const filas = q ? g.porTercero.filter(t => String(t.tercero || '').toLowerCase().indexOf(q) !== -1) : g.porTercero;
+    const viejos = g.edades.d90_mas || 0;
+    const quien = tipo === 'cobrar' ? 'Clientes' : 'Proveedores';
+
+    let h = '<div class="kpi-grid">' +
+      kpi('Total ' + (tipo === 'cobrar' ? 'por cobrar' : 'por pagar'), corto(g.total), pesos(g.total), 'var(--navy)') +
+      kpi('Más de 90 días', corto(viejos), g.total ? Math.round(viejos / g.total * 100) + '% del total' : '—', viejos ? 'var(--red)' : 'var(--ink-l)') +
+      kpi(quien, String(g.porTercero.length), g.items + ' documentos abiertos', 'var(--navy)') +
+      '</div>';
+
+    h += '<div class="card car-edades"><div class="car-barra" role="img" aria-label="Antigüedad del saldo">' +
+      TRAMOS.map(t => {
+        const v = g.edades[t.k] || 0;
+        return v > 0 && g.total ? '<span style="flex:' + v + ';background:' + t.color + '" title="' + t.lbl + ': ' + pesos(v) + '"></span>' : '';
+      }).join('') + '</div><div class="car-ley">' +
+      TRAMOS.map(t => '<div><i style="background:' + t.color + '"></i>' + t.lbl + '<b>' + corto(g.edades[t.k] || 0) + '</b></div>').join('') +
+      '</div></div>';
+
+    h += '<div class="card" style="padding:0;overflow:auto"><table class="tbl"><thead><tr>' +
+      '<th>' + (tipo === 'cobrar' ? 'Cliente' : 'Proveedor') + '</th><th class="num col-movil-no">Docs</th>' +
+      '<th class="num" title="Días desde la fecha del documento más antiguo">Más antiguo</th><th class="num">Saldo</th></tr></thead><tbody>';
+    if (!filas.length) h += '<tr><td colspan="4" class="empty">' + (q ? 'Nadie coincide con la búsqueda.' : 'Sin saldos abiertos.') + '</td></tr>';
+    filas.forEach(t => {
+      const k = tipo + '|' + t.terceroId, abierto = !!abiertos[k];
+      h += '<tr class="car-fila' + (abierto ? ' abierta' : '') + '" data-car-k="' + esc(k) + '" tabindex="0" aria-expanded="' + abierto + '">' +
+        '<td>' + esc(t.tercero || 'Tercero ' + t.terceroId) + '</td><td class="num col-movil-no">' + t.docs.length + '</td>' +
+        '<td class="num">' + chip(t.masViejo) + '</td><td class="num"><b>' + pesos(t.total) + '</b></td></tr>';
+      if (abierto) {
+        const docs = t.docs.slice().sort((a, b) => (b.dias || 0) - (a.dias || 0));
+        h += '<tr class="car-det"><td colspan="4"><table class="car-det-t">' + docs.map(d =>
+          '<tr><td>' + esc(d.fecha || '—') + '</td><td>' + esc(d.concepto || '') + '</td><td class="col-movil-no">' + esc(d.cuenta || '') +
+          '</td><td class="num">' + chip(d.dias) + '</td><td class="num">' + pesos(d.saldo) + '</td></tr>').join('') +
+          '</table></td></tr>';
+      }
+    });
+    h += '</tbody></table></div>';
+    cuerpo.innerHTML = h;
+  }
+
+  function kpi(lbl, val, desc, ac){
+    return '<div class="kpi" style="--ac:' + ac + '"><div class="kpi-lbl">' + esc(lbl) + '</div><div class="kpi-val">' + esc(val) +
+      '</div><div class="kpi-desc">' + esc(desc) + '</div></div>';
+  }
+
+  document.addEventListener('click', function(e){
+    const b = e.target.closest('#panel-cartera [data-car-tipo]');
+    if (b) {
+      tipo = b.getAttribute('data-car-tipo');
+      document.querySelectorAll('#panel-cartera [data-car-tipo]').forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
+      return pintar();
+    }
+    if (e.target.closest('#car-recargar')) return pedir();
+    const f = e.target.closest('#panel-cartera tr.car-fila');
+    if (f) { const k = f.getAttribute('data-car-k'); abiertos[k] = !abiertos[k]; pintar(); }
+  });
+  document.addEventListener('keydown', function(e){
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('#panel-cartera tr.car-fila')) {
+      e.preventDefault(); e.target.click();
+    }
+  });
+  document.addEventListener('input', function(e){ if (e.target.id === 'car-buscar') pintar(); });
+
+  window.carteraActivar = function(){
+    const viejo = !datos || !datos.ok || !datos.listo || (datos._pedido && Date.now() - datos._pedido > 10 * 60e3);
+    if (viejo) pedir().then(() => { if (datos) datos._pedido = Date.now(); });
+    else pintar();
+  };
+})();
+</script>
 <div class="panel" id="panel-catalogo">
   <div class="sec-hdr"><div class="sec-title">Lista de Precios de Referencia 2025</div><div class="sec-sub">39 referencias · 9 lineas de producto</div></div>
   <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
@@ -14074,6 +14295,7 @@ function showPanel(id, el) {
        mostraría un recorte sin decir de dónde sale. */
   }
   if (id === 'accesos') renderAccesos();
+  if (id === 'cartera' && typeof window.carteraActivar === 'function') window.carteraActivar();
   if (id === 'mapa' && typeof window.mapaActivar === 'function') window.mapaActivar();
   if (id === 'personal' && typeof window.personalActivar === 'function') window.personalActivar();
   /* El botón de ajustar el stock aparece (o no) según quién entró, aunque
