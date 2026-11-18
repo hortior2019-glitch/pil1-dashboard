@@ -2341,6 +2341,20 @@ td .preop-fotos{margin-top:0;gap:4px;flex-wrap:nowrap}
 #panel-cortes .cc-tj-dias{display:flex;gap:4px;flex-wrap:wrap}
 #panel-cortes .cc-tj-dias span{font-size:13px;font-weight:700;color:var(--navy);background:var(--green-l);border-radius:6px;padding:0 7px;font-variant-numeric:tabular-nums}
 #panel-cortes .cc-tj-freq{font-size:13px;color:var(--ink-m);line-height:1.35}
+/* Plazos de cortes atrasados: aviso arriba del control de cortes. */
+#panel-cortes .rz{background:var(--gold-l);border:1px solid #e4d3a3;border-radius:14px;padding:14px 16px;margin-bottom:14px}
+#panel-cortes .rz-mal{background:var(--red-l);border-color:var(--red)}
+#panel-cortes .rz-cab{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+#panel-cortes .rz-tit{display:block;font-size:16px;color:var(--ink)}
+#panel-cortes .rz-mal .rz-tit{color:var(--red)}
+#panel-cortes .rz-sub{display:block;font-size:13px;color:var(--ink-m);margin-top:2px}
+#panel-cortes .rz-total{font-size:13px;font-weight:700;color:var(--ink-m);background:var(--white);border-radius:999px;padding:3px 10px;white-space:nowrap}
+#panel-cortes .rz-lista{list-style:none;margin:10px 0 0;padding:0}
+#panel-cortes .rz-lista li{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;align-items:center;gap:6px 12px;padding:7px 0;border-top:1px solid rgba(0,0,0,.08)}
+#panel-cortes .rz-nom{font-size:14px;font-weight:700;color:var(--ink);overflow-wrap:anywhere}
+#panel-cortes .rz-meta{font-size:13px;color:var(--ink-m)}
+#panel-cortes .rz-edad{font-size:13px;font-weight:800;color:var(--red);font-variant-numeric:tabular-nums}
+@media(max-width:700px){#panel-cortes .rz-lista li{grid-template-columns:minmax(0,1fr) auto}#panel-cortes .rz-meta{grid-column:1}}
 #panel-cortes .cc-aviso{font-size:13px;color:#6e5310;background:var(--gold-l);border-radius:8px;padding:8px 12px;margin-bottom:10px}
 #panel-cortes .cc-agregar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px;border-radius:10px;background:var(--s2);margin-bottom:12px}
 #panel-cortes .cc-agregar label{font-size:13px;font-weight:700;color:var(--ink)}
@@ -9254,6 +9268,7 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
     Colapsable para no estorbar. Permite hacer clic para precargar fechas.
     ═══════════════════════════════════════════════════════════
   -->
+  <div id="rz-aviso"></div>
   <section class="cc-cal" id="cc-cal" aria-label="Control de cortes">
     <header class="cc-cab">
       <div class="cc-cab-tit">
@@ -24661,6 +24676,7 @@ function renderCalendarioCortes() {
       : (_ccOcurrencias().map(o => o.dia).sort((a, b) => a - b)[0] || null);
   }
   if (titulo) titulo.textContent = _CC_MESES[_calMes] + ' ' + _calAnio;
+  try { _rzPintar(); } catch (e) { console.warn('plazos de cortes:', e); }
   _ccTipIniciar(); _ccTopIniciar();
   _ccMarcarVista(_ccVista);
   if (_ccAlertaPend) setTimeout(_ccRevisarAlertaFacturas, 0);
@@ -25735,6 +25751,128 @@ function _cobCortar(key) {
   setTimeout(() => { const r = document.getElementById('corte-paso2') || document.getElementById('corte-paso1'); if (r) r.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 120);
 }
 
+/* ══ PLAZOS PARA PONERSE AL DÍA CON LOS CORTES ATRASADOS ═════════════
+   Corte atrasado: una operación con viajes de un mes que pasaron su día
+   de corte sin corte guardado (estado "vencido" de la cobertura). Solo
+   cuenta lo no generado; las facturas que falten no entran aquí.
+   Primero los de más de 60 días; cuando no quede ninguno, los de más de 30.
+   Van de a 3: el primer lote tiene 2 días desde RZ.inicio y cada lote
+   siguiente 3 días desde que se completó el anterior. Si un plazo vence
+   no se bloquea todo: solo se exige 1 corte atrasado antes de volver a
+   generar cortes al día, y lo que falte de ese lote queda con 2 días.
+   Hecho = informe creado (columna CreadoFecha del servicio de cortes)
+   después de RZ.inicio, con su cierre a más días que el umbral.
+   Solo lectura: no escribe en ninguna hoja. */
+const RZ = { inicio: new Date(2026, 10, 19), lote: 3, diasPrimero: 2, diasLote: 3, diasCastigo: 2, umbrales: [60, 30] };
+const _RZ_DIA = 864e5;
+
+function _rzPendientes() {
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const g = {};
+  _cobClasificar().viajes.forEach(v => {
+    if (v.estado !== 'vencido' || !v.limite) return;
+    const key = _ccCompacto(v.op || v.prov);
+    const id = key + '|' + v.anio + '|' + v.mes;
+    const x = g[id] || (g[id] = { id, key, mes: v.mes, anio: v.anio, nombre: v.op || nombreProveedorInforme(v.prov) || v.prov, limite: v.limite, n: 0 });
+    if (v.limite < x.limite) x.limite = v.limite;
+    x.n++;
+  });
+  return Object.values(g).map(x => { x.edad = Math.floor((hoy - x.limite) / _RZ_DIA); return x; });
+}
+
+function _rzFecha(s) { if (!s) return null; const d = new Date(String(s).replace(' ', 'T')); return isNaN(d) ? null : d; }
+
+function _rzEstado() {
+  if (!(window.dataIngreso && window.dataIngreso.length) || !(_informesGuardados || []).length) return { activo: false };
+  const pend = _rzPendientes();
+  const u = pend.some(p => p.edad > RZ.umbrales[0]) ? RZ.umbrales[0] : RZ.umbrales[1];
+  const cola = pend.filter(p => p.edad > u).sort((a, b) => b.edad - a.edad);
+  if (!cola.length) return { activo: false };
+  const hechos = (_informesGuardados || []).map(inf => {
+    if (!inf || String(inf.id || '').indexOf('__') === 0) return null;
+    const cr = _rzFecha(inf.creado), f = _parsePeriodoTexto(inf.periodo);
+    if (!cr || !f || cr < RZ.inicio) return null;
+    return (cr - new Date(f.cie + 'T00:00:00')) / _RZ_DIA > u ? cr : null;
+  }).filter(Boolean).sort((a, b) => a - b);
+
+  let i = 0, t = RZ.inicio, plazo = RZ.diasPrimero, falta = RZ.lote, castigo = false, lote = 1, hechosLote = 0;
+  for (let vuelta = 0; vuelta < 1000; vuelta++) {
+    const lim = +t + plazo * _RZ_DIA;
+    let ult = null;
+    while (i < hechos.length && falta > 0 && +hechos[i] <= lim) { ult = hechos[i++]; falta--; hechosLote++; }
+    if (falta > 0 && i < hechos.length) {
+      /* Venció el plazo y luego se generó el corte obligado: lo que falte
+         del lote sigue con la prórroga corta. */
+      ult = hechos[i++]; falta--; hechosLote++;
+      if (falta > 0) { t = ult; plazo = RZ.diasCastigo; castigo = true; continue; }
+    }
+    if (falta === 0) { t = ult; plazo = RZ.diasLote; falta = RZ.lote; castigo = false; lote++; hechosLote = 0; continue; }
+    break;
+  }
+  /* Lote nuevo sin avances: arranca cuando el más viejo cruzó el umbral,
+     no cuando se cerró el lote anterior (si ya no había atrasados). */
+  if (!hechosLote && !castigo) {
+    const cruce = Math.min.apply(null, cola.map(p => +p.limite + (u + 1) * _RZ_DIA));
+    if (cruce > +t) t = new Date(cruce);
+  }
+  const limite = new Date(+t + plazo * _RZ_DIA), ahora = new Date();
+  return { activo: true, u, cola, lote, castigo, hechosLote, limite,
+    falta: Math.min(falta, cola.length), vencido: ahora > limite, horas: Math.max(0, (limite - ahora) / 36e5) };
+}
+
+/* Con el plazo vencido solo se generan cortes atrasados (o se reabren
+   los que ya estaban guardados). */
+function _rzPermite(prov, ini, cie) {
+  let e;
+  try { e = _rzEstado(); } catch (er) { return true; }
+  if (!e.activo || !e.vencido) return true;
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  if ((hoy - new Date(cie + 'T00:00:00')) / _RZ_DIA > e.u) return true;
+  const k = _ccCompacto(prov);
+  return (_informesGuardados || []).some(inf => {
+    if (_ccCompacto(inf.operacion || '') !== k) return false;
+    const f = _parsePeriodoTexto(inf.periodo);
+    return f && f.ini === ini && f.cie === cie;
+  });
+}
+
+function _rzPlural(n, uno, varios) { return n + ' ' + (n === 1 ? uno : varios); }
+function _rzQueda(h) { return h >= 48 ? Math.floor(h / 24) + ' días' : h >= 1 ? Math.floor(h) + ' h' : 'menos de 1 h'; }
+function _rzVence(d) { return d.getDate() + ' ' + _MESES_AB[d.getMonth()] + ', ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
+
+function _rzHtml(e) {
+  const puede = !!document.getElementById('corte-proveedor');
+  const tipo = 'de más de ' + e.u + ' días';
+  const tit = e.vencido
+    ? 'Plazo vencido: genera 1 corte atrasado para seguir'
+    : (e.castigo ? 'Prórroga corta: ' : 'Lote ' + e.lote + ': ') + _rzPlural(e.falta, 'corte ' + tipo, 'cortes ' + tipo);
+  const sub = e.vencido
+    ? 'Mientras tanto no se generan cortes al día.' + (e.falta > 2 ? ' Después, los ' + (e.falta - 1) + ' que faltan del lote tienen ' + RZ.diasCastigo + ' días.' : e.falta === 2 ? ' Después, el que falta del lote tiene ' + RZ.diasCastigo + ' días.' : '')
+    : 'Vence el ' + _rzVence(e.limite) + ' · quedan ' + _rzQueda(e.horas) + '. Si vence, se exige 1 corte atrasado antes de generar uno al día.';
+  const filas = e.cola.slice(0, Math.max(3, e.falta)).map(p =>
+    '<li><span class="rz-nom">' + _ccEsc(p.nombre) + '</span><span class="rz-meta">' + _MESES_AB[p.mes] + ' ' + p.anio + ' · ' +
+    _rzPlural(p.n, 'viaje', 'viajes') + '</span><span class="rz-edad">' + p.edad + ' d</span>' +
+    (puede ? '<button type="button" class="cc-btn" onclick="_rzCortar(' + p.mes + ',' + p.anio + ',\'' + p.key + '\')">Cortar</button>' : '') + '</li>').join('');
+  return '<section class="rz' + (e.vencido ? ' rz-mal' : '') + '" aria-live="polite"><div class="rz-cab"><div><b class="rz-tit">' + tit + '</b>' +
+    '<span class="rz-sub">' + sub + '</span></div><span class="rz-total" title="Cortes no generados ' + tipo + ', de todas las operaciones">' +
+    _rzPlural(e.cola.length, 'atrasado', 'atrasados') + '</span></div><ol class="rz-lista">' + filas + '</ol></section>';
+}
+
+function _rzPintar() {
+  const el = document.getElementById('rz-aviso');
+  if (!el) return;
+  const e = _rzEstado();
+  el.innerHTML = e.activo ? _rzHtml(e) : '';
+}
+
+/* Lleva al mes del corte atrasado y lo prepara como "Cortar" de la cobertura. */
+function _rzCortar(mes, anio, key) {
+  _resumenMes = mes; _resumenAnio = anio; _resumenVerTodos = false;
+  _calMes = mes; _calAnio = anio;
+  try { renderInformesGuardados(); } catch (e) { console.warn(e); }
+  _cobCortar(key);
+}
+
 /* Control por operación: reemplaza la lista de tarjetas del calendario.
    Solo operaciones de ops-materiales.csv (y las que tienen viajes con un
    nombre fuera de la lista, para que nada quede sin facturar). */
@@ -26527,6 +26665,14 @@ function generarCorte() {
   const cobrarTransporte = (document.getElementById('corte-cobrar-transporte')||{}).checked;
   const transporteValor  = parseFloat((document.getElementById('corte-transporte-valor')||{}).value) || 0;
   const cont = document.getElementById('corte-resultado');
+
+  if (!_rzPermite(prov, ini, cie)) {
+    const e = _rzEstado();
+    cont.innerHTML = '<div class="card" style="padding:28px;text-align:center"><div style="font-size:16px;font-weight:700;color:var(--red);margin-bottom:6px">Generar cortes al día está en pausa</div>' +
+      '<div style="font-size:14px;color:var(--ink-m)">Venció el plazo de los cortes de más de ' + e.u + ' días. Genera 1 de la lista de arriba y se vuelve a habilitar.</div></div>';
+    const a = document.getElementById('rz-aviso'); if (a) a.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
 
   if (colsSel.length === 0) { cont.innerHTML = '<div class="card" style="padding:24px;text-align:center;color:var(--ink-l)">Selecciona al menos una columna</div>'; return; }
 
@@ -27400,6 +27546,10 @@ function guardarInformeCorte() {
   // Buscar si este corte YA tiene un informe guardado (por nombre+operación u operación+periodo)
   // para actualizar esa misma fila en vez de crear una nueva (evita duplicados).
   const existente = _buscarInformeExistente(c.prov, periodoStr, nombreCorteVal);
+  if (!existente && !_rzPermite(c.prov, c.ini, c.cie)) {
+    if (estado) { estado.style.color = 'var(--red)'; estado.textContent = 'Venció el plazo de cortes atrasados: genera 1 de ellos antes de guardar cortes al día.'; }
+    return;
+  }
   // Si ya estaba facturado (tenía un valor real > 0) ANTES de este guardado, registrar quién y cuándo lo editó
   const yaEstabaFacturado = existente && parseFloat(existente.valorRealFacturado) > 0;
 
@@ -36172,6 +36322,7 @@ const VOZ_SOLUCIONES = [
   [/^mant-atraso/, 'vehiculos', 'Vehículos Carga', 'La ficha del vehículo ya muestra el próximo mantenimiento. Programen la entrada antes de que el carro se quede en plena operación.', ['Programen la entrada al taller antes de que el carro se detenga en plena operación. La ficha ya muestra cuándo toca.', 'El próximo mantenimiento está en la ficha del vehículo. Agendarlo ahora sale más barato que una varada.']],
   [/^per-sinarea/, 'personal', 'Personal', 'En Personal, Áreas y turnos, ya se arma el equipo de cada área. Son personas que hoy no le responden a ninguna.', ['En Personal, Áreas y turnos, cada persona queda en un equipo. Así alguien responde por ella.', 'Una persona sin área no aparece en ningún cuadro de turnos. Se asigna en Personal, Áreas y turnos.']],
   [/^he-aprobar/, 'personal', 'Personal', 'Las horas por aprobar ya están esperando en Personal. Ellas no se aprueban solas, y yo tampoco puedo hacerlo.', ['Las horas por aprobar están en Personal. Revisarlas a tiempo evita sorpresas en la nómina.', 'Las horas extra esperan aprobación en Personal. Mientras no se aprueben, no se sabe si están bien.']],
+  [/^cor-rezago/, 'cortes', 'Cortes a Proveedor', 'Arriba de Cortes a Proveedor está la lista de los atrasados, cada uno con su botón Cortar. Un servicio sin corte es un servicio que no se cobra.', ['Cada corte atrasado tiene su botón Cortar en Cortes a Proveedor. Tres por lote, y la facturación se pone al día.', 'Los cortes atrasados ya están en fila en Cortes a Proveedor. Lo que falta es generarlos.']],
   [/^cli-perdido/, 'clientes', 'Ingreso por Cliente', 'Ingreso por Cliente ya tiene su historial. Llamen con el dato en la mano, no a preguntar cómo les ha ido.', ['El historial del cliente está en Ingreso por Cliente. Con ese dato, la llamada va directo al punto.', 'Antes de llamar, miren en Ingreso por Cliente cuándo fue su último viaje y cuánto traía.', 'Ingreso por Cliente muestra cuándo dejó de venir. Esa es la pregunta para la llamada.']]
 ];
 function vozSolDe(k){
@@ -36530,11 +36681,31 @@ function vozAuditoriaCartera(C, P, M, MC, faltan, sem, mes){
   return resumen.join('; ');
 }
 
+/* Cortes a proveedor sin generar: el asistente pide la gestión cada día,
+   con el plazo del lote y quiénes tienen la pestaña. */
+function vozRadarCortesAtrasados(hoy, faltan){
+  if (!(_informesGuardados || []).length){ try { cargarInformesGuardados(); } catch(e){} return ''; }
+  const e = _rzEstado();
+  if (!e.activo) return '';
+  const quien = vozQuienTiene('cortes') || [];
+  const nombres = e.cola.slice(0, 3).map(function(p){ return p.nombre + ' (' + _MESES_AB[p.mes] + ' ' + p.anio + ', ' + p.edad + ' días)'; });
+  const pedido = e.vencido
+    ? 'Venció el plazo: hasta que se genere 1 corte atrasado no se pueden generar cortes al día.'
+    : 'Hay plazo hasta el ' + _rzVence(e.limite) + ' para generar ' + _rzPlural(e.falta, 'corte', 'cortes') + ' de más de ' + e.u + ' días; si vence, se exige 1 antes de seguir y el resto queda con ' + RZ.diasCastigo + ' días.';
+  faltan.push({ k:'cor-rezago-' + e.lote + '-' + (e.vencido ? 'v' : 'p') + '-' + e.u + '-' + hoy, p: e.vencido ? 4 : 3.7, tono:'alerta',
+    tit: e.vencido ? 'Cortes al día en pausa' : 'Cortes atrasados con plazo',
+    t: 'Hay ' + _rzPlural(e.cola.length, 'corte a proveedor sin generar', 'cortes a proveedor sin generar') + ' de más de ' + e.u + ' días: son servicios sin facturar. Los más viejos: ' + vozListaNombres(nombres) + '. ' + pedido +
+      (quien.length ? ' Pídeselo a ' + vozListaNombres(quien) + ', que tienen Cortes a Proveedor.' : ''),
+    fig:{ t:'numero', v:String(e.falta), e: e.vencido ? 'corte atrasado para desbloquear' : 'cortes del lote por generar', caida:true } });
+  return '- CORTES A PROVEEDOR SIN GENERAR: ' + e.cola.length + ' de más de ' + e.u + ' días; lote ' + e.lote + ', faltan ' + e.falta + (e.vencido ? ', plazo vencido' : ', vence ' + _rzVence(e.limite)) + '\n';
+}
+
 function vozRadarAsesor(){
   const hoy = vozHoy(), faltan = [];
   faltan.add = function(k, t, p){ faltan.push({ k: String(k).slice(0, 80), t: t, p: p || 2 }); };
   let t = '=== RADAR OPERATIVO YA CALCULADO (cifras de base, para contexto) ===\n';
   try { t += vozRadarCartera(hoy, faltan); } catch(e){}
+  try { t += vozRadarCortesAtrasados(hoy, faltan); } catch(e){}
   try { t += vozRadarHumus(hoy, faltan); } catch(e){}
   try { t += vozRadarFlota(hoy, faltan); } catch(e){}
   try { t += vozRadarMaquinaria(hoy, faltan); } catch(e){}
