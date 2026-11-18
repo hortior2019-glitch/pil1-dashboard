@@ -8262,6 +8262,25 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
 #panel-cartera tr.det td{background:var(--s2);padding:4px 12px 12px 28px}
 #panel-cartera .det-t{width:100%;border-collapse:collapse;font-size:13px}
 #panel-cartera .det-t td{padding:6px 8px;border-bottom:1px solid var(--rule);background:transparent;color:var(--car-ink2)}
+/* Documentos de un tercero: línea de tiempo del más viejo al más nuevo,
+   con un punto del color de su antigüedad, y al pie el saldo que suman. */
+#panel-cartera .dd-cab{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--car-mute);padding:10px 0 6px}
+#panel-cartera .dd-cab span:first-child{font-weight:700;color:var(--car-ink)}
+#panel-cartera .dd{list-style:none;margin:0;padding:0;position:relative}
+#panel-cartera .dd::before{content:"";position:absolute;left:5px;top:14px;bottom:14px;width:2px;background:var(--car-line)}
+#panel-cartera .dd li{position:relative;display:grid;grid-template-columns:12px 190px minmax(0,1fr) 64px 130px;grid-template-areas:"pt meta con dias sal";gap:4px 14px;align-items:center;padding:9px 0;border-bottom:1px solid var(--rule)}
+#panel-cartera .dd li:last-child{border-bottom:0}
+#panel-cartera .dd-pt{grid-area:pt;width:12px;height:12px;border-radius:50%;box-shadow:0 0 0 3px var(--sel-bg);position:relative;z-index:1}
+#panel-cartera .dd-con{grid-area:con;font-size:14px;color:var(--car-ink);line-height:1.3;overflow-wrap:anywhere}
+#panel-cartera .dd-meta{grid-area:meta;font-size:13px;color:var(--car-mute);white-space:normal;line-height:1.6}
+#panel-cartera .dd-meta .dd-pdf{white-space:nowrap}
+#panel-cartera .dd-dias{grid-area:dias;text-align:right}
+#panel-cartera .dd-sal{grid-area:sal;text-align:right;font-size:14px;font-weight:700;color:var(--car-ink)}
+#panel-cartera .dd-pdf{margin-left:6px;padding:2px 10px;border-radius:999px;border:1px solid var(--car-line);background:var(--white,#fff);font:700 13px 'Source Sans 3',sans-serif;color:var(--car-ink);cursor:pointer;vertical-align:baseline}
+#panel-cartera .dd-pdf:hover{background:var(--s2)}
+#panel-cartera .dd-pdf:disabled{opacity:.6;cursor:wait}
+#panel-cartera .dd-pie{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:4px;padding-top:10px;border-top:2px solid var(--car-line);font-size:13px;color:var(--car-mute)}
+#panel-cartera .dd-pie b{font-size:16px;color:var(--car-ink)}
 #panel-cartera .flecha{display:inline-block;width:14px;color:var(--car-mute);transition:transform .15s}
 #panel-cartera tr.abierta .flecha{transform:rotate(90deg)}
 
@@ -8289,6 +8308,19 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
   #panel-cartera .esp-val{font-size:12px}
   #panel-cartera .car-esp{padding:14px 12px}
   #panel-cartera .col-movil-no{display:none}
+  /* Nombres de clientes y proveedores completos, en las líneas que ocupen;
+     el monto y la acción se apilan a la derecha para dejarles ancho. */
+  #panel-cartera .lista li.fl{grid-template-columns:40px minmax(0,1fr) auto;gap:4px 10px;padding:10px 4px}
+  #panel-cartera .lista li.fl .av{width:40px;height:40px;grid-row:1/3}
+  #panel-cartera .lista li.fl .av.sin{width:38px;height:38px;margin:1px}
+  #panel-cartera .lista li.fl .fl-cuerpo{grid-row:1/3}
+  #panel-cartera .lista li.fl .fl-mon{grid-column:3;grid-row:1;align-self:end}
+  #panel-cartera .lista li.fl .fl-fin{grid-column:3;grid-row:2;align-self:start;min-width:0}
+  #panel-cartera .fl-nom,#panel-cartera .lista .nom,#panel-cartera .nom .tx{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.25;overflow-wrap:anywhere}
+  #panel-cartera .tab-cab .car-h{flex:1 1 100%}
+  #panel-cartera .fl-sub{flex-wrap:wrap;white-space:normal}
+  #panel-cartera .det-tabla tr.det td{padding:4px 12px 12px}
+  #panel-cartera .dd li{grid-template-columns:12px minmax(0,1fr) auto;grid-template-areas:"pt con sal" "pt meta dias";gap:4px 10px}
 }
 @media (prefers-reduced-motion:reduce){#panel-cartera *{transition:none!important;animation:none!important}}
 </style>
@@ -8736,9 +8768,16 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
           (t._ed.d90_mas ? '<div class="sal-sub num" style="color:var(--red)">' + mill(t._ed.d90_mas) + ' de +90 d</div>' : '<div class="sal-sub">al día bajo 90 d</div>') + '</td></tr>';
       if (ab) {
         const docs = t.docs.slice().sort((a, b) => (b.dias || 0) - (a.dias || 0));
-        h += '<tr class="det"><td colspan="4"><table class="det-t">' + docs.map(d =>
-          '<tr><td class="num">' + esc(d.fecha || '—') + '</td><td>' + esc(d.concepto || '') + '</td><td class="col-movil-no num">' + esc(d.cuenta || '') +
-          '</td><td class="num">' + chipDias(d.dias) + '</td><td class="num">' + pesos(d.saldo) + '</td></tr>').join('') + '</table></td></tr>';
+        const colTramo = d => { const x = TRAMOS.find(z => z.k === tramoDe(d.dias)); return x ? x.color : 'var(--car-line)'; };
+        h += '<tr class="det"><td colspan="4"><div class="dd-cab"><span>' + docs.length + (docs.length === 1 ? ' documento abierto' : ' documentos abiertos') +
+          '</span><span>del más antiguo al más reciente</span></div><ol class="dd">' + docs.map(d =>
+          '<li><i class="dd-pt" style="background:' + colTramo(d) + '"></i>' +
+          '<span class="dd-con">' + esc(String(d.concepto || '').trim() || 'Sin concepto') + '</span>' +
+          '<span class="dd-meta num">' + (d.docRef ? esc(d.docRef) + ' · ' : '') + esc(d.fecha || 'sin fecha') + (d.cuenta ? ' · cta ' + esc(d.cuenta) : '') +
+            (d.pdf ? ' <button type="button" class="dd-pdf" data-car-pdf="' + esc(d.docId) + '">Ver PDF</button>' : '') + '</span>' +
+          '<span class="dd-dias">' + chipDias(d.dias) + '</span>' +
+          '<span class="dd-sal num">' + pesos(d.saldo) + '</span></li>').join('') +
+          '</ol><div class="dd-pie"><span>Saldo de ' + esc(t.tercero || 'este tercero') + '</span><b class="num">' + pesos(t.total) + '</b></div></td></tr>';
       }
     });
     h += '</tbody></table></div></div>';
@@ -8768,7 +8807,36 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
   window.addEventListener('scroll', ocultarTip, { passive: true });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') ocultarTip(); });
 
+  /* PDF del documento: lo trae el servicio (el token de World Office no
+     sale de allí). La ventana se abre antes de pedirlo para que el
+     navegador no la bloquee. */
+  async function verPdf(btn){
+    if (btn.disabled) return;
+    const txt = btn.textContent; btn.disabled = true; btn.textContent = 'Abriendo…';
+    const w = window.open('', '_blank');
+    try {
+      const res = await fetch(CARTERA_API, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ accion: 'pdf', docId: btn.getAttribute('data-car-pdf'), token: (typeof _authToken !== 'undefined' && _authToken) || '' }) });
+      const j = JSON.parse(await res.text());
+      if (!j.ok) throw new Error(j.error || 'No se pudo traer el PDF.');
+      const bin = atob(j.pdf), u8 = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([u8], { type: 'application/pdf' }));
+      if (w) w.location.href = url;
+      else { const a = document.createElement('a'); a.href = url; a.download = j.nombre || 'documento.pdf'; a.click(); }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      btn.textContent = txt;
+    } catch (err) {
+      if (w) w.close();
+      btn.textContent = 'Sin PDF';
+      btn.setAttribute('data-tip', esc(err.message || String(err)));
+      btn.title = err.message || String(err);
+    } finally { btn.disabled = false; }
+  }
+
   panelEl.addEventListener('click', function(e){
+    const pdfB = e.target.closest('[data-car-pdf]');
+    if (pdfB) { e.preventDefault(); return verPdf(pdfB); }
     const b = e.target.closest('[data-car-lado]');
     if (b) { lado = b.getAttribute('data-car-lado'); ocultarTip(); return pintar(); }
     if (e.target.closest('#car-recargar,[data-car-recargar]')) return pedir();
