@@ -36347,13 +36347,119 @@ function vozRadarCartera(hoy, faltan){
         fig:{ t:'bascula', a:C.total, b:base.c, ta:MC(C.total), tb:MC(base.c), ea:'hoy', eb:'hace 7 días' } });
   }
 
+  const aud = vozAuditoriaCartera(C, P, M, MC, faltan, sem, mes);
+
   let s = '- CARTERA (World Office, saldos abiertos; la antigüedad cuenta desde la fecha del documento, no desde el vencimiento): por cobrar ' +
     vozPesos(C.total) + ' en ' + C.porTercero.length + ' clientes (+90 días: ' + vozPesos(C.edades.d90_mas || 0) + '); por pagar ' + vozPesos(P.total) +
     ' en ' + P.porTercero.length + ' proveedores (+90 días: ' + vozPesos(P.edades.d90_mas || 0) + '). Provisión fiscal estimada: ' + vozPesos(prov) +
     '. Cobrar 0-30 d ' + vozPesos(c30) + ' frente a pagar 0-30 d ' + vozPesos(p30) + '.\n';
   s += '  Mayores deudores: ' + C.porTercero.slice(0, 10).map(function(t){ return t.tercero + ' ' + vozPesos(t.total) + ' (más viejo ' + t.masViejo + ' d)'; }).join('; ') + '\n';
   s += '  Mayores acreedores: ' + P.porTercero.slice(0, 10).map(function(t){ return t.tercero + ' ' + vozPesos(t.total) + ' (más viejo ' + t.masViejo + ' d)'; }).join('; ') + '\n';
+  if (aud) s += '  AUDITORÍA DE BUENAS PRÁCTICAS (documentos abiertos): ' + aud + '\n';
   return s;
+}
+
+/* AUDITOR. Lo que un revisor fiscal marcaría en los documentos abiertos:
+   saldos fantasma, documentos que no dicen qué se facturó, posibles
+   duplicados, facturas zombi, fechas imposibles y deudas sin dueño. Cada
+   hallazgo con nombre, cifra y la pregunta incómoda. */
+const VOZ_CONCEPTO_VACIO = /^(varios|vario|pago|pagos|factura|facturas|fv|fc|ajuste|ajustes|n\/?a|na|ninguno|otro|otros|general|servicio|servicios|venta|ventas|compra|compras|anticipo|saldo|saldos|cxc|cxp|prueba|x+|-+|\.+)$/i;
+const VOZ_TERCERO_GENERICO = /\b(varios|cliente(s)? varios|proveedor(es)? varios|consumidor final|tercero(s)? varios|sin nombre|n\/?a|xxx+|generico|gen[eé]rico|prueba|ocasional(es)?)\b/i;
+function vozConceptoPobre(c){
+  const t = String(c || '').trim();
+  if (!t) return true;
+  /* Se quita el número del documento ("OS 13356 -", "FV-1234") y se mira qué queda. */
+  const resto = t.replace(/^[A-Z]{1,5}[\s-]*\d+[\s\-:.]*/i, '').replace(/[\d\s.,:;\/#-]+/g, ' ').trim();
+  return resto.length < 6 || VOZ_CONCEPTO_VACIO.test(resto);
+}
+function vozAuditoriaCartera(C, P, M, MC, faltan, sem, mes){
+  const lados = [['cobrar', C, 'nos deben', 'cliente'], ['pagar', P, 'debemos', 'proveedor']];
+  const docs = [];
+  lados.forEach(function(L){
+    L[1].porTercero.forEach(function(t){ (t.docs || []).forEach(function(dc){ docs.push({ lado:L[0], quien:L[3], t:t, d:dc }); }); });
+  });
+  if (!docs.length) return '';
+  const resumen = [];
+  const nombres = function(lista, n){ return vozListaNombres(lista.slice(0, n || 3).map(function(x){ return String(x).replace(/\.+$/, ''); })); };
+
+  /* 1. Saldos fantasma: $1.000 o menos. */
+  const fant = docs.filter(function(x){ return (x.d.saldo || 0) > 0 && x.d.saldo <= 1000; });
+  if (fant.length){
+    const de1 = fant.filter(function(x){ return x.d.saldo <= 1; }).length;
+    const ter = []; fant.forEach(function(x){ if (ter.indexOf(x.t.tercero) === -1) ter.push(x.t.tercero); });
+    faltan.push({ k:'car-aud-fant-' + mes + '-' + fant.length, p:3.3, tono:'alerta', tit:'Saldos fantasma',
+      t:'Hay ' + fant.length + (fant.length === 1 ? ' saldo abierto' : ' saldos abiertos') + ' de mil pesos o menos' + (de1 ? (de1 === 1 ? ', uno de ellos de un peso' : ', ' + de1 + ' de ellos de un peso') : '') +
+        ', en ' + nombres(ter) + (ter.length > 3 ? ' y otros' : '') + '. Eso no es cartera: es residuo que nadie cruzó. ' +
+        vozInfVar(['¿Quién deja documentos así abiertos? Se limpian con una nota y se acaba el ruido.',
+                   'Un revisor fiscal lo ve y se pregunta qué más se está dejando sin cruzar.',
+                   'Son pesos, pero dicen mucho de cómo se está cerrando la cartera.'], fant.length),
+      fig:{ t:'numero', v:String(fant.length), e:'saldos de $1.000 o menos', caida:true } });
+    resumen.push(fant.length + ' saldos fantasma (≤ $1.000' + (de1 ? ', ' + de1 + ' de $1' : '') + ')');
+  }
+
+  /* 2. Documentos sin título descriptivo. */
+  const pobres = docs.filter(function(x){ return (x.d.saldo || 0) > 1000 && vozConceptoPobre(x.d.concepto); });
+  if (pobres.length){
+    const plata = pobres.reduce(function(a, x){ return a + (x.d.saldo || 0); }, 0);
+    const ej = pobres.slice().sort(function(a, b){ return b.d.saldo - a.d.saldo; })[0];
+    faltan.push({ k:'car-aud-titulo-' + mes + '-' + pobres.length, p:3.0, tono:'alerta', tit:'Documentos que no dicen qué se facturó',
+      t: pobres.length + (pobres.length === 1 ? ' documento abierto, por ' : ' documentos abiertos, por ') + M(plata) + ', no dicen qué se facturó: el concepto está vacío o dice algo como "' +
+        (String(ej.d.concepto || '').trim() || 'nada') + '" (' + ej.t.tercero + '). ' +
+        vozInfVar(['Si mañana el cliente reclama, ¿con qué se defiende esa factura?',
+                   'Un auditor los rechaza de entrada. El concepto es la primera prueba de que el servicio existió.',
+                   '¿Quién factura sin describir? Esto se corrige desde el que emite el documento, no al cierre.'], pobres.length),
+      fig:{ t:'numero', v:String(pobres.length), e:'documentos sin concepto claro · ' + MC(plata), caida:true } });
+    resumen.push(pobres.length + ' documentos sin concepto descriptivo (' + vozPesos(plata) + ')');
+  }
+
+  /* 3. Posibles duplicados: mismo tercero, mismo valor, misma fecha. */
+  const vistos = {}, dup = [];
+  docs.forEach(function(x){
+    if ((x.d.saldo || 0) <= 1000) return;
+    const k = x.lado + '|' + x.t.terceroId + '|' + Math.round(x.d.saldo) + '|' + (x.d.fecha || '');
+    if (vistos[k]) dup.push(x); else vistos[k] = x;
+  });
+  if (dup.length){
+    const x = dup.slice().sort(function(a, b){ return b.d.saldo - a.d.saldo; })[0];
+    faltan.push({ k:'car-aud-dup-' + x.t.terceroId + '-' + mes, p:3.4, tono:'alerta', tit:'¿Facturado dos veces?',
+      t:(dup.length === 1 ? 'Hay un caso' : 'Hay ' + dup.length + ' casos') + ' de documentos con el mismo valor, la misma fecha y el mismo tercero. El más grande: ' + x.t.tercero + ', dos veces ' + M(x.d.saldo) + ' el ' + (x.d.fecha || 'mismo día') +
+        '. ¿Se facturó dos veces o es coincidencia? Es de lo primero que mira un revisor fiscal.',
+      fig:{ t:'numero', v:MC(x.d.saldo) + ' ×2', e:String(x.t.tercero).slice(0, 34), caida:true } });
+    resumen.push(dup.length + ' posibles duplicados');
+  }
+
+  /* 4. Zombis: más de un año abiertos. */
+  const zomb = docs.filter(function(x){ return (x.d.dias || 0) > 365 && (x.d.saldo || 0) > 1000; });
+  if (zomb.length){
+    const plata = zomb.reduce(function(a, x){ return a + (x.d.saldo || 0); }, 0);
+    const ter = []; zomb.forEach(function(x){ if (ter.indexOf(x.t.tercero) === -1) ter.push(x.t.tercero); });
+    faltan.push({ k:'car-aud-zomb-' + mes + '-' + zomb.length, p:3.0, tono:'alerta', tit:'Facturas zombi',
+      t: zomb.length + (zomb.length === 1 ? ' documento lleva más de un año abierto' : ' documentos llevan más de un año abiertos') + ', por ' + M(plata) + ' (' + nombres(ter) + (ter.length > 3 ? ' y otros' : '') + '). ' +
+        'O se cobran, o se provisionan, o se castigan. Tenerlos abiertos infla una cartera que probablemente ya no existe.',
+      fig:{ t:'numero', v:MC(plata), e:'en documentos de más de un año', caida:true } });
+    resumen.push(zomb.length + ' documentos de más de un año (' + vozPesos(plata) + ')');
+  }
+
+  /* 5. Fechas imposibles: posteriores a hoy. */
+  const fut = docs.filter(function(x){ return x.d.dias != null && x.d.dias < 0; });
+  if (fut.length){
+    faltan.push({ k:'car-aud-fut-' + mes + '-' + fut.length, p:2.8, tono:'alerta', tit:'Documentos del futuro',
+      t: fut.length + (fut.length === 1 ? ' documento tiene' : ' documentos tienen') + ' fecha posterior a hoy, por ejemplo de ' + fut[0].t.tercero + ' (' + (fut[0].d.fecha || '') + '). ¿Error de digitación o se está registrando por adelantado? Cualquiera de las dos cosas descuadra la antigüedad.',
+      fig:{ t:'numero', v:String(fut.length), e:'documentos con fecha futura', caida:true } });
+    resumen.push(fut.length + ' con fecha futura');
+  }
+
+  /* 6. Deudas sin dueño: terceros genéricos. */
+  const gen = [];
+  lados.forEach(function(L){ L[1].porTercero.forEach(function(t){ if (VOZ_TERCERO_GENERICO.test(String(t.tercero || ''))) gen.push({ L:L, t:t }); }); });
+  if (gen.length){
+    const plata = gen.reduce(function(a, x){ return a + x.t.total; }, 0);
+    faltan.push({ k:'car-aud-gen-' + mes + '-' + Math.round(plata / 1e5), p:3.2, tono:'alerta', tit:'Deudas sin dueño',
+      t:'Hay ' + M(plata) + ' a nombre de terceros genéricos como "' + gen[0].t.tercero + '". Una deuda sin dueño no se puede cobrar ni conciliar. ¿Quién es en realidad?',
+      fig:{ t:'numero', v:MC(plata), e:'a nombre de terceros genéricos', caida:true } });
+    resumen.push(vozPesos(plata) + ' a terceros genéricos');
+  }
+  return resumen.join('; ');
 }
 
 function vozRadarAsesor(){
