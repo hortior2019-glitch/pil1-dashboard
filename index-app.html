@@ -6238,6 +6238,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <div class="nav-tab active" data-panel="clientes" onclick="showPanel('clientes',this)"><span class="nav-lbl">Ingreso por Cliente</span></div>
   <div class="nav-tab" data-panel="ingreso" onclick="showPanel('ingreso',this)"><span class="nav-lbl">Ingreso de Material</span></div>
   <div class="nav-tab" data-panel="ProduccionHumus" onclick="showPanel('ProduccionHumus',this)"><span class="nav-lbl">Producción Humus</span></div>
+  <div class="nav-tab" data-panel="cartera" data-admin-only="1" onclick="showPanel('cartera',this)" style="display:none"><span class="nav-lbl">Cartera</span></div>
   <div class="nav-tab" data-panel="vehiculos" onclick="showPanel('vehiculos',this)"><span class="nav-lbl">Vehículos Carga</span></div>
   <div class="nav-sep"></div>
   <div class="nav-tab" data-panel="personal" onclick="showPanel('personal',this)"><span class="nav-lbl">Personal</span></div>
@@ -6260,7 +6261,6 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <div class="nav-tab" data-panel="dalas" onclick="showPanel('dalas',this)"><span class="nav-lbl">Dalas_Solutions</span></div>
   <div class="nav-sep"></div>
   <div class="nav-tab" data-panel="catalogo" onclick="showPanel('catalogo',this)"><span class="nav-lbl">Catálogo de Precios</span></div>
-  <div class="nav-tab" data-panel="cartera" data-admin-only="1" onclick="showPanel('cartera',this)" style="display:none"><span class="nav-lbl">Cartera</span></div>
   <div class="nav-sep"></div>
   <div class="nav-tab" data-panel="accesos" onclick="showPanel('accesos',this)"><span class="nav-lbl">Control Accesos</span></div>
   <div class="nav-tab" data-panel="permisos" data-admin-only="1" onclick="showPanel('permisos',this)" style="display:none"><span class="nav-lbl">Permisos</span></div>
@@ -7971,90 +7971,185 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 <!--
   ═══════════════════════════════════════════════════════════
   PANEL: CARTERA (solo admins) · World Office, solo lectura
-  - Cuentas por cobrar (clientes) y por pagar (proveedores)
-  - Datos del servicio Codigo-world-office.gs (se actualiza solo cada 6 h)
-  - La antigüedad se cuenta desde la fecha del documento: World Office
-    no entrega la fecha de vencimiento por la API.
+  Pregunta: ¿cuánto nos deben, cuánto debemos y qué está en riesgo?
+  - Franja de 3 cifras: Por cobrar y Por pagar (seleccionables: cambian
+    todo lo de abajo) y la posición neta.
+  - Antigüedad en espejo: cobrar a la izquierda, pagar a la derecha, misma
+    escala, para comparar los dos lados de un vistazo.
+  - Atención: los terceros con más saldo de +90 días del lado elegido.
+  - Concentración: los 8 saldos más grandes con barra de participación.
+  - Tabla completa ordenable, con la antigüedad de cada tercero en una barra.
+  Colores: verde = por cobrar, azul = por pagar (validados para daltonismo);
+  la antigüedad va de gris (sano) a rojo (+90 días), siempre con etiqueta.
+  La antigüedad se cuenta desde la fecha del documento: World Office no
+  entrega la fecha de vencimiento por la API.
   ═══════════════════════════════════════════════════════════
 -->
 <style>
-#panel-cartera .car-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px}
-#panel-cartera .car-seg{display:inline-flex;border:1px solid var(--rule);border-radius:8px;overflow:hidden;background:var(--white)}
-#panel-cartera .car-seg button{border:0;background:transparent;padding:9px 18px;font:700 13px 'Source Sans 3',sans-serif;color:var(--ink-m);cursor:pointer;letter-spacing:.3px}
-#panel-cartera .car-seg button[aria-pressed="true"]{background:var(--green-l);color:var(--green);box-shadow:inset 0 0 0 1px rgba(26,92,53,.25)}
-#panel-cartera .car-buscar{flex:1;min-width:180px;max-width:320px;padding:9px 12px;border:1px solid var(--rule);border-radius:8px;font:14px 'Source Sans 3',sans-serif;background:var(--white);color:var(--ink)}
-#panel-cartera .car-estado{font-size:13px;color:var(--ink-m);display:flex;align-items:center;gap:7px;margin-left:auto}
-#panel-cartera .car-punto{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0}
-#panel-cartera .car-punto.viejo{background:var(--gold)}
-#panel-cartera .car-btn{padding:8px 14px;border:1px solid var(--rule);border-radius:8px;background:var(--white);font:700 12px 'Source Sans 3',sans-serif;color:var(--ink-m);cursor:pointer;letter-spacing:.5px;text-transform:uppercase}
-#panel-cartera .car-btn:hover{background:var(--s2)}
-#panel-cartera .kpi-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
-#panel-cartera .kpi-val{font-size:clamp(28px,3.6vw,44px);letter-spacing:-1px;white-space:nowrap}
-#panel-cartera .car-edades{margin-bottom:24px}
-#panel-cartera .car-barra{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--rule-l);gap:2px}
-#panel-cartera .car-barra span{display:block;height:100%;min-width:0}
-#panel-cartera .car-ley{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:12px}
-#panel-cartera .car-ley div{font-size:13px;color:var(--ink-m)}
-#panel-cartera .car-ley b{display:block;font-size:17px;color:var(--ink);font-variant-numeric:tabular-nums;margin-top:2px}
-#panel-cartera .car-ley i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:baseline}
-#panel-cartera .tbl{font-size:14px}
-#panel-cartera .tbl td{color:var(--ink);font-weight:400}
-#panel-cartera .tbl th{font-size:12px}
-#panel-cartera .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-#panel-cartera tr.car-fila{cursor:pointer}
-#panel-cartera tr.car-fila td:first-child::before{content:'▸';display:inline-block;width:16px;color:var(--ink-l);transition:transform .15s}
-#panel-cartera tr.car-fila.abierta td:first-child::before{transform:rotate(90deg)}
-#panel-cartera tr.car-det td{background:var(--s2);padding:0 12px 10px 40px}
-#panel-cartera .car-det-t{width:100%;border-collapse:collapse;font-size:13px}
-#panel-cartera .car-det-t td{padding:6px 8px;border-bottom:1px solid var(--rule-l);background:transparent;color:var(--ink-m)}
-#panel-cartera .car-chip{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700;background:var(--rule-l);color:var(--ink-m)}
-#panel-cartera .car-chip.t61{background:var(--orange-l);color:var(--orange)}
-#panel-cartera .car-chip.t90{background:var(--red-l);color:var(--red)}
-#panel-cartera .car-aviso{padding:18px 22px;font-size:14px;color:var(--ink-m)}
+#panel-cartera{
+  --car-cob:#2d8a4e; --car-pag:#3e63dd; --car-cob-l:#e8f5ee; --car-pag-l:#eceffc;
+  --car-t0:#cfcbc2; --car-t1:#d39b2f; --car-t2:#b85a24; --car-t3:#8b1a1a;
+  --car-ink:var(--ink); --car-ink2:var(--ink-m); --car-mute:#767676; --car-line:var(--rule-l);
+}
+#panel-cartera .car-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+#panel-cartera .car-buscar{flex:1;min-width:200px;max-width:340px;padding:9px 12px;border:1px solid var(--rule);border-radius:10px;font:14px 'Source Sans 3',sans-serif;background:var(--white);color:var(--ink)}
+#panel-cartera .car-pill{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border:1px solid var(--rule);border-radius:999px;background:var(--white);font:600 13px 'Source Sans 3',sans-serif;color:var(--car-ink2)}
+#panel-cartera .car-pill .pt{width:8px;height:8px;border-radius:50%;background:var(--car-cob)}
+#panel-cartera .car-pill .pt.viejo{background:var(--car-t1)}
+#panel-cartera button.car-pill{cursor:pointer}
+#panel-cartera button.car-pill:hover{background:var(--s2)}
+#panel-cartera .car-top .der{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+#panel-cartera .car-card{background:var(--white);border:1px solid var(--rule);border-radius:14px}
+#panel-cartera .car-h{font:700 13px 'Source Sans 3',sans-serif;letter-spacing:.8px;text-transform:uppercase;color:var(--car-ink2);margin:0 0 12px}
+#panel-cartera .num{font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* Franja de cifras: una tarjeta dividida por líneas finas */
+#panel-cartera .car-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:16px}
+#panel-cartera .car-kpis>*{border-right:1px solid var(--car-line);padding:8px}
+#panel-cartera .car-kpis>*:last-child{border-right:0}
+#panel-cartera .car-kpi{display:block;width:100%;text-align:left;border:0;background:transparent;border-radius:10px;padding:14px 16px;font-family:'Source Sans 3',sans-serif;color:inherit}
+#panel-cartera button.car-kpi{cursor:pointer}
+#panel-cartera button.car-kpi:hover{background:var(--s2)}
+#panel-cartera button.car-kpi[aria-pressed="true"]{background:var(--sel-bg);box-shadow:inset 0 0 0 1px var(--sel-ring)}
+#panel-cartera button.car-kpi:focus-visible{outline:2px solid var(--car-pag);outline-offset:2px}
+#panel-cartera .car-kpi .lbl{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:var(--car-ink2)}
+#panel-cartera .car-kpi .sw{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+#panel-cartera .car-kpi .val{font-family:'Libre Baskerville',Georgia,serif;font-size:clamp(28px,3.2vw,40px);font-weight:700;letter-spacing:-.03em;color:var(--car-ink);margin:8px 0 6px;line-height:1.1}
+#panel-cartera .car-kpi[aria-pressed="false"] .val{color:var(--car-ink2)}
+#panel-cartera .car-kpi .pie{font-size:13px;color:var(--car-mute);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#panel-cartera .chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font:700 12px 'Source Sans 3',sans-serif;background:var(--rule-l);color:var(--car-ink2);white-space:nowrap}
+#panel-cartera .chip.t2{background:var(--orange-l);color:var(--orange)}
+#panel-cartera .chip.t3{background:var(--red-l);color:var(--red)}
+
+/* Antigüedad en espejo */
+#panel-cartera .car-esp{padding:18px 20px 16px;margin-bottom:16px}
+#panel-cartera .esp-cab,#panel-cartera .esp-fila{display:grid;grid-template-columns:minmax(0,1fr) 92px minmax(0,1fr);align-items:center;gap:10px}
+#panel-cartera .esp-cab{font-size:13px;font-weight:700;color:var(--car-ink2);margin-bottom:8px}
+#panel-cartera .esp-cab .izq{text-align:right}
+#panel-cartera .esp-cab i{display:inline-block;width:10px;height:10px;border-radius:3px;margin:0 6px;vertical-align:-1px}
+#panel-cartera .esp-fila{height:40px}
+#panel-cartera .esp-lado{display:flex;align-items:center;gap:8px;height:100%;min-width:0}
+#panel-cartera .esp-lado.izq{flex-direction:row-reverse}
+#panel-cartera .esp-bar{height:18px;border-radius:4px;min-width:2px;transition:opacity .15s}
+#panel-cartera .esp-lado.izq .esp-bar{border-radius:4px 0 0 4px}
+#panel-cartera .esp-lado.der .esp-bar{border-radius:0 4px 4px 0}
+#panel-cartera .esp-lado.apagado .esp-bar{opacity:.35}
+#panel-cartera .esp-val{font-size:14px;font-weight:600;color:var(--car-ink)}
+#panel-cartera .esp-lado.apagado .esp-val{color:var(--car-mute);font-weight:400}
+#panel-cartera .esp-tramo{display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px;font-weight:700;color:var(--car-ink2);border-left:1px solid var(--rule);border-right:1px solid var(--rule);height:100%}
+#panel-cartera .esp-tramo i{width:9px;height:9px;border-radius:2px;flex-shrink:0}
+#panel-cartera .esp-fila.t3 .esp-tramo{color:var(--red)}
+#panel-cartera .esp-fila.t3{background:linear-gradient(90deg,transparent,var(--red-l) 20%,var(--red-l) 80%,transparent);border-radius:8px}
+
+/* Atención y concentración */
+#panel-cartera .car-dos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:16px}
+#panel-cartera .car-dos>.car-card{padding:18px 20px}
+#panel-cartera .lista{list-style:none;margin:0;padding:0}
+#panel-cartera .lista li{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;min-height:44px;padding:4px 6px 8px;border-radius:8px}
+#panel-cartera .lista li:hover{background:var(--s2)}
+#panel-cartera .lista .nom{font-size:14px;color:var(--car-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#panel-cartera .lista .sub{font-size:12px;color:var(--car-mute)}
+#panel-cartera .lista .mon{font-size:14px;font-weight:600;text-align:right}
+#panel-cartera .lista .pct{font-size:12px;color:var(--car-mute);width:40px;text-align:right}
+#panel-cartera .lista .trk{position:absolute;left:6px;right:6px;bottom:3px;height:3px;border-radius:2px;background:var(--car-line)}
+#panel-cartera .lista .trk span{display:block;height:100%;border-radius:2px;opacity:.75}
+#panel-cartera .lista li:hover .trk span{opacity:1}
+#panel-cartera .accion{border:1px solid var(--rule);background:var(--white);border-radius:8px;padding:5px 10px;font:700 12px 'Source Sans 3',sans-serif;color:var(--car-ink2);cursor:pointer}
+#panel-cartera .accion:hover{background:var(--s2);color:var(--car-ink)}
+#panel-cartera .nota{font-size:12px;color:var(--car-mute);margin-top:8px}
+#panel-cartera .vacio{font-size:14px;color:var(--car-mute);padding:14px 6px}
+
+/* Tabla */
+#panel-cartera .car-tabla{overflow:auto}
+#panel-cartera table{width:100%;border-collapse:collapse;font:14px 'Source Sans 3',sans-serif}
+#panel-cartera th{font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--car-ink2);padding:12px;text-align:left;border-bottom:1px solid var(--rule);position:sticky;top:0;background:var(--white)}
+#panel-cartera th.num,#panel-cartera td.num{text-align:right}
+#panel-cartera th button{all:unset;cursor:pointer}
+#panel-cartera th button:focus-visible{outline:2px solid var(--car-pag)}
+#panel-cartera th[aria-sort] button::after{content:' ↓';color:var(--car-ink)}
+#panel-cartera td{padding:10px 12px;border-bottom:1px solid var(--car-line);color:var(--car-ink);vertical-align:middle}
+#panel-cartera tr.fila{cursor:pointer}
+#panel-cartera tr.fila:hover td{background:var(--s2)}
+#panel-cartera tr.fila.abierta td{background:var(--sel-bg)}
+#panel-cartera .seg{display:flex;gap:2px;height:6px;margin-top:6px;max-width:260px}
+#panel-cartera .seg span{display:block;height:100%;border-radius:3px}
+#panel-cartera tr.det td{background:var(--s2);padding:4px 12px 12px 28px}
+#panel-cartera .det-t{width:100%;border-collapse:collapse;font-size:13px}
+#panel-cartera .det-t td{padding:6px 8px;border-bottom:1px solid var(--rule);background:transparent;color:var(--car-ink2)}
+#panel-cartera .flecha{display:inline-block;width:14px;color:var(--car-mute);transition:transform .15s}
+#panel-cartera tr.abierta .flecha{transform:rotate(90deg)}
+
+/* Estados */
+#panel-cartera .esq{background:linear-gradient(90deg,#ececea 25%,#f6f6f4 37%,#ececea 63%);background-size:400% 100%;animation:carBrillo 1.4s ease infinite;border-radius:10px}
+@keyframes carBrillo{0%{background-position:100% 50%}100%{background-position:0 50%}}
+#panel-cartera .car-aviso{padding:18px 22px;font-size:14px;color:var(--car-ink2);margin-bottom:16px}
+#panel-cartera .car-aviso.error{box-shadow:inset 3px 0 0 var(--red)}
+#panel-cartera .viejos{opacity:.45;pointer-events:none;transition:opacity .2s}
+
+/* Tooltip único del panel */
+#car-tip{position:fixed;z-index:9999;pointer-events:none;background:#1f2328;color:#fff;font:12px/1.4 'Source Sans 3',sans-serif;padding:8px 10px;border-radius:9px;max-width:260px;box-shadow:0 6px 20px rgba(0,0,0,.18);opacity:0;transition:opacity .12s}
+#car-tip b{display:block;font-size:15px}
+#car-tip.ver{opacity:1}
+
+@media(max-width:900px){
+  #panel-cartera .car-dos{grid-template-columns:1fr}
+}
 @media(max-width:700px){
-  #panel-cartera .car-ley{grid-template-columns:repeat(2,1fr)}
-  #panel-cartera .kpi-grid{grid-template-columns:1fr}
-  #panel-cartera .kpi-val{font-size:34px}
-  #panel-cartera .car-estado{margin-left:0;width:100%}
+  #panel-cartera .car-kpis{grid-template-columns:1fr}
+  #panel-cartera .car-kpis>*{border-right:0;border-bottom:1px solid var(--car-line)}
+  #panel-cartera .car-kpis>*:last-child{border-bottom:0}
+  #panel-cartera .car-top .der{margin-left:0}
+  #panel-cartera .esp-cab,#panel-cartera .esp-fila{grid-template-columns:minmax(0,1fr) 64px minmax(0,1fr);gap:6px}
+  #panel-cartera .esp-val{font-size:12px}
+  #panel-cartera .car-esp{padding:14px 12px}
   #panel-cartera .col-movil-no{display:none}
 }
+@media (prefers-reduced-motion:reduce){#panel-cartera *{transition:none!important;animation:none!important}}
 </style>
 <div class="panel" id="panel-cartera">
   <div class="sec-hdr">
     <div class="sec-title">Cartera</div>
-    <div class="sec-sub">World Office · cuentas por cobrar y por pagar</div>
+    <div class="sec-sub">World Office · por cobrar y por pagar</div>
   </div>
   <div class="car-top">
-    <div class="car-seg" role="group" aria-label="Tipo de cartera">
-      <button type="button" data-car-tipo="cobrar" aria-pressed="true">Por cobrar</button>
-      <button type="button" data-car-tipo="pagar" aria-pressed="false">Por pagar</button>
-    </div>
     <input class="car-buscar" id="car-buscar" type="search" placeholder="Buscar cliente o proveedor" aria-label="Buscar tercero">
-    <div class="car-estado" id="car-estado"></div>
-    <button type="button" class="car-btn" id="car-recargar">Recargar</button>
+    <div class="der">
+      <span class="car-pill" id="car-estado" tabindex="0">Consultando…</span>
+      <button type="button" class="car-pill" id="car-recargar">Recargar</button>
+    </div>
   </div>
-  <div id="car-cuerpo"><div class="card car-aviso">Cargando cartera…</div></div>
+  <div id="car-cuerpo"></div>
 </div>
+<div id="car-tip" role="tooltip"></div>
 <script>
 (function(){
   const CARTERA_API = 'https://script.google.com/macros/s/AKfycbwFK2kpgz3zZwSdkjNiLxETMEJ-TvtPlzYPEhvUcMcpZx4mdJTrSyK5pl0b0LUI4Aoc/exec';
   const TRAMOS = [
-    { k:'d0_30',   lbl:'0 a 30 días',   color:'var(--ink-l)' },
-    { k:'d31_60',  lbl:'31 a 60 días',  color:'var(--gold)' },
-    { k:'d61_90',  lbl:'61 a 90 días',  color:'var(--orange)' },
-    { k:'d90_mas', lbl:'Más de 90 días', color:'var(--red)' }
+    { k:'d0_30',   lbl:'0–30',  largo:'0 a 30 días',    color:'var(--car-t0)' },
+    { k:'d31_60',  lbl:'31–60', largo:'31 a 60 días',   color:'var(--car-t1)' },
+    { k:'d61_90',  lbl:'61–90', largo:'61 a 90 días',   color:'var(--car-t2)' },
+    { k:'d90_mas', lbl:'+90',   largo:'más de 90 días', color:'var(--car-t3)' }
   ];
-  let datos = null, tipo = 'cobrar', cargando = false, abiertos = {};
+  const LADO = {
+    cobrar: { nombre:'Por cobrar', quien:'Cliente',   quienes:'clientes',    color:'var(--car-cob)', sel:'var(--car-cob-l)', ring:'rgba(45,138,78,.28)', accion:'Cobrar' },
+    pagar:  { nombre:'Por pagar',  quien:'Proveedor', quienes:'proveedores', color:'var(--car-pag)', sel:'var(--car-pag-l)', ring:'rgba(62,99,221,.28)', accion:'Ver' }
+  };
+  let datos = null, lado = 'cobrar', cargando = false, error = '', abiertos = {}, orden = 'total';
 
   const $c = id => document.getElementById(id);
   const esc = x => String(x == null ? '' : x).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const pesos = n => '$' + Math.round(n || 0).toLocaleString('es-CO');
-  const corto = n => {
-    const a = Math.abs(n || 0);
-    if (a >= 1e9) return '$' + (n / 1e9).toLocaleString('es-CO', { maximumFractionDigits: 1 }) + ' mil M';
-    if (a >= 1e6) return '$' + (n / 1e6).toLocaleString('es-CO', { maximumFractionDigits: 1 }) + ' M';
-    return pesos(n);
+  /* Millones para las cifras grandes; el valor exacto va en el tooltip. */
+  const mill = n => {
+    const a = Math.abs(n || 0), s = n < 0 ? '−' : '';
+    if (a < 1e6) return s + pesos(a);
+    const m = a / 1e6;
+    return s + '$' + m.toLocaleString('es-CO', { maximumFractionDigits: m >= 100 ? 0 : 1 }) + ' M';
   };
+  const pct = (v, t) => !t ? '—' : (v / t < .001 && v > 0 ? '<0,1%' : Math.round(v / t * 100) + '%');
+  const tramoDe = d => d == null ? null : d <= 30 ? 'd0_30' : d <= 60 ? 'd31_60' : d <= 90 ? 'd61_90' : 'd90_mas';
+  const chipDias = d => d == null ? '<span class="chip">—</span>' :
+    '<span class="chip' + (d > 90 ? ' t3' : d > 60 ? ' t2' : '') + '">' + d + ' d</span>';
   const hace = iso => {
     if (!iso) return '';
     const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
@@ -8062,13 +8157,20 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     const h = Math.round(m / 60);
     return h < 48 ? 'hace ' + h + ' h' : 'hace ' + Math.round(h / 24) + ' días';
   };
-  const chip = d => d == null ? '—' :
-    '<span class="car-chip' + (d > 90 ? ' t90' : d > 60 ? ' t61' : '') + '">' + d + ' d</span>';
+
+  /* Antigüedad de cada tercero, calculada de sus documentos. */
+  function prepararTerceros(g){
+    (g.porTercero || []).forEach(t => {
+      if (t._ed) return;
+      t._ed = { d0_30:0, d31_60:0, d61_90:0, d90_mas:0 };
+      t.docs.forEach(d => { const k = tramoDe(d.dias); if (k) t._ed[k] += d.saldo || 0; });
+    });
+  }
 
   async function pedir(){
     if (cargando) return;
-    cargando = true;
-    pintarEstado();
+    cargando = true; error = '';
+    pintar();
     try {
       const res = await fetch(CARTERA_API, {
         method: 'POST', redirect: 'follow',
@@ -8076,11 +8178,13 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
         body: JSON.stringify({ accion: 'cartera', token: (typeof _authToken !== 'undefined' && _authToken) || '' })
       });
       const txt = await res.text();
-      let j; try { j = JSON.parse(txt); } catch (e) { throw new Error('El servicio no respondió bien. Intenta de nuevo.'); }
-      if (!j.ok) throw new Error(j.error || 'No se pudo consultar');
+      let j; try { j = JSON.parse(txt); } catch (e) { throw new Error('El servicio de cartera no respondió bien.'); }
+      if (!j.ok) throw new Error(j.error || 'No se pudo consultar la cartera.');
+      j._pedido = Date.now();
+      if (j.listo) { prepararTerceros(j.cobrar); prepararTerceros(j.pagar); }
       datos = j;
     } catch (e) {
-      datos = { ok: false, error: e.message || String(e) };
+      error = e.message || String(e);
     } finally {
       cargando = false;
       pintar();
@@ -8090,101 +8194,186 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   function pintarEstado(){
     const el = $c('car-estado');
     if (!el) return;
-    if (cargando) { el.innerHTML = 'Consultando…'; return; }
-    if (datos && datos.ok && datos.listo) {
-      const viejo = datos.actualizado && (Date.now() - new Date(datos.actualizado).getTime()) > 8 * 3600e3;
-      el.innerHTML = '<span class="car-punto' + (viejo ? ' viejo' : '') + '"></span>Actualizado ' + esc(hace(datos.actualizado));
-      el.title = datos.actualizado ? new Date(datos.actualizado).toLocaleString('es-CO') : '';
-    } else el.innerHTML = '';
+    if (cargando) { el.innerHTML = 'Consultando…'; el.removeAttribute('data-tip'); return; }
+    if (datos && datos.listo) {
+      const horas = (Date.now() - new Date(datos.actualizado).getTime()) / 3600e3;
+      el.innerHTML = '<span class="pt' + (horas > 8 ? ' viejo' : '') + '"></span>Actualizado ' + esc(hace(datos.actualizado));
+      el.setAttribute('data-tip', '<b>' + esc(new Date(datos.actualizado).toLocaleString('es-CO')) + '</b>World Office se consulta solo cada 6 horas. La antigüedad cuenta desde la fecha del documento.');
+    } else { el.innerHTML = '—'; el.removeAttribute('data-tip'); }
+  }
+
+  function esqueleto(){
+    return '<div class="car-card car-kpis">' + [1,2,3].map(() => '<div><div class="esq" style="height:118px"></div></div>').join('') + '</div>' +
+      '<div class="car-card car-esp"><div class="esq" style="height:190px"></div></div>' +
+      '<div class="car-dos"><div class="car-card"><div class="esq" style="height:240px"></div></div><div class="car-card"><div class="esq" style="height:240px"></div></div></div>';
   }
 
   function pintar(){
     pintarEstado();
     const cuerpo = $c('car-cuerpo');
     if (!cuerpo) return;
-    if (!datos) { cuerpo.innerHTML = '<div class="card car-aviso">Cargando cartera…</div>'; return; }
-    if (!datos.ok) {
-      cuerpo.innerHTML = '<div class="card car-aviso" style="border-left:3px solid var(--red)"><b>No se pudo traer la cartera.</b> ' + esc(datos.error) + '</div>';
-      return;
-    }
-    if (!datos.listo) {
-      const st = datos.estado || {};
-      const paso = st.error ? 'Error en World Office: ' + esc(st.error)
-        : st.fase === 'saldos' ? 'Consultando saldos de cada tercero…'
-        : st.fase === 'docs' ? 'Reuniendo clientes y proveedores de las facturas…'
-        : 'Esperando la primera consulta (corre cada 10 minutos).';
-      cuerpo.innerHTML = '<div class="card car-aviso"><b>La primera carga de World Office está en curso.</b><br>' + paso +
-        '<br><span style="color:var(--ink-l)">Vuelve en unos minutos y pulsa Recargar.</span></div>';
-      return;
-    }
-    const g = datos[tipo] || { total: 0, items: 0, porTercero: [], edades: {} };
-    const q = ($c('car-buscar').value || '').trim().toLowerCase();
-    const filas = q ? g.porTercero.filter(t => String(t.tercero || '').toLowerCase().indexOf(q) !== -1) : g.porTercero;
-    const viejos = g.edades.d90_mas || 0;
-    const quien = tipo === 'cobrar' ? 'Clientes' : 'Proveedores';
+    let aviso = '';
+    if (error) aviso = '<div class="car-card car-aviso error"><b>No se pudo actualizar.</b> ' + esc(error) +
+      (datos && datos.listo ? ' Se muestran las últimas cifras traídas.' : '') +
+      ' <button type="button" class="accion" data-car-recargar>Reintentar</button></div>';
 
-    let h = '<div class="kpi-grid">' +
-      kpi('Total ' + (tipo === 'cobrar' ? 'por cobrar' : 'por pagar'), corto(g.total), pesos(g.total), 'var(--navy)') +
-      kpi('Más de 90 días', corto(viejos), g.total ? Math.round(viejos / g.total * 100) + '% del total' : '—', viejos ? 'var(--red)' : 'var(--ink-l)') +
-      kpi(quien, String(g.porTercero.length), g.items + ' documentos abiertos', 'var(--navy)') +
+    if (!datos || !datos.listo) {
+      if (datos && !datos.listo && !cargando) {
+        const st = datos.estado || {};
+        const paso = st.error ? 'World Office respondió con error: ' + esc(st.error)
+          : st.fase === 'saldos' ? 'Consultando saldos de cada tercero…'
+          : st.fase === 'docs' ? 'Reuniendo clientes y proveedores…'
+          : 'Esperando la primera consulta.';
+        cuerpo.innerHTML = aviso + '<div class="car-card car-aviso"><b>La primera carga de World Office está en curso.</b> ' + paso + '</div>';
+      } else cuerpo.innerHTML = aviso + (cargando ? esqueleto() : '');
+      return;
+    }
+
+    const C = datos.cobrar, P = datos.pagar, g = datos[lado], L = LADO[lado];
+    const panel = $c('panel-cartera');
+    panel.style.setProperty('--sel-bg', L.sel);
+    panel.style.setProperty('--sel-ring', L.ring);
+
+    let h = aviso + '<div class="' + (cargando ? 'viejos' : '') + '">';
+
+    /* 1. Franja de cifras */
+    const neta = C.total - P.total;
+    const kpiLado = k => {
+      const G = datos[k], X = LADO[k], v90 = G.edades.d90_mas || 0;
+      return '<div><button type="button" class="car-kpi" data-car-lado="' + k + '" aria-pressed="' + (lado === k) + '">' +
+        '<span class="lbl"><span class="sw" style="background:' + X.color + '"></span>' + X.nombre + '</span>' +
+        '<div class="val num" data-tip="<b>' + pesos(G.total) + '</b>' + G.porTercero.length + ' ' + X.quienes + ' · ' + G.items + ' documentos abiertos">' + mill(G.total) + '</div>' +
+        '<span class="pie"><span class="chip' + (v90 ? ' t3' : '') + '" data-tip="<b>' + pesos(v90) + '</b>Saldo con más de 90 días desde la fecha del documento">+90 d · ' + pct(v90, G.total) + '</span>' +
+        '<span class="num">' + G.porTercero.length + ' ' + X.quienes + '</span></span></button></div>';
+    };
+    h += '<div class="car-card car-kpis">' + kpiLado('cobrar') + kpiLado('pagar') +
+      '<div><div class="car-kpi"><span class="lbl">Posición neta</span>' +
+      '<div class="val num" style="color:' + (neta < 0 ? 'var(--red)' : 'var(--car-ink)') + '" data-tip="<b>' + (neta < 0 ? '−' : '+') + pesos(Math.abs(neta)) + '</b>Por cobrar menos por pagar. Positivo: nos deben más de lo que debemos.">' +
+      (neta < 0 ? '' : '+') + mill(neta) + '</div>' +
+      '<span class="pie">cobrar − pagar · ' + (P.total ? (C.total / P.total).toLocaleString('es-CO', { maximumFractionDigits: 2 }) + '×' : '—') + '</span></div></div></div>';
+
+    /* 2. Antigüedad en espejo, misma escala para los dos lados */
+    const max = Math.max(1, ...TRAMOS.map(t => Math.max(C.edades[t.k] || 0, P.edades[t.k] || 0)));
+    const barra = (k, t) => {
+      const v = datos[k].edades[t.k] || 0, w = v / max * 100;
+      return '<div class="esp-lado ' + (k === 'cobrar' ? 'izq' : 'der') + (lado !== k ? ' apagado' : '') + '" data-tip="<b>' + pesos(v) + '</b>' +
+        LADO[k].nombre + ' · ' + t.largo + ' · ' + pct(v, datos[k].total) + ' de su total">' +
+        '<div class="esp-bar" style="width:' + Math.max(w, v ? 1 : 0) + '%;background:' + LADO[k].color + '"></div>' +
+        '<span class="esp-val num">' + mill(v) + '</span></div>';
+    };
+    h += '<div class="car-card car-esp"><div class="car-h">Antigüedad del saldo</div>' +
+      '<div class="esp-cab"><div class="izq">Por cobrar<i style="background:var(--car-cob)"></i></div><div style="text-align:center">Días</div>' +
+      '<div><i style="background:var(--car-pag)"></i>Por pagar</div></div>' +
+      TRAMOS.map((t, i) => '<div class="esp-fila' + (i === 3 ? ' t3' : '') + '">' + barra('cobrar', t) +
+        '<div class="esp-tramo"><i style="background:' + t.color + '"></i>' + t.lbl + '</div>' + barra('pagar', t) + '</div>').join('') +
       '</div>';
 
-    h += '<div class="card car-edades"><div class="car-barra" role="img" aria-label="Antigüedad del saldo">' +
-      TRAMOS.map(t => {
-        const v = g.edades[t.k] || 0;
-        return v > 0 && g.total ? '<span style="flex:' + v + ';background:' + t.color + '" title="' + t.lbl + ': ' + pesos(v) + '"></span>' : '';
-      }).join('') + '</div><div class="car-ley">' +
-      TRAMOS.map(t => '<div><i style="background:' + t.color + '"></i>' + t.lbl + '<b>' + corto(g.edades[t.k] || 0) + '</b></div>').join('') +
-      '</div></div>';
+    /* 3. Atención (+90 días) y concentración, del lado elegido */
+    const q = ($c('car-buscar').value || '').trim().toLowerCase();
+    const urg = g.porTercero.filter(t => t._ed.d90_mas > 0).sort((a, b) => b._ed.d90_mas - a._ed.d90_mas);
+    const v90 = g.edades.d90_mas || 0;
+    h += '<div class="car-dos"><div class="car-card"><div class="car-h" data-tip="Terceros con saldo de más de 90 días desde la fecha del documento, de mayor a menor">Atención · +90 días</div>';
+    if (!urg.length) h += '<div class="vacio">Sin saldos de más de 90 días.</div>';
+    else h += '<ul class="lista">' + urg.slice(0, 6).map(t =>
+      '<li><div style="min-width:0"><div class="nom">' + esc(t.tercero) + '</div><div class="sub num">' + chipDias(t.masViejo) + ' · ' + mill(t.total) + ' en total</div></div>' +
+      '<span class="mon num" data-tip="<b>' + pesos(t._ed.d90_mas) + '</b>De ' + pesos(t.total) + ' que tiene en total">' + mill(t._ed.d90_mas) + '</span>' +
+      '<button type="button" class="accion" data-car-ir="' + esc(t.terceroId) + '">' + L.accion + '</button>' +
+      '<span class="trk"><span style="width:' + (t._ed.d90_mas / urg[0]._ed.d90_mas * 100) + '%;background:var(--car-t3)"></span></span></li>').join('') + '</ul>' +
+      '<div class="nota num">' + urg.length + ' ' + L.quienes + ' · ' + mill(v90) + ' de +90 días</div>';
+    h += '</div>';
 
-    h += '<div class="card" style="padding:0;overflow:auto"><table class="tbl"><thead><tr>' +
-      '<th>' + (tipo === 'cobrar' ? 'Cliente' : 'Proveedor') + '</th><th class="num col-movil-no">Docs</th>' +
-      '<th class="num" title="Días desde la fecha del documento más antiguo">Más antiguo</th><th class="num">Saldo</th></tr></thead><tbody>';
-    if (!filas.length) h += '<tr><td colspan="4" class="empty">' + (q ? 'Nadie coincide con la búsqueda.' : 'Sin saldos abiertos.') + '</td></tr>';
+    const top = g.porTercero.slice(0, 8);
+    const top5 = g.porTercero.slice(0, 5).reduce((s, t) => s + t.total, 0);
+    h += '<div class="car-card"><div class="car-h">Mayores saldos</div>' +
+      (top.length ? '<ul class="lista">' + top.map(t =>
+        '<li data-car-ir="' + esc(t.terceroId) + '" style="cursor:pointer"><div class="nom">' + esc(t.tercero) + '</div>' +
+        '<span class="mon num" data-tip="<b>' + pesos(t.total) + '</b>' + t.docs.length + ' documentos abiertos">' + mill(t.total) + '</span>' +
+        '<span class="pct num">' + pct(t.total, g.total) + '</span>' +
+        '<span class="trk"><span style="width:' + (t.total / top[0].total * 100) + '%;background:' + L.color + '"></span></span></li>').join('') + '</ul>' +
+        '<div class="nota num">Los 5 mayores son el ' + pct(top5, g.total) + ' del total</div>'
+        : '<div class="vacio">Sin saldos abiertos.</div>') + '</div></div>';
+
+    /* 4. Tabla completa */
+    let filas = q ? g.porTercero.filter(t => String(t.tercero || '').toLowerCase().indexOf(q) !== -1) : g.porTercero.slice();
+    if (orden === 'dias') filas.sort((a, b) => (b.masViejo || 0) - (a.masViejo || 0));
+    else if (orden === 'd90') filas.sort((a, b) => b._ed.d90_mas - a._ed.d90_mas || b.total - a.total);
+    else filas.sort((a, b) => b.total - a.total);
+    const th = (k, txt, cls, tip) => '<th class="' + (cls || '') + '"' + (orden === k ? ' aria-sort="descending"' : '') + (tip ? ' data-tip="' + tip + '"' : '') +
+      '><button type="button" data-car-orden="' + k + '">' + txt + '</button></th>';
+    h += '<div class="car-card car-tabla"><table><thead><tr><th>' + L.quien + (q ? ' · ' + filas.length : '') + '</th>' +
+      '<th class="num col-movil-no">Docs</th>' + th('dias', 'Más antiguo', 'num', 'Días desde la fecha del documento más antiguo') +
+      th('d90', '+90 días', 'num col-movil-no') + th('total', 'Saldo', 'num') + '</tr></thead><tbody>';
+    if (!filas.length) h += '<tr><td colspan="5" class="vacio">' + (q ? 'Nadie coincide con “' + esc(q) + '”.' : 'Sin saldos abiertos.') + '</td></tr>';
     filas.forEach(t => {
-      const k = tipo + '|' + t.terceroId, abierto = !!abiertos[k];
-      h += '<tr class="car-fila' + (abierto ? ' abierta' : '') + '" data-car-k="' + esc(k) + '" tabindex="0" aria-expanded="' + abierto + '">' +
-        '<td>' + esc(t.tercero || 'Tercero ' + t.terceroId) + '</td><td class="num col-movil-no">' + t.docs.length + '</td>' +
-        '<td class="num">' + chip(t.masViejo) + '</td><td class="num"><b>' + pesos(t.total) + '</b></td></tr>';
-      if (abierto) {
+      const k = lado + '|' + t.terceroId, ab = !!abiertos[k];
+      const seg = TRAMOS.filter(x => t._ed[x.k] > 0).map(x =>
+        '<span style="flex:' + t._ed[x.k] + ';background:' + x.color + '" data-tip="<b>' + pesos(t._ed[x.k]) + '</b>' + x.largo + '"></span>').join('');
+      h += '<tr class="fila' + (ab ? ' abierta' : '') + '" id="car-t-' + esc(t.terceroId) + '" data-car-k="' + esc(k) + '" tabindex="0" aria-expanded="' + ab + '">' +
+        '<td><span class="flecha">▸</span>' + esc(t.tercero || 'Tercero ' + t.terceroId) + '<div class="seg" aria-hidden="true">' + seg + '</div></td>' +
+        '<td class="num col-movil-no">' + t.docs.length + '</td><td class="num">' + chipDias(t.masViejo) + '</td>' +
+        '<td class="num col-movil-no" style="color:' + (t._ed.d90_mas ? 'var(--red)' : 'var(--car-mute)') + '">' + (t._ed.d90_mas ? mill(t._ed.d90_mas) : '—') + '</td>' +
+        '<td class="num"><b>' + pesos(t.total) + '</b></td></tr>';
+      if (ab) {
         const docs = t.docs.slice().sort((a, b) => (b.dias || 0) - (a.dias || 0));
-        h += '<tr class="car-det"><td colspan="4"><table class="car-det-t">' + docs.map(d =>
-          '<tr><td>' + esc(d.fecha || '—') + '</td><td>' + esc(d.concepto || '') + '</td><td class="col-movil-no">' + esc(d.cuenta || '') +
-          '</td><td class="num">' + chip(d.dias) + '</td><td class="num">' + pesos(d.saldo) + '</td></tr>').join('') +
-          '</table></td></tr>';
+        h += '<tr class="det"><td colspan="5"><table class="det-t">' + docs.map(d =>
+          '<tr><td class="num">' + esc(d.fecha || '—') + '</td><td>' + esc(d.concepto || '') + '</td><td class="col-movil-no num">' + esc(d.cuenta || '') +
+          '</td><td class="num">' + chipDias(d.dias) + '</td><td class="num">' + pesos(d.saldo) + '</td></tr>').join('') + '</table></td></tr>';
       }
     });
-    h += '</tbody></table></div>';
+    h += '</tbody></table></div></div>';
     cuerpo.innerHTML = h;
   }
 
-  function kpi(lbl, val, desc, ac){
-    return '<div class="kpi" style="--ac:' + ac + '"><div class="kpi-lbl">' + esc(lbl) + '</div><div class="kpi-val">' + esc(val) +
-      '</div><div class="kpi-desc">' + esc(desc) + '</div></div>';
+  /* Tooltip único: aparece con el ratón o con el foco del teclado. */
+  const tip = $c('car-tip');
+  function mostrarTip(el){
+    const t = el && el.getAttribute('data-tip');
+    if (!t) return ocultarTip();
+    tip.innerHTML = t;
+    const r = el.getBoundingClientRect();
+    tip.classList.add('ver');
+    const w = tip.offsetWidth, hh = tip.offsetHeight;
+    let x = r.left + r.width / 2 - w / 2, y = r.top - hh - 8;
+    if (y < 8) y = r.bottom + 8;
+    x = Math.max(8, Math.min(x, window.innerWidth - w - 8));
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
   }
+  function ocultarTip(){ tip.classList.remove('ver'); }
+  const panelEl = $c('panel-cartera');
+  panelEl.addEventListener('mouseover', e => mostrarTip(e.target.closest('[data-tip]')));
+  panelEl.addEventListener('mouseleave', ocultarTip);
+  panelEl.addEventListener('focusin', e => mostrarTip(e.target.closest('[data-tip]')));
+  panelEl.addEventListener('focusout', ocultarTip);
+  window.addEventListener('scroll', ocultarTip, { passive: true });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') ocultarTip(); });
 
-  document.addEventListener('click', function(e){
-    const b = e.target.closest('#panel-cartera [data-car-tipo]');
-    if (b) {
-      tipo = b.getAttribute('data-car-tipo');
-      document.querySelectorAll('#panel-cartera [data-car-tipo]').forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
-      return pintar();
+  panelEl.addEventListener('click', function(e){
+    const b = e.target.closest('[data-car-lado]');
+    if (b) { lado = b.getAttribute('data-car-lado'); ocultarTip(); return pintar(); }
+    if (e.target.closest('#car-recargar,[data-car-recargar]')) return pedir();
+    const o = e.target.closest('[data-car-orden]');
+    if (o) { orden = o.getAttribute('data-car-orden'); return pintar(); }
+    const ir = e.target.closest('[data-car-ir]');
+    if (ir) {
+      const id = ir.getAttribute('data-car-ir');
+      $c('car-buscar').value = '';
+      abiertos[lado + '|' + id] = true;
+      pintar();
+      const fila = $c('car-t-' + id);
+      if (fila) { fila.scrollIntoView({ behavior: 'smooth', block: 'center' }); fila.focus({ preventScroll: true }); }
+      return;
     }
-    if (e.target.closest('#car-recargar')) return pedir();
-    const f = e.target.closest('#panel-cartera tr.car-fila');
+    const f = e.target.closest('tr.fila');
     if (f) { const k = f.getAttribute('data-car-k'); abiertos[k] = !abiertos[k]; pintar(); }
   });
-  document.addEventListener('keydown', function(e){
-    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('#panel-cartera tr.car-fila')) {
-      e.preventDefault(); e.target.click();
-    }
+  panelEl.addEventListener('keydown', function(e){
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('tr.fila')) { e.preventDefault(); e.target.click(); }
   });
-  document.addEventListener('input', function(e){ if (e.target.id === 'car-buscar') pintar(); });
+  $c('car-buscar').addEventListener('input', pintar);
 
   window.carteraActivar = function(){
-    const viejo = !datos || !datos.ok || !datos.listo || (datos._pedido && Date.now() - datos._pedido > 10 * 60e3);
-    if (viejo) pedir().then(() => { if (datos) datos._pedido = Date.now(); });
-    else pintar();
+    const viejo = !datos || !datos.listo || Date.now() - (datos._pedido || 0) > 10 * 60e3;
+    if (viejo) pedir(); else pintar();
   };
 })();
 </script>
