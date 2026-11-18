@@ -19430,6 +19430,25 @@ function _kmVehiculo(v) {
   return { km: propio, origen: propio ? 'ficha' : 'sin dato', fecha: '' };
 }
 
+/* Fotos de las facturas: las nuevas traen 'fotosFactura' (varias); las
+   viejas solo 'fotoFactura' (una). Se muestran en miniatura, no en un boton. */
+function _facturasDeMant(m) {
+  if (Array.isArray(m.fotosFactura) && m.fotosFactura.length) return m.fotosFactura;
+  return String(m.fotoFactura || '').split('\n').map(u => u.trim()).filter(Boolean);
+}
+function _galeriaFacturasMant(m, ancho) {
+  const fs = _facturasDeMant(m);
+  if (!fs.length) return '';
+  return `<div style="margin-top:9px">
+    <div style="font-size:13px;font-weight:700;color:var(--ink-m);margin-bottom:5px">Factura${fs.length !== 1 ? 's' : ''} (${fs.length})</div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap">
+      ${fs.map((f, i) => `<img src="${urlFotoDrive(f)}" data-alt="${urlFotoDriveAlt(f)}" alt="Factura ${i + 1}"
+          onclick="abrirFotoBaucher('${_escAttrVeh(f)}','Factura · ${_escAttrVeh(m.titulo||'')}')"
+          onerror="if(!this.dataset.f2){this.dataset.f2='1';this.src=this.dataset.alt;}else{this.style.display='none';}"
+          style="width:${ancho}px;height:${Math.round(ancho * 0.75)}px;object-fit:cover;border-radius:4px;border:2px solid var(--navy);cursor:zoom-in">`).join('')}
+    </div></div>`;
+}
+
 function _fotosDeMant(m) {
   if (Array.isArray(m.fotos) && m.fotos.length) return m.fotos;
   return (m.foto ? [m.foto] : []);
@@ -20570,10 +20589,10 @@ function _rpNovedades(placa) {
         ${m.km ? `<span style="font-size:11px;color:var(--ink-m);font-weight:600">${_fmtLect(m.km, _uVeh(m.placa))}</span>` : ''}
         ${Number(m.valor) ? `<span style="font-size:11px;font-weight:700;color:var(--green)">$ ${fmt(Number(m.valor))}</span>` : ''}
         ${m.factura ? `<span style="font-size:10.5px;color:var(--ink-l)">factura ${_escVeh(m.factura)}</span>` : ''}
-        ${m.fotoFactura ? `<button type="button" onclick="abrirFotoBaucher('${_escAttrVeh(m.fotoFactura)}','Factura · ${_escAttrVeh(m.titulo||'')}')" style="font-size:13px;font-weight:700;color:var(--navy);background:none;border:1px solid var(--rule);border-radius:10px;padding:1px 9px;cursor:zoom-in">Ver factura</button>` : ''}
         <span style="margin-left:auto;font-size:11px;color:var(--ink-l);white-space:nowrap">${_fmtFechaVeh(m.fecha)}</span>
       </div>
       ${m.descripcion ? `<div style="font-size:11.5px;color:var(--ink-m);margin-top:3px;line-height:1.4">${_escVeh(m.descripcion)}</div>` : ''}
+      ${_galeriaFacturasMant(m, 130)}
       ${galeria}
     </div>`;
   }).join('');
@@ -21628,8 +21647,9 @@ async function guardarKmVehiculo(placa, actual) {
 /* Fotos elegidas para el mantenimiento que se está cargando.
    v3: antes era una sola imagen, ahora se admiten varias. */
 let _mantFotosTmp = [];
-/* La foto de la factura va en su propio campo, aparte de la evidencia. */
-let _mantFacturaTmp = '';
+/* Las fotos de las facturas van en su propio campo, aparte de la evidencia.
+   Antes era una sola; ahora se admiten varias. */
+let _mantFacturaTmp = [];
 const MANT_TIPOS = [
   { k:'preventivo', n:'Preventivo', d:'Programado, antes de que falle' },
   { k:'correctivo', n:'Correctivo', d:'Reparar una falla o daño' },
@@ -21640,20 +21660,26 @@ function _chipTipoMant(t) {
   return x ? `<span class="vm-chip vm-chip-${x.k}">${x.n}</span>` : '';
 }
 async function _previewFacturaMant(input) {
-  const f = input.files && input.files[0];
-  _mantFacturaTmp = f ? await _comprimirImagenVeh(f) : '';
+  const files = Array.from(input.files || []);
+  for (const f of files) {
+    const b64 = await _comprimirImagenVeh(f);
+    if (b64) _mantFacturaTmp.push(b64);
+  }
+  input.value = '';
+  _pintarFacturasMant();
+}
+function _pintarFacturasMant() {
   const prev = document.getElementById('vm-ffact-prev');
-  if (prev) prev.innerHTML = _mantFacturaTmp
-    ? `<div style="position:relative;display:inline-block"><img src="${_mantFacturaTmp}" alt="Factura" style="width:110px;height:82px;object-fit:cover;border-radius:4px;border:1px solid var(--rule);display:block">
-        <button type="button" onclick="_quitarFacturaMant()" title="Quitar la foto de la factura" style="position:absolute;top:-7px;right:-7px;width:22px;height:22px;border-radius:50%;background:var(--red);color:#fff;border:2px solid var(--white);cursor:pointer;font-size:13px;line-height:1;padding:0;font-weight:700">×</button></div>`
+  if (prev) prev.innerHTML = _mantFacturaTmp.length
+    ? `<div style="display:flex;gap:9px;flex-wrap:wrap">${_mantFacturaTmp.map((src, i) => `<div style="position:relative;display:inline-block"><img src="${src}" alt="Factura ${i + 1}" style="width:110px;height:82px;object-fit:cover;border-radius:4px;border:1px solid var(--rule);display:block">
+        <button type="button" onclick="_quitarFacturaMant(${i})" title="Quitar esta factura" style="position:absolute;top:-7px;right:-7px;width:22px;height:22px;border-radius:50%;background:var(--red);color:#fff;border:2px solid var(--white);cursor:pointer;font-size:13px;line-height:1;padding:0;font-weight:700">×</button></div>`).join('')}</div>
+      <div style="font-size:13px;color:var(--ink-m);margin-top:6px;font-weight:600">${_mantFacturaTmp.length} factura${_mantFacturaTmp.length !== 1 ? 's' : ''} lista${_mantFacturaTmp.length !== 1 ? 's' : ''} para subir</div>`
     : '';
   _mantRevisarFaltan();
 }
-function _quitarFacturaMant() {
-  _mantFacturaTmp = '';
-  const i = document.getElementById('vm-ffact'); if (i) i.value = '';
-  const prev = document.getElementById('vm-ffact-prev'); if (prev) prev.innerHTML = '';
-  _mantRevisarFaltan();
+function _quitarFacturaMant(i) {
+  _mantFacturaTmp.splice(i, 1);
+  _pintarFacturasMant();
 }
 
 /* ── ANTES DE GUARDAR: ¿QUÉ FALTA? ─────────────────────────────────
@@ -21669,7 +21695,7 @@ function _mantFaltantes() {
   if (!(_leerLect(val('vm-km')) > 0)) sug.push(['vm-km-caja', enH ? 'Horómetro' : 'Kilometraje']);
   if (!(parseInt(val('vm-valor'), 10) > 0)) sug.push(['vm-valor-caja', 'Valor']);
   if (!val('vm-factura')) sug.push(['vm-factura-caja', 'N.º de factura']);
-  if (!_mantFacturaTmp) sug.push(['vm-ffact-caja', 'Foto de la factura']);
+  if (!_mantFacturaTmp.length) sug.push(['vm-ffact-caja', 'Foto de la factura']);
   if (!_mantFotosTmp.length) sug.push(['vm-foto-caja', 'Evidencia fotográfica']);
   return { oblig, sug };
 }
@@ -21713,7 +21739,7 @@ function abrirFormMantenimiento(placa, esAceite) {
   const kmActual = vehiculo ? (_kmVehiculo(vehiculo).km || 0) : 0;
   const uM = _uVeh(vehiculo || placa), enH = uM === 'h';
   const marcarAceite = esAceite === true;
-  _mantFacturaTmp = '';
+  _mantFacturaTmp = [];
   _modalVeh(`
     <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:4px">${marcarAceite ? 'Registrar cambio de aceite' : 'Nuevo mantenimiento'} · ${placa}</div>
     <div style="font-size:12px;color:var(--ink-l);margin-bottom:16px">Queda guardado en el historial del vehículo.</div>
@@ -21760,8 +21786,9 @@ function abrirFormMantenimiento(placa, esAceite) {
         </div>
       </div>
       <div id="vm-ffact-caja">
-        <div class="vm-et">Foto de la factura</div>
-        <input id="vm-ffact" type="file" accept="image/*" onchange="_previewFacturaMant(this)" style="font-size:13px">
+        <div class="vm-et">Fotos de las facturas</div>
+        <input id="vm-ffact" type="file" accept="image/*" multiple onchange="_previewFacturaMant(this)" style="font-size:13px">
+        <div style="font-size:13px;color:var(--ink-l);margin-top:4px">Puedes elegir varias a la vez, o ir agregándolas de a una.</div>
         <div id="vm-ffact-prev" style="margin-top:8px"></div>
       </div>
       <div id="vm-foto-caja">
@@ -21859,7 +21886,7 @@ async function guardarMantenimiento(placa, guardarAsi) {
   const kmL = _leerLect(kmTxt);
   const km = kmTxt === '' || isNaN(kmL) ? '' : kmL;
 
-  const n = _mantFotosTmp.length + (_mantFacturaTmp ? 1 : 0);
+  const n = _mantFotosTmp.length + _mantFacturaTmp.length;
   if (btn) { btn.disabled = true; btn.textContent = n ? ('Subiendo ' + n + ' foto' + (n !== 1 ? 's' : '') + '...') : 'Guardando...'; }
   const autor = (window._usuarioActual && _usuarioActual.nombre) || '';
 
@@ -21869,7 +21896,8 @@ async function guardarMantenimiento(placa, guardarAsi) {
 
   const cuerpo = JSON.stringify({ accion:'guardarMantenimiento', placa, fecha, titulo, descripcion: desc,
                                   fotos: _mantFotosTmp, esAceite, km, valor, factura, autor,
-                                  tipo, fotoFactura: _mantFacturaTmp || '' });
+                                  tipo, fotosFactura: _mantFacturaTmp,
+                                  fotoFactura: _mantFacturaTmp[0] || '' });
   const kb = Math.round(cuerpo.length / 1024);
 
   /* Se envia con fetch directo y NO con fetchJSONTolerante.
@@ -21905,7 +21933,7 @@ async function guardarMantenimiento(placa, guardarAsi) {
     return;
   }
   _mantFotosTmp = [];
-  _mantFacturaTmp = '';
+  _mantFacturaTmp = [];
   _cerrarModalVeh();
   await cargarVehiculos(true);
 }
@@ -21941,9 +21969,9 @@ function verHistorialVehiculo(placa) {
         ${m.km ? `<span style="font-size:13px;color:var(--ink-m);font-weight:600">${_fmtLect(m.km, _uVeh(placa))}</span>` : ''}
         ${Number(m.valor) ? `<span style="font-size:13px;font-weight:700;color:var(--green)">${_fmtPesos(Number(m.valor))}</span>` : ''}
         ${m.factura ? `<span style="font-size:13px;color:var(--ink-l)">factura ${_escVeh(m.factura)}</span>` : ''}
-        ${m.fotoFactura ? `<button type="button" onclick="abrirFotoBaucher('${_escAttrVeh(m.fotoFactura)}','Factura · ${_escAttrVeh(m.titulo||'')}')" style="font-size:13px;font-weight:700;color:var(--navy);background:none;border:1px solid var(--rule);border-radius:10px;padding:1px 9px;cursor:zoom-in">Ver factura</button>` : ''}
       </div>
       ${m.descripcion?`<div style="font-size:12px;color:var(--ink-m);margin-top:5px;white-space:pre-wrap">${_escVeh(m.descripcion)}</div>`:''}
+      ${_galeriaFacturasMant(m, 104)}
       ${galeria}
     </div>`;
   }).join('') : '<div style="font-size:13px;color:var(--ink-l);font-style:italic;padding:10px 0">Este vehículo no tiene mantenimientos registrados.</div>';
