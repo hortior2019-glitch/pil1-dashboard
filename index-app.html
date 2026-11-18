@@ -2279,6 +2279,12 @@ td .preop-fotos{margin-top:0;gap:4px;flex-wrap:nowrap}
 .cc-alf-asis{margin:4px 22px 12px;padding:10px 14px;border-left:4px solid #1a5c35;background:#f1f6f2;border-radius:0 8px 8px 0;display:flex;gap:12px;align-items:flex-start}
 .cc-alf-mun{flex:none;display:block;width:84px;height:88px;margin:-4px 0 -6px}
 .cc-alf-chico{max-width:520px}
+.cc-alf-plazo{margin:0 22px 12px;padding:10px 14px;border-radius:10px;background:#fbf3dc;border:1px solid #e4d3a3;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;align-items:center}
+.cc-alf-plazo b{font-size:15px;color:#6e5310}
+.cc-alf-plazo span{grid-column:1;font-size:13px;color:#5c574e}
+.cc-alf-plazo .cc-alf-rz{grid-column:2;grid-row:1/3}
+.cc-alf-plazo-mal{background:#fcebe8;border-color:#c0392b}
+.cc-alf-plazo-mal b{color:#a52a1d}
 .cc-alf-cifras{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:0 22px}
 .cc-alf-cifras div{border:1px solid #e1e6e2;border-radius:8px;padding:10px 12px}
 .cc-alf-cifras b{display:block;font-size:26px;line-height:1.1;color:#16261b;font-variant-numeric:tabular-nums}
@@ -24788,7 +24794,8 @@ function _ccRevisarAlertaFacturas() {
     const d = new Date(ma.anio, ma.mes, 1);
     if (!primero || d < primero) primero = d;
   });
-  if (!primero) return;
+  const rz = _rzSeguro();
+  if (!primero && !rz.activo) return;
   const atras = [];
   for (let k = 6; k >= 1; k--) {
     const d = new Date(hoy.getFullYear(), hoy.getMonth() - k, 1);
@@ -24806,7 +24813,7 @@ function _ccRevisarAlertaFacturas() {
   let recibido = false;
   try { recibido = localStorage.getItem(claveRec) === '1'; } catch (e) {}
   if (recibido) { _ccAlfResumen(atras); return; }
-  if (!atras.length) return;
+  if (!atras.length) { if (rz.activo) _ccAlfResumen(atras); return; }
   _ccAlfTabla(atras, claveRec);
 }
 
@@ -24832,16 +24839,18 @@ function _ccAlfHablar(fondo, texto) {
 /* Ya recibido: solo el resumen. */
 function _ccAlfResumen(atras) {
   const nGen = atras.filter(o => !o.inf).length, nFac = atras.length - nGen;
-  const txt = !atras.length
-    ? 'Todos los cortes de hace más de un mes tienen su factura.'
+  const rz = _rzSeguro();
+  const txt = (rz.activo ? _rzFrase(rz) + ' ' : '') + (!atras.length
+    ? (rz.activo ? '' : 'Todos los cortes de hace más de un mes tienen su factura.')
     : 'Hay ' + (atras.length === 1 ? 'un corte' : atras.length + ' cortes') + ' con más de un mes sin factura: ' +
       (nGen === 1 ? 'falta generar uno' : nGen ? 'faltan generar ' + nGen : 'no falta generar ninguno') + ', y ' +
-      (nFac === 1 ? 'uno está generado sin factura.' : nFac ? nFac + ' están generados sin factura.' : 'ninguno está generado sin factura.');
+      (nFac === 1 ? 'uno está generado sin factura.' : nFac ? nFac + ' están generados sin factura.' : 'ninguno está generado sin factura.'));
   const fondo = document.createElement('div');
   fondo.className = 'cc-alf-fondo';
   fondo.innerHTML = '<div class="cc-alf cc-alf-chico" role="dialog" aria-modal="true" aria-labelledby="ccAlfTit" tabindex="-1">' +
     '<h3 id="ccAlfTit">Cortes pendientes</h3>' +
     '<div class="cc-alf-asis">' + _ccMuneco() + '<div><span class="cc-alf-asis-nom">Asistente Horti</span><p>' + _ccEsc(txt) + '</p></div></div>' +
+    (rz.activo ? _rzBloqueAlerta(rz) : '') +
     (atras.length ? '<div class="cc-alf-cifras">' +
       '<div><b>' + atras.length + '</b><span>Cortes</span></div>' +
       '<div><b>' + nGen + '</b><span>Faltan generar</span></div>' +
@@ -24853,6 +24862,7 @@ function _ccAlfResumen(atras) {
   document.addEventListener('keydown', tecla);
   fondo.addEventListener('click', e => {
     if (e.target.closest('.cc-alf-ver')) { cerrar(); _ccAlfTabla(atras, null); return; }
+    if (e.target.closest('.cc-alf-rz')) { cerrar(); _rzIrAviso(); return; }
     if (e.target.closest('.cc-alf-ok') || e.target === fondo) cerrar();
   });
   document.body.appendChild(fondo);
@@ -24871,10 +24881,11 @@ function _ccAlfTabla(atras, claveRec) {
   const guardado = o => !!(o.inf && !o.inf.esFavoritoSinInforme);
   const estadoTxt = o => !o.inf ? 'Sin generar' : (guardado(o) ? 'Guardado sin factura' : 'Generado sin guardar');
   const nGen = atras.filter(o => !o.inf).length, nAbr = atras.length - nGen;
+  const rz = _rzSeguro();
   /* El Asistente Horti presenta la tabla. No se cierra con Escape ni
      tocando afuera: hay que tocar Recibido (o actuar sobre un corte), y
      los botones se activan cuando termina la introducción. */
-  const intro = 'Soy el Asistente Horti. Antes de trabajar en Cortes te recuerdo lo pendiente: ' +
+  const intro = 'Soy el Asistente Horti. ' + (rz.activo ? _rzFrase(rz) + ' ' : '') + 'Antes de trabajar en Cortes te recuerdo lo pendiente: ' +
     (atras.length === 1 ? 'un corte lleva' : atras.length + ' cortes llevan') + ' más de un mes sin factura. ' +
     (nGen ? 'Los que no se han generado tienen el botón Generar: te lleva a ese periodo con las fechas sugeridas, y tú eliges las columnas o cambias las fechas. ' : '') +
     (nAbr ? 'Los que ya se generaron tienen el botón Abrir: abre ese corte para que adjuntes la factura. ' : '') +
@@ -24885,6 +24896,7 @@ function _ccAlfTabla(atras, claveRec) {
     '<h3 id="ccAlfTit">' + atras.length + (atras.length === 1 ? ' corte lleva' : ' cortes llevan') + ' más de un mes sin factura</h3>' +
     '<div class="cc-alf-asis">' + _ccMuneco() + '<div><span class="cc-alf-asis-nom">Asistente Horti</span><p id="ccAlfIntro">' +
       _ccEsc(forzada ? intro : 'Generar te lleva a ese periodo con las fechas sugeridas; Abrir abre el corte para adjuntar la factura.') + '</p></div></div>' +
+    (rz.activo ? _rzBloqueAlerta(rz) : '') +
     '<div class="cc-alf-wrap"><table><thead><tr><th>Operación</th><th>Corte</th><th>Estado</th><th class="cc-alf-n">Facturas</th><th class="cc-alf-n">Días</th><th></th></tr></thead><tbody>' +
     atras.map((o, j) => '<tr><td>' + _ccEsc(o.op) + '</td><td>' + _cobFechaCorta(o.ini) + ' → ' + _cobFechaCorta(o.cie) + '</td>' +
       '<td>' + estadoTxt(o) + '</td>' +
@@ -24915,6 +24927,7 @@ function _ccAlfTabla(atras, claveRec) {
   };
   fondo.addEventListener('click', e => {
     if (!listo) return;
+    if (e.target.closest('.cc-alf-rz')) { cerrar(); _rzIrAviso(); return; }
     const ir = e.target.closest('.cc-alf-ir');
     if (ir) {
       const o = _ccAlertaAtras[+ir.dataset.j]; cerrar();
@@ -25837,8 +25850,28 @@ function _rzPermite(prov, ini, cie) {
 }
 
 function _rzPlural(n, uno, varios) { return n + ' ' + (n === 1 ? uno : varios); }
-function _rzQueda(h) { return h >= 48 ? Math.floor(h / 24) + ' días' : h >= 1 ? Math.floor(h) + ' h' : 'menos de 1 h'; }
+function _rzQueda(h) {
+  if (h < 1) return 'menos de 1 h';
+  const d = Math.floor(h / 24), r = Math.floor(h % 24);
+  return d ? (d === 1 ? '1 día' : d + ' días') + (r ? ' y ' + r + ' h' : '') : r + ' h';
+}
 function _rzVence(d) { return d.getDate() + ' ' + _MESES_AB[d.getMonth()] + ', ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
+
+function _rzSeguro() { try { return _rzEstado(); } catch (er) { return { activo: false }; } }
+/* Lo que dice el asistente al entrar a Cortes: cuánto queda y qué pasa si vence. */
+function _rzFrase(e) {
+  const tipo = 'atrasado' + (e.falta === 1 ? '' : 's') + ' de más de ' + e.u + ' días';
+  return e.vencido
+    ? 'Venció el plazo de los cortes atrasados: no se pueden generar cortes nuevos hasta que generes 1 de los ' + tipo.replace(/^atrasados? /, '') + '.'
+    : 'Quedan ' + _rzQueda(e.horas) + ' para generar ' + _rzPlural(e.falta, 'corte', 'cortes') + ' ' + tipo + '. Si no, se bloquea generar cortes nuevos hasta generar uno de ellos.';
+}
+function _rzBloqueAlerta(e) {
+  return '<div class="cc-alf-plazo' + (e.vencido ? ' cc-alf-plazo-mal' : '') + '"><b>' +
+    (e.vencido ? 'Generar cortes nuevos: bloqueado' : 'Quedan ' + _rzQueda(e.horas) + ' · vence el ' + _rzVence(e.limite)) + '</b><span>' +
+    _rzPlural(e.falta, 'corte', 'cortes') + ' de más de ' + e.u + ' días por generar en este lote · ' + _rzPlural(e.cola.length, 'atrasado', 'atrasados') + ' en total</span>' +
+    '<button type="button" class="cc-alf-ir cc-alf-rz">Ver atrasados</button></div>';
+}
+function _rzIrAviso() { const a = document.getElementById('rz-aviso'); if (a) a.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
 
 function _rzHtml(e) {
   const puede = !!document.getElementById('corte-proveedor');
