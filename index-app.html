@@ -8018,6 +8018,13 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-cartera .car-kpi[aria-pressed="false"] .val{color:var(--car-ink2)}
 #panel-cartera .car-kpi .pie{font-size:13px;color:var(--car-mute);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 #panel-cartera .chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font:700 12px 'Source Sans 3',sans-serif;background:var(--rule-l);color:var(--car-ink2);white-space:nowrap}
+#panel-cartera .car-filtro{display:inline-flex;flex-wrap:wrap;border:1px solid var(--rule);border-radius:10px;background:var(--white);padding:3px;gap:2px}
+#panel-cartera .car-filtro button{border:0;background:transparent;border-radius:8px;padding:7px 12px;font:600 13px 'Source Sans 3',sans-serif;color:var(--car-ink2);cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+#panel-cartera .car-filtro button:hover{background:var(--s2)}
+#panel-cartera .car-filtro button[aria-pressed="true"]{background:var(--car-ink);color:#fff}
+#panel-cartera .car-filtro i{width:9px;height:9px;border-radius:2px}
+#panel-cartera .esp-fila.fuera{opacity:.3}
+#panel-cartera .car-dos.uno{grid-template-columns:1fr}
 #panel-cartera .chip.t1{background:#fbefd6;color:#7a5410}
 #panel-cartera .chip.t2{background:var(--orange-l);color:var(--orange)}
 /* Antigüedad por tramo: cuatro columnas que se leen solas */
@@ -8129,6 +8136,13 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     <div class="sec-sub">World Office · por cobrar y por pagar</div>
   </div>
   <div class="car-top">
+    <div class="car-filtro" role="group" aria-label="Filtrar por antigüedad" id="car-filtro">
+      <button type="button" data-car-tramo="" aria-pressed="true">Todos</button>
+      <button type="button" data-car-tramo="d0_30" aria-pressed="false"><i style="background:var(--car-t0)"></i>0–30 días</button>
+      <button type="button" data-car-tramo="d31_60" aria-pressed="false"><i style="background:var(--car-t1)"></i>31–60</button>
+      <button type="button" data-car-tramo="d61_90" aria-pressed="false"><i style="background:var(--car-t2)"></i>61–90</button>
+      <button type="button" data-car-tramo="d90_mas" aria-pressed="false"><i style="background:var(--car-t3)"></i>+90</button>
+    </div>
     <input class="car-buscar" id="car-buscar" type="search" placeholder="Buscar cliente o proveedor" aria-label="Buscar tercero">
     <div class="der">
       <span class="car-pill" id="car-estado" tabindex="0">Consultando…</span>
@@ -8182,6 +8196,25 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
       t._ed = { d0_30:0, d31_60:0, d61_90:0, d90_mas:0 };
       t.docs.forEach(d => { const k = tramoDe(d.dias); if (k) t._ed[k] += d.saldo || 0; });
     });
+  }
+
+  /* Con un filtro de antigüedad activo, cada tercero queda solo con sus
+     documentos de ese tramo, y sus totales se recalculan con ellos. */
+  function vista(G){
+    if (!tramoSel) return G;
+    const pt = []; let total = 0, items = 0;
+    G.porTercero.forEach(t => {
+      const docs = t.docs.filter(d => tramoDe(d.dias) === tramoSel);
+      if (!docs.length) return;
+      const sum = docs.reduce((a, d) => a + (d.saldo || 0), 0);
+      const ed = { d0_30:0, d31_60:0, d61_90:0, d90_mas:0 }; ed[tramoSel] = sum;
+      pt.push({ terceroId: t.terceroId, tercero: t.tercero, total: sum, docs: docs, _ed: ed,
+                masViejo: Math.max.apply(null, docs.map(d => d.dias || 0)) });
+      total += sum; items += docs.length;
+    });
+    pt.sort((a, b) => b.total - a.total);
+    const edades = { d0_30:0, d31_60:0, d61_90:0, d90_mas:0, sin_fecha:0 }; edades[tramoSel] = total;
+    return { total: total, items: items, porTercero: pt, edades: edades };
   }
 
   async function pedir(){
@@ -8247,7 +8280,10 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
       return;
     }
 
-    const C = datos.cobrar, P = datos.pagar, g = datos[lado], L = LADO[lado];
+    const V = { cobrar: vista(datos.cobrar), pagar: vista(datos.pagar) };
+    const C = V.cobrar, P = V.pagar, g = V[lado], gTodo = datos[lado], L = LADO[lado];
+    const trSel = TRAMOS.find(x => x.k === tramoSel);
+    document.querySelectorAll('#car-filtro [data-car-tramo]').forEach(x => x.setAttribute('aria-pressed', String(x.getAttribute('data-car-tramo') === tramoSel)));
     const panel = $c('panel-cartera');
     panel.style.setProperty('--sel-bg', L.sel);
     panel.style.setProperty('--sel-ring', L.ring);
@@ -8257,11 +8293,11 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     /* 1. Franja de cifras */
     const neta = C.total - P.total;
     const kpiLado = k => {
-      const G = datos[k], X = LADO[k], v90 = G.edades.d90_mas || 0;
+      const G = V[k], X = LADO[k], v90 = G.edades.d90_mas || 0;
       return '<div><button type="button" class="car-kpi" data-car-lado="' + k + '" aria-pressed="' + (lado === k) + '">' +
-        '<span class="lbl"><span class="sw" style="background:' + X.color + '"></span>' + X.nombre + '</span>' +
+        '<span class="lbl"><span class="sw" style="background:' + X.color + '"></span>' + X.nombre + (trSel ? ' · ' + trSel.largo : '') + '</span>' +
         '<div class="val num" data-tip="<b>' + pesos(G.total) + '</b>' + G.porTercero.length + ' ' + X.quienes + ' · ' + G.items + ' documentos abiertos">' + mill(G.total) + '</div>' +
-        '<span class="pie"><span class="chip' + (v90 ? ' t3' : '') + '" data-tip="<b>' + pesos(v90) + '</b>Saldo con más de 90 días desde la fecha del documento">+90 d · ' + pct(v90, G.total) + '</span>' +
+        '<span class="pie">' + (tramoSel ? '' : '<span class="chip' + (v90 ? ' t3' : '') + '" data-tip="<b>' + pesos(v90) + '</b>Saldo con más de 90 días desde la fecha del documento">+90 d · ' + pct(v90, G.total) + '</span>') +
         '<span class="num">' + G.porTercero.length + ' ' + X.quienes + '</span></span></button></div>';
     };
     h += '<div class="car-card car-kpis">' + kpiLado('cobrar') + kpiLado('pagar') +
@@ -8282,29 +8318,31 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     h += '<div class="car-card car-esp"><div class="car-h">Antigüedad del saldo</div>' +
       '<div class="esp-cab"><div class="izq">Por cobrar<i style="background:var(--car-cob)"></i></div><div style="text-align:center">Días</div>' +
       '<div><i style="background:var(--car-pag)"></i>Por pagar</div></div>' +
-      TRAMOS.map((t, i) => '<div class="esp-fila' + (i === 3 ? ' t3' : '') + '">' + barra('cobrar', t) +
+      TRAMOS.map((t, i) => '<div class="esp-fila' + (i === 3 ? ' t3' : '') + (tramoSel && tramoSel !== t.k ? ' fuera' : '') + '">' + barra('cobrar', t) +
         '<div class="esp-tramo"><i style="background:' + t.color + '"></i>' + t.lbl + '</div>' + barra('pagar', t) + '</div>').join('') +
       '</div>';
 
     /* 2b. Por tramo, del lado elegido: monto, % y cuántos terceros.
        Clic en un tramo filtra la tabla a quienes tienen saldo en él. */
-    h += '<div class="car-card car-tramos"><div class="car-h">' + L.nombre + ' por antigüedad' +
-      (tramoSel ? '<button type="button" class="accion tr-filtro" data-car-tramo="">Quitar filtro ✕</button>' : '') + '</div><div class="tr-grid">' +
+    h += '<div class="car-card car-tramos"><div class="car-h">' + L.nombre + ' por antigüedad</div><div class="tr-grid">' +
       TRAMOS.map(t => {
-        const v = g.edades[t.k] || 0, n = g.porTercero.filter(x => x._ed[t.k] > 0).length;
+        const v = gTodo.edades[t.k] || 0, n = gTodo.porTercero.filter(x => x._ed[t.k] > 0).length;
         return '<button type="button" class="tr-col" data-car-tramo="' + t.k + '" aria-pressed="' + (tramoSel === t.k) + '" data-tip="<b>' + pesos(v) + '</b>' +
-          n + ' ' + L.quienes + ' con saldo de ' + t.largo + '. Clic para verlos en la tabla.">' +
+          n + ' ' + L.quienes + ' con saldo de ' + t.largo + '. Clic para filtrar todo el cuadro.">' +
           '<span class="tr-tit"><i style="background:' + t.color + '"></i>' + t.largo.charAt(0).toUpperCase() + t.largo.slice(1) + '</span>' +
           '<span class="tr-val num">' + mill(v) + '</span>' +
-          '<span class="tr-bar"><span style="width:' + (g.total ? v / g.total * 100 : 0) + '%;background:' + t.color + '"></span></span>' +
-          '<span class="tr-pie num"><b>' + pct(v, g.total) + '</b><span>' + n + ' ' + L.quienes + '</span></span></button>';
+          '<span class="tr-bar"><span style="width:' + (gTodo.total ? v / gTodo.total * 100 : 0) + '%;background:' + t.color + '"></span></span>' +
+          '<span class="tr-pie num"><b>' + pct(v, gTodo.total) + '</b><span>' + n + ' ' + L.quienes + '</span></span></button>';
       }).join('') + '</div></div>';
 
     /* 3. Atención (+90 días) y concentración, del lado elegido */
     const q = ($c('car-buscar').value || '').trim().toLowerCase();
     const urg = g.porTercero.filter(t => t._ed.d90_mas > 0).sort((a, b) => b._ed.d90_mas - a._ed.d90_mas);
     const v90 = g.edades.d90_mas || 0;
-    h += '<div class="car-dos"><div class="car-card"><div class="car-h" data-tip="Terceros con saldo de más de 90 días desde la fecha del documento, de mayor a menor">Atención · +90 días</div>';
+    const conAtencion = !tramoSel || tramoSel === 'd90_mas';
+    h += '<div class="car-dos' + (conAtencion ? '' : ' uno') + '">';
+    if (conAtencion) {
+    h += '<div class="car-card"><div class="car-h" data-tip="Terceros con saldo de más de 90 días desde la fecha del documento, de mayor a menor">Atención · +90 días</div>';
     if (!urg.length) h += '<div class="vacio">Sin saldos de más de 90 días.</div>';
     else h += '<ul class="lista">' + urg.slice(0, 6).map(t =>
       '<li><div style="min-width:0"><div class="nom">' + esc(t.tercero) + '</div><div class="sub num">' + chipDias(t.masViejo) + ' · ' + mill(t.total) + ' en total</div></div>' +
@@ -8313,10 +8351,11 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
       '<span class="trk"><span style="width:' + (t._ed.d90_mas / urg[0]._ed.d90_mas * 100) + '%;background:var(--car-t3)"></span></span></li>').join('') + '</ul>' +
       '<div class="nota num">' + urg.length + ' ' + L.quienes + ' · ' + mill(v90) + ' de +90 días</div>';
     h += '</div>';
+    }
 
     const top = g.porTercero.slice(0, 8);
     const top5 = g.porTercero.slice(0, 5).reduce((s, t) => s + t.total, 0);
-    h += '<div class="car-card"><div class="car-h">Mayores saldos</div>' +
+    h += '<div class="car-card"><div class="car-h">Mayores saldos' + (trSel ? ' · ' + trSel.largo : '') + '</div>' +
       (top.length ? '<ul class="lista">' + top.map(t =>
         '<li data-car-ir="' + esc(t.terceroId) + '" style="cursor:pointer"><div class="nom">' + esc(t.tercero) + '</div>' +
         '<span class="mon num" data-tip="<b>' + pesos(t.total) + '</b>' + t.docs.length + ' documentos abiertos">' + mill(t.total) + '</span>' +
@@ -8327,18 +8366,16 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 
     /* 4. Tabla completa */
     let filas = q ? g.porTercero.filter(t => String(t.tercero || '').toLowerCase().indexOf(q) !== -1) : g.porTercero.slice();
-    if (tramoSel) filas = filas.filter(t => t._ed[tramoSel] > 0);
     if (orden === 'dias') filas.sort((a, b) => (b.masViejo || 0) - (a.masViejo || 0));
     else if (orden === 'd90') filas.sort((a, b) => b._ed.d90_mas - a._ed.d90_mas || b.total - a.total);
     else filas.sort((a, b) => b.total - a.total);
     const th = (k, txt, cls, tip) => '<th class="' + (cls || '') + '"' + (orden === k ? ' aria-sort="descending"' : '') + (tip ? ' data-tip="' + tip + '"' : '') +
       '><button type="button" data-car-orden="' + k + '">' + txt + '</button></th>';
-    const trSel = TRAMOS.find(x => x.k === tramoSel);
     h += '<div class="car-card car-tabla" id="car-tabla"><table><thead><tr><th>' + L.quien + (q || trSel ? ' · ' + filas.length : '') +
       (trSel ? ' · con saldo de ' + trSel.largo : '') + '</th>' +
       '<th class="num col-movil-no">Docs</th>' + th('dias', 'Más antiguo', 'num', 'Días desde la fecha del documento más antiguo') +
       th('d90', '+90 días', 'num col-movil-no') + th('total', 'Saldo', 'num') + '</tr></thead><tbody>';
-    if (!filas.length) h += '<tr><td colspan="5" class="vacio">' + (q ? 'Nadie coincide con “' + esc(q) + '”.' : 'Sin saldos abiertos.') + '</td></tr>';
+    if (!filas.length) h += '<tr><td colspan="5" class="vacio">' + (q ? 'Nadie coincide con “' + esc(q) + '”.' : trSel ? 'Sin saldos de ' + trSel.largo + '.' : 'Sin saldos abiertos.') + '</td></tr>';
     filas.forEach(t => {
       const k = lado + '|' + t.terceroId, ab = !!abiertos[k];
       const seg = TRAMOS.filter(x => t._ed[x.k] > 0).map(x =>
@@ -8384,15 +8421,13 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 
   panelEl.addEventListener('click', function(e){
     const b = e.target.closest('[data-car-lado]');
-    if (b) { lado = b.getAttribute('data-car-lado'); tramoSel = ''; ocultarTip(); return pintar(); }
+    if (b) { lado = b.getAttribute('data-car-lado'); ocultarTip(); return pintar(); }
     if (e.target.closest('#car-recargar,[data-car-recargar]')) return pedir();
     const tr = e.target.closest('[data-car-tramo]');
     if (tr) {
       const k = tr.getAttribute('data-car-tramo');
       tramoSel = (k && tramoSel !== k) ? k : '';
-      ocultarTip(); pintar();
-      if (tramoSel) { const tb = $c('car-tabla'); if (tb) tb.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
-      return;
+      ocultarTip(); return pintar();
     }
     const o = e.target.closest('[data-car-orden]');
     if (o) { orden = o.getAttribute('data-car-orden'); return pintar(); }
