@@ -8425,6 +8425,9 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
       j._pedido = Date.now();
       if (j.listo) { prepararTerceros(j.cobrar); prepararTerceros(j.pagar); }
       datos = j;
+      /* Novedades del día: el asistente las presenta una vez al entrar. */
+      if (j.listo && typeof window.vozCarteraDiaria === 'function' && document.getElementById('panel-cartera').classList.contains('active'))
+        setTimeout(window.vozCarteraDiaria, 900);
     } catch (e) {
       error = e.message || String(e);
     } finally {
@@ -8795,9 +8798,13 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
   });
   $c('car-buscar').addEventListener('input', pintar);
 
+  /* Para el asistente: los datos ya traídos (solo si están completos). */
+  window.carteraDatos = function(){ return datos && datos.ok && datos.listo ? datos : null; };
+  window.carteraPedir = pedir;
   window.carteraActivar = function(){
     const viejo = !datos || !datos.listo || Date.now() - (datos._pedido || 0) > 10 * 60e3;
-    if (viejo) pedir(); else pintar();
+    if (viejo) pedir();
+    else { pintar(); if (typeof window.vozCarteraDiaria === 'function') setTimeout(window.vozCarteraDiaria, 900); }
   };
 })();
 </script>
@@ -36245,10 +36252,115 @@ function vozSemana(ymd){
    uno con una clave estable, para "chulearlo" cuando ya se dijo. */
 let _vozHallazgosCli = [];
 let _vozCifras = {};   // cifras base de cada informe, las deja el radar al calcular
+/* CARTERA (World Office). Asesor financiero: dónde está la plata que no
+   entra, a quién le debemos hace rato y qué va a apretar la caja. Sale de
+   la pestaña Cartera ya cargada; si no se ha abierto, no dice nada. */
+function vozRadarCartera(hoy, faltan){
+  const d = (typeof window.carteraDatos === 'function') ? window.carteraDatos() : null;
+  if (!d || !d.cobrar || !d.pagar) return '';
+  const C = d.cobrar, P = d.pagar, f = new Date();
+  const sem = hoy.slice(0, 7) + '-s' + Math.ceil(f.getDate() / 7), mes = hoy.slice(0, 7);
+  const M = function(n){ const m = (n || 0) / 1e6; return m >= 1 ? '$' + m.toLocaleString('es-CO', { maximumFractionDigits: m >= 100 ? 0 : 1 }) + ' millones' : vozPesos(n); };
+  const MC = function(n){ return M(n).replace(' millones', ' M'); };
+  const ed = function(t){
+    const e = { d0_30:0, d31_60:0, d61_90:0, d90_mas:0 };
+    (t.docs || []).forEach(function(x){
+      if (x.dias == null) return;
+      e[x.dias <= 30 ? 'd0_30' : x.dias <= 60 ? 'd31_60' : x.dias <= 90 ? 'd61_90' : 'd90_mas'] += x.saldo || 0;
+    });
+    return e;
+  };
+  const cli = C.porTercero.map(function(t){ return { t:t, e:ed(t) }; });
+  const pro = P.porTercero.map(function(t){ return { t:t, e:ed(t) }; });
+
+  const c90 = cli.filter(function(x){ return x.e.d90_mas > 0; }).sort(function(a, b){ return b.e.d90_mas - a.e.d90_mas; });
+  if (c90.length){
+    const x = c90[0];
+    faltan.push({ k:'car-c90-' + x.t.terceroId + '-' + sem, p:3.6, tono:'alerta', tit:'El que más nos debe hace rato',
+      t: x.t.tercero + ' nos debe ' + M(x.e.d90_mas) + ' con más de 90 días, y su factura más vieja tiene ' + x.t.masViejo + ' días. ' +
+        vozInfVar(['¿Es un cliente que paga tarde o un saldo que ya nadie está persiguiendo? Pidan el estado de cuenta y una fecha de pago esta semana.',
+                   '¿Alguien lo ha llamado este mes? Sin compromiso de pago por escrito, esa plata se va volviendo provisión.',
+                   'Le seguimos prestando servicio mientras debe esto. ¿De verdad vale la pena?'], Number(x.t.terceroId) || 0),
+      fig:{ t:'numero', v:MC(x.e.d90_mas), e:'de +90 días · ' + String(x.t.tercero).slice(0, 30), caida:true } });
+  }
+  if (c90.length > 1){
+    const tot = c90.reduce(function(s, x){ return s + x.e.d90_mas; }, 0);
+    faltan.push({ k:'car-c90lista-' + sem, p:3.2, tono:'alerta', tit:'La cartera vieja tiene nombre propio',
+      t: c90.length + ' clientes tienen saldos de más de 90 días que suman ' + M(tot) + '. Los más grandes: ' +
+        vozListaNombres(c90.slice(0, 4).map(function(x){ return String(x.t.tercero).replace(/\.+$/, ''); })) + '. Esa es la lista de llamadas de esta semana.',
+      fig:{ t:'barras', u:'saldo de +90 días por cliente', filas:c90.slice(0, 6).map(function(x){ return { n:x.t.tercero, v:x.e.d90_mas, txt:MC(x.e.d90_mas) }; }) } });
+  }
+  const cruzaron = cli.filter(function(x){ return (x.t.docs || []).some(function(dc){ return dc.dias > 90 && dc.dias <= 97; }); });
+  if (cruzaron.length)
+    faltan.push({ k:'car-nuevo90-' + sem, p:3.0, tono:'alerta', tit:'Esta semana cruzaron los 90 días',
+      t:'Esta semana pasaron a más de 90 días facturas de ' + vozListaNombres(cruzaron.slice(0, 4).map(function(x){ return String(x.t.tercero).replace(/\.+$/, ''); })) +
+        '. Es el momento de llamar, antes de que el atraso se vuelva costumbre.',
+      fig:{ t:'numero', v:String(cruzaron.length), e: cruzaron.length === 1 ? 'cliente cruzó los 90 días' : 'clientes cruzaron los 90 días', caida:true } });
+
+  if (C.total && C.porTercero.length){
+    const top = C.porTercero[0], sh = top.total / C.total;
+    if (sh >= .2)
+      faltan.push({ k:'car-conc-' + top.terceroId + '-' + mes, p:2.8, tono:'alerta', tit:'Un solo cliente sostiene la caja',
+        t:'El ' + Math.round(sh * 100) + '% de lo que nos deben está en ' + top.tercero + ' (' + M(top.total) + '). Si ese cliente se demora, se frena todo. ¿Tenemos un acuerdo de pago o una garantía con él?',
+        fig:{ t:'barras', u:'participación en lo que nos deben', filas:C.porTercero.slice(0, 5).map(function(t){ return { n:t.tercero, v:t.total, txt:Math.round(t.total / C.total * 100) + '%' }; }) } });
+  }
+  let prov = 0;
+  C.porTercero.forEach(function(t){ (t.docs || []).forEach(function(x){ const dd = x.dias || 0; prov += (x.saldo || 0) * (dd > 360 ? .15 : dd > 180 ? .10 : dd > 90 ? .05 : 0); }); });
+  if (prov >= 1e6)
+    faltan.push({ k:'car-prov-' + mes, p:2.6, tono:'alerta', tit:'Lo que la cartera vieja ya cuesta',
+      t:'Con el método general fiscal, la cartera vieja ya implica una provisión cercana a ' + M(prov) + '. Es plata que contablemente empieza a darse por perdida. ¿Contabilidad ya la tiene registrada?',
+      fig:{ t:'numero', v:MC(prov), e:'provisión estimada · método fiscal', caida:true } });
+
+  const c30 = cli.reduce(function(s, x){ return s + x.e.d0_30; }, 0), p30 = pro.reduce(function(s, x){ return s + x.e.d0_30; }, 0);
+  if (p30 && c30 / p30 < 1)
+    faltan.push({ k:'car-cob30-' + sem, p:3.1, tono:'alerta', tit:'La caja del próximo mes',
+      t:'Lo facturado en los últimos 30 días suma ' + M(c30) + ' por cobrar, pero lo que debemos en el mismo plazo es ' + M(p30) + '. Si no entra la cartera vieja, el próximo mes la caja va a apretar.',
+      fig:{ t:'bascula', a:c30, b:p30, ta:MC(c30), tb:MC(p30), ea:'por cobrar 0–30 d', eb:'por pagar 0–30 d' } });
+
+  const p90 = pro.filter(function(x){ return x.e.d90_mas > 0; }).sort(function(a, b){ return b.e.d90_mas - a.e.d90_mas; });
+  if (p90.length){
+    const x = p90[0];
+    faltan.push({ k:'car-p90-' + x.t.terceroId + '-' + sem, p:2.9, tono:'alerta', tit:'Lo que debemos hace rato',
+      t:'Le debemos a ' + x.t.tercero + ' ' + M(x.e.d90_mas) + ' con más de 90 días. ' +
+        vozInfVar(['¿Está en disputa o se nos pasó? Un proveedor con deuda vieja es el primero que corta el crédito cuando más se necesita.',
+                   '¿Hay un acuerdo con ellos o simplemente no se ha pagado? Mejor saberlo antes de que llamen ellos.'], Number(x.t.terceroId) || 0),
+      fig:{ t:'numero', v:MC(x.e.d90_mas), e:'por pagar con +90 días · ' + String(x.t.tercero).slice(0, 26), caida:true } });
+  }
+  const mp = {};
+  P.porTercero.forEach(function(t){ mp[t.terceroId] = t; });
+  const cr = C.porTercero.filter(function(t){ return mp[t.terceroId]; }).map(function(t){ return { n:t.tercero, m:Math.min(t.total, mp[t.terceroId].total) }; })
+    .sort(function(a, b){ return b.m - a.m; });
+  const totCr = cr.reduce(function(s, x){ return s + x.m; }, 0);
+  if (totCr >= 1e6)
+    faltan.push({ k:'car-cruce-' + mes, p:2.4, tono:'dato', tit:'Caja sin mover un peso',
+      t:'Hay ' + M(totCr) + ' que se podrían cruzar con ' + (cr.length === 1 ? 'un tercero que es' : cr.length + ' terceros que son') + ' cliente y proveedor a la vez, empezando por ' + cr[0].n + '. ¿Por qué pagarles y cobrarles por separado?',
+      fig:{ t:'barras', u:'compensable por tercero', filas:cr.slice(0, 5).map(function(x){ return { n:x.n, v:x.m, txt:MC(x.m) }; }) } });
+
+  const hist = d.historia || [];
+  const base = hist.filter(function(x){ return new Date(x.f).getTime() <= Date.now() - 7 * 864e5; }).pop();
+  if (base && base.c){
+    const dv = (C.total - base.c) / base.c;
+    if (Math.abs(dv) >= .08)
+      faltan.push({ k:'car-tend-' + sem, p:2.7, tono: dv > 0 ? 'alerta' : 'bien', tit: dv > 0 ? 'Lo que nos deben está creciendo' : 'La cartera está bajando',
+        t:'Lo que nos deben ' + (dv > 0 ? 'subió' : 'bajó') + ' ' + Math.round(Math.abs(dv) * 100) + '% en una semana: de ' + M(base.c) + ' a ' + M(C.total) + '. ' +
+          (dv > 0 ? '¿Se facturó más o se dejó de cobrar? Si es lo segundo, hay que actuar ya.' : 'Buen ritmo de cobro. ¿Qué cambió? Vale la pena repetirlo.'),
+        fig:{ t:'bascula', a:C.total, b:base.c, ta:MC(C.total), tb:MC(base.c), ea:'hoy', eb:'hace 7 días' } });
+  }
+
+  let s = '- CARTERA (World Office, saldos abiertos; la antigüedad cuenta desde la fecha del documento, no desde el vencimiento): por cobrar ' +
+    vozPesos(C.total) + ' en ' + C.porTercero.length + ' clientes (+90 días: ' + vozPesos(C.edades.d90_mas || 0) + '); por pagar ' + vozPesos(P.total) +
+    ' en ' + P.porTercero.length + ' proveedores (+90 días: ' + vozPesos(P.edades.d90_mas || 0) + '). Provisión fiscal estimada: ' + vozPesos(prov) +
+    '. Cobrar 0-30 d ' + vozPesos(c30) + ' frente a pagar 0-30 d ' + vozPesos(p30) + '.\n';
+  s += '  Mayores deudores: ' + C.porTercero.slice(0, 10).map(function(t){ return t.tercero + ' ' + vozPesos(t.total) + ' (más viejo ' + t.masViejo + ' d)'; }).join('; ') + '\n';
+  s += '  Mayores acreedores: ' + P.porTercero.slice(0, 10).map(function(t){ return t.tercero + ' ' + vozPesos(t.total) + ' (más viejo ' + t.masViejo + ' d)'; }).join('; ') + '\n';
+  return s;
+}
+
 function vozRadarAsesor(){
   const hoy = vozHoy(), faltan = [];
   faltan.add = function(k, t, p){ faltan.push({ k: String(k).slice(0, 80), t: t, p: p || 2 }); };
   let t = '=== RADAR OPERATIVO YA CALCULADO (cifras de base, para contexto) ===\n';
+  try { t += vozRadarCartera(hoy, faltan); } catch(e){}
   try { t += vozRadarHumus(hoy, faltan); } catch(e){}
   try { t += vozRadarFlota(hoy, faltan); } catch(e){}
   try { t += vozRadarMaquinaria(hoy, faltan); } catch(e){}
@@ -36611,6 +36723,7 @@ async function vozAgendarProximoInforme(a){
    que dice (hortiGestos.tono). Solo lee; no cambia ningún dato.
    ══════════════════════════════════════════════════════════════ */
 const VOZ_INF_TEMAS = [
+  { id:'cartera',  titulo:'Cartera: cobrar y pagar', re:/^car-/ },
   { id:'clientes', titulo:'Clientes e ingreso', re:/^(cli|ing)-/ },
   { id:'humus',    titulo:'Producción de humus', re:/^hum-/ },
   { id:'flota',    titulo:'Flota y combustible', re:/^(tq|veh|mant|maq)-/ },
@@ -36848,6 +36961,21 @@ function vozInfCierre(tramos, id){
 /* Los tramos de apertura de cada frente: cada uno con su propia figura. */
 function vozInfBase(id){
   const c = _vozCifras, sl = [];
+  if (id === 'cartera'){
+    const d = (typeof window.carteraDatos === 'function') ? window.carteraDatos() : null;
+    if (d){
+      const C = d.cobrar, P = d.pagar, neta = C.total - P.total;
+      const MC = function(n){ const m = (n || 0) / 1e6; return m >= 1 ? '$' + m.toLocaleString('es-CO', { maximumFractionDigits: m >= 100 ? 0 : 1 }) + ' M' : vozPesos(n); };
+      sl.push({ tono: neta < 0 ? 'alerta' : 'dato', tit:'¿Nos deben más de lo que debemos?',
+        dice:'Nos deben ' + MC(C.total).replace(' M', ' millones') + ' y debemos ' + MC(P.total).replace(' M', ' millones') + '. ' +
+          (neta >= 0 ? 'La balanza está a favor por ' + MC(neta).replace(' M', ' millones') + ', pero solo sirve si esa plata entra.' : 'La balanza está en contra por ' + MC(-neta).replace(' M', ' millones') + ': debemos más de lo que nos deben.'),
+        fig:{ t:'bascula', a:C.total, b:P.total, ta:MC(C.total), tb:MC(P.total), ea:'nos deben', eb:'debemos' } });
+      const tr = [['d0_30', '0–30 d'], ['d31_60', '31–60 d'], ['d61_90', '61–90 d'], ['d90_mas', '+90 d']];
+      sl.push({ tono: (C.edades.d90_mas || 0) / (C.total || 1) > .3 ? 'alerta' : 'dato', tit:'¿Qué tan vieja está la plata que nos deben?',
+        dice:'De lo que nos deben, ' + Math.round((C.edades.d90_mas || 0) / (C.total || 1) * 100) + '% tiene más de 90 días y ' + Math.round((C.edades.d0_30 || 0) / (C.total || 1) * 100) + '% es de este último mes.',
+        fig:{ t:'barras', u:'por cobrar según antigüedad', filas:tr.map(function(x){ return { n:x[1], v:C.edades[x[0]] || 0, txt:MC(C.edades[x[0]] || 0) }; }) } });
+    }
+  }
   if (id === 'clientes' && c.ing){
     const dif = c.ing.ant ? (c.ing.kg - c.ing.ant) / c.ing.ant : 0;
     sl.push({ tono: dif < -.03 ? 'alerta' : (dif > .03 ? 'bien' : 'dato'), tit: vozInfVar(['¿Vamos mejor que el mes pasado?', 'Mes contra mes', '¿Cuánto ha entrado a la planta?']),
@@ -36911,7 +37039,7 @@ function vozInfHallazgosTema(tema, hall){
     const nuevos = lista.filter(function(h){ return !dichos[h.k]; });
     lista = nuevos.length ? nuevos : lista.slice().sort(function(a, b){ return String(dichos[a.k]).localeCompare(String(dichos[b.k])); }).slice(0, 1);
   }
-  return lista.slice(0, tema.id === 'dotacion' ? 10 : (tema.id === 'flota' ? 10 : (tema.id === 'personal' ? 7 : VOZ_INF_MAX_TRAMOS))).map(vozInfTramo).map(function(t){
+  return lista.slice(0, tema.id === 'cartera' ? 9 : (tema.id === 'dotacion' ? 3 : (tema.id === 'flota' ? 10 : (tema.id === 'personal' ? 7 : VOZ_INF_MAX_TRAMOS)))).map(vozInfTramo).map(function(t){
     if (t.sol){ if (vistos['s:' + t.sol.id]) t.sol = null; else vistos['s:' + t.sol.id] = 1; }
     return t;
   });
@@ -36949,7 +37077,7 @@ function vozInfArmarTemas(){
   });
   /* La mezcla: primero el estado de cada frente y luego lo más grave de
      cada uno, por turnos, para que uno solo no la llene. */
-  const pool = VOZ_INF_TEMAS.filter(function(t){ return t.id !== 'mercado' && !caidos[t.id]; })
+  const pool = VOZ_INF_TEMAS.filter(function(t){ return t.id !== 'mercado' && t.id !== 'dotacion' && !caidos[t.id]; })
     .map(function(t){ return vozInfHallazgosTema(t, hall); });
   const pano = [];
   for (let i = 0; i < 4; i++) pool.forEach(function(g){ if (g[i] && pano.length < 4) pano.push(g[i]); });
@@ -37099,6 +37227,7 @@ const VOZ_INF_ICONOS = {
   flota:'<path d="M4 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16M3 21h12M7 8h4M14 12h2a2 2 0 0 1 2 2v3a1.5 1.5 0 0 0 3 0V9l-3-3"/>',
   personal:'<circle cx="9" cy="8" r="3.5"/><path d="M3 20c0-4 3-6 6-6s6 2 6 6M16 5a3.5 3.5 0 0 1 0 6.5M18 14c2 .7 3 3 3 6"/>',
   dotacion:'<path d="M15 3l6 6M18 6l-9 9M5.5 11.5l7 7-3 2.5-6.5-6.5z"/>',
+  cartera:'<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4M16 3l-4 3-4-3"/>',
   mercado:'<path d="M4 5h13v14a2 2 0 0 0 2 2H6a2 2 0 0 1-2-2zM17 9h3v10a2 2 0 0 1-3 0M7 9h7M7 13h7M7 17h4"/>'
 };
 function vozInfIcono(id, x, y, t){
@@ -37675,6 +37804,13 @@ async function vozInfTraerDatos(){
   try {
     await Promise.race([Promise.all([
       paso('Ingreso', function(){ return vozArr(function(){ return dataIngreso; }).length > 0 && !(typeof _ingSinSesion !== 'undefined' && _ingSinSesion); }),
+      /* Cartera solo para quien tiene la pestaña: se trae aunque no la haya abierto. */
+      paso('Cartera', async function(){
+        if (typeof window.carteraDatos !== 'function') return false;
+        const tab = document.querySelector('.nav-tab[data-panel="cartera"]');
+        if (!window.carteraDatos() && tab && tab.style.display !== 'none' && typeof window.carteraPedir === 'function') await window.carteraPedir();
+        return !!window.carteraDatos();
+      }),
       paso('Humus', async function(){
         const d = await fetchCSV(SHEETS.ProduccionHumus);
         if (d && d.length){ dataProduccionHumus = d; return true; }
@@ -38050,6 +38186,41 @@ async function vozSupRevisar(panel){
     await vozSupMostrar(rep);
   } finally { _vozSupCorriendo = false; }
 }
+/* CARTERA: al entrar a la pestaña, una vez al día por persona, el asistente
+   presenta las novedades más grandes de cobrar y pagar, con su tono de
+   asesor financiero. Sale de los datos ya cargados en la pestaña. */
+let _vozCarCorriendo = false;
+function vozCarClave(){
+  const u = (typeof _usuarioActual !== 'undefined' && _usuarioActual) ? vozNorm(String(_usuarioActual.usuario || '')) : '';
+  return u ? 'hortiVozCar|' + u + '|' + vozHoy() : '';
+}
+async function vozCarteraDiaria(){
+  const clave = vozCarClave();
+  if (!clave || _vozCarCorriendo || _vozOcupado) return;
+  if (!(vozUsuarioPermitido() || vozEsPremium() || vozUsuarioAsesor())) return;
+  try { if (localStorage.getItem(clave)) return; } catch(e){}
+  if (typeof window.carteraDatos !== 'function' || !window.carteraDatos()) return;
+  _vozCarCorriendo = true;
+  try {
+    await vozInfTraerDatos();
+    for (let i = 0; i < 60 && _vozInfTrayendo; i++) await vozEsperar(500);
+    if (!_vozInfHora) _vozInfHora = Date.now();
+    vozInfActualizar();
+    if (vozSupPanelActivo() !== 'cartera') return;
+    const r = (_vozInfLista || []).find(function(x){ return x.id === 'cartera'; });
+    if (!r || !r.tramos.length) return;
+    try { localStorage.setItem(clave, '1'); } catch(e){}
+    const n = r.tramos.filter(function(x){ return x.k; }).length;
+    await vozSupBloqueo({ tit:'Cartera de hoy', minimo:2400, tope:7000,
+      txt:'Antes de que la revises, te cuento lo más grande que encontré en lo que nos deben y lo que debemos' + (n ? ': ' + n + (n === 1 ? ' novedad.' : ' novedades.') : '.') });
+    if (vozSupPanelActivo() !== 'cartera') return;
+    await vozSupMostrar({ id:'sup', titulo:'Cartera · novedades del día', fecha:r.fecha, tramos:r.tramos, recorrido:false, sup:true,
+                          panel:'cartera', n:n, recibido:'—' });
+    const a = vozUsuarioAsesor();
+    if (a) vozChulear(a, r.tramos.filter(function(x){ return x.k; }).map(function(x){ return x.k; }));
+  } finally { _vozCarCorriendo = false; }
+}
+window.vozCarteraDiaria = vozCarteraDiaria;
 /* Lo observado se queda a la mano en la pestaña durante el día. */
 function vozSupVigilar(){
   const panel = vozSupPanelActivo(), u = vozSupUsuario();
