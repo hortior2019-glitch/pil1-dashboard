@@ -8016,6 +8016,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-cartera .car-kpi .sw{width:10px;height:10px;border-radius:3px;flex-shrink:0}
 #panel-cartera .car-kpi .val{font-family:'Libre Baskerville',Georgia,serif;font-size:clamp(28px,3.2vw,40px);font-weight:700;letter-spacing:-.03em;color:var(--car-ink);margin:8px 0 6px;line-height:1.1}
 #panel-cartera .car-kpi[aria-pressed="false"] .val{color:var(--car-ink2)}
+#panel-cartera .car-kpi .tend{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--car-mute);margin-top:6px}
+#panel-cartera .car-kpi .tend svg{flex-shrink:0}
 #panel-cartera .car-kpi .pie{font-size:13px;color:var(--car-mute);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 #panel-cartera .chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font:700 12px 'Source Sans 3',sans-serif;background:var(--rule-l);color:var(--car-ink2);white-space:nowrap}
 #panel-cartera .car-filtro{display:inline-flex;flex-wrap:wrap;border:1px solid var(--rule);border-radius:10px;background:var(--white);padding:3px;gap:2px}
@@ -8026,13 +8028,14 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-cartera .esp-fila.fuera{opacity:.3}
 #panel-cartera .car-dos.uno{grid-template-columns:1fr}
 /* Logo del tercero, o sus iniciales si no hay logo */
-#panel-cartera .av{width:28px;height:28px;border-radius:50%;background:#fff;box-shadow:0 0 0 1px var(--rule);display:inline-flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;vertical-align:middle}
-#panel-cartera .av img{width:76%;height:76%;object-fit:contain}
-#panel-cartera .av b{display:none;font:700 11px 'Source Sans 3',sans-serif;color:var(--car-ink2);letter-spacing:.3px}
+#panel-cartera .av{width:38px;height:38px;border-radius:50%;background:#fff;box-shadow:0 0 0 1px var(--rule);display:inline-flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;vertical-align:middle}
+#panel-cartera .av img{width:82%;height:82%;object-fit:contain}
+#panel-cartera .av b{display:none;font:700 13px 'Source Sans 3',sans-serif;color:var(--car-ink2);letter-spacing:.3px}
 #panel-cartera .av.sin{background:var(--sel-bg,var(--s2));box-shadow:none}
 #panel-cartera .av.sin img{display:none}
 #panel-cartera .av.sin b{display:inline}
 #panel-cartera .nom{display:flex;align-items:center;gap:9px;min-width:0}
+#panel-cartera .lista li{min-height:52px}
 #panel-cartera .nom .tx{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 #panel-cartera .td-nom{display:inline-flex;align-items:center;gap:9px;vertical-align:middle}
 /* Indicadores: una tarjeta, celdas separadas por líneas finas a cualquier ancho */
@@ -8243,7 +8246,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   const SOBRA_NOM = /\b(S\.?A\.?S|S\.?A|LTDA|S\.?C\.?A|E\.?S\.?P|C\.?I|Y CIA|SOCIEDAD|COMPA[NÑ]IA|CORPORACION|DE|DEL|LA|LAS|LOS|EL)\b\.?/gi;
   function iniciales(n){
     const w = String(n || '').replace(SOBRA_NOM, ' ').trim().split(/\s+/).filter(x => /[A-Za-zÁÉÍÓÚÑ]/.test(x));
-    return ((w[0] || '?').charAt(0) + (w[1] || '').charAt(0)).toUpperCase();
+    return (w.length > 1 ? w[0].charAt(0) + w[1].charAt(0) : (w[0] || '?').slice(0, 2)).toUpperCase();
   }
   function logoConocido(nom){
     if (typeof CLIENT_LOGOS === 'undefined') return null;
@@ -8365,13 +8368,36 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 
     /* 1. Franja de cifras */
     const neta = C.total - P.total;
+    /* Tendencia: contra la foto más reciente de hace 7 días o más, y una
+       línea con el último mes (una foto por día). Sin historia, no se muestra. */
+    const hist = (datos.historia || []).map(x => ({ t: new Date(x.f).getTime(), c: x.c, p: x.p }));
+    const tendencia = k => {
+      if (tramoSel || hist.length < 2) return '';
+      const campo = k === 'cobrar' ? 'c' : 'p', ahora = Date.now();
+      const base = hist.filter(x => x.t <= ahora - 7 * 864e5).pop();
+      const porDia = {}; hist.filter(x => x.t >= ahora - 31 * 864e5).forEach(x => porDia[new Date(x.t).toDateString()] = x);
+      const pts = Object.values(porDia).sort((a, b) => a.t - b.t);
+      let svg = '';
+      if (pts.length >= 3) {
+        const vs = pts.map(x => x[campo]), mn = Math.min(...vs), mx = Math.max(...vs), W = 84, H = 22;
+        const xy = pts.map((x, i) => (i / (pts.length - 1) * W).toFixed(1) + ',' + (H - 2 - (mx > mn ? (x[campo] - mn) / (mx - mn) : .5) * (H - 4)).toFixed(1)).join(' ');
+        svg = '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" aria-hidden="true"><polyline points="' + xy + '" fill="none" stroke="' + LADO[k].color + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>';
+      }
+      let dl = '';
+      if (base && base[campo]) {
+        const d = (V[k].total - base[campo]) / base[campo] * 100;
+        dl = '<span class="num" data-tip="<b>' + pesos(base[campo]) + '</b>Total del ' + new Date(base.t).toLocaleDateString('es-CO') + '">' +
+          (Math.abs(d) < .5 ? '±0%' : (d > 0 ? '▲ ' : '▼ ') + Math.abs(Math.round(d)) + '%') + ' vs hace ' + Math.round((ahora - base.t) / 864e5) + ' d</span>';
+      }
+      return svg || dl ? '<span class="tend">' + svg + dl + '</span>' : '';
+    };
     const kpiLado = k => {
       const G = V[k], X = LADO[k], v90 = G.edades.d90_mas || 0;
       return '<div><button type="button" class="car-kpi" data-car-lado="' + k + '" aria-pressed="' + (lado === k) + '">' +
         '<span class="lbl"><span class="sw" style="background:' + X.color + '"></span>' + X.nombre + (trSel ? ' · ' + trSel.largo : '') + '</span>' +
         '<div class="val num" data-tip="<b>' + pesos(G.total) + '</b>' + G.porTercero.length + ' ' + X.quienes + ' · ' + G.items + ' documentos abiertos">' + mill(G.total) + '</div>' +
         '<span class="pie">' + (tramoSel ? '' : '<span class="chip' + (v90 ? ' t3' : '') + '" data-tip="<b>' + pesos(v90) + '</b>Saldo con más de 90 días desde la fecha del documento">+90 d · ' + pct(v90, G.total) + '</span>') +
-        '<span class="num">' + G.porTercero.length + ' ' + X.quienes + '</span></span></button></div>';
+        '<span class="num">' + G.porTercero.length + ' ' + X.quienes + '</span></span>' + tendencia(k) + '</button></div>';
     };
     h += '<div class="car-card car-kpis">' + kpiLado('cobrar') + kpiLado('pagar') +
       '<div><div class="car-kpi"><span class="lbl">Posición neta</span>' +
@@ -8380,31 +8406,52 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
       '<span class="pie">cobrar − pagar · ' + (P.total ? (C.total / P.total).toLocaleString('es-CO', { maximumFractionDigits: 2 }) + '×' : '—') + '</span></div></div></div>';
 
     /* 1b. Indicadores del lado elegido (respetan el filtro de antigüedad).
-       Solo los que salen honestos de estos datos: no hay ventas ni pagos
-       en el período, así que DSO/DPO y rotación no se calculan. */
+       Solo los que salen honestos de saldos abiertos: no hay ventas ni pagos
+       del período, así que DSO/DPO y rotación no se calculan.
+       - Edad promedio ponderada por saldo.
+       - Morosidad: % del saldo con más de 90 días.
+       - Provisión estimada (cobrar): método general fiscal, Decreto 187 de
+         1975: 5% de 91 a 180 días, 10% de 181 a 360, 15% de más de 360.
+       - Pagos próximos (pagar): saldo de 0 a 30 días, la presión de caja.
+       - Concentración HHI (Herfindahl-Hirschman): suma de participaciones al
+         cuadrado; <1.500 baja, 1.500-2.500 moderada, >2.500 alta.
+       - Pareto: cuántos terceros hacen el 80% del saldo.
+       - Cobertura 30 d: cobrar 0-30 ÷ pagar 0-30 (sin filtro): >1 alcanza. */
     const docsL = [];
     g.porTercero.forEach(t => t.docs.forEach(d => docsL.push(d)));
     const conDias = docsL.filter(d => d.dias != null);
     const sd = conDias.reduce((a, d) => a + (d.saldo || 0), 0);
+    const sumaSi = fn => conDias.filter(fn).reduce((a, d) => a + (d.saldo || 0), 0);
     const edadProm = sd ? Math.round(conDias.reduce((a, d) => a + (d.saldo || 0) * d.dias, 0) / sd) : null;
-    const m30 = conDias.filter(d => d.dias > 30).reduce((a, d) => a + (d.saldo || 0), 0);
-    const may = g.porTercero[0];
-    const top5v = g.porTercero.slice(0, 5).reduce((a, t) => a + t.total, 0);
-    const ticket = docsL.length ? g.total / docsL.length : 0;
+    const s90 = sumaSi(d => d.dias > 90);
+    const prov = sumaSi(d => d.dias > 90 && d.dias <= 180) * .05 + sumaSi(d => d.dias > 180 && d.dias <= 360) * .10 + sumaSi(d => d.dias > 360) * .15;
+    const prox = sumaSi(d => d.dias <= 30);
+    const hhi = g.total ? Math.round(g.porTercero.reduce((a, t) => a + Math.pow(t.total / g.total * 100, 2), 0)) : null;
+    let acum = 0, n80 = 0;
+    for (const t of g.porTercero) { if (acum >= g.total * .8) break; acum += t.total; n80++; }
+    const c30 = datos.cobrar.edades.d0_30 || 0, p30 = datos.pagar.edades.d0_30 || 0;
+    const cob = p30 ? c30 / p30 : null;
     const tono = (v, a, b) => v == null ? '' : v >= b ? ' mal' : v >= a ? ' ojo' : '';
     const ind = (lbl, val, sub, tip, cls) => '<div class="ind' + (cls || '') + '" tabindex="0" data-tip="' + tip + '">' +
       '<span class="ind-l">' + lbl + '</span><span class="ind-v num">' + val + '</span><span class="ind-s num">' + sub + '</span></div>';
+    const fmtN = x => x.toLocaleString('es-CO');
+    const nivelHHI = hhi == null ? '—' : hhi > 2500 ? 'concentración alta' : hhi >= 1500 ? 'concentración moderada' : 'concentración baja';
     h += '<div class="car-card car-inds">' +
       ind('Edad promedio', edadProm == null ? '—' : edadProm + ' d', 'ponderada por saldo',
-        '<b>' + (edadProm == null ? '—' : edadProm + ' días') + '</b>Días promedio de los documentos abiertos; pesan más los de mayor saldo. Más de 45 días se marca en amarillo y más de 75 en rojo.', tono(edadProm, 45, 75)) +
-      ind('Más de 30 días', pct(m30, sd), mill(m30),
-        '<b>' + pesos(m30) + '</b>Parte del saldo con más de 30 días desde la fecha del documento.', tono(sd ? m30 / sd * 100 : null, 40, 60)) +
-      ind('Mayor ' + L.quien.toLowerCase(), may ? pct(may.total, g.total) : '—', may ? esc(may.tercero) : '—',
-        '<b>' + (may ? pesos(may.total) : '—') + '</b>' + (may ? esc(may.tercero) + '. ' : '') + 'Cuánto del total depende de un solo tercero.', tono(may && g.total ? may.total / g.total * 100 : null, 20, 35)) +
-      ind('Top 5', pct(top5v, g.total), mill(top5v), '<b>' + pesos(top5v) + '</b>Lo que suman los 5 mayores saldos.', '') +
-      ind('Ticket promedio', mill(ticket), 'por documento', '<b>' + pesos(ticket) + '</b>Saldo promedio de cada documento abierto.', '') +
-      ind('Documentos', docsL.length.toLocaleString('es-CO'), g.porTercero.length + ' ' + L.quienes,
-        '<b>' + docsL.length + ' documentos abiertos</b>De ' + g.porTercero.length + ' ' + L.quienes + '.', '') +
+        '<b>' + (edadProm == null ? '—' : edadProm + ' días') + '</b>Días promedio de los documentos abiertos; pesan más los de mayor saldo. Amarillo desde 45 días, rojo desde 75.', tono(edadProm, 45, 75)) +
+      ind('Morosidad +90', pct(s90, sd), mill(s90),
+        '<b>' + pesos(s90) + '</b>Parte del saldo con más de 90 días. Amarillo desde 15%, rojo desde 30%.', tono(sd ? s90 / sd * 100 : null, 15, 30)) +
+      (lado === 'cobrar'
+        ? ind('Provisión estimada', mill(prov), pct(prov, g.total) + ' de la cartera',
+            '<b>' + pesos(prov) + '</b>Deterioro estimado con el método general fiscal (Decreto 187 de 1975): 5% de 91 a 180 días, 10% de 181 a 360 y 15% de más de 360. Es una referencia: Contabilidad define la provisión real.', tono(g.total ? prov / g.total * 100 : null, 3, 6))
+        : ind('Pagos próximos', mill(prox), pct(prox, g.total) + ' del total · 0–30 d',
+            '<b>' + pesos(prox) + '</b>Saldo por pagar de 0 a 30 días: lo que presiona la caja en el corto plazo.', '')) +
+      ind('Concentración', hhi == null ? '—' : fmtN(hhi), nivelHHI,
+        '<b>Índice HHI ' + (hhi == null ? '—' : fmtN(hhi)) + '</b>Herfindahl-Hirschman: suma de las participaciones al cuadrado. Menos de 1.500 es baja, de 1.500 a 2.500 moderada y más de 2.500 alta (mucho riesgo en pocos terceros).', tono(hhi, 1500, 2500)) +
+      ind('Pareto 80%', n80 ? n80 + ' de ' + g.porTercero.length : '—', L.quienes + ' hacen el 80%',
+        '<b>' + n80 + ' ' + L.quienes + '</b>Son el ' + pct(acum, g.total) + ' del saldo. Pocos terceros con casi todo el saldo es más riesgo.', '') +
+      ind('Cobertura 30 d', cob == null ? '—' : cob.toLocaleString('es-CO', { maximumFractionDigits: 2 }) + '×', 'cobrar ÷ pagar recientes',
+        '<b>' + pesos(c30) + ' ÷ ' + pesos(p30) + '</b>Lo que nos deben de 0 a 30 días frente a lo que debemos de 0 a 30 días. Mayor a 1: lo reciente por cobrar alcanza para lo reciente por pagar.', cob == null ? '' : cob < .8 ? ' mal' : cob < 1 ? ' ojo' : '') +
       '</div>';
 
     /* 2. Antigüedad en espejo, misma escala para los dos lados */
@@ -8486,7 +8533,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     h += '<div class="car-card"><div class="car-h" data-tip="Terceros que nos deben y a los que también les debemos. Lo compensable es el menor de los dos saldos: se podría cruzar con un acuerdo entre las partes.">Cruce de cuentas</div>' +
       (cruce.length ? '<ul class="lista cruce">' + cruce.slice(0, 6).map(x =>
         '<li data-tip="<b>' + pesos(x.min) + ' compensables</b>Nos debe ' + pesos(x.c) + ' · le debemos ' + pesos(x.p) + '"><div style="min-width:0">' + nomCon(x.id, x.nom) +
-        '<div class="sub num" style="padding-left:37px"><span style="color:var(--car-cob)">●</span> ' + mill(x.c) + ' &nbsp;<span style="color:var(--car-pag)">●</span> ' + mill(x.p) + '</div></div>' +
+        '<div class="sub num" style="padding-left:47px"><span style="color:var(--car-cob)">●</span> ' + mill(x.c) + ' &nbsp;<span style="color:var(--car-pag)">●</span> ' + mill(x.p) + '</div></div>' +
         '<span class="mon num">' + mill(x.min) + '</span>' +
         '<span class="trk"><span style="width:' + (x.min / cruce[0].min * 100) + '%;background:var(--car-ink2)"></span></span></li>').join('') + '</ul>' +
         '<div class="nota num">' + cruce.length + (cruce.length === 1 ? ' tercero · ' : ' terceros · ') + mill(totCruce) + ' compensables</div>'
@@ -8503,7 +8550,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     h += '<div class="car-card"><div class="car-h" data-tip="Terceros con saldo de más de 90 días desde la fecha del documento, de mayor a menor">Atención · +90 días</div>';
     if (!urg.length) h += '<div class="vacio">Sin saldos de más de 90 días.</div>';
     else h += '<ul class="lista">' + urg.slice(0, 6).map(t =>
-      '<li><div style="min-width:0">' + nomCon(t.terceroId, t.tercero) + '<div class="sub num" style="padding-left:37px">' + chipDias(t.masViejo) + ' · ' + mill(t.total) + ' en total</div></div>' +
+      '<li><div style="min-width:0">' + nomCon(t.terceroId, t.tercero) + '<div class="sub num" style="padding-left:47px">' + chipDias(t.masViejo) + ' · ' + mill(t.total) + ' en total</div></div>' +
       '<span class="mon num" data-tip="<b>' + pesos(t._ed.d90_mas) + '</b>De ' + pesos(t.total) + ' que tiene en total">' + mill(t._ed.d90_mas) + '</span>' +
       '<button type="button" class="accion" data-car-ir="' + esc(t.terceroId) + '">' + L.accion + '</button>' +
       '<span class="trk"><span style="width:' + (t._ed.d90_mas / urg[0]._ed.d90_mas * 100) + '%;background:var(--car-t3)"></span></span></li>').join('') + '</ul>' +
@@ -8543,7 +8590,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
       const seg = TRAMOS.filter(x => t._ed[x.k] > 0).map(x =>
         '<span style="flex:' + t._ed[x.k] + ';background:' + x.color + '" data-tip="<b>' + pesos(t._ed[x.k]) + '</b>' + x.largo + '"></span>').join('');
       h += '<tr class="fila' + (ab ? ' abierta' : '') + '" id="car-t-' + esc(t.terceroId) + '" data-car-k="' + esc(k) + '" tabindex="0" aria-expanded="' + ab + '">' +
-        '<td><span class="flecha">▸</span><span class="td-nom">' + av(t.terceroId, t.tercero) + esc(t.tercero || 'Tercero ' + t.terceroId) + '</span><div class="seg" aria-hidden="true" style="margin-left:51px">' + seg + '</div></td>' +
+        '<td><span class="flecha">▸</span><span class="td-nom">' + av(t.terceroId, t.tercero) + esc(t.tercero || 'Tercero ' + t.terceroId) + '</span><div class="seg" aria-hidden="true" style="margin-left:61px">' + seg + '</div></td>' +
         '<td class="num col-movil-no">' + t.docs.length + '</td><td class="num">' + chipDias(t.masViejo) + '</td>' +
         '<td class="num col-movil-no" style="color:' + (t._ed.d90_mas ? 'var(--red)' : 'var(--car-mute)') + '">' + (t._ed.d90_mas ? mill(t._ed.d90_mas) : '—') + '</td>' +
         '<td class="num"><b>' + pesos(t.total) + '</b></td></tr>';
