@@ -8025,6 +8025,16 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-cartera .car-filtro i{width:9px;height:9px;border-radius:2px}
 #panel-cartera .esp-fila.fuera{opacity:.3}
 #panel-cartera .car-dos.uno{grid-template-columns:1fr}
+/* Logo del tercero, o sus iniciales si no hay logo */
+#panel-cartera .av{width:28px;height:28px;border-radius:50%;background:#fff;box-shadow:0 0 0 1px var(--rule);display:inline-flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;vertical-align:middle}
+#panel-cartera .av img{width:76%;height:76%;object-fit:contain}
+#panel-cartera .av b{display:none;font:700 11px 'Source Sans 3',sans-serif;color:var(--car-ink2);letter-spacing:.3px}
+#panel-cartera .av.sin{background:var(--sel-bg,var(--s2));box-shadow:none}
+#panel-cartera .av.sin img{display:none}
+#panel-cartera .av.sin b{display:inline}
+#panel-cartera .nom{display:flex;align-items:center;gap:9px;min-width:0}
+#panel-cartera .nom .tx{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+#panel-cartera .td-nom{display:inline-flex;align-items:center;gap:9px;vertical-align:middle}
 /* Indicadores: una tarjeta, celdas separadas por líneas finas a cualquier ancho */
 #panel-cartera .car-inds{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:1px;background:var(--car-line);overflow:hidden;margin-bottom:16px}
 #panel-cartera .ind{background:var(--white);padding:14px 16px;display:flex;flex-direction:column;gap:3px;min-width:0;outline:none}
@@ -8066,7 +8076,9 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-cartera .chip.t2{background:var(--orange-l);color:var(--orange)}
 /* Antigüedad por tramo: cuatro columnas que se leen solas */
 #panel-cartera .car-tramos{padding:18px 20px;margin-bottom:16px}
-#panel-cartera .tr-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+#panel-cartera .tr-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+#panel-cartera .tr-seg{display:flex;gap:2px;height:10px}
+#panel-cartera .tr-seg span{display:block;height:100%;border-radius:3px;min-width:3px}
 #panel-cartera .tr-col{all:unset;box-sizing:border-box;display:flex;flex-direction:column;gap:6px;padding:14px 14px 12px;border:1px solid var(--rule);border-radius:12px;cursor:pointer;font-family:'Source Sans 3',sans-serif;background:var(--white)}
 #panel-cartera .tr-col:hover{background:var(--s2)}
 #panel-cartera .tr-col:focus-visible{outline:2px solid var(--car-pag);outline-offset:2px}
@@ -8079,7 +8091,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 #panel-cartera .tr-pie{display:flex;justify-content:space-between;font-size:13px;color:var(--car-ink2)}
 #panel-cartera .tr-pie b{color:var(--car-ink)}
 #panel-cartera .tr-filtro{display:inline-flex;align-items:center;gap:6px;margin-left:8px;text-transform:none;letter-spacing:0;font-weight:600}
-@media(max-width:900px){#panel-cartera .tr-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:900px){#panel-cartera .tr-grid{grid-template-columns:repeat(2,minmax(0,1fr))}#panel-cartera .tr-col.todos{grid-column:1/-1}}
 #panel-cartera .chip.t3{background:var(--red-l);color:var(--red)}
 
 /* Antigüedad en espejo */
@@ -8225,6 +8237,30 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     const h = Math.round(m / 60);
     return h < 48 ? 'hace ' + h + ' h' : 'hace ' + Math.round(h / 24) + ' días';
   };
+
+  /* Logo de cada tercero: el que trae el servicio (pestaña Logos), o el de
+     Ingreso por Cliente si el nombre coincide; si no hay, sus iniciales. */
+  const SOBRA_NOM = /\b(S\.?A\.?S|S\.?A|LTDA|S\.?C\.?A|E\.?S\.?P|C\.?I|Y CIA|SOCIEDAD|COMPA[NÑ]IA|CORPORACION|DE|DEL|LA|LAS|LOS|EL)\b\.?/gi;
+  function iniciales(n){
+    const w = String(n || '').replace(SOBRA_NOM, ' ').trim().split(/\s+/).filter(x => /[A-Za-zÁÉÍÓÚÑ]/.test(x));
+    return ((w[0] || '?').charAt(0) + (w[1] || '').charAt(0)).toUpperCase();
+  }
+  function logoConocido(nom){
+    if (typeof CLIENT_LOGOS === 'undefined') return null;
+    const n = ' ' + String(nom || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]+/g, ' ') + ' ';
+    for (const k in CLIENT_LOGOS) {
+      const kk = ' ' + k.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]+/g, ' ') + ' ';
+      if (n.indexOf(kk) !== -1) return CLIENT_LOGOS[k];
+    }
+    return null;
+  }
+  function av(id, nom){
+    const u = (datos && datos.logos && datos.logos[String(id)]) || logoConocido(nom);
+    return '<span class="av' + (u ? '' : ' sin') + '" aria-hidden="true">' +
+      (u ? '<img src="' + esc(u) + '" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.classList.add(\'sin\')">' : '') +
+      '<b>' + esc(iniciales(nom)) + '</b></span>';
+  }
+  const nomCon = (id, nom) => '<div class="nom">' + av(id, nom) + '<span class="tx">' + esc(nom) + '</span></div>';
 
   /* Antigüedad de cada tercero, calculada de sus documentos. */
   function prepararTerceros(g){
@@ -8389,7 +8425,16 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 
     /* 2b. Por tramo, del lado elegido: monto, % y cuántos terceros.
        Clic en un tramo filtra la tabla a quienes tienen saldo en él. */
+    /* "Todos" va primero y es el filtro por defecto: el total del lado con su
+       barra ya dividida por tramos. */
+    const nTodos = gTodo.porTercero.length;
     h += '<div class="car-card car-tramos"><div class="car-h">' + L.nombre + ' por antigüedad</div><div class="tr-grid">' +
+      '<button type="button" class="tr-col todos" data-car-tramo="" aria-pressed="' + (!tramoSel) + '" data-tip="<b>' + pesos(gTodo.total) + '</b>Todo el saldo ' +
+        (lado === 'cobrar' ? 'por cobrar' : 'por pagar') + '. Clic para quitar el filtro de antigüedad.">' +
+        '<span class="tr-tit">Todos</span><span class="tr-val num">' + mill(gTodo.total) + '</span>' +
+        '<span class="tr-seg">' + TRAMOS.filter(t => gTodo.edades[t.k] > 0).map(t =>
+          '<span style="flex:' + gTodo.edades[t.k] + ';background:' + t.color + '" data-tip="<b>' + pesos(gTodo.edades[t.k]) + '</b>' + t.largo + ' · ' + pct(gTodo.edades[t.k], gTodo.total) + '"></span>').join('') + '</span>' +
+        '<span class="tr-pie num"><b>100%</b><span>' + nTodos + ' ' + L.quienes + '</span></span></button>' +
       TRAMOS.map(t => {
         const v = gTodo.edades[t.k] || 0, n = gTodo.porTercero.filter(x => x._ed[t.k] > 0).length;
         return '<button type="button" class="tr-col" data-car-tramo="' + t.k + '" aria-pressed="' + (tramoSel === t.k) + '" data-tip="<b>' + pesos(v) + '</b>' +
@@ -8440,8 +8485,8 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     const totCruce = cruce.reduce((a, x) => a + x.min, 0);
     h += '<div class="car-card"><div class="car-h" data-tip="Terceros que nos deben y a los que también les debemos. Lo compensable es el menor de los dos saldos: se podría cruzar con un acuerdo entre las partes.">Cruce de cuentas</div>' +
       (cruce.length ? '<ul class="lista cruce">' + cruce.slice(0, 6).map(x =>
-        '<li data-tip="<b>' + pesos(x.min) + ' compensables</b>Nos debe ' + pesos(x.c) + ' · le debemos ' + pesos(x.p) + '"><div style="min-width:0"><div class="nom">' + esc(x.nom) + '</div>' +
-        '<div class="sub num"><span style="color:var(--car-cob)">●</span> ' + mill(x.c) + ' &nbsp;<span style="color:var(--car-pag)">●</span> ' + mill(x.p) + '</div></div>' +
+        '<li data-tip="<b>' + pesos(x.min) + ' compensables</b>Nos debe ' + pesos(x.c) + ' · le debemos ' + pesos(x.p) + '"><div style="min-width:0">' + nomCon(x.id, x.nom) +
+        '<div class="sub num" style="padding-left:37px"><span style="color:var(--car-cob)">●</span> ' + mill(x.c) + ' &nbsp;<span style="color:var(--car-pag)">●</span> ' + mill(x.p) + '</div></div>' +
         '<span class="mon num">' + mill(x.min) + '</span>' +
         '<span class="trk"><span style="width:' + (x.min / cruce[0].min * 100) + '%;background:var(--car-ink2)"></span></span></li>').join('') + '</ul>' +
         '<div class="nota num">' + cruce.length + (cruce.length === 1 ? ' tercero · ' : ' terceros · ') + mill(totCruce) + ' compensables</div>'
@@ -8458,7 +8503,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     h += '<div class="car-card"><div class="car-h" data-tip="Terceros con saldo de más de 90 días desde la fecha del documento, de mayor a menor">Atención · +90 días</div>';
     if (!urg.length) h += '<div class="vacio">Sin saldos de más de 90 días.</div>';
     else h += '<ul class="lista">' + urg.slice(0, 6).map(t =>
-      '<li><div style="min-width:0"><div class="nom">' + esc(t.tercero) + '</div><div class="sub num">' + chipDias(t.masViejo) + ' · ' + mill(t.total) + ' en total</div></div>' +
+      '<li><div style="min-width:0">' + nomCon(t.terceroId, t.tercero) + '<div class="sub num" style="padding-left:37px">' + chipDias(t.masViejo) + ' · ' + mill(t.total) + ' en total</div></div>' +
       '<span class="mon num" data-tip="<b>' + pesos(t._ed.d90_mas) + '</b>De ' + pesos(t.total) + ' que tiene en total">' + mill(t._ed.d90_mas) + '</span>' +
       '<button type="button" class="accion" data-car-ir="' + esc(t.terceroId) + '">' + L.accion + '</button>' +
       '<span class="trk"><span style="width:' + (t._ed.d90_mas / urg[0]._ed.d90_mas * 100) + '%;background:var(--car-t3)"></span></span></li>').join('') + '</ul>' +
@@ -8470,7 +8515,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
     const top5 = g.porTercero.slice(0, 5).reduce((s, t) => s + t.total, 0);
     h += '<div class="car-card"><div class="car-h">Mayores saldos' + (trSel ? ' · ' + trSel.largo : '') + '</div>' +
       (top.length ? '<ul class="lista">' + top.map(t =>
-        '<li data-car-ir="' + esc(t.terceroId) + '" style="cursor:pointer"><div class="nom">' + esc(t.tercero) + '</div>' +
+        '<li data-car-ir="' + esc(t.terceroId) + '" style="cursor:pointer">' + nomCon(t.terceroId, t.tercero) +
         '<span class="mon num" data-tip="<b>' + pesos(t.total) + '</b>' + t.docs.length + ' documentos abiertos">' + mill(t.total) + '</span>' +
         '<span class="pct num">' + pct(t.total, g.total) + '</span>' +
         '<span class="trk"><span style="width:' + (t.total / top[0].total * 100) + '%;background:' + L.color + '"></span></span></li>').join('') + '</ul>' +
@@ -8498,7 +8543,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
       const seg = TRAMOS.filter(x => t._ed[x.k] > 0).map(x =>
         '<span style="flex:' + t._ed[x.k] + ';background:' + x.color + '" data-tip="<b>' + pesos(t._ed[x.k]) + '</b>' + x.largo + '"></span>').join('');
       h += '<tr class="fila' + (ab ? ' abierta' : '') + '" id="car-t-' + esc(t.terceroId) + '" data-car-k="' + esc(k) + '" tabindex="0" aria-expanded="' + ab + '">' +
-        '<td><span class="flecha">▸</span>' + esc(t.tercero || 'Tercero ' + t.terceroId) + '<div class="seg" aria-hidden="true">' + seg + '</div></td>' +
+        '<td><span class="flecha">▸</span><span class="td-nom">' + av(t.terceroId, t.tercero) + esc(t.tercero || 'Tercero ' + t.terceroId) + '</span><div class="seg" aria-hidden="true" style="margin-left:51px">' + seg + '</div></td>' +
         '<td class="num col-movil-no">' + t.docs.length + '</td><td class="num">' + chipDias(t.masViejo) + '</td>' +
         '<td class="num col-movil-no" style="color:' + (t._ed.d90_mas ? 'var(--red)' : 'var(--car-mute)') + '">' + (t._ed.d90_mas ? mill(t._ed.d90_mas) : '—') + '</td>' +
         '<td class="num"><b>' + pesos(t.total) + '</b></td></tr>';
