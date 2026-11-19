@@ -8522,6 +8522,8 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
 #panel-cartera .dd-con{grid-area:con;font-size:14px;color:var(--car-ink);line-height:1.3;overflow-wrap:anywhere}
 #panel-cartera .dd-meta{grid-area:meta;font-size:13px;color:var(--car-mute);white-space:normal;line-height:1.6}
 #panel-cartera .dd-meta .dd-pdf{white-space:nowrap}
+#panel-cartera .dd-cta{display:block;margin-top:3px;font-size:13px;color:var(--car-mute)}
+#panel-cartera .dd-cta b{color:var(--car-ink);font-weight:700}
 #panel-cartera .dd-dias{grid-area:dias;text-align:right}
 #panel-cartera .dd-sal{grid-area:sal;text-align:right;font-size:14px;font-weight:700;color:var(--car-ink)}
 #panel-cartera .dd-pdf{margin-left:6px;padding:2px 10px;border-radius:999px;border:1px solid var(--car-line);background:var(--white,#fff);font:700 13px 'Source Sans 3',sans-serif;color:var(--car-ink);cursor:pointer;vertical-align:baseline}
@@ -9016,12 +9018,21 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
           (t._ed.d90_mas ? '<div class="sal-sub num" style="color:var(--red)">' + mill(t._ed.d90_mas) + ' de +90 d</div>' : '<div class="sal-sub">al día bajo 90 d</div>') + '</td></tr>';
       if (ab) {
         const docs = t.docs.slice().sort((a, b) => (b.dias || 0) - (a.dias || 0));
+        /* Cuenta de World Office de la que sale el saldo: código, nombre y grupo del PUC. */
+        const GRUPO_PUC = { '13':'13 Deudores', '21':'21 Obligaciones financieras', '22':'22 Proveedores', '23':'23 Cuentas por pagar',
+                            '24':'24 Impuestos', '25':'25 Obligaciones laborales', '26':'26 Pasivos estimados', '28':'28 Otros pasivos' };
+        const ctaDoc = d => {
+          const c = String(d.cuenta || '').trim();
+          if (!c) return '<span class="dd-cta">Cuenta: sin dato</span>';
+          const g = GRUPO_PUC[c.slice(0, 2)] || ('Grupo ' + c.slice(0, 2));
+          return '<span class="dd-cta num">Cuenta <b>' + esc(c) + '</b>' + (d.nombreCuenta ? ' · ' + esc(d.nombreCuenta) : '') + ' · ' + esc(g) + '</span>';
+        };
         const colTramo = d => { const x = TRAMOS.find(z => z.k === tramoDe(d.dias)); return x ? x.color : 'var(--car-line)'; };
         h += '<tr class="det"><td colspan="4"><div class="dd-cab"><span>' + docs.length + (docs.length === 1 ? ' documento abierto' : ' documentos abiertos') +
           '</span><span>del más antiguo al más reciente</span></div><ol class="dd">' + docs.map(d =>
           '<li><i class="dd-pt" style="background:' + colTramo(d) + '"></i>' +
-          '<span class="dd-con">' + esc(String(d.concepto || '').trim() || 'Sin concepto') + '</span>' +
-          '<span class="dd-meta num">' + (d.docRef ? esc(d.docRef) + ' · ' : '') + esc(d.fecha || 'sin fecha') + (d.cuenta ? ' · cta ' + esc(d.cuenta) : '') +
+          '<span class="dd-con">' + esc(String(d.concepto || '').trim() || 'Sin concepto') + ctaDoc(d) + '</span>' +
+          '<span class="dd-meta num">' + (d.docRef ? esc(d.docRef) + ' · ' : '') + esc(d.fecha || 'sin fecha') +
             (d.pdf ? ' <button type="button" class="dd-pdf" data-car-pdf="' + esc(d.docId) + '">Ver PDF</button>' : '') + '</span>' +
           '<span class="dd-dias">' + chipDias(d.dias) + '</span>' +
           '<span class="dd-sal num">' + pesos(d.saldo) + '</span></li>').join('') +
