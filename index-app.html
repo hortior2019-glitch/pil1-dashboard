@@ -6505,8 +6505,6 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <div class="nav-tab" data-panel="csc-pagos" onclick="showPanel('csc-pagos',this)"><span class="nav-lbl">Cadena · Pagos</span></div>
   <div class="nav-tab" data-panel="csc-recepcion" onclick="showPanel('csc-recepcion',this)"><span class="nav-lbl">Cadena · Recepción</span></div>
   <div class="nav-sep"></div>
-  <div class="nav-tab" data-panel="preopequipo" onclick="showPanel('preopequipo',this)"><span class="nav-lbl">Preop. Equipo Pesado</span></div>
-  <div class="nav-tab" data-panel="dalas" onclick="showPanel('dalas',this)"><span class="nav-lbl">Dalas_Solutions</span></div>
   <div class="nav-sep"></div>
   <div class="nav-tab" data-panel="catalogo" onclick="showPanel('catalogo',this)"><span class="nav-lbl">Catálogo de Precios</span></div>
   <div class="nav-sep"></div>
@@ -6587,37 +6585,6 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
 
 <div class="wrapper">
 
-<!-- ═══════════════════════════════════════════════════════════
-  PANEL: DALAS SOLUTIONS — Franjas de cumplimiento Bavaria (tiempo real)
-  - Lee getIndicadores del Apps Script del preoperacional
-  - Mismos indicadores que la app de conductores
-  ═══════════════════════════════════════════════════════════ -->
-<div class="panel" id="panel-dalas">
-  <div class="sec-hdr">
-    <div class="sec-title">Dalas_Solutions — Cumplimiento Bavaria</div>
-    <div class="sec-sub">Indicadores del día en tiempo real · franjas de cumplimiento</div>
-  </div>
-
-  <div class="card" style="margin-bottom:16px">
-    <div class="dls-prog">
-      <div class="dls-prog-field">
-        <label>Conductores turno día</label>
-        <input type="number" id="dls-dia" min="0" value="1" oninput="recalcDls()">
-      </div>
-      <div class="dls-prog-field">
-        <label>Conductores turno noche</label>
-        <input type="number" id="dls-noche" min="0" value="1" oninput="recalcDls()">
-      </div>
-      <button class="dls-refresh" onclick="cargarDalasIndicadores()">Actualizar indicadores</button>
-      <span class="dls-updated" id="dls-updated"></span>
-    </div>
-  </div>
-
-  <div id="dls-container">
-    <div class="dls-loading">Cargando indicadores…</div>
-  </div>
-</div>
-<!-- /PANEL DALAS -->
 
 <!--
   ═══════════════════════════════════════════════════════════
@@ -8531,6 +8498,11 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
 #panel-cartera .dd-pdf:disabled{opacity:.6;cursor:wait}
 #panel-cartera .dd-pie{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:4px;padding-top:10px;border-top:2px solid var(--car-line);font-size:13px;color:var(--car-mute)}
 #panel-cartera .dd-pie b{font-size:16px;color:var(--car-ink)}
+#panel-cartera .dd-busca{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 6px}
+#panel-cartera .dd-buscar{flex:1;min-width:200px;max-width:380px;padding:8px 12px;border:1px solid var(--rule);border-radius:10px;font:14px 'Source Sans 3',sans-serif;background:var(--white);color:var(--ink)}
+#panel-cartera .dd-n{font-size:13px;color:var(--car-mute)}
+#panel-cartera .dd li[hidden]{display:none}
+#panel-cartera .dd-nada{font-size:13px;color:var(--car-mute);padding:10px 0}
 #panel-cartera .flecha{display:inline-block;width:14px;color:var(--car-mute);transition:transform .15s}
 #panel-cartera tr.abierta .flecha{transform:rotate(90deg)}
 
@@ -8587,7 +8559,7 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
       <button type="button" data-car-tramo="d61_90" aria-pressed="false"><i style="background:var(--car-t2)"></i>61–90</button>
       <button type="button" data-car-tramo="d90_mas" aria-pressed="false"><i style="background:var(--car-t3)"></i>+90</button>
     </div>
-    <input class="car-buscar" id="car-buscar" type="search" placeholder="Buscar cliente o proveedor" aria-label="Buscar tercero">
+    <input class="car-buscar" id="car-buscar" type="search" placeholder="Buscar cliente, proveedor, documento o concepto" aria-label="Buscar en la cartera">
     <div class="der">
       <span class="car-pill" id="car-estado" tabindex="0">Consultando…</span>
       <button type="button" class="car-pill" id="car-recargar">Recargar</button>
@@ -8663,6 +8635,14 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
     '<span class="fl-fin">' + (o.fin || '') + '</span></li>';
   const nomCon = (id, nom) => '<div class="nom">' + av(id, nom) + '<span class="tx">' + esc(nom) + '</span></div>';
 
+  /* Búsqueda: sin tildes ni mayúsculas. Cada documento se busca por
+     concepto, número, fecha, cuenta y saldo. */
+  const norm = x => String(x == null ? '' : x).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const qSup = () => norm(($c('car-buscar') || {}).value || '').trim();
+  const txtDoc = d => d._q || (d._q = norm([d.concepto, d.docRef, d.fecha, d.cuenta, d.nombreCuenta,
+    Math.round(d.saldo || 0), pesos(d.saldo)].join(' ')));
+  const ddQ = {};
+
   /* Antigüedad de cada tercero, calculada de sus documentos. */
   function prepararTerceros(g){
     (g.porTercero || []).forEach(t => {
@@ -8674,20 +8654,25 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
 
   /* Con un filtro de antigüedad activo, cada tercero queda solo con sus
      documentos de ese tramo, y sus totales se recalculan con ellos. */
-  function vista(G){
-    if (!tramoSel) return G;
+  /* La búsqueda de arriba deja solo lo relacionado: el tercero entero si
+     su nombre coincide; si no, solo sus documentos que coinciden. */
+  function vista(G, conTramo){
+    const tr = conTramo === false ? '' : tramoSel, q = qSup();
+    if (!tr && !q) return G;
     const pt = []; let total = 0, items = 0;
+    const edades = { d0_30:0, d31_60:0, d61_90:0, d90_mas:0, sin_fecha:0 };
     G.porTercero.forEach(t => {
-      const docs = t.docs.filter(d => tramoDe(d.dias) === tramoSel);
+      let docs = tr ? t.docs.filter(d => tramoDe(d.dias) === tr) : t.docs, porDoc = false;
+      if (q && norm(t.tercero).indexOf(q) === -1) { docs = docs.filter(d => txtDoc(d).indexOf(q) !== -1); porDoc = true; }
       if (!docs.length) return;
-      const sum = docs.reduce((a, d) => a + (d.saldo || 0), 0);
-      const ed = { d0_30:0, d31_60:0, d61_90:0, d90_mas:0 }; ed[tramoSel] = sum;
-      pt.push({ terceroId: t.terceroId, tercero: t.tercero, total: sum, docs: docs, _ed: ed,
+      const ed = { d0_30:0, d31_60:0, d61_90:0, d90_mas:0 };
+      let sum = 0;
+      docs.forEach(d => { const k = tramoDe(d.dias); sum += d.saldo || 0; if (k) ed[k] += d.saldo || 0; edades[k || 'sin_fecha'] += d.saldo || 0; });
+      pt.push({ terceroId: t.terceroId, tercero: t.tercero, total: sum, docs: docs, _ed: ed, _porDoc: porDoc,
                 masViejo: Math.max.apply(null, docs.map(d => d.dias || 0)) });
       total += sum; items += docs.length;
     });
     pt.sort((a, b) => b.total - a.total);
-    const edades = { d0_30:0, d31_60:0, d61_90:0, d90_mas:0, sin_fecha:0 }; edades[tramoSel] = total;
     return { total: total, items: items, porTercero: pt, edades: edades };
   }
 
@@ -8758,7 +8743,10 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
     }
 
     const V = { cobrar: vista(datos.cobrar), pagar: vista(datos.pagar) };
-    const C = V.cobrar, P = V.pagar, g = V[lado], gTodo = datos[lado], L = LADO[lado];
+    /* Sin el filtro de antigüedad, pero con la búsqueda: para el espejo y los tramos. */
+    const B = { cobrar: vista(datos.cobrar, false), pagar: vista(datos.pagar, false) };
+    const q = qSup();
+    const C = V.cobrar, P = V.pagar, g = V[lado], gTodo = B[lado], L = LADO[lado];
     const trSel = TRAMOS.find(x => x.k === tramoSel);
     document.querySelectorAll('#car-filtro [data-car-tramo]').forEach(x => x.setAttribute('aria-pressed', String(x.getAttribute('data-car-tramo') === tramoSel)));
     const panel = $c('panel-cartera');
@@ -8774,7 +8762,7 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
        línea con el último mes (una foto por día). Sin historia, no se muestra. */
     const hist = (datos.historia || []).map(x => ({ t: new Date(x.f).getTime(), c: x.c, p: x.p }));
     const tendencia = k => {
-      if (tramoSel || hist.length < 2) return '';
+      if (tramoSel || q || hist.length < 2) return '';
       const campo = k === 'cobrar' ? 'c' : 'p', ahora = Date.now();
       const base = hist.filter(x => x.t <= ahora - 7 * 864e5).pop();
       const porDia = {}; hist.filter(x => x.t >= ahora - 31 * 864e5).forEach(x => porDia[new Date(x.t).toDateString()] = x);
@@ -8798,7 +8786,7 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
       const seg = TRAMOS.filter(t => G.edades[t.k] > 0).map(t =>
         '<span style="flex:' + G.edades[t.k] + ';background:' + t.color + '" data-tip="<b>' + pesos(G.edades[t.k]) + '</b>' + t.largo + ' · ' + pct(G.edades[t.k], G.total) + '"></span>').join('');
       return '<div><button type="button" class="hero ' + k + '" data-car-lado="' + k + '" aria-pressed="' + sel + '">' +
-        '<span class="h-top">' + X.nombre + (trSel ? ' · ' + trSel.largo : '') + (sel ? '<span class="h-sel">Viendo</span>' : '') + '</span>' +
+        '<span class="h-top">' + X.nombre + (trSel ? ' · ' + trSel.largo : '') + (q ? ' · “' + esc(($c('car-buscar').value || '').trim()) + '”' : '') + (sel ? '<span class="h-sel">Viendo</span>' : '') + '</span>' +
         '<span class="h-val num" data-tip="<b>' + pesos(G.total) + '</b>' + G.items + ' documentos abiertos">' + mill(G.total) + '</span>' +
         '<span class="h-sub num">' + G.porTercero.length + ' ' + X.quienes + '</span>' +
         '<span class="h-seg" aria-hidden="true">' + seg + '</span>' +
@@ -8866,11 +8854,11 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
       '</div>';
 
     /* 2. Antigüedad en espejo, misma escala para los dos lados */
-    const max = Math.max(1, ...TRAMOS.map(t => Math.max(C.edades[t.k] || 0, P.edades[t.k] || 0)));
+    const max = Math.max(1, ...TRAMOS.map(t => Math.max(B.cobrar.edades[t.k] || 0, B.pagar.edades[t.k] || 0)));
     const barra = (k, t) => {
-      const v = datos[k].edades[t.k] || 0, w = v / max * 100;
+      const v = B[k].edades[t.k] || 0, w = v / max * 100;
       return '<div class="esp-lado ' + (k === 'cobrar' ? 'izq' : 'der') + (lado !== k ? ' apagado' : '') + '" data-tip="<b>' + pesos(v) + '</b>' +
-        LADO[k].nombre + ' · ' + t.largo + ' · ' + pct(v, datos[k].total) + ' de su total">' +
+        LADO[k].nombre + ' · ' + t.largo + ' · ' + pct(v, B[k].total) + ' de su total">' +
         '<div class="esp-bar" style="width:' + Math.max(w, v ? 1 : 0) + '%;background:' + LADO[k].color + '"></div>' +
         '<span class="esp-val num">' + mill(v) + '</span></div>';
     };
@@ -8951,7 +8939,6 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
       '</div></div>';
 
     /* 3. Atención (+90 días) y concentración, del lado elegido */
-    const q = ($c('car-buscar').value || '').trim().toLowerCase();
     const urg = g.porTercero.filter(t => t._ed.d90_mas > 0).sort((a, b) => b._ed.d90_mas - a._ed.d90_mas);
     const v90 = g.edades.d90_mas || 0;
     const conAtencion = !tramoSel || tramoSel === 'd90_mas';
@@ -8981,7 +8968,7 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
         : '<div class="vacio">Sin saldos abiertos.</div>') + '</div></div>';
 
     /* 4. Tabla completa */
-    let filas = q ? g.porTercero.filter(t => String(t.tercero || '').toLowerCase().indexOf(q) !== -1) : g.porTercero.slice();
+    let filas = g.porTercero.slice();
     if (orden === 'dias') filas.sort((a, b) => (b.masViejo || 0) - (a.masViejo || 0));
     else if (orden === 'd90') filas.sort((a, b) => b._ed.d90_mas - a._ed.d90_mas || b.total - a.total);
     else filas.sort((a, b) => b.total - a.total);
@@ -8998,9 +8985,9 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
       '<thead><tr><th>' + L.quien + (q || trSel ? ' · ' + filas.length : '') + (trSel ? ' · con saldo de ' + trSel.largo : '') + '</th>' +
       th('d90', 'Antigüedad del saldo', 'col-bk', 'Ordena por saldo de más de 90 días') +
       th('dias', 'Más antiguo', 'num', 'Días desde la fecha del documento más antiguo') + th('total', 'Saldo', 'num') + '</tr></thead><tbody>';
-    if (!filas.length) h += '<tr><td colspan="4" class="vacio">' + (q ? 'Nadie coincide con “' + esc(q) + '”.' : trSel ? 'Sin saldos de ' + trSel.largo + '.' : 'Sin saldos abiertos.') + '</td></tr>';
+    if (!filas.length) h += '<tr><td colspan="4" class="vacio">' + (q ? 'Nada coincide con “' + esc(($c('car-buscar').value || '').trim()) + '”.' : trSel ? 'Sin saldos de ' + trSel.largo + '.' : 'Sin saldos abiertos.') + '</td></tr>';
     filas.forEach(t => {
-      const k = lado + '|' + t.terceroId, ab = !!abiertos[k];
+      const k = lado + '|' + t.terceroId, ab = abiertos[k] != null ? !!abiertos[k] : !!(q && t._porDoc);
       const seg = TRAMOS.filter(x => t._ed[x.k] > 0).map(x =>
         '<span style="flex:' + t._ed[x.k] + ';background:' + x.color + '" data-tip="<b>' + pesos(t._ed[x.k]) + '</b>' + x.largo + ' · ' + pct(t._ed[x.k], t.total) + '"></span>').join('');
       const ley = TRAMOS.map(x => {
@@ -9029,18 +9016,38 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
         };
         const colTramo = d => { const x = TRAMOS.find(z => z.k === tramoDe(d.dias)); return x ? x.color : 'var(--car-line)'; };
         h += '<tr class="det"><td colspan="4"><div class="dd-cab"><span>' + docs.length + (docs.length === 1 ? ' documento abierto' : ' documentos abiertos') +
-          '</span><span>del más antiguo al más reciente</span></div><ol class="dd">' + docs.map(d =>
-          '<li><i class="dd-pt" style="background:' + colTramo(d) + '"></i>' +
+          '</span><span>del más antiguo al más reciente</span></div>' +
+          (docs.length > 1 ? '<div class="dd-busca"><input type="search" class="dd-buscar" data-car-ddq="' + esc(k) + '" value="' + esc(ddQ[k] || '') +
+            '" placeholder="Buscar en estos documentos: concepto, número, cuenta, valor" aria-label="Buscar en los documentos de ' + esc(t.tercero || '') + '" autocomplete="off">' +
+            '<span class="dd-n num"></span></div>' : '') +
+          '<ol class="dd">' + docs.map(d =>
+          '<li data-q="' + esc(txtDoc(d)) + '" data-saldo="' + (d.saldo || 0) + '"><i class="dd-pt" style="background:' + colTramo(d) + '"></i>' +
           '<span class="dd-con">' + esc(String(d.concepto || '').trim() || 'Sin concepto') + ctaDoc(d) + '</span>' +
           '<span class="dd-meta num">' + (d.docRef ? esc(d.docRef) + ' · ' : '') + esc(d.fecha || 'sin fecha') +
             (d.pdf ? ' <button type="button" class="dd-pdf" data-car-pdf="' + esc(d.docId) + '">Ver PDF</button>' : '') + '</span>' +
           '<span class="dd-dias">' + chipDias(d.dias) + '</span>' +
           '<span class="dd-sal num">' + pesos(d.saldo) + '</span></li>').join('') +
-          '</ol><div class="dd-pie"><span>Saldo de ' + esc(t.tercero || 'este tercero') + '</span><b class="num">' + pesos(t.total) + '</b></div></td></tr>';
+          '</ol><div class="dd-nada" hidden>Ningún documento coincide.</div><div class="dd-pie"><span>Saldo de ' + esc(t.tercero || 'este tercero') + '</span><b class="num">' + pesos(t.total) + '</b></div></td></tr>';
       }
     });
     h += '</tbody></table></div></div>';
     cuerpo.innerHTML = h;
+    cuerpo.querySelectorAll('.dd-buscar').forEach(filtrarDd);
+  }
+
+  /* Filtra el desglose de un tercero sin repintar, para no perder el cursor. */
+  function filtrarDd(inp){
+    const k = inp.getAttribute('data-car-ddq'), q = norm(inp.value).trim();
+    if (q) ddQ[k] = inp.value; else delete ddQ[k];
+    const td = inp.closest('td'), lis = td.querySelectorAll('ol.dd > li');
+    let n = 0, suma = 0;
+    lis.forEach(li => {
+      const ok = !q || li.getAttribute('data-q').indexOf(q) !== -1;
+      li.hidden = !ok;
+      if (ok) { n++; suma += +li.getAttribute('data-saldo') || 0; }
+    });
+    td.querySelector('.dd-nada').hidden = n > 0;
+    td.querySelector('.dd-n').textContent = q ? n + ' de ' + lis.length + ' · ' + pesos(suma) : '';
   }
 
   /* Tooltip único: aparece con el ratón o con el foco del teclado. */
@@ -9118,12 +9125,13 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
       return;
     }
     const f = e.target.closest('tr.fila');
-    if (f) { const k = f.getAttribute('data-car-k'); abiertos[k] = !abiertos[k]; pintar(); }
+    if (f) { const k = f.getAttribute('data-car-k'); abiertos[k] = f.getAttribute('aria-expanded') !== 'true'; pintar(); }
   });
   panelEl.addEventListener('keydown', function(e){
     if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('tr.fila')) { e.preventDefault(); e.target.click(); }
   });
   $c('car-buscar').addEventListener('input', pintar);
+  panelEl.addEventListener('input', e => { if (e.target.matches && e.target.matches('.dd-buscar')) filtrarDd(e.target); });
 
   /* Para el asistente: los datos ya traídos (solo si están completos). */
   window.carteraDatos = function(){ return datos && datos.ok && datos.listo ? datos : null; };
@@ -9797,23 +9805,6 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
   </div><!-- fin corte-contenido-protegido -->
 </div>
 
-<div class="panel" id="panel-preopequipo">
-  <div class="sec-hdr">
-    <div class="sec-title">Preoperacional Equipo Pesado</div>
-    <div class="sec-sub" id="equipo-period">Hoy</div>
-  </div>
-  <!-- Filtro fecha -->
-  <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px;padding:16px 20px;background:var(--white);border:1px solid var(--rule);border-radius:4px">
-    <div style="display:flex;flex-direction:column;gap:4px">
-      <label style="font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-l)">Fecha puntual</label>
-      <input type="date" id="equipo-filtro-fecha" onchange="aplicarFiltrosEquipo()" style="border:1px solid var(--rule);background:var(--white);padding:7px 10px;font-size:12px;border-radius:3px;color:var(--ink)">
-    </div>
-    <button onclick="limpiarFiltrosEquipo()" style="padding:7px 16px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);border:1px solid var(--rule);border-radius:3px;cursor:pointer;color:var(--ink-m);transition:.2s">Limpiar</button>
-    <div id="equipo-filtro-info" style="font-size:11px;color:var(--ink-l);align-self:center"></div>
-  </div>
-  <!-- Contenido dinámico: se llena con renderPreopUnificado() -->
-  <div id="equipo-contenido"></div>
-</div>
 
 <!--
   ═══════════════════════════════════════════════════════════
@@ -12258,10 +12249,8 @@ const PESTANAS_CONTROLABLES = [
   // dentro de Personal quién maneja documentación y quién horas y turnos.
   { id:'personal-maestro', label:'Personal · Maestro', porDefecto:false },
   { id:'cortes',          label:'Cortes a Proveedor' },
-  { id:'preopequipo',     label:'Preop. Equipo Pesado' },
   { id:'catalogo',        label:'Catálogo de Precios' },
   { id:'accesos',         label:'Control Accesos' },
-  { id:'dalas',           label:'Dalas_Solutions' },
   { id:'mapa',              label:'Mapa de Planta' },
   { id:'csc-resumen',       label:'Cadena · Resumen' },
   { id:'csc-compras',       label:'Cadena · Compras' },
@@ -14770,7 +14759,7 @@ document.addEventListener('change', function(e){
      peticiones que hicieron al abrirse (tope de 20 s). */
 var CARGA_DEPENDE = {
   clientes:'ingreso', ingreso:'ingreso', operaciones:'ingreso', cortes:'ingreso',
-  ProduccionHumus:'humus', accesos:'accesos', preopequipo:'preop'
+  ProduccionHumus:'humus', accesos:'accesos'
 };
 var CARGA = { activo:false, pasos:{}, listas:{}, panel:'', pend:[], desde:0, quieto:null, tope:null, boton:null };
 (function(){
@@ -15283,7 +15272,6 @@ function showPanel(id, el) {
   if (id === 'certificado' && typeof window.certificadoCargarLogos === 'function'){
     window.certificadoCargarLogos();
   }
-  if (id === 'dalas') { try { cargarDalasIndicadores(); } catch(e){} }
   if (id !== 'auditoria' && id !== 'certificado' && id !== 'mapa' && document.documentElement.classList.contains('solo-panel')) {
     alternarSoloPanel(false);   // cambiar de pestaña siempre devuelve el dashboard
   }
@@ -23670,6 +23658,8 @@ function renderPreop(tipo, data, filter, yaFiltrado) {
   ═══════════════════════════════════════════════════════════
 */
 function renderPreopUnificado(dataCar, dataTra, filter) {
+  // La pestaña Preop. Equipo Pesado se quitó: todo está en Vehículos Carga.
+  if (!document.getElementById('equipo-contenido')) return;
   filter = filter || currentFilter;
   const periodoLbl = {ayer:'Ayer',hoy:'Hoy',semana:'Esta semana',mes:'Este mes',total:'Total acumulado'}[filter] || filter;
   const periodEl = document.getElementById('equipo-period');
@@ -34022,7 +34012,7 @@ const VOZ_FUENTES = {
   },
   preopVolquetas: {
     label:'Preoperacional Volquetas',
-    panel:'preopequipo',
+    panel:'vehiculos',
     desc:'inspección preoperacional de volquetas, fallas reportadas en volquetas',
     obtener: () => vozArr(() => dataPreopVol),
     fecha:   vozFechaGenerica,
@@ -34030,7 +34020,7 @@ const VOZ_FUENTES = {
   },
   preopEquipo: {
     label:'Preoperacional Cargador 9540 / Tractor',
-    panel:'preopequipo',
+    panel:'vehiculos',
     desc:'inspección preoperacional de cargador y tractor, equipo pesado',
     obtener: () => vozArr(() => dataPreopCar),
     fecha:   vozFechaGenerica,
@@ -34058,7 +34048,7 @@ const VOZ_FUENTES = {
   },
   maquinaria: {
     label:'Maquinaria amarilla · combustible por operario y turno',
-    panel:'preopequipo',
+    panel:'vehiculos',
     desc:'maquinaria amarilla, cargador, tractor, oruga, excavadora, retroexcavadora, minicargador, equipo pesado, maquinista, tractorista, operador de maquinaria, combustible por operario, gasto por turno, franja, horómetro, quién operaba',
     obtener: () => (_vozPerIntento && vozArr(() => dataCombustible).length) ? vozArr(() => dataPreopCar) : [],
     sinFecha:true,
@@ -34603,7 +34593,6 @@ const VOZ_PANEL_FUENTE = {
   ingreso:         ['ingreso'],
   vehiculos:       ['vehiculos', 'combustible'],
   ProduccionHumus: ['humus'],
-  preopequipo:     ['preopEquipo', 'preopVolquetas'],
   accesos:         ['accesos'],
   cortes:          ['ingreso'],
   operaciones:     ['ingreso'],
@@ -36880,9 +36869,9 @@ const VOZ_SOLUCIONES = [
   [/^(tq-sinkm|veh-sintq|veh-tqviejo)/, 'vehiculos', 'Vehículos Carga', 'El formulario de tanqueo ya pide kilometraje y foto del recibo. No falta el sistema: falta el dato.', ['Con el kilometraje y la foto del recibo en cada tanqueo, el rendimiento se mide solo.', 'Cada tanqueo sin kilometraje es un tanqueo que no se puede revisar. El formulario ya lo pide.']],
   [/^tq-raro/, 'vehiculos', 'Vehículos Carga', 'La ficha del vehículo en Vehículos Carga ya guarda cada tanqueo con sus fotos. Ahí se confronta sin tener que preguntarle a nadie.', ['En la ficha del vehículo están el tanqueo y sus fotos. Con eso se confirma o se corrige.', 'La foto del recibo está en la ficha del vehículo. Ahí se ve si el valor está bien digitado.']],
   [/^mant-sinvalor/, 'vehiculos', 'Vehículos Carga', 'En Vehículos Carga el mantenimiento ya tiene su costo. Registrarlo en cero solo me hace sospechar a mí.', ['Un mantenimiento en cero no dice cuánto cuesta el carro. Pongan el valor en Vehículos Carga.', 'Sin el costo del mantenimiento, el costo por kilómetro sale incompleto. Se corrige en la ficha del vehículo.']],
-  [/^maq-sinop/, 'preopequipo', 'Preop. Equipo Pesado', 'El preoperacional ya pide operador y placa. Uno por turno, y el combustible deja de ser de nadie.', ['Un preoperacional por turno basta para saber quién operaba. Sin él, ese combustible no tiene responsable.', 'El preoperacional es lo que le pone nombre al combustible de la máquina. Que no se salte ningún turno.']],
+  [/^maq-sinop/, 'vehiculos', 'Vehículos Carga', 'El preoperacional ya pide operador y placa. Uno por turno, y el combustible deja de ser de nadie.', ['Un preoperacional por turno basta para saber quién operaba. Sin él, ese combustible no tiene responsable.', 'El preoperacional es lo que le pone nombre al combustible de la máquina. Que no se salte ningún turno.']],
   [/^maq-sinturno/, 'personal', 'Personal', 'En Personal, Áreas y turnos, se arma el turno del maquinista. Sin turno, sus horas no existen para el sistema.', ['El turno del maquinista se arma en Personal, Áreas y turnos. Así sus horas se pueden comparar.', 'Sin turno en Personal no sé cuántas horas trabajó. Con el turno, su gasto se compara con el de los demás.']],
-  [/^maq-op/, 'preopequipo', 'Preop. Equipo Pesado', 'Preop. Equipo Pesado tiene cada turno con su operador y su horómetro. Ahí se ve qué pasó esos días, sin preguntarle a nadie.', ['En Preop. Equipo Pesado están el horómetro y el operador de cada turno. Ahí se ve en qué días se fue el combustible.', 'Miren los turnos de esos días en Preop. Equipo Pesado: el horómetro dice cuánto trabajó la máquina.']],
+  [/^maq-op/, 'vehiculos', 'Vehículos Carga', 'Vehículos Carga tiene cada turno con su operador y su horómetro. Ahí se ve qué pasó esos días, sin preguntarle a nadie.', ['En Vehículos Carga están el horómetro y el operador de cada turno. Ahí se ve en qué días se fue el combustible.', 'Miren los turnos de esos días en Vehículos Carga: el horómetro dice cuánto trabajó la máquina.']],
   [/^per-cond/, 'personal', 'Personal', 'En Personal, Áreas y turnos, ya se ajusta el horario de cada conductor. Armen la próxima semana mirando a qué horas entran los viajes.', ['El horario de cada conductor se ajusta en Personal, Áreas y turnos. Que coincida con la hora en que entran los viajes.', 'Si los viajes entran a otra hora, muevan el turno en Personal. Así no se paga espera.']],
   [/^mant-atraso/, 'vehiculos', 'Vehículos Carga', 'La ficha del vehículo ya muestra el próximo mantenimiento. Programen la entrada antes de que el carro se quede en plena operación.', ['Programen la entrada al taller antes de que el carro se detenga en plena operación. La ficha ya muestra cuándo toca.', 'El próximo mantenimiento está en la ficha del vehículo. Agendarlo ahora sale más barato que una varada.']],
   [/^per-sinarea/, 'personal', 'Personal', 'En Personal, Áreas y turnos, ya se arma el equipo de cada área. Son personas que hoy no le responden a ninguna.', ['En Personal, Áreas y turnos, cada persona queda en un equipo. Así alguien responde por ella.', 'Una persona sin área no aparece en ningún cuadro de turnos. Se asigna en Personal, Áreas y turnos.']],
