@@ -6487,6 +6487,7 @@ a.act-sinfoto{color:#1c5636;border-style:solid;border-color:#1c5636}
   <div class="nav-tab" data-panel="ingreso" onclick="showPanel('ingreso',this)"><span class="nav-lbl">Ingreso de Material</span></div>
   <div class="nav-tab" data-panel="ProduccionHumus" onclick="showPanel('ProduccionHumus',this)"><span class="nav-lbl">Producción Humus</span></div>
   <div class="nav-tab" data-panel="cartera" onclick="showPanel('cartera',this)"><span class="nav-lbl">Cartera</span></div>
+  <div class="nav-tab" data-panel="ventas" onclick="showPanel('ventas',this)"><span class="nav-lbl">Ventas</span></div>
   <div class="nav-tab" data-panel="vehiculos" onclick="showPanel('vehiculos',this)"><span class="nav-lbl">Vehículos Carga</span></div>
   <div class="nav-sep"></div>
   <div class="nav-tab" data-panel="personal" onclick="showPanel('personal',this)"><span class="nav-lbl">Personal</span></div>
@@ -9140,6 +9141,736 @@ html[data-cartera="pagar"] body{background:#d5dcf1}
     const viejo = !datos || !datos.listo || Date.now() - (datos._pedido || 0) > 10 * 60e3;
     if (viejo) pedir();
     else { pintar(); if (typeof window.vozCarteraDiaria === 'function') setTimeout(window.vozCarteraDiaria, 900); }
+  };
+})();
+</script>
+<!-- ═══════════════════════════════════════════════════════════
+  PANEL: VENTAS (World Office, solo lectura) · mismo lenguaje que Cartera
+  - Color propio: petróleo (ventas) con acento dorado; notas crédito en
+    bronce. Fondo propio de la app mientras se ve la pestaña.
+  - Valores sin IVA. Las notas crédito restan.
+  - Periodo: este mes (contra los mismos días del mes anterior), 30, 90 días
+    o 12 meses (contra el periodo igual anterior).
+  - Ventas por semana: los cortes semanales, quincenales o de mes caen en
+    semanas distintas; la línea dorada es el promedio de 4 semanas.
+  - Ritmo de facturación: mediana de días entre facturas de cada cliente y
+    aviso cuando un corte se atrasa.
+  - Mezcla de productos: paleta categórica validada (dataviz), con la
+    etiqueta y el monto de cada producto al lado: el color nunca va solo.
+  - Desglose: cada producto dice de qué concepto, OC y centro de costo salió.
+  ═══════════════════════════════════════════════════════════ -->
+<style>
+#panel-ventas{
+  --ven:#12404b; --ven-2:#0c3039; --ven-l:#e6eff0; --ven-ring:rgba(18,64,75,.28); --oro:#c9a24a; --oro-l:#f4e7c4;
+  --ven-nc:#7a3b1d; --ven-ink:var(--ink); --ven-ink2:var(--ink-m); --ven-mute:#6b6b66; --ven-line:var(--rule-l);
+  --p1:#2a78d6; --p2:#eb6834; --p3:#1baf7a; --p4:#eda100; --p5:#e87ba4; --p0:#b9b6ae;
+}
+html[data-ventas] body{background:
+  radial-gradient(1100px 520px at 0% -8%, rgba(201,162,74,.20), transparent 62%),
+  radial-gradient(900px 600px at 105% 0%, rgba(18,64,75,.16), transparent 60%),
+  linear-gradient(180deg,#eef1ef 0%,#e9ece8 45%,#efe9de 100%) fixed}
+#panel-ventas .num{font-variant-numeric:tabular-nums;white-space:nowrap}
+#panel-ventas .v-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+#panel-ventas .v-seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--rule);border-radius:10px;background:var(--white);padding:3px;gap:2px}
+#panel-ventas .v-seg button{border:0;background:transparent;border-radius:8px;padding:7px 12px;font:600 13px 'Source Sans 3',sans-serif;color:var(--ven-ink2);cursor:pointer}
+#panel-ventas .v-seg button:hover{background:var(--s2)}
+#panel-ventas .v-seg button[aria-pressed="true"]{background:var(--ven);color:#fff}
+#panel-ventas .v-buscar,#panel-ventas .vd-buscar{flex:1;min-width:200px;max-width:380px;padding:9px 12px;border:1px solid var(--rule);border-radius:10px;font:14px 'Source Sans 3',sans-serif;background:var(--white);color:var(--ink)}
+#panel-ventas .v-buscar:focus,#panel-ventas .vd-buscar:focus{outline:2px solid var(--ven-ring);border-color:var(--ven)}
+#panel-ventas .der{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+#panel-ventas .v-pill{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border:1px solid var(--rule);border-radius:999px;background:var(--white);font:600 13px 'Source Sans 3',sans-serif;color:var(--ven-ink2)}
+#panel-ventas .v-pill .pt{width:8px;height:8px;border-radius:50%;background:#2d8a4e}
+#panel-ventas .v-pill .pt.ojo{background:#d39b2f}
+#panel-ventas button.v-pill{cursor:pointer}
+#panel-ventas button.v-pill:hover{background:var(--s2)}
+#panel-ventas .vc{background:var(--white);border:1px solid var(--rule);border-radius:16px;padding:18px 20px;margin-bottom:16px;box-shadow:0 1px 2px rgba(16,30,30,.04)}
+#panel-ventas .vh{font:700 13px 'Source Sans 3',sans-serif;letter-spacing:.8px;text-transform:uppercase;color:var(--ven-ink2);margin:0 0 12px;display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+#panel-ventas .vh span{text-transform:none;letter-spacing:0;font-weight:600;color:var(--ven-mute)}
+#panel-ventas .vacio{font-size:14px;color:var(--ven-mute);padding:14px 6px}
+#panel-ventas .aviso{font-size:14px;color:var(--ink)}
+#panel-ventas .aviso.error{border-color:var(--red);background:var(--red-l)}
+#panel-ventas .viejos{opacity:.55}
+#panel-ventas .accion{border:1px solid var(--rule);background:var(--white);border-radius:8px;padding:5px 10px;font:700 13px 'Source Sans 3',sans-serif;cursor:pointer;color:var(--ven-ink2)}
+#panel-ventas .accion:hover{background:var(--s2);color:var(--ink)}
+#panel-ventas .chip{display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font:700 13px 'Source Sans 3',sans-serif;background:var(--rule-l);color:var(--ven-ink2);white-space:nowrap}
+#panel-ventas .chip.mal{background:var(--red-l);color:var(--red)}
+#panel-ventas .chip.ok{background:var(--ven-l);color:var(--ven)}
+#panel-ventas .chip.nc{background:#f6e6dc;color:var(--ven-nc)}
+
+/* 1. Cajas principales, como Cartera: ventas (petróleo) y notas crédito
+   (bronce) en color pleno; facturación en blanco con su balanza. */
+#panel-ventas .heroes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:16px}
+#panel-ventas .hero{position:relative;display:flex;flex-direction:column;height:100%;border-radius:16px;padding:20px 22px 18px;color:#fff;overflow:hidden;box-sizing:border-box}
+#panel-ventas .hero.ventas{background:linear-gradient(145deg,#185261 0%,var(--ven) 55%,var(--ven-2) 100%);box-shadow:0 16px 32px -14px rgba(12,48,57,.55)}
+#panel-ventas .hero.nc{background:linear-gradient(145deg,#8e4a28 0%,var(--ven-nc) 60%,#5e2c15 100%)}
+#panel-ventas .hero::after{content:'';position:absolute;right:-50px;top:-50px;width:190px;height:190px;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.10),rgba(255,255,255,0) 70%);pointer-events:none}
+#panel-ventas .hero.ventas::before{content:'';position:absolute;left:22px;right:22px;top:0;height:2px;background:linear-gradient(90deg,transparent,var(--oro),transparent);opacity:.8}
+#panel-ventas .h-top{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:14px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:rgba(255,255,255,.82)}
+#panel-ventas .h-top .q{font-size:13px;font-weight:600;letter-spacing:0;text-transform:none;background:rgba(255,255,255,.14);border-radius:999px;padding:3px 10px;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#panel-ventas .h-val{font-family:'Libre Baskerville',Georgia,serif;font-size:clamp(32px,3.4vw,46px);font-weight:700;letter-spacing:-.03em;line-height:1.05;margin:12px 0 4px}
+#panel-ventas .h-sub{font-size:13px;color:rgba(255,255,255,.78)}
+#panel-ventas .h-cmp{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 10px;align-items:center;margin:16px 0 6px;font-size:13px;color:rgba(255,255,255,.82)}
+#panel-ventas .h-cmp .tr{height:8px;border-radius:4px;background:rgba(255,255,255,.14);overflow:hidden}
+#panel-ventas .h-cmp .tr span{display:block;height:100%;border-radius:4px}
+#panel-ventas .h-pie{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:13px;color:rgba(255,255,255,.88);margin-top:auto;padding-top:8px}
+#panel-ventas .h-dl{display:inline-flex;align-items:center;gap:6px;font-weight:700;padding:3px 10px;border-radius:999px;background:rgba(255,255,255,.14)}
+#panel-ventas .h-dl.sube{background:rgba(120,220,160,.20);color:#c8f2d8}
+#panel-ventas .h-dl.baja{background:rgba(255,140,140,.22);color:#ffd2d2}
+#panel-ventas .blanca{background:var(--white);border:1px solid var(--rule);border-radius:16px;padding:20px 22px 18px;height:100%;display:flex;flex-direction:column;box-sizing:border-box}
+#panel-ventas .blanca .h-top{color:var(--ven-ink2)}
+#panel-ventas .blanca .h-val{color:var(--ink)}
+#panel-ventas .blanca .h-sub{color:var(--ven-mute)}
+#panel-ventas .trio{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:auto;padding-top:14px;border-top:1px solid var(--ven-line)}
+#panel-ventas .trio div{font-size:13px;color:var(--ven-mute);line-height:1.3}
+#panel-ventas .trio b{display:block;font-size:18px;color:var(--ink);font-variant-numeric:tabular-nums}
+
+/* 2. Indicadores: una tarjeta con celdas separadas por líneas finas */
+#panel-ventas .inds{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:1px;background:var(--ven-line);border:1px solid var(--rule);border-radius:16px;overflow:hidden;margin-bottom:16px}
+#panel-ventas .ind{background:var(--white);padding:14px 16px;display:flex;flex-direction:column;gap:3px;min-width:0;outline:none}
+#panel-ventas .ind:focus-visible{box-shadow:inset 0 0 0 2px var(--ven)}
+#panel-ventas .ind-l{font-size:13px;font-weight:600;color:var(--ven-ink2);display:flex;align-items:center;gap:6px}
+#panel-ventas .ind-v{font-size:26px;font-weight:700;color:var(--ink);letter-spacing:-.02em;line-height:1.15}
+#panel-ventas .ind-s{font-size:13px;color:var(--ven-mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#panel-ventas .ind.mal .ind-v{color:var(--red)}
+#panel-ventas .ind.mal .ind-l::after{content:'';width:7px;height:7px;border-radius:50%;background:var(--red)}
+
+/* 3. Ventas por semana: tarjeta oscura, barras en degradado con remate
+   redondo, promedio de 4 semanas en dorado. */
+#panel-ventas .graf{background:linear-gradient(160deg,#16495a 0%,#0f3742 55%,#0a2a33 100%);border:0;color:#fff;box-shadow:0 18px 36px -18px rgba(10,42,51,.6)}
+#panel-ventas .graf .vh{color:rgba(255,255,255,.86)}
+#panel-ventas .graf .vh span{color:rgba(255,255,255,.62)}
+#panel-ventas .sem-w{position:relative;padding-left:52px;margin-top:14px}
+#panel-ventas .sem{position:relative;height:220px;display:flex;align-items:flex-end;gap:4px}
+#panel-ventas .sem-gr{position:absolute;left:0;right:0;border-top:1px dashed rgba(255,255,255,.12);pointer-events:none}
+#panel-ventas .sem-gr span{position:absolute;left:-52px;top:-9px;width:46px;text-align:right;font-size:13px;color:rgba(255,255,255,.55)}
+#panel-ventas .sem-gr.cero{border-top:1px solid rgba(255,255,255,.28)}
+#panel-ventas .sem-col{flex:1;min-width:0;height:100%;display:flex;align-items:flex-end;position:relative;cursor:default}
+#panel-ventas .sem-col .b{width:100%;border-radius:6px 6px 2px 2px;min-height:2px;background:rgba(255,255,255,.16);transition:transform .18s cubic-bezier(.2,.8,.2,1),filter .18s;transform-origin:bottom}
+#panel-ventas .sem-col.en .b{background:linear-gradient(180deg,#9ff0df 0%,#3cc4ad 38%,#1d8f86 100%);box-shadow:0 0 0 1px rgba(159,240,223,.25) inset,0 6px 14px -6px rgba(60,196,173,.55)}
+#panel-ventas .sem-col.curso .b{background:repeating-linear-gradient(135deg,rgba(159,240,223,.55) 0 4px,rgba(159,240,223,.22) 4px 8px)}
+#panel-ventas .sem-col:hover .b{filter:brightness(1.12);transform:scaleY(1.02)}
+#panel-ventas .sem-col .et{position:absolute;left:50%;transform:translate(-50%,-100%);padding-bottom:4px;font-size:13px;font-weight:700;color:#fff;white-space:nowrap}
+#panel-ventas .sem svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+#panel-ventas .sem-ejes{display:flex;gap:4px;margin-top:8px}
+#panel-ventas .sem-ejes span{flex:1;min-width:0;font-size:13px;color:rgba(255,255,255,.6);text-align:left;white-space:nowrap;overflow:visible}
+#panel-ventas .ley{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:rgba(255,255,255,.78);margin-top:14px}
+#panel-ventas .ley i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-2px}
+#panel-ventas .ley i.ln{height:3px;border-radius:2px;vertical-align:3px;background:var(--oro)}
+
+/* 4. Listas con logo, como Cartera */
+#panel-ventas .dos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:16px}
+#panel-ventas .dos>.vc{margin-bottom:0}
+#panel-ventas .lista{list-style:none;margin:0;padding:0}
+#panel-ventas .lista li.fl{display:grid;grid-template-columns:48px minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:10px 8px;border-radius:10px;border-bottom:1px solid var(--ven-line);cursor:pointer}
+#panel-ventas .lista li.fl:last-child{border-bottom:0}
+#panel-ventas .lista li.fl:hover{background:var(--s2)}
+#panel-ventas .lista li.fl:focus-visible{outline:2px solid var(--ven);outline-offset:-2px}
+#panel-ventas .fl-cuerpo{min-width:0;display:flex;flex-direction:column;gap:5px}
+#panel-ventas .fl-nom{font-size:14px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#panel-ventas .fl-sub{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ven-mute);white-space:nowrap;overflow:hidden}
+#panel-ventas .fl-bar{height:6px;border-radius:3px;background:var(--ven-line);overflow:hidden}
+#panel-ventas .fl-bar span{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,#2a6f7c,var(--ven));box-shadow:inset 0 1px 0 rgba(255,255,255,.25)}
+#panel-ventas .fl-mon{font-size:15px;font-weight:700;color:var(--ink);text-align:right;white-space:nowrap}
+#panel-ventas .fl-fin{min-width:44px;text-align:right;font-size:13px;color:var(--ven-mute)}
+#panel-ventas .nota{font-size:13px;color:var(--ven-mute);margin-top:8px}
+
+/* Logo del tercero, o sus iniciales; productos: cuadro de su color */
+#panel-ventas .av{width:48px;height:48px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;vertical-align:middle}
+#panel-ventas .av img{width:100%;height:100%;object-fit:contain}
+#panel-ventas .av b{display:none;font:700 15px 'Source Sans 3',sans-serif;color:var(--ven);letter-spacing:.3px}
+#panel-ventas .av.sin{background:var(--ven-l);border-radius:50%;width:44px;height:44px;margin:2px}
+#panel-ventas .av.sin img{display:none}
+#panel-ventas .av.sin b{display:inline}
+#panel-ventas .av.prod{border-radius:12px;width:44px;height:44px;margin:2px;color:#fff}
+#panel-ventas .av.prod b{display:inline;color:#fff;font-size:14px;text-shadow:0 1px 1px rgba(0,0,0,.25)}
+
+/* 5. Detalle por cliente: cada fila es una tarjeta, como Cartera */
+#panel-ventas .tabla{padding:0;overflow:auto}
+#panel-ventas .tab-cab{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:16px 18px 6px}
+#panel-ventas .tab-cab .vh{margin:0;flex:1}
+#panel-ventas .det-tabla{width:100%;border-collapse:separate;border-spacing:0 10px;padding:0 14px 6px;font:14px 'Source Sans 3',sans-serif}
+#panel-ventas .det-tabla thead th{font-size:13px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--ven-ink2);padding:4px 16px;text-align:left}
+#panel-ventas .det-tabla th.r,#panel-ventas .det-tabla td.r{text-align:right}
+#panel-ventas .det-tabla tr.fila{cursor:pointer}
+#panel-ventas .det-tabla tr.fila td{background:var(--white);border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:14px 16px;vertical-align:middle;color:var(--ink)}
+#panel-ventas .det-tabla tr.fila td:last-child{border-right:1px solid var(--rule);border-radius:0 14px 14px 0}
+#panel-ventas .det-tabla tr.fila td.izq{border:0;border-radius:14px 0 0 14px;background:linear-gradient(135deg,#185261,var(--ven));color:#fff;width:34%;min-width:260px}
+#panel-ventas .det-tabla tr.fila:hover td{background:var(--s2)}
+#panel-ventas .det-tabla tr.fila:hover td.izq,#panel-ventas .det-tabla tr.fila.abierta td.izq{background:linear-gradient(135deg,var(--ven),var(--ven-2))}
+#panel-ventas .det-tabla tr.fila.abierta td{background:var(--ven-l)}
+#panel-ventas .det-tabla tr.fila.abierta td:last-child{border-radius:0 14px 0 0}
+#panel-ventas .det-tabla tr.fila.abierta td.izq{border-radius:14px 0 0 0}
+#panel-ventas .det-tabla tr.fila:focus-visible td{outline:2px solid var(--oro);outline-offset:-2px}
+#panel-ventas .izq-in{display:flex;align-items:center;gap:12px;min-width:0}
+#panel-ventas .izq .av{background:#fff;border-radius:12px;padding:4px;box-sizing:border-box}
+#panel-ventas .izq .av.sin{background:rgba(255,255,255,.16);border-radius:50%}
+#panel-ventas .izq .av.sin b{color:#fff}
+#panel-ventas .izq-nom{font-size:15px;font-weight:700;line-height:1.25;color:#fff;overflow-wrap:anywhere}
+#panel-ventas .izq-sub{font-size:13px;color:rgba(255,255,255,.78);margin-top:3px}
+#panel-ventas .flecha{display:inline-block;width:12px;color:rgba(255,255,255,.7);transition:transform .15s;flex-shrink:0}
+#panel-ventas tr.abierta .flecha{transform:rotate(90deg)}
+#panel-ventas .col-bk{width:40%}
+#panel-ventas .bk-bar{display:flex;gap:2px;height:14px;border-radius:7px;overflow:hidden;background:var(--ven-line)}
+#panel-ventas .bk-bar span{display:block;height:100%;box-shadow:inset 0 1px 0 rgba(255,255,255,.35),inset 0 -1px 0 rgba(0,0,0,.08)}
+#panel-ventas .bk-ley{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 10px;margin-top:8px}
+#panel-ventas .bk-ley div{font-size:13px;color:var(--ven-mute);line-height:1.3;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#panel-ventas .bk-ley b{display:block;font-size:14px;color:var(--ink);font-variant-numeric:tabular-nums}
+#panel-ventas .bk-ley i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}
+#panel-ventas .sal{font-size:18px;font-weight:700;color:var(--ink)}
+#panel-ventas .sal-sub{font-size:13px;color:var(--ven-mute);margin-top:2px}
+#panel-ventas .det-tabla tr.det td{background:var(--ven-l);border:1px solid var(--rule);border-top:0;border-radius:0 0 14px 14px;padding:6px 16px 16px}
+#panel-ventas .det-tabla .seg{display:none}
+
+/* Desglose de cada factura */
+#panel-ventas .vd-busca{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 10px}
+#panel-ventas .vd-n{font-size:13px;color:var(--ven-mute)}
+#panel-ventas .vd-doc{background:var(--white);border:1px solid var(--rule);border-left:4px solid var(--ven);border-radius:10px;padding:10px 14px;margin-bottom:8px}
+#panel-ventas .vd-doc.nc{border-left-color:var(--ven-nc)}
+#panel-ventas .vd-doc[hidden],#panel-ventas .vd-ln[hidden]{display:none}
+#panel-ventas .vd-cab{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+#panel-ventas .vd-ref{font-weight:700;font-size:14px;color:var(--ink)}
+#panel-ventas .vd-meta{font-size:13px;color:var(--ven-mute)}
+#panel-ventas .vd-tot{font-weight:700;font-size:15px;color:var(--ink)}
+#panel-ventas .vd-tot.neg{color:var(--ven-nc)}
+#panel-ventas .vd-con{font-size:13px;color:var(--ven-ink2);margin-top:2px}
+#panel-ventas .vd-ls{list-style:none;margin:8px 0 0;padding:0}
+#panel-ventas .vd-ln{display:grid;grid-template-columns:10px minmax(0,1fr) auto;gap:2px 12px;padding:8px 0;border-top:1px solid var(--ven-line)}
+#panel-ventas .vd-ln > i{grid-row:1/span 2;width:10px;height:10px;border-radius:3px;margin-top:5px}
+#panel-ventas .vd-prod{font-size:14px;font-weight:600;color:var(--ink)}
+#panel-ventas .vd-prod small{font-size:13px;font-weight:400;color:var(--ven-mute)}
+#panel-ventas .vd-de{font-size:13px;color:var(--ven-ink2);grid-column:2}
+#panel-ventas .vd-de b{color:var(--ink);font-weight:700}
+#panel-ventas .vd-val{text-align:right;font-size:14px;font-weight:700;color:var(--ink);grid-row:1/span 2;grid-column:3;align-self:center}
+#panel-ventas .vd-val small{display:block;font-size:13px;font-weight:400;color:var(--ven-mute)}
+#panel-ventas .vd-nada{font-size:13px;color:var(--ven-mute);padding:8px 0}
+#panel-ventas .esq{border-radius:14px;background:linear-gradient(90deg,var(--s2),var(--rule-l),var(--s2));background-size:200% 100%;animation:venEsq 1.2s linear infinite}
+@keyframes venEsq{to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){#panel-ventas .esq{animation:none}#panel-ventas .sem-col .b{transition:none}}
+#ven-tip{position:fixed;z-index:9999;pointer-events:none;background:#14232a;color:#fff;font:13px/1.4 'Source Sans 3',sans-serif;padding:8px 11px;border-radius:9px;max-width:280px;box-shadow:0 8px 24px rgba(0,0,0,.22);border:1px solid rgba(201,162,74,.35);opacity:0;transition:opacity .12s}
+#ven-tip b{display:block;font-size:15px;color:#f4e7c4}
+#ven-tip.ver{opacity:1}
+@media(max-width:1100px){#panel-ventas .inds{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:900px){
+  #panel-ventas .heroes{grid-template-columns:1fr 1fr}
+  #panel-ventas .heroes>*:last-child{grid-column:1/-1}
+  #panel-ventas .dos{grid-template-columns:1fr}
+  #panel-ventas .det-tabla tr.fila td.izq{min-width:0;width:45%}
+  #panel-ventas .det-tabla .col-bk{display:none}
+  #panel-ventas .det-tabla .seg{display:flex;gap:2px;height:6px;margin-top:10px;border-radius:3px;overflow:hidden}
+  #panel-ventas .det-tabla .seg span{display:block;height:100%}
+}
+@media(max-width:700px){
+  #panel-ventas .heroes{grid-template-columns:1fr}
+  #panel-ventas .inds{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #panel-ventas .ind-v{font-size:22px}
+  #panel-ventas .vc{padding:14px}
+  #panel-ventas .sem-w{padding-left:40px}
+  #panel-ventas .sem-gr span{left:-40px;width:36px}
+  #panel-ventas .sem,#panel-ventas .sem-ejes{gap:2px}
+  #panel-ventas .sem-ejes.largo span.imp{visibility:hidden}
+  #panel-ventas .det-tabla,#panel-ventas .det-tabla tbody{display:block;padding:0 8px 4px;box-sizing:border-box;width:100%}
+  #panel-ventas .det-tabla tbody{padding:0}
+  #panel-ventas .det-tabla tr.fila td.izq{min-width:0}
+  #panel-ventas .vd-meta.num{white-space:normal}
+  #panel-ventas .vd-ln{grid-template-columns:10px minmax(0,1fr)}
+  #panel-ventas .vd-val{grid-column:2;grid-row:auto;text-align:left;margin-top:4px}
+  #panel-ventas .vd-val small{display:inline;margin-left:6px}
+  #panel-ventas .det-tabla thead{display:none}
+  #panel-ventas .det-tabla tr.fila{display:grid;grid-template-columns:auto 1fr;margin-top:10px}
+  #panel-ventas .det-tabla tr.fila td{display:block;border:1px solid var(--rule);border-top:0}
+  #panel-ventas .det-tabla tr.fila td.izq{grid-column:1/-1;width:auto;border:0;border-radius:14px 14px 0 0}
+  #panel-ventas .det-tabla tr.fila td:nth-child(3){border-radius:0 0 0 14px;border-right:0;display:flex;align-items:center}
+  #panel-ventas .det-tabla tr.fila td:last-child{border-radius:0 0 14px 0;border-left:0}
+  #panel-ventas .det-tabla tr.fila.abierta td:nth-child(3),#panel-ventas .det-tabla tr.fila.abierta td:last-child{border-radius:0}
+  #panel-ventas .det-tabla tr.fila td.col-bk{display:none}
+  #panel-ventas .det-tabla tr.det{display:block}
+  #panel-ventas .det-tabla tr.det td{display:block;padding:6px 10px 14px}
+  #panel-ventas .trio b{font-size:16px}
+  #panel-ventas .lista li.fl{grid-template-columns:44px minmax(0,1fr) auto;gap:10px;padding:10px 4px}
+  #panel-ventas .lista li.fl .av{width:44px;height:44px}
+  #panel-ventas .lista li.fl .av.sin,#panel-ventas .lista li.fl .av.prod{width:40px;height:40px}
+  #panel-ventas .fl-fin:empty,#panel-ventas .lista .fl-fin{display:none}
+  #panel-ventas .fl-nom{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+}
+</style>
+<div class="panel" id="panel-ventas">
+  <div class="sec-hdr">
+    <div class="sec-title">Ventas</div>
+    <div class="sec-sub">World Office · facturas y notas crédito, valores sin IVA</div>
+  </div>
+  <div class="v-top">
+    <div class="v-seg" role="group" aria-label="Periodo" id="ven-per">
+      <button type="button" data-ven-per="mes" aria-pressed="true">Este mes</button>
+      <button type="button" data-ven-per="30" aria-pressed="false">30 días</button>
+      <button type="button" data-ven-per="90" aria-pressed="false">90 días</button>
+      <button type="button" data-ven-per="365" aria-pressed="false">12 meses</button>
+    </div>
+    <input class="v-buscar" id="ven-buscar" type="search" placeholder="Buscar cliente, factura, producto, concepto u OC" aria-label="Buscar en ventas" autocomplete="off">
+    <div class="der">
+      <span class="v-pill" id="ven-estado" tabindex="0">—</span>
+      <button type="button" class="v-pill" id="ven-recargar">Recargar</button>
+    </div>
+  </div>
+  <div id="ven-cuerpo"></div>
+</div>
+<div id="ven-tip" role="tooltip"></div>
+<script>
+(function(){
+  /* Mismo servicio de World Office que Cartera; exige el permiso "ventas". */
+  const VENTAS_API = 'https://script.google.com/macros/s/AKfycbwFK2kpgz3zZwSdkjNiLxETMEJ-TvtPlzYPEhvUcMcpZx4mdJTrSyK5pl0b0LUI4Aoc/exec';
+  const DIA = 864e5, MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  /* Paleta categórica validada (dataviz): orden fijo por producto según sus
+     ventas de los 13 meses, para que cada producto conserve su color. */
+  const PAL = ['var(--p1)','var(--p2)','var(--p3)','var(--p4)','var(--p5)'], OTROS = 'var(--p0)';
+  let D = null, docs = [], colorProd = {}, cargando = false, error = '', per = 'mes', abiertos = {}, ddQ = {}, ritmoTodos = false;
+
+  const $v = id => document.getElementById(id);
+  const esc = x => String(x == null ? '' : x).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const pesos = n => (n < 0 ? '−' : '') + '$' + Math.abs(Math.round(n || 0)).toLocaleString('es-CO');
+  const mill = n => {
+    const a = Math.abs(n || 0), s = n < 0 ? '−' : '';
+    if (a < 1e6) return s + '$' + Math.round(a).toLocaleString('es-CO');
+    const m = a / 1e6;
+    return s + '$' + m.toLocaleString('es-CO', { maximumFractionDigits: m >= 100 ? 0 : 1 }) + ' M';
+  };
+  const corto = n => { const a = Math.abs(n); return a >= 1e9 ? (n / 1e9).toLocaleString('es-CO', { maximumFractionDigits: 1 }) + ' mil M' : a >= 1e6 ? Math.round(n / 1e6) + ' M' : a >= 1e3 ? Math.round(n / 1e3) + ' k' : String(Math.round(n)); };
+  const pct = (v, t) => !t ? '—' : (Math.abs(v / t) < .001 && v ? '<0,1%' : Math.round(v / t * 100) + '%');
+  const norm = x => String(x == null ? '' : x).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const aFecha = s => { const p = String(s || '').split('-'); return p.length === 3 ? new Date(+p[0], +p[1] - 1, +p[2]) : null; };
+  const hoy0 = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+  const fCorta = d => d.getDate() + ' ' + MESES[d.getMonth()];
+  const fLarga = d => d.getDate() + ' ' + MESES[d.getMonth()] + ' ' + d.getFullYear();
+  const dias = (a, b) => Math.round((b - a) / DIA);
+  /* Orden de compra escrita en el concepto: "OC 6599-0", "O.C. 123", "OC: 45". */
+  const ocDe = s => { const m = String(s || '').match(/\bO\.?\s?C\.?\s*(?:N[º°o.]?\s*)?[:#-]?\s*([A-Z0-9][\w-]*)/i); return m ? m[1] : ''; };
+  const hace = iso => {
+    if (!iso) return '';
+    const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (m < 60) return 'hace ' + Math.max(m, 1) + ' min';
+    const h = Math.round(m / 60);
+    return h < 48 ? 'hace ' + h + ' h' : 'hace ' + Math.round(h / 24) + ' días';
+  };
+
+  /* Logo del cliente: el de World Office (pestaña Logos del servicio, la
+     misma de Cartera) o el de Ingreso por Cliente; si no hay, iniciales. */
+  const SOBRA_NOM = /\b(S\.?A\.?S|S\.?A|LTDA|S\.?C\.?A|E\.?S\.?P|C\.?I|Y CIA|SOCIEDAD|COMPA[NÑ]IA|CORPORACION|DE|DEL|LA|LAS|LOS|EL)\b\.?/gi;
+  function iniciales(n){
+    const w = String(n || '').replace(SOBRA_NOM, ' ').trim().split(/\s+/).filter(x => /[A-Za-zÁÉÍÓÚÑ]/.test(x));
+    return (w.length > 1 ? w[0].charAt(0) + w[1].charAt(0) : (w[0] || '?').slice(0, 2)).toUpperCase();
+  }
+  function logoConocido(nom){
+    if (typeof CLIENT_LOGOS === 'undefined') return null;
+    const n = ' ' + String(nom || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]+/g, ' ') + ' ';
+    for (const k in CLIENT_LOGOS) {
+      const kk = ' ' + k.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]+/g, ' ') + ' ';
+      if (n.indexOf(kk) !== -1) return CLIENT_LOGOS[k];
+    }
+    return null;
+  }
+  function av(id, nom){
+    const u = (D && D.logos && D.logos[String(id)]) || logoConocido(nom);
+    return '<span class="av' + (u ? '' : ' sin') + '" aria-hidden="true">' +
+      (u ? '<img src="' + esc(u) + '" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.classList.add(\'sin\')">' : '') +
+      '<b>' + esc(iniciales(nom)) + '</b></span>';
+  }
+  const avProd = (cod, nom) => '<span class="av prod" style="background:' + (colorProd[cod] || OTROS) + '" aria-hidden="true"><b>' + esc(iniciales(nom)) + '</b></span>';
+  /* Fila de lista: logo · nombre, dato y barra · monto · fin. */
+  const filaLista = o => '<li class="fl" tabindex="0"' + (o.attrs || '') + '>' + o.av +
+    '<div class="fl-cuerpo"><span class="fl-nom">' + esc(o.nom) + '</span>' + (o.sub ? '<span class="fl-sub num">' + o.sub + '</span>' : '') +
+    (o.barra != null ? '<span class="fl-bar"><span style="width:' + Math.max(2, o.barra) + '%' + (o.color ? ';background:' + o.color : '') + '"></span></span>' : '') + '</div>' +
+    '<span class="fl-mon num"' + (o.tip ? ' data-tip="' + o.tip + '"' : '') + '>' + o.mon + '</span>' +
+    '<span class="fl-fin">' + (o.fin || '') + '</span></li>';
+
+  /* Documentos compactos del servicio → objetos con su texto de búsqueda. */
+  function preparar(j){
+    const P = j.productos || {}, CC = j.centros || [], CL = j.clientes || {};
+    docs = (j.docs || []).map(a => {
+      const d = { id: a[0], t: a[1], ref: a[2], f: a[3], fd: aFecha(a[3]), cid: String(a[4]), cli: CL[a[4]] || ('Tercero ' + a[4]),
+                  con: a[5], fp: a[6], ven: a[7], sin: a[8] || 0, iva: a[9] || 0 };
+      d.ls = (a[10] || []).map(x => {
+        const p = P[x[0]] || [];
+        const l = { cod: x[0], prod: p[0] || x[0], cl: p[1] || '', um: p[2] || '', con: x[1], cc: CC[x[2]] || '', cant: x[3], vu: x[4], sin: x[5], iva: x[6] };
+        l.oc = ocDe(l.con);
+        l.q = norm([l.cod, l.prod, l.con, l.cc, l.oc ? 'oc ' + l.oc : ''].join(' '));
+        return l;
+      });
+      d.oc = ocDe(d.con) || (d.ls.find(l => l.oc) || {}).oc || '';
+      d.qh = norm([d.ref, d.con, d.f, d.fp, d.ven, d.t === 'NCV' ? 'nota credito' : 'factura', d.oc ? 'oc ' + d.oc : ''].join(' '));
+      d.qc = norm(d.cli);
+      return d;
+    }).filter(d => d.fd).sort((a, b) => b.fd - a.fd);
+    const tot = {};
+    docs.forEach(d => d.ls.forEach(l => { tot[l.cod] = (tot[l.cod] || 0) + l.sin; }));
+    colorProd = {};
+    Object.keys(tot).sort((a, b) => tot[b] - tot[a]).slice(0, PAL.length).forEach((c, i) => { colorProd[c] = PAL[i]; });
+  }
+
+  /* La búsqueda de arriba deja solo lo relacionado: el documento entero si
+     coincide el cliente o la factura; si no, solo los productos que coinciden. */
+  function vista(){
+    const q = norm(($v('ven-buscar') || {}).value || '').trim();
+    if (!q) return docs.map(d => ({ d: d, ls: d.ls, sin: d.sin, todo: true }));
+    const out = [];
+    docs.forEach(d => {
+      if (d.qc.indexOf(q) !== -1 || d.qh.indexOf(q) !== -1) { out.push({ d: d, ls: d.ls, sin: d.sin, todo: true }); return; }
+      const ls = d.ls.filter(l => l.q.indexOf(q) !== -1);
+      if (ls.length) out.push({ d: d, ls: ls, sin: ls.reduce((s, l) => s + l.sin, 0), todo: false });
+    });
+    return out;
+  }
+
+  /* Periodo elegido y el anterior de igual largo. "Este mes" se compara con
+     los mismos días del mes anterior, no con el mes completo. */
+  function rangos(){
+    const h = hoy0(), fin = new Date(+h + DIA);
+    let ini, pini, pfin, lbl, plbl;
+    if (per === 'mes') {
+      ini = new Date(h.getFullYear(), h.getMonth(), 1);
+      pini = new Date(h.getFullYear(), h.getMonth() - 1, 1);
+      const finAnt = new Date(h.getFullYear(), h.getMonth(), 1);
+      pfin = new Date(Math.min(+new Date(h.getFullYear(), h.getMonth() - 1, h.getDate() + 1), +finAnt));
+      lbl = '1 al ' + h.getDate() + ' de ' + MESES_L[h.getMonth()];
+      plbl = '1 al ' + dias(pini, pfin) + ' de ' + MESES_L[pini.getMonth()];
+    } else {
+      const n = +per;
+      ini = new Date(+fin - n * DIA); pfin = ini; pini = new Date(+ini - n * DIA);
+      lbl = 'últimos ' + (n === 365 ? '12 meses' : n + ' días');
+      plbl = (n === 365 ? '12 meses' : n + ' días') + ' anteriores';
+    }
+    return { ini: ini, fin: fin, pini: pini, pfin: pfin, lbl: lbl, plbl: plbl };
+  }
+
+  async function pedir(){
+    if (cargando) return;
+    cargando = true; error = '';
+    pintar();
+    try {
+      const res = await fetch(VENTAS_API, {
+        method: 'POST', redirect: 'follow',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ accion: 'ventas', token: (typeof _authToken !== 'undefined' && _authToken) || '' })
+      });
+      let j; try { j = JSON.parse(await res.text()); } catch (e) { throw new Error('El servicio de World Office no respondió bien.'); }
+      if (!j.ok) throw new Error(j.error === 'Accion no valida' ? 'El servicio de World Office aún no tiene Ventas: falta publicar la nueva versión.' : (j.error || 'No se pudieron consultar las ventas.'));
+      j._pedido = Date.now();
+      if (j.listo) preparar(j);
+      D = j;
+    } catch (e) {
+      error = e.message || String(e);
+    } finally {
+      cargando = false;
+      pintar();
+    }
+  }
+
+  function pintarEstado(){
+    const el = $v('ven-estado');
+    if (!el) return;
+    if (cargando) { el.innerHTML = 'Consultando…'; el.removeAttribute('data-tip'); return; }
+    if (D && D.listo) {
+      const p = D.pendientes || 0;
+      el.innerHTML = '<span class="pt' + (p ? ' ojo' : '') + '"></span>' + (p ? 'Cargando productos · faltan ' + p : 'Actualizado ' + esc(hace(D.actualizado)));
+      el.setAttribute('data-tip', '<b>' + esc(new Date(D.actualizado).toLocaleString('es-CO')) + '</b>World Office se consulta cada hora. ' +
+        (p ? p + ' documentos todavía no traen sus productos; no se cuentan hasta que lleguen.' : 'Todos los documentos tienen sus productos.'));
+    } else { el.innerHTML = '—'; el.removeAttribute('data-tip'); }
+  }
+
+  const delta = (a, b, sinBase) => {
+    if (sinBase || !b) return { txt: 'sin base', cls: '' };
+    const d = (a - b) / Math.abs(b) * 100;
+    if (Math.abs(d) < .5) return { txt: '±0%', cls: '' };
+    return { txt: (d > 0 ? '▲ ' : '▼ ') + Math.abs(Math.round(d)) + '%', cls: d > 0 ? 'sube' : 'baja' };
+  };
+
+  function pintar(){
+    pintarEstado();
+    document.querySelectorAll('#ven-per [data-ven-per]').forEach(b => b.setAttribute('aria-pressed', String(b.getAttribute('data-ven-per') === per)));
+    const panel = $v('panel-ventas');
+    if (panel && panel.classList.contains('active')) document.documentElement.setAttribute('data-ventas', '');
+    const cuerpo = $v('ven-cuerpo');
+    if (!cuerpo) return;
+    let aviso = '';
+    if (error) aviso = '<div class="vc aviso error"><b>No se pudo actualizar.</b> ' + esc(error) +
+      (D && D.listo ? ' Se muestran las últimas cifras traídas.' : '') + ' <button type="button" class="accion" data-ven-recargar>Reintentar</button></div>';
+    if (!D || !D.listo) {
+      if (D && !D.listo && !cargando)
+        cuerpo.innerHTML = aviso + '<div class="vc aviso"><b>La primera carga de ventas está en curso.</b> Documentos leídos de World Office: ' +
+          (D.leidos || 0) + '. Vuelve en unos minutos.</div>';
+      else cuerpo.innerHTML = aviso + (cargando ? '<div class="heroes"><div class="esq" style="height:200px"></div><div class="esq" style="height:200px"></div><div class="esq" style="height:200px"></div></div><div class="esq" style="height:300px"></div>' : '');
+      return;
+    }
+
+    const R = rangos(), V = vista(), qTxt = (($v('ven-buscar') || {}).value || '').trim();
+    const enP = x => x.d.fd >= R.ini && x.d.fd < R.fin, enA = x => x.d.fd >= R.pini && x.d.fd < R.pfin;
+    const P = V.filter(enP), A = V.filter(enA);
+    const desdeDatos = docs.length ? docs[docs.length - 1].fd : hoy0();
+    const sinBase = per === '365' && R.pini < new Date(desdeDatos.getFullYear(), desdeDatos.getMonth(), 1);
+    const suma = (L, t) => L.filter(x => !t || x.d.t === t).reduce((s, x) => s + x.sin, 0);
+    const vFV = suma(P, 'FV'), vNC = suma(P, 'NCV'), neto = vFV + vNC;
+    const aNeto = suma(A), aNC = suma(A, 'NCV');
+    const fvP = P.filter(x => x.d.t === 'FV'), ncP = P.filter(x => x.d.t === 'NCV');
+    const nFac = fvP.length, aFac = A.filter(x => x.d.t === 'FV').length;
+    const cliP = new Set(fvP.map(x => x.d.cid)).size, cliA = new Set(A.filter(x => x.d.t === 'FV').map(x => x.d.cid)).size;
+
+    let h = aviso + '<div class="' + (cargando ? 'viejos' : '') + '">';
+
+    /* 1. Cajas principales */
+    const dN = delta(neto, aNeto, sinBase), maxC = Math.max(Math.abs(neto), Math.abs(aNeto), 1);
+    const etiq = qTxt ? '<span class="q">“' + esc(qTxt) + '”</span>' : '';
+    h += '<div class="heroes">' +
+      '<div class="hero ventas"><span class="h-top">Ventas netas' + etiq + '</span>' +
+        '<span class="h-val num" data-tip="<b>' + pesos(neto) + '</b>Facturas ' + pesos(vFV) + ' menos notas crédito ' + pesos(Math.abs(vNC)) + '">' + mill(neto) + '</span>' +
+        '<span class="h-sub">' + esc(R.lbl) + ' · sin IVA</span>' +
+        '<div class="h-cmp"><span>Ahora</span><span class="tr"><span style="width:' + (Math.max(0, neto) / maxC * 100) + '%;background:linear-gradient(90deg,#e7c46a,#c9a24a)"></span></span><span class="num">' + mill(neto) + '</span>' +
+          '<span>Antes</span><span class="tr"><span style="width:' + (sinBase ? 0 : Math.max(0, aNeto) / maxC * 100) + '%;background:rgba(255,255,255,.45)"></span></span><span class="num">' + (sinBase ? '—' : mill(aNeto)) + '</span></div>' +
+        '<span class="h-pie"><span class="h-dl ' + dN.cls + '" data-tip="<b>' + (sinBase ? '—' : pesos(aNeto)) + '</b>' + esc(R.plbl) + '">' + dN.txt + '</span><span>vs ' + esc(R.plbl) + '</span></span></div>' +
+      '<div class="hero nc"><span class="h-top">Notas crédito</span>' +
+        '<span class="h-val num" data-tip="<b>' + pesos(Math.abs(vNC)) + '</b>' + ncP.length + ' notas crédito en el periodo">' + mill(Math.abs(vNC)) + '</span>' +
+        '<span class="h-sub">' + ncP.length + (ncP.length === 1 ? ' nota crédito' : ' notas crédito') + ' · ' + pct(Math.abs(vNC), vFV) + ' de lo facturado</span>' +
+        '<span class="h-pie"><span>Antes ' + (sinBase ? '—' : mill(Math.abs(aNC))) + '</span><span>' + esc(R.plbl) + '</span></span></div>' +
+      '<div class="blanca"><span class="h-top">Facturación</span>' +
+        '<span class="h-val num">' + nFac.toLocaleString('es-CO') + '</span>' +
+        '<span class="h-sub">' + (nFac === 1 ? 'factura' : 'facturas') + ' · antes ' + (sinBase ? '—' : aFac) + '</span>' +
+        '<div class="trio"><div>Promedio<b data-tip="<b>' + pesos(nFac ? vFV / nFac : 0) + '</b>Sin IVA por factura">' + mill(nFac ? vFV / nFac : 0) + '</b></div>' +
+          '<div>Clientes<b>' + cliP + '</b></div><div>Antes<b>' + (sinBase ? '—' : cliA) + '</b></div></div></div>' +
+      '</div>';
+
+    /* 2. Indicadores */
+    const porCli = {};
+    P.forEach(x => { const c = porCli[x.d.cid] || (porCli[x.d.cid] = { k: x.d.cid, nom: x.d.cli, v: 0, nf: 0, nn: 0, xs: [] }); c.v += x.sin; c.xs.push(x); if (x.d.t === 'FV') c.nf++; else c.nn++; });
+    const clientes = Object.values(porCli).sort((a, b) => b.v - a.v);
+    const top5 = clientes.slice(0, 5).reduce((s, c) => s + c.v, 0);
+    const porProd = {};
+    P.forEach(x => x.ls.forEach(l => { const o = porProd[l.cod] || (porProd[l.cod] = { k: l.cod, nom: l.prod, v: 0, cant: 0, um: l.um, docs: new Set() }); o.v += l.sin; o.cant += l.cant; o.docs.add(x.d.id); }));
+    const prods = Object.values(porProd).sort((a, b) => b.v - a.v);
+    const porCC = {};
+    P.forEach(x => x.ls.forEach(l => { const k = l.cc || 'Sin centro de costo'; const o = porCC[k] || (porCC[k] = { k: k, nom: k, v: 0, docs: new Set() }); o.v += l.sin; o.docs.add(x.d.id); }));
+    const ccs = Object.values(porCC).sort((a, b) => b.v - a.v);
+
+    /* Ritmo: mediana de días entre facturas (3 o más fechas). Atrasado: más
+       de 1,5 veces su ritmo y al menos 5 días de más sin factura. */
+    const h0 = hoy0(), rc = {};
+    V.forEach(x => { if (x.d.t !== 'FV') return; const c = rc[x.d.cid] || (rc[x.d.cid] = { cid: x.d.cid, cli: x.d.cli, f: new Set(), v: 0 }); c.f.add(+x.d.fd); c.v += x.sin; });
+    const ritmo = []; let pocos = 0;
+    Object.values(rc).forEach(c => {
+      const f = [...c.f].sort((a, b) => a - b);
+      if (f.length < 3) { pocos++; return; }
+      const iv = []; for (let i = 1; i < f.length; i++) iv.push(Math.round((f[i] - f[i - 1]) / DIA));
+      iv.sort((a, b) => a - b);
+      const med = iv.length % 2 ? iv[(iv.length - 1) / 2] : Math.round((iv[iv.length / 2 - 1] + iv[iv.length / 2]) / 2);
+      const ult = new Date(f[f.length - 1]), desde = dias(ult, h0), atraso = desde - med;
+      ritmo.push({ cid: c.cid, cli: c.cli, med: med, ult: ult, desde: desde, atraso: atraso, mal: med > 0 && desde > med * 1.5 && atraso >= 5,
+                   n: f.length, v: c.v, esperada: new Date(+ult + med * DIA) });
+    });
+    ritmo.sort((a, b) => (b.mal - a.mal) || (b.mal ? b.atraso - a.atraso : b.v - a.v));
+    const nMal = ritmo.filter(r => r.mal).length;
+
+    const ind = (lbl, val, sub, tip, cls) => '<div class="ind' + (cls || '') + '" tabindex="0" data-tip="' + tip + '">' +
+      '<span class="ind-l">' + lbl + '</span><span class="ind-v num">' + val + '</span><span class="ind-s num">' + sub + '</span></div>';
+    const prod1 = prods[0];
+    h += '<div class="inds">' +
+      ind('Promedio por factura', mill(nFac ? vFV / nFac : 0), nFac + ' facturas', '<b>' + pesos(nFac ? vFV / nFac : 0) + '</b>Ventas sin IVA divididas por el número de facturas del periodo.') +
+      ind('Clientes facturados', cliP, 'antes ' + (sinBase ? '—' : cliA), '<b>' + cliP + ' clientes</b>Con al menos una factura en el periodo.') +
+      ind('Top 5 clientes', pct(top5, neto), mill(top5), '<b>' + pesos(top5) + '</b>Parte de las ventas que hacen los 5 clientes más grandes. Mucho en pocos es más riesgo.', neto && top5 / neto > .8 ? ' mal' : '') +
+      ind('Producto principal', prod1 ? pct(prod1.v, neto) : '—', prod1 ? esc(prod1.nom) : '—', prod1 ? '<b>' + esc(prod1.nom) + '</b>' + pesos(prod1.v) + ' en el periodo.' : 'Sin productos.') +
+      ind('Cortes atrasados', nMal, 'de ' + ritmo.length + ' con ritmo', '<b>' + nMal + ' clientes</b>Llevan más de 1,5 veces su ritmo normal sin factura (y al menos 5 días de más).', nMal ? ' mal' : '') +
+      ind('Notas crédito', pct(Math.abs(vNC), vFV), 'de lo facturado', '<b>' + pesos(Math.abs(vNC)) + '</b>Notas crédito del periodo frente a lo facturado.') +
+      '</div>';
+
+    /* 3. Ventas por semana (lunes a domingo) y promedio de 4 semanas */
+    const nSem = per === '365' ? 53 : 26;
+    const lunes = new Date(+h0 - ((h0.getDay() + 6) % 7) * DIA);
+    const sem = [];
+    for (let i = nSem - 1; i >= 0; i--) sem.push({ ini: new Date(+lunes - i * 7 * DIA), v: 0, n: 0 });
+    const s0 = +sem[0].ini;
+    V.forEach(x => { const k = Math.floor((+x.d.fd - s0) / (7 * DIA)); if (k >= 0 && k < nSem) { sem[k].v += x.sin; if (x.d.t === 'FV') sem[k].n++; } });
+    sem.forEach((s, i) => { const w = sem.slice(Math.max(0, i - 3), i + 1); s.avg = w.reduce((a, b) => a + b.v, 0) / w.length; });
+    const crudo = Math.max(1, ...sem.map(s => Math.max(s.v, s.avg)));
+    const paso = Math.pow(10, Math.floor(Math.log10(crudo / 3))), pasoN = [1, 2, 2.5, 5, 10].map(m => m * paso).find(p => p * 3 >= crudo) || paso * 10;
+    const maxS = pasoN * Math.ceil(crudo / pasoN);
+    const iMax = sem.reduce((a, s, i) => s.v > sem[a].v ? i : a, 0);
+    const pts = sem.map((s, i) => ((i + .5) / nSem * 100).toFixed(2) + ',' + (100 - Math.max(0, s.avg) / maxS * 100).toFixed(2)).join(' ');
+    let nMes = 0;
+    const ejes = sem.map((s, i) => {
+      const nuevo = i === 0 || s.ini.getMonth() !== sem[i - 1].ini.getMonth();
+      return nuevo ? '<span' + (nMes++ % 2 ? ' class="imp"' : '') + '>' + MESES[s.ini.getMonth()] + '</span>' : '<span></span>';
+    }).join('');
+    let grilla = '';
+    for (let v = 0; v <= maxS + 1; v += pasoN) grilla += '<div class="sem-gr' + (v === 0 ? ' cero' : '') + '" style="bottom:' + (v / maxS * 100) + '%"><span class="num">' + corto(v) + '</span></div>';
+    h += '<div class="vc graf"><div class="vh">Ventas por semana<span>lunes a domingo · sin IVA · ' + (nSem === 53 ? 'último año' : 'últimas 26 semanas') + '</span></div>' +
+      '<div class="sem-w"><div class="sem" role="img" aria-label="Ventas netas por semana">' + grilla + sem.map((s, i) => {
+        const fin = new Date(+s.ini + 6 * DIA), en = s.ini < R.fin && new Date(+fin + DIA) > R.ini, curso = i === nSem - 1;
+        return '<div class="sem-col' + (en ? ' en' : '') + (curso ? ' curso' : '') + '" data-tip="<b>' + pesos(s.v) + '</b>' + fCorta(s.ini) + ' al ' + fCorta(fin) +
+          ' · ' + s.n + (s.n === 1 ? ' factura' : ' facturas') + (curso ? ' · semana en curso' : '') + '<br>Promedio 4 semanas: ' + pesos(s.avg) + '">' +
+          (i === iMax && s.v > 0 ? '<span class="et num" style="bottom:' + (s.v / maxS * 100) + '%">' + mill(s.v) + '</span>' : '') +
+          '<div class="b" style="height:' + (Math.max(0, s.v) / maxS * 100) + '%"></div></div>';
+      }).join('') +
+      '<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><defs><filter id="venBrillo" x="-5%" y="-20%" width="110%" height="140%"><feGaussianBlur stdDeviation="1.2"/></filter></defs>' +
+        '<polyline points="' + pts + '" fill="none" stroke="rgba(231,196,106,.45)" stroke-width="6" vector-effect="non-scaling-stroke" stroke-linejoin="round" filter="url(#venBrillo)"/>' +
+        '<polyline points="' + pts + '" fill="none" stroke="#e7c46a" stroke-width="2.5" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/></svg></div>' +
+      '<div class="sem-ejes' + (nSem > 40 ? ' largo' : '') + '">' + ejes + '</div></div>' +
+      '<div class="ley"><span><i style="background:linear-gradient(180deg,#9ff0df,#1d8f86)"></i>Semanas del periodo elegido</span><span><i style="background:rgba(255,255,255,.16)"></i>Otras semanas</span><span><i class="ln"></i>Promedio de 4 semanas</span></div></div>';
+
+    /* 4. Mayores clientes y ritmo de facturación, con logo */
+    const topC = clientes.slice(0, 8), mxC = Math.max(1, ...topC.map(c => Math.abs(c.v)));
+    const cad = m => m <= 9 ? 'Semanal' : m <= 18 ? 'Quincenal' : m <= 40 ? 'Mensual' : 'Cada ' + m + ' d';
+    const verR = ritmoTodos ? ritmo : ritmo.slice(0, 8);
+    h += '<div class="dos">' +
+      '<div class="vc"><div class="vh">Mayores clientes<span>' + esc(R.lbl) + '</span></div>' +
+        (topC.length ? '<ul class="lista">' + topC.map(c => filaLista({
+          av: av(c.k, c.nom), nom: c.nom, barra: Math.abs(c.v) / mxC * 100, mon: mill(c.v),
+          sub: c.nf + (c.nf === 1 ? ' factura' : ' facturas') + (c.nn ? ' · <span style="color:var(--ven-nc)">' + c.nn + ' NC</span>' : ''),
+          tip: '<b>' + pesos(c.v) + '</b>Sin IVA en el periodo', fin: '<span class="num">' + pct(c.v, neto) + '</span>',
+          attrs: ' data-ven-ir="' + esc(c.k) + '"' })).join('') + '</ul>' +
+          (clientes.length > 5 ? '<div class="nota num">Los 5 mayores son el ' + pct(top5, neto) + ' de las ventas</div>' : '')
+          : '<div class="vacio">Sin ventas en el periodo.</div>') + '</div>' +
+      '<div class="vc"><div class="vh">Ritmo de facturación<span>' + (nMal ? nMal + (nMal === 1 ? ' atrasado · ' : ' atrasados · ') : '') + ritmo.length + ' clientes' +
+        (pocos ? ' · ' + pocos + ' con menos de 3 facturas' : '') + '</span></div>' +
+        (ritmo.length ? '<ul class="lista">' + verR.map(r => filaLista({
+          av: av(r.cid, r.cli), nom: r.cli,
+          sub: '<span class="chip" data-tip="<b>Cada ' + r.med + ' días</b>Mediana entre ' + r.n + ' fechas de factura. Próxima esperada: ' + fCorta(r.esperada) + '">' + cad(r.med) + '</span> última ' + fCorta(r.ult) + ' · hace ' + r.desde + ' d',
+          mon: r.mal ? '<span class="chip mal">Atrasado ' + r.atraso + ' d</span>' : '<span class="chip ok">Al día</span>',
+          attrs: ' data-ven-ir="' + esc(r.cid) + '"' })).join('') + '</ul>' +
+          (ritmo.length > 8 ? '<div style="margin-top:10px"><button type="button" class="accion" data-ven-ritmo>' + (ritmoTodos ? 'Ver menos' : 'Ver los ' + ritmo.length) + '</button></div>' : '')
+          : '<div class="vacio">Ningún cliente tiene 3 o más facturas' + (qTxt ? ' con esta búsqueda' : '') + '.</div>') + '</div>' +
+      '</div>';
+
+    /* 5. Por producto y por centro de costo */
+    const listaSimple = (titulo, L, conAv, sub) => {
+      const top = L.slice(0, 8), mx = Math.max(1, ...top.map(o => Math.abs(o.v)));
+      return '<div class="vc"><div class="vh">' + titulo + '<span>' + L.length + '</span></div>' +
+        (top.length ? '<ul class="lista">' + top.map(o => filaLista({
+          av: conAv(o), nom: o.nom, barra: Math.abs(o.v) / mx * 100, color: conAv === avCC ? null : (colorProd[o.k] || OTROS),
+          mon: mill(o.v), sub: sub(o), tip: '<b>' + pesos(o.v) + '</b>Clic para ver solo esto', fin: '<span class="num">' + pct(o.v, neto) + '</span>',
+          attrs: ' data-ven-buscar="' + esc(o.nom) + '"' })).join('') + '</ul>' : '<div class="vacio">Sin ventas en el periodo.</div>') + '</div>';
+    };
+    const nDocs = o => o.docs.size + (o.docs.size === 1 ? ' documento' : ' documentos');
+    const avCC = o => '<span class="av sin" aria-hidden="true"><b>' + esc(iniciales(o.nom)) + '</b></span>';
+    h += '<div class="dos">' +
+      listaSimple('Por producto', prods, o => avProd(o.k, o.nom), o => (o.cant ? o.cant.toLocaleString('es-CO', { maximumFractionDigits: 1 }) + ' ' + esc(o.um) + ' · ' : '') + nDocs(o)) +
+      listaSimple('Por centro de costo', ccs, avCC, nDocs) + '</div>';
+
+    /* 6. Detalle por cliente: tarjeta con logo, mezcla de productos y total;
+       al abrirla, cada factura con de dónde sale cada valor. */
+    h += '<div class="vc tabla"><div class="tab-cab"><div class="vh">Detalle por cliente<span>' + esc(R.lbl) + (qTxt ? ' · ' + clientes.length + ' con “' + esc(qTxt) + '”' : '') + '</span></div></div>' +
+      '<table class="det-tabla"><thead><tr><th>Cliente</th><th class="col-bk">Productos</th><th class="r">Última</th><th class="r">Ventas sin IVA</th></tr></thead><tbody>';
+    if (!clientes.length) h += '<tr><td colspan="4" class="vacio">' + (qTxt ? 'Nada coincide con “' + esc(qTxt) + '” en el periodo.' : 'Sin ventas en el periodo.') + '</td></tr>';
+    clientes.forEach(c => {
+      const ab = abiertos[c.k] != null ? abiertos[c.k] : !!(qTxt && c.xs.some(x => !x.todo));
+      const mz = {};
+      c.xs.forEach(x => x.ls.forEach(l => { const k = colorProd[l.cod] ? l.cod : '_otros'; const o = mz[k] || (mz[k] = { nom: k === '_otros' ? 'Otros' : l.prod, v: 0, col: colorProd[l.cod] || OTROS }); o.v += l.sin; }));
+      const mzL = Object.values(mz).filter(o => o.v > 0).sort((a, b) => b.v - a.v), mzT = mzL.reduce((s, o) => s + o.v, 0);
+      const seg = mzL.map(o => '<span style="flex:' + o.v + ';background:' + o.col + '" data-tip="<b>' + pesos(o.v) + '</b>' + esc(o.nom) + ' · ' + pct(o.v, mzT) + '"></span>').join('');
+      const ley = mzL.slice(0, 3).map(o => '<div title="' + esc(o.nom) + '"><i style="background:' + o.col + '"></i>' + esc(o.nom) + '<b>' + mill(o.v) + '</b></div>').join('');
+      const ult = c.xs[0].d.fd;
+      h += '<tr class="fila' + (ab ? ' abierta' : '') + '" id="ven-c-' + esc(c.k) + '" data-ven-k="' + esc(c.k) + '" tabindex="0" aria-expanded="' + ab + '">' +
+        '<td class="izq"><div class="izq-in"><span class="flecha">▸</span>' + av(c.k, c.nom) +
+          '<div style="min-width:0"><div class="izq-nom">' + esc(c.nom) + '</div>' +
+          '<div class="izq-sub num">' + c.nf + (c.nf === 1 ? ' factura' : ' facturas') + (c.nn ? ' · ' + c.nn + ' NC' : '') + ' · ' + pct(c.v, neto) + ' del periodo</div></div></div>' +
+          '<div class="seg" aria-hidden="true">' + seg + '</div></td>' +
+        '<td class="col-bk">' + (seg ? '<div class="bk-bar">' + seg + '</div><div class="bk-ley">' + ley + '</div>' : '<span class="sal-sub">Sin productos</span>') + '</td>' +
+        '<td class="r num"><span class="chip">' + fCorta(ult) + '</span><div class="sal-sub">hace ' + dias(ult, h0) + ' d</div></td>' +
+        '<td class="r num"><div class="sal">' + pesos(c.v) + '</div><div class="sal-sub">' + mill(c.xs.reduce((s, x) => s + (x.todo ? x.d.iva : x.ls.reduce((a, l) => a + l.iva, 0)), 0)) + ' con IVA</div></td></tr>';
+      if (ab) {
+        h += '<tr class="det"><td colspan="4">' +
+          (c.xs.length > 1 ? '<div class="vd-busca"><input type="search" class="vd-buscar" data-ven-ddq="' + esc(c.k) + '" value="' + esc(ddQ[c.k] || '') +
+            '" placeholder="Buscar en estas facturas: número, producto, concepto, OC" aria-label="Buscar en las facturas de ' + esc(c.nom) + '" autocomplete="off"><span class="vd-n num"></span></div>' : '') +
+          c.xs.map(x => {
+            const d = x.d, nc = d.t === 'NCV';
+            return '<div class="vd-doc' + (nc ? ' nc' : '') + '" data-q="' + esc(d.qh) + '" data-sin="' + x.sin + '">' +
+              '<div class="vd-cab"><span><span class="vd-ref">' + (nc ? '<span class="chip nc">Nota crédito</span> ' : '') + esc(d.ref) + '</span>' +
+              ' <span class="vd-meta num">· ' + fLarga(d.fd) + (d.fp ? ' · ' + esc(d.fp) : '') + (d.ven ? ' · ' + esc(d.ven) : '') + '</span></span>' +
+              '<span class="vd-tot num' + (nc ? ' neg' : '') + '" data-tip="<b>' + pesos(d.iva) + '</b>Con IVA">' + pesos(x.sin) + '</span></div>' +
+              (d.con ? '<div class="vd-con">Concepto de la factura: ' + esc(d.con) + '</div>' : '') +
+              (x.ls.length ? '<ul class="vd-ls">' + x.ls.map(l =>
+                '<li class="vd-ln" data-q="' + esc(l.q) + '" data-sin="' + l.sin + '"><i style="background:' + (colorProd[l.cod] || OTROS) + '"></i>' +
+                '<span class="vd-prod">' + esc(l.prod) + ' <small>· código ' + esc(l.cod) + (l.cl ? ' · ' + esc(l.cl.toLowerCase()) : '') + '</small></span>' +
+                '<span class="vd-de">Concepto: <b>' + esc(l.con || 'sin concepto') + '</b>' + (l.oc ? ' · OC <b>' + esc(l.oc) + '</b>' : '') +
+                  ' · Centro de costo: <b>' + esc(l.cc || 'sin dato') + '</b></span>' +
+                '<span class="vd-val num">' + pesos(l.sin) + '<small>' + l.cant.toLocaleString('es-CO', { maximumFractionDigits: 2 }) + ' ' + esc(l.um) + ' × ' + pesos(l.vu) + '</small></span></li>').join('') + '</ul>'
+                : '<div class="vd-nada">World Office no trae productos para este documento.</div>') +
+              '</div>';
+          }).join('') + '<div class="vd-nada" data-vd-nada hidden>Ningún documento coincide.</div></td></tr>';
+      }
+    });
+    h += '</tbody></table></div></div>';
+    cuerpo.innerHTML = h;
+    cuerpo.querySelectorAll('.vd-buscar').forEach(filtrarDd);
+  }
+
+  /* Filtra el desglose de un cliente sin repintar, para no perder el cursor. */
+  function filtrarDd(inp){
+    const k = inp.getAttribute('data-ven-ddq'), q = norm(inp.value).trim();
+    if (q) ddQ[k] = inp.value; else delete ddQ[k];
+    const td = inp.closest('td'), ds = td.querySelectorAll('.vd-doc');
+    let n = 0, suma = 0;
+    ds.forEach(doc => {
+      const cab = !q || doc.getAttribute('data-q').indexOf(q) !== -1;
+      let vis = 0, s = 0;
+      doc.querySelectorAll('.vd-ln').forEach(li => {
+        const ok = cab || li.getAttribute('data-q').indexOf(q) !== -1;
+        li.hidden = !ok;
+        if (ok) { vis++; s += +li.getAttribute('data-sin') || 0; }
+      });
+      const ok = cab || vis > 0;
+      doc.hidden = !ok;
+      if (ok) { n++; suma += cab ? (+doc.getAttribute('data-sin') || 0) : s; }
+    });
+    td.querySelector('[data-vd-nada]').hidden = n > 0;
+    const out = td.querySelector('.vd-n');
+    if (out) out.textContent = q ? n + ' de ' + ds.length + ' · ' + pesos(suma) : '';
+  }
+
+  /* Tooltip único: con el ratón o con el foco del teclado. */
+  const tip = $v('ven-tip'), panelEl = $v('panel-ventas');
+  function mostrarTip(el){
+    const t = el && el.getAttribute('data-tip');
+    if (!t) return ocultarTip();
+    tip.innerHTML = t;
+    const r = el.getBoundingClientRect();
+    tip.classList.add('ver');
+    const w = tip.offsetWidth, hh = tip.offsetHeight;
+    let x = r.left + r.width / 2 - w / 2, y = r.top - hh - 8;
+    if (y < 8) y = r.bottom + 8;
+    x = Math.max(8, Math.min(x, window.innerWidth - w - 8));
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  }
+  function ocultarTip(){ tip.classList.remove('ver'); }
+  panelEl.addEventListener('mouseover', e => mostrarTip(e.target.closest('[data-tip]')));
+  panelEl.addEventListener('mouseleave', ocultarTip);
+  panelEl.addEventListener('focusin', e => mostrarTip(e.target.closest('[data-tip]')));
+  panelEl.addEventListener('focusout', ocultarTip);
+  window.addEventListener('scroll', ocultarTip, { passive: true });
+
+  panelEl.addEventListener('click', function(e){
+    const p = e.target.closest('[data-ven-per]');
+    if (p) { per = p.getAttribute('data-ven-per'); ocultarTip(); return pintar(); }
+    if (e.target.closest('#ven-recargar,[data-ven-recargar]')) return pedir();
+    if (e.target.closest('[data-ven-ritmo]')) { ritmoTodos = !ritmoTodos; return pintar(); }
+    const b = e.target.closest('[data-ven-buscar]');
+    if (b) { $v('ven-buscar').value = b.getAttribute('data-ven-buscar'); ocultarTip(); pintar(); $v('ven-buscar').scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+    const ir = e.target.closest('[data-ven-ir]');
+    if (ir) {
+      const id = ir.getAttribute('data-ven-ir');
+      abiertos[id] = true; ocultarTip(); pintar();
+      const fila = $v('ven-c-' + id);
+      if (fila) { fila.scrollIntoView({ behavior: 'smooth', block: 'center' }); fila.focus({ preventScroll: true }); }
+      return;
+    }
+    const f = e.target.closest('tr.fila');
+    if (f) { abiertos[f.getAttribute('data-ven-k')] = f.getAttribute('aria-expanded') !== 'true'; pintar(); }
+  });
+  panelEl.addEventListener('keydown', function(e){
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('tr.fila,li.fl')) { e.preventDefault(); e.target.click(); }
+  });
+  panelEl.addEventListener('input', e => { if (e.target.matches && e.target.matches('.vd-buscar')) filtrarDd(e.target); });
+  $v('ven-buscar').addEventListener('input', pintar);
+
+  window.ventasActivar = function(){
+    document.documentElement.setAttribute('data-ventas', '');
+    if (!D || !D.listo || Date.now() - (D._pedido || 0) > 10 * 60e3) pedir();
+    else pintar();
   };
 })();
 </script>
@@ -12243,6 +12974,8 @@ const PESTANAS_CONTROLABLES = [
   // Cartera de World Office: datos financieros, nadie la ve sin marcarla
   // (salvo los admins). El servicio de World Office exige lo mismo.
   { id:'cartera',         label:'Cartera', porDefecto:false },
+  // Ventas de World Office: igual que Cartera, solo con el permiso marcado.
+  { id:'ventas',          label:'Ventas', porDefecto:false },
   { id:'vehiculos',       label:'Vehículos Carga' },
   { id:'personal',        label:'Personal' },
   // No es una pestaña: marca al usuario maestro de Personal, que reparte
@@ -15222,6 +15955,7 @@ function mostrarPestanaActiva(el){
 
 function showPanel(id, el) {
   if (id !== 'cartera') document.documentElement.removeAttribute('data-cartera');
+  if (id !== 'ventas') document.documentElement.removeAttribute('data-ventas');
   /* Volver a hacer clic en la pestaña que ya está abierta despliega su
      filtro de fechas, como en Ingreso por Cliente. */
   const _yaEstaba = !!(el && el.classList.contains('active'));
@@ -15262,6 +15996,7 @@ function showPanel(id, el) {
   }
   if (id === 'accesos') renderAccesos();
   if (id === 'cartera' && typeof window.carteraActivar === 'function') window.carteraActivar();
+  if (id === 'ventas' && typeof window.ventasActivar === 'function') window.ventasActivar();
   if (id === 'mapa' && typeof window.mapaActivar === 'function') window.mapaActivar();
   if (id === 'personal' && typeof window.personalActivar === 'function') window.personalActivar();
   /* El botón de ajustar el stock aparece (o no) según quién entró, aunque
