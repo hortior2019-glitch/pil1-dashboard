@@ -9346,6 +9346,32 @@ html[data-ventas] body{background:
 #panel-ventas .esq{border-radius:14px;background:linear-gradient(90deg,var(--s2),var(--rule-l),var(--s2));background-size:200% 100%;animation:venEsq 1.2s linear infinite}
 @keyframes venEsq{to{background-position:-200% 0}}
 @media (prefers-reduced-motion:reduce){#panel-ventas .esq{animation:none}#panel-ventas .sem-col .b{transition:none}}
+/* 6. Tarifa por kg: tabla de 12 meses, primera columna fija */
+#panel-ventas .tar-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+#panel-ventas .tar-chips button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rule);background:var(--white);border-radius:999px;padding:5px 12px;font:600 13px 'Source Sans 3',sans-serif;color:var(--ven-ink2);cursor:pointer}
+#panel-ventas .tar-chips button i{width:9px;height:9px;border-radius:2px}
+#panel-ventas .tar-chips button[aria-pressed="true"]{background:var(--ven);border-color:var(--ven);color:#fff}
+#panel-ventas .tar-w{overflow-x:auto;border:1px solid var(--rule);border-radius:12px}
+#panel-ventas table.tar{border-collapse:separate;border-spacing:0;width:100%;min-width:1080px;font:14px 'Source Sans 3',sans-serif}
+#panel-ventas .tar th{position:sticky;top:0;background:var(--ven);color:#fff;font-size:13px;font-weight:700;padding:9px 8px;text-align:right;white-space:nowrap}
+#panel-ventas .tar th:first-child,#panel-ventas .tar td:first-child{position:sticky;left:0;z-index:1;text-align:left;min-width:230px;max-width:260px}
+#panel-ventas .tar th:first-child{z-index:2;background:var(--ven-2)}
+#panel-ventas .tar td{white-space:nowrap;padding:8px;border-bottom:1px solid var(--ven-line);text-align:right;vertical-align:top;background:var(--white);color:var(--ink)}
+#panel-ventas .tar td:first-child{box-shadow:1px 0 0 var(--rule);white-space:normal}
+#panel-ventas .tar tr.prom td{background:#f4efe1;font-weight:700;border-bottom:2px solid var(--oro)}
+#panel-ventas .tar tr:hover td{background:var(--s2)}
+#panel-ventas .tar .t-cli{display:flex;align-items:center;gap:8px;min-width:0}
+#panel-ventas .tar .t-cli .av{width:32px;height:32px;border-radius:8px}
+#panel-ventas .tar .t-cli .av.sin{width:30px;height:30px;margin:1px}
+#panel-ventas .tar .t-cli .av b{font-size:12px}
+#panel-ventas .tar .t-n{font-weight:700;font-size:13px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+#panel-ventas .tar .t-s{font-size:13px;color:var(--ven-mute);font-weight:400}
+#panel-ventas .tar .pr{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+#panel-ventas .tar .nf{display:block;font-size:13px;color:var(--ven-mute);white-space:nowrap}
+#panel-ventas .tar .vacia{color:var(--rule)}
+#panel-ventas .tar .up{color:#1f7a45;font-size:12px}
+#panel-ventas .tar .dn{color:var(--red);font-size:12px}
+#panel-ventas .tar td.act{background:var(--ven-l)}
 #ven-tip{position:fixed;z-index:9999;pointer-events:none;background:#14232a;color:#fff;font:13px/1.4 'Source Sans 3',sans-serif;padding:8px 11px;border-radius:9px;max-width:280px;box-shadow:0 8px 24px rgba(0,0,0,.22);border:1px solid rgba(201,162,74,.35);opacity:0;transition:opacity .12s}
 #ven-tip b{display:block;font-size:15px;color:#f4e7c4}
 #ven-tip.ver{opacity:1}
@@ -9423,7 +9449,7 @@ html[data-ventas] body{background:
   /* Paleta categórica validada (dataviz): orden fijo por producto según sus
      ventas de los 13 meses, para que cada producto conserve su color. */
   const PAL = ['var(--p1)','var(--p2)','var(--p3)','var(--p4)','var(--p5)'], OTROS = 'var(--p0)';
-  let D = null, docs = [], colorProd = {}, cargando = false, error = '', per = 'mes', abiertos = {}, ddQ = {}, ritmoTodos = false;
+  let D = null, docs = [], colorProd = {}, tarSel = null, cargando = false, error = '', per = 'mes', abiertos = {}, ddQ = {}, ritmoTodos = false;
 
   const $v = id => document.getElementById(id);
   const esc = x => String(x == null ? '' : x).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -9490,9 +9516,11 @@ html[data-ventas] body{background:
                   con: a[5], fp: a[6], ven: a[7], sin: a[8] || 0, iva: a[9] || 0 };
       d.ls = (a[10] || []).map(x => {
         const p = P[x[0]] || [];
-        const l = { cod: x[0], prod: p[0] || x[0], cl: p[1] || '', um: p[2] || '', con: x[1], cc: CC[x[2]] || '', cant: x[3], vu: x[4], sin: x[5], iva: x[6] };
+        const ct = (j.cuentas || [])[x[7]] || null;
+        const l = { cod: x[0], prod: p[0] || x[0], cl: p[1] || '', um: p[2] || '', con: x[1], cc: CC[x[2]] || '', cant: x[3], vu: x[4], sin: x[5], iva: x[6],
+                    cta: ct ? ct[0] : '', ctaN: ct ? ct[1] : '' };
         l.oc = ocDe(l.con);
-        l.q = norm([l.cod, l.prod, l.con, l.cc, l.oc ? 'oc ' + l.oc : ''].join(' '));
+        l.q = norm([l.cod, l.prod, l.con, l.cc, l.oc ? 'oc ' + l.oc : '', l.cta, l.ctaN].join(' '));
         return l;
       });
       d.oc = ocDe(d.con) || (d.ls.find(l => l.oc) || {}).oc || '';
@@ -9751,7 +9779,78 @@ html[data-ventas] body{background:
       listaSimple('Por producto', prods, o => avProd(o.k, o.nom), o => (o.cant ? o.cant.toLocaleString('es-CO', { maximumFractionDigits: 1 }) + ' ' + esc(o.um) + ' · ' : '') + nDocs(o)) +
       listaSimple('Por centro de costo', ccs, avCC, nDocs) + '</div>';
 
-    /* 6. Detalle por cliente: tarjeta con logo, mezcla de productos y total;
+    /* 6. Tarifa por kg de los servicios de ingreso de materia prima: valor ÷
+       cantidad facturada, por cliente y servicio, mes a mes en los últimos 12
+       meses, con cuántas facturas salieron y cada cuánto. Solo facturas (las
+       notas crédito no cambian la tarifa cobrada). Respeta la búsqueda. */
+    const serv = {};
+    docs.forEach(d => { if (d.t !== 'FV') return; d.ls.forEach(l => { if (l.cl && !/servic/i.test(l.cl)) return;
+      const o = serv[l.cod] || (serv[l.cod] = { cod: l.cod, nom: l.prod, kg: 0 }); o.kg += l.cant; }); });
+    const servL = Object.values(serv).sort((a, b) => b.kg - a.kg);
+    if (!tarSel) {
+      tarSel = new Set(servL.filter(o => /LODO|RESIDU|TRATAM|DISPOSIC|COMPOST|ORGANIC/i.test(o.nom) && !/TRANSPORT|FLETE/i.test(o.nom)).map(o => o.cod));
+      if (!tarSel.size) servL.slice(0, 3).forEach(o => tarSel.add(o.cod));
+    }
+    const meses = [];
+    for (let i = 11; i >= 0; i--) { const m = new Date(h0.getFullYear(), h0.getMonth() - i, 1); meses.push({ k: m.getFullYear() + '-' + String(m.getMonth() + 1).padStart(2, '0'), d: m }); }
+    const mesK = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    const filasT = {}, prom = {};
+    meses.forEach(m => prom[m.k] = { kg: 0, val: 0, fac: new Set() });
+    V.forEach(x => {
+      if (x.d.t !== 'FV' || x.d.fd < meses[0].d) return;
+      const mk = mesK(x.d.fd);
+      x.ls.forEach(l => {
+        if (!tarSel.has(l.cod) || !l.cant) return;
+        const k = x.d.cid + '|' + l.cod;
+        const o = filasT[k] || (filasT[k] = { cid: x.d.cid, cli: x.d.cli, prod: l.prod, um: l.um, m: {}, fechas: new Set(), facs: new Set(), kg: 0 });
+        const c = o.m[mk] || (o.m[mk] = { kg: 0, val: 0, fac: new Set() });
+        c.kg += l.cant; c.val += l.sin; c.fac.add(x.d.id);
+        o.fechas.add(+x.d.fd); o.facs.add(x.d.id); o.kg += l.cant;
+        if (prom[mk]) { prom[mk].kg += l.cant; prom[mk].val += l.sin; prom[mk].fac.add(x.d.id); }
+      });
+    });
+    const tar = Object.values(filasT).sort((a, b) => b.kg - a.kg);
+    const precio = v => v == null ? '' : '$' + v.toLocaleString('es-CO', { maximumFractionDigits: v < 1000 ? 1 : 0 });
+    const frec = o => {
+      const f = [...o.fechas].sort((a, b) => a - b);
+      if (f.length < 3) return { txt: f.length + (f.length === 1 ? ' fecha' : ' fechas'), tip: 'Pocas facturas para calcular su frecuencia' };
+      const iv = []; for (let i = 1; i < f.length; i++) iv.push(Math.round((f[i] - f[i - 1]) / DIA));
+      iv.sort((a, b) => a - b);
+      const med = iv.length % 2 ? iv[(iv.length - 1) / 2] : Math.round((iv[iv.length / 2 - 1] + iv[iv.length / 2]) / 2);
+      return { txt: cad(med), tip: 'Cada ' + med + ' días (mediana entre ' + f.length + ' fechas de factura)' };
+    };
+    const celdas = (m, ult) => {
+      let ant = null;
+      return meses.map((mm, i) => {
+        const c = m[mm.k];
+        if (!c || !c.kg) return '<td class="' + (i === 11 ? 'act' : '') + '"><span class="vacia">—</span></td>';
+        const p = c.val / c.kg, cambio = ant != null && Math.abs(p - ant) / ant > .005 ? (p > ant ? '<span class="up" title="Subió">▲</span> ' : '<span class="dn" title="Bajó">▼</span> ') : '';
+        ant = p;
+        return '<td class="' + (i === 11 ? 'act' : '') + '" data-tip="<b>' + precio(p) + ' por ' + esc(ult || 'unidad') + '</b>' + esc(MESES_L[mm.d.getMonth()]) + ' ' + mm.d.getFullYear() +
+          ' · ' + c.kg.toLocaleString('es-CO', { maximumFractionDigits: 0 }) + ' ' + esc(ult || '') + ' · ' + pesos(c.val) + ' sin IVA · ' + c.fac.size + (c.fac.size === 1 ? ' factura' : ' facturas') + '">' +
+          cambio + '<span class="pr">' + precio(p) + '</span><span class="nf">' + c.fac.size + ' fact.</span></td>';
+      }).join('');
+    };
+    const actual = m => { for (let i = 11; i >= 0; i--) { const c = m[meses[i].k]; if (c && c.kg) return c.val / c.kg; } return null; };
+    const promM = {}; meses.forEach(mm => { promM[mm.k] = prom[mm.k]; });
+    const kgTot = tar.reduce((s, o) => s + o.kg, 0), facTot = new Set(); tar.forEach(o => o.facs.forEach(f => facTot.add(f)));
+    h += '<div class="vc"><div class="vh">Tarifa por kg · servicios de ingreso<span>últimos 12 meses · valor sin IVA ÷ cantidad facturada · solo facturas</span></div>' +
+      '<div class="tar-chips" role="group" aria-label="Servicios incluidos">' + servL.map(o =>
+        '<button type="button" data-ven-tar="' + esc(o.cod) + '" aria-pressed="' + tarSel.has(o.cod) + '"><i style="background:' + (colorProd[o.cod] || OTROS) + '"></i>' + esc(o.nom) + '</button>').join('') + '</div>' +
+      (tar.length ? '<div class="tar-w"><table class="tar"><thead><tr><th>Cliente · servicio</th>' +
+        meses.map(mm => '<th>' + MESES[mm.d.getMonth()] + (mm.d.getMonth() === 0 || mm === meses[0] ? ' ' + String(mm.d.getFullYear()).slice(2) : '') + '</th>').join('') +
+        '<th>Frecuencia</th><th>Tarifa actual</th><th>Cantidad 12 m</th></tr></thead><tbody>' +
+        '<tr class="prom"><td><div class="t-n">Todos · promedio ponderado</div><div class="t-s">' + facTot.size + ' facturas · ' + tar.length + ' combinaciones</div></td>' +
+          celdas(promM, '') + '<td>—</td><td><span class="pr">' + precio(actual(promM)) + '</span></td><td class="num">' + kgTot.toLocaleString('es-CO', { maximumFractionDigits: 0 }) + '</td></tr>' +
+        tar.map(o => { const f = frec(o);
+          return '<tr><td><div class="t-cli">' + av(o.cid, o.cli) + '<div style="min-width:0"><div class="t-n">' + esc(o.cli) + '</div><div class="t-s">' + esc(o.prod) + '</div></div></div></td>' +
+            celdas(o.m, o.um) + '<td data-tip="<b>' + esc(f.txt) + '</b>' + esc(f.tip) + '"><span class="chip">' + esc(f.txt) + '</span><span class="nf">' + o.facs.size + ' fact. en 12 m</span></td>' +
+            '<td><span class="pr">' + precio(actual(o.m)) + '</span><span class="nf">por ' + esc(o.um || 'unidad') + '</span></td>' +
+            '<td class="num">' + o.kg.toLocaleString('es-CO', { maximumFractionDigits: 0 }) + '<span class="nf">' + esc(o.um || '') + '</span></td></tr>'; }).join('') +
+        '</tbody></table></div>'
+        : '<div class="vacio">Ninguna factura de los servicios elegidos' + (qTxt ? ' con esta búsqueda' : '') + ' en los últimos 12 meses.</div>') + '</div>';
+
+    /* 7. Detalle por cliente: tarjeta con logo, mezcla de productos y total;
        al abrirla, cada factura con de dónde sale cada valor. */
     h += '<div class="vc tabla"><div class="tab-cab"><div class="vh">Detalle por cliente<span>' + esc(R.lbl) + (qTxt ? ' · ' + clientes.length + ' con “' + esc(qTxt) + '”' : '') + '</span></div></div>' +
       '<table class="det-tabla"><thead><tr><th>Cliente</th><th class="col-bk">Productos</th><th class="r">Última</th><th class="r">Ventas sin IVA</th></tr></thead><tbody>';
@@ -9786,7 +9885,9 @@ html[data-ventas] body{background:
               (x.ls.length ? '<ul class="vd-ls">' + x.ls.map(l =>
                 '<li class="vd-ln" data-q="' + esc(l.q) + '" data-sin="' + l.sin + '"><i style="background:' + (colorProd[l.cod] || OTROS) + '"></i>' +
                 '<span class="vd-prod">' + esc(l.prod) + ' <small>· código ' + esc(l.cod) + (l.cl ? ' · ' + esc(l.cl.toLowerCase()) : '') + '</small></span>' +
-                '<span class="vd-de">Concepto: <b>' + esc(l.con || 'sin concepto') + '</b>' + (l.oc ? ' · OC <b>' + esc(l.oc) + '</b>' : '') +
+                '<span class="vd-de">Cuenta de ingreso: <b>' + (l.cta ? esc(l.cta) + (l.ctaN ? ' · ' + esc(l.ctaN) : '') : (D.sinCuenta ? 'cargando…' : 'sin dato')) + '</b><br>' +
+                  (l.con ? 'Concepto: <b>' + esc(l.con) + '</b>'
+                  : 'Concepto de la factura: <b>' + esc(d.con || 'sin concepto') + '</b> <span data-tip="El renglón no trae detalle propio en World Office; se muestra el concepto general de la factura.">(el renglón no trae detalle)</span>') + (l.oc ? ' · OC <b>' + esc(l.oc) + '</b>' : '') +
                   ' · Centro de costo: <b>' + esc(l.cc || 'sin dato') + '</b></span>' +
                 '<span class="vd-val num">' + pesos(l.sin) + '<small>' + l.cant.toLocaleString('es-CO', { maximumFractionDigits: 2 }) + ' ' + esc(l.um) + ' × ' + pesos(l.vu) + '</small></span></li>').join('') + '</ul>'
                 : '<div class="vd-nada">World Office no trae productos para este documento.</div>') +
@@ -9848,6 +9949,8 @@ html[data-ventas] body{background:
     if (p) { per = p.getAttribute('data-ven-per'); ocultarTip(); return pintar(); }
     if (e.target.closest('#ven-recargar,[data-ven-recargar]')) return pedir();
     if (e.target.closest('[data-ven-ritmo]')) { ritmoTodos = !ritmoTodos; return pintar(); }
+    const tb = e.target.closest('[data-ven-tar]');
+    if (tb) { const c = tb.getAttribute('data-ven-tar'); if (tarSel.has(c)) tarSel.delete(c); else tarSel.add(c); ocultarTip(); return pintar(); }
     const b = e.target.closest('[data-ven-buscar]');
     if (b) { $v('ven-buscar').value = b.getAttribute('data-ven-buscar'); ocultarTip(); pintar(); $v('ven-buscar').scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
     const ir = e.target.closest('[data-ven-ir]');
