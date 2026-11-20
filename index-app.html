@@ -35938,8 +35938,24 @@ function vozEsPremium(){
   if (u.admin || esAdminDash(u.usuario)) return true;
   return (_permisosConfig[u.usuario] || []).includes('voz-premium');
 }
+/* Para cuidar el costo, un premium habla con Claude solo en su PRIMERA
+   pregunta del día (el plan y la respuesta de esa pregunta); el resto va a
+   Gemini, como los demás usuarios. Se recuerda por usuario y día. */
+function _vozClaveClaude(){ const u = _usuarioActual; return 'vozClaude_' + (u ? u.usuario : '') + '_' + new Date().toLocaleDateString('en-CA'); }
+function vozClaudeDisponible(){
+  if (!vozEsPremium()) return false;
+  try { return !localStorage.getItem(_vozClaveClaude()); } catch (e) { return !window._vozClaudeUsado; }
+}
+function vozClaudeGastado(){
+  window._vozClaudeUsado = true;
+  try { localStorage.setItem(_vozClaveClaude(), '1'); } catch (e) {}
+}
 async function vozProxy(body){
-  if (body && (body.mode === 'plan' || body.mode === 'answer')) body = Object.assign({ premium: vozEsPremium() }, body);
+  let conClaude = false;
+  if (body && (body.mode === 'plan' || body.mode === 'answer')) {
+    conClaude = vozClaudeDisponible();
+    body = Object.assign({ premium: conClaude }, body);
+  }
   const res = await fetch(VOZ_PROXY_URL, {
     method:'POST',
     headers:{ 'Content-Type':'text/plain;charset=utf-8' },
@@ -35947,6 +35963,8 @@ async function vozProxy(body){
   });
   const data = await res.json();
   if (data.error) throw new Error(data.error);
+  /* La respuesta cierra la primera pregunta: desde aquí, Gemini. */
+  if (conClaude && body.mode === 'answer') vozClaudeGastado();
   return data;
 }
 /* La pestaña Precio del combustible (fuera de este bloque) también lo usa. */
