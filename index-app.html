@@ -42505,6 +42505,10 @@ function refrescarPendientes(){
 
 let enviando = false;
 const TAM_LOTE = 1200;   // los envíos grandes (una columna entera) se parten en tandas
+/* Lo que está viajando: sale de S.cola al mandarse, y si la página se
+   recargaba en ese momento no había aviso ni copia en el equipo, y las
+   tandas que faltaban por mandar se perdían. */
+let _loteVuelo = null, _loteVueloI = 0;
 
 async function enviarCola(){
   if(!S.cola.length) return;
@@ -42517,8 +42521,10 @@ async function enviarCola(){
   estado('busy', 'Guardando…');
 
   let i = 0;
+  _loteVuelo = lote; _loteVueloI = 0;
   try{
     for(; i < lote.length; i += TAM_LOTE){
+      _loteVueloI = i;
       const parte = lote.slice(i, i + TAM_LOTE);
       const res = await llamar({
         accion: 'auditGuardar',
@@ -42527,7 +42533,10 @@ async function enviarCola(){
       });
       if(!res.resultados && res.error) throw new Error(res.error);
 
+      /* Una celda con error nunca se marca como guardada. */
+      const conError = new Set((res.errores || []).map(e => e.fila + '|' + e.col + '|' + e.tipo));
       (res.resultados || []).forEach(r=>{
+        if(conError.has(r.fila + '|' + r.col + '|' + r.tipo)) return;
         const f = filaPorR(r.fila);
         if(!f) return;
         const c = r.col - 1;
@@ -42549,8 +42558,10 @@ async function enviarCola(){
         res.errores.forEach(e=>{
           const orig = parte.find(x => x.fila === e.fila && x.col === e.col && x.tipo === e.tipo);
           if(orig) revertir(orig);
-          aviso('Fila ' + e.fila + ', columna ' + letraCol(e.col) + ': ' + e.error, true);
         });
+        const e0 = res.errores[0];
+        aviso((res.errores.length > 1 ? res.errores.length + ' celdas NO quedaron guardadas y se revirtieron. ' : '') +
+          'Fila ' + e0.fila + ', columna ' + letraCol(e0.col) + ': ' + e0.error, true);
       }
 
       parte.forEach(x=>{
@@ -42618,6 +42629,7 @@ async function enviarCola(){
     render(); refrescarPendientes();
   }finally{
     enviando = false;
+    _loteVuelo = null;
     S.enviandoN = 0;
     refrescarPendientes();
     if(S.esperaReintento) S.esperaReintento = false;
@@ -45496,10 +45508,19 @@ $('cfgProbar').addEventListener('click', async ()=>{
 });
 
 window.addEventListener('beforeunload', ev=>{
-  if(S.cola.length){ ev.preventDefault(); ev.returnValue = ''; }
+  if(S.cola.length || enviando){ ev.preventDefault(); ev.returnValue = ''; }
 });
-/* Si igual se cierra o se recarga con cambios en cola, quedan en el equipo. */
-window.addEventListener('pagehide', ()=>{ if(S.cola.length) pendientesGrabar(); });
+/* Si igual se cierra o se recarga con cambios en cola o guardándose, quedan
+   en el equipo y se mandan al volver. Volver a mandar un color o un valor
+   ya guardado no cambia nada; los comentarios no se repiten. */
+window.addEventListener('pagehide', ()=>{
+  const vuelo = (enviando && _loteVuelo) ? _loteVuelo.slice(_loteVueloI).filter(x => x.tipo !== 'nota') : [];
+  if(!S.cola.length && !vuelo.length) return;
+  const cola = S.cola;
+  S.cola = vuelo.concat(cola);
+  pendientesGrabar();
+  S.cola = cola;
+});
 /* El tablero pregunta esto para mantener viva la sesión mientras haya algo por guardar. */
 window.auditoriaPendientes = function(){ return S.cola.length + (S.enviandoN || 0) + (enviando ? 1 : 0); };
 
