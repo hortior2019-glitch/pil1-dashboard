@@ -10699,7 +10699,10 @@ html[data-ventas] body{background:
       <button onclick="abrirFormVehiculo()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">+ Agregar vehículo</button>
       <button onclick="abrirCatalogoVeh('conductores')" style="padding:9px 16px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--white);color:var(--navy);border:1px solid var(--navy);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Conductores</button>
       <button onclick="abrirCatalogoVeh('operaciones')" style="padding:9px 16px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--white);color:var(--navy);border:1px solid var(--navy);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Operaciones</button>
-      <button onclick="exportarViajesVehExcel()" title="Viajes de las placas de la flota en el periodo elegido" style="padding:9px 16px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--white);color:var(--navy);border:1px solid var(--navy);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Descargar Excel</button>
+      <button onclick="exportarViajesVehExcel()" title="Viajes de las placas de la flota en el mes en curso" style="padding:9px 16px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--white);color:var(--navy);border:1px solid var(--navy);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Excel del mes</button>
+      <!-- Formularios de preoperacional (se abren en otra pestaña) -->
+      <a href="https://hortior2019-glitch.github.io/pil1-dashboard/preoperacional_volquetas.html" target="_blank" rel="noopener" title="Abrir el preoperacional de volqueta" style="padding:9px 16px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--white);color:var(--navy);border:1px solid var(--navy);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif;text-decoration:none;display:inline-flex;align-items:center">Preoperacional volqueta</a>
+      <a href="https://hortior2019-glitch.github.io/pil1-dashboard/preoperacional_cargador_tractor.html" target="_blank" rel="noopener" title="Abrir el preoperacional de cargador y tractor" style="padding:9px 16px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--white);color:var(--navy);border:1px solid var(--navy);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif;text-decoration:none;display:inline-flex;align-items:center">Preoperacional cargador / tractor</a>
       <button onclick="cargarVehiculos(true)" style="padding:9px 16px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Actualizar</button>
     </div>
   </div>
@@ -18301,18 +18304,22 @@ function _flSoloFlota(){
 }
 
 /* Excel de los viajes de las placas de la flota: día, hora, placa,
-   operación, conductor, lleno, vacío y neto. Usa el mismo periodo del
-   tablero (filtro de arriba o rango Desde/Hasta) y el buscador de placa. */
+   operación, conductor, lleno, vacío y neto. Solo el mes en curso (del 1
+   a hoy), sin importar el periodo elegido; respeta el buscador de placa. */
 function exportarViajesVehExcel(){
   if (typeof XLSX === 'undefined') { alert('No cargó la librería de Excel. Recargue la página.'); return; }
   var regs = (typeof dataIngreso !== 'undefined' ? dataIngreso : []) || [];
   var dela = _flSoloFlota();
   var q = ((document.getElementById('veh-buscar') || {}).value || '').trim().toUpperCase();
   var num = function(v){ var n = precioNum(String(v == null ? '' : v).replace(/[^0-9.,]/g, '')); return (n === null || isNaN(n)) ? '' : n; };
+  var ahora = new Date();
+  var mes = ahora.getFullYear() + '-' + String(ahora.getMonth()+1).padStart(2,'0');
+  var hoyIso = mes + '-' + String(ahora.getDate()).padStart(2,'0');
   var filas = [];
   regs.forEach(function(r){
     var mt = getMarcaTemporal(r);
-    if(!_flPeriodoOk(fechaIsoDeRegistro(r), mt)) return;
+    var iso = fechaIsoDeRegistro(r);
+    if(!iso || iso.slice(0, 7) !== mes || iso > hoyIso) return;
     var pl = getPlacaReg(r);
     if(!pl || !dela[pl]) return;
     if(q && pl.indexOf(q) === -1) return;
@@ -18332,7 +18339,7 @@ function exportarViajesVehExcel(){
       'Neto (kg)': getPesoNeto(r) || 0
     });
   });
-  if(!filas.length){ alert('No hay viajes de la flota en el periodo elegido (' + _flEtiquetaPeriodo() + ').'); return; }
+  if(!filas.length){ alert('No hay viajes de la flota en este mes (' + mes + ').'); return; }
   filas.sort(function(a, b){ return a.t - b.t; });
   var datos = filas.map(function(f){ var o = Object.assign({}, f); delete o.t; return o; });
   var tot = filas.reduce(function(s, f){ return s + f['Neto (kg)']; }, 0);
@@ -18342,8 +18349,7 @@ function exportarViajesVehExcel(){
   ws['!cols'] = [{wch:11},{wch:7},{wch:10},{wch:26},{wch:26},{wch:11},{wch:11},{wch:11}];
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Viajes');
-  var et = _flHayRango() ? ((VEH_RANGO.desde || 'inicio') + '_a_' + (VEH_RANGO.hasta || 'hoy')) : (currentFilter || 'periodo');
-  XLSX.writeFile(wb, 'viajes_flota_' + (q ? q + '_' : '') + et + '.xlsx');
+  XLSX.writeFile(wb, 'viajes_flota_' + (q ? q + '_' : '') + mes + '.xlsx');
 }
 
 /* Lo movido por cada placa en el periodo que esté elegido arriba. */
@@ -63278,9 +63284,11 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
       var iso = key + '-' + pad(d), dow = aFecha(iso).getDay(), x = viajes[iso], fut = iso > hoy;
       var alfa = x ? .22 + .78 * x.v / mx : 0;
       var st = x ? ' style="background:rgba(26,92,53,' + alfa.toFixed(2) + ');color:' + (alfa < .55 ? '#10331f' : '#fff') + '"' : '';
-      var top = x ? Object.keys(x.op).sort(function(a, b){ return x.op[b] - x.op[a]; }).slice(0, 3) : [];
+      /* Desglose del día: cada operación con sus viajes y su neto. */
+      var top = x ? Object.keys(x.op).sort(function(a, b){ return x.op[b] - x.op[a] || (x.opKg[b] || 0) - (x.opKg[a] || 0); })
+        .map(function(o){ return o + ' · ' + x.op[o] + (x.op[o] === 1 ? ' viaje' : ' viajes') + ' · ' + n0((x.opKg || {})[o] || 0) + ' kg'; }) : [];
       cel += '<div class="hx-cel' + (fut ? ' fut' : dow === 0 ? ' dom' : '') + '"' + st +
-        (fut ? '' : tip(fCorta(iso), x ? x.v + (x.v === 1 ? ' viaje' : ' viajes') : 'Sin viajes', x ? [ton(x.kg)].concat(top) : [])) + '>' + (x ? x.v : '') + '</div>';
+        (fut ? '' : tip(fCorta(iso), x ? x.v + (x.v === 1 ? ' viaje' : ' viajes') : 'Sin viajes', x ? ['Neto ' + n0(x.kg) + ' kg'].concat(top) : [])) + '>' + (x ? x.v : '') + '</div>';
     }
     return cel;
   }
@@ -63290,6 +63298,7 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
       if(x.iso.slice(0, 7) !== key) return;
       var q = o[x.iso] || (o[x.iso] = { v:0, kg:0, op:{} });
       q.v++; q.kg += x.kg; q.op[x.op] = (q.op[x.op] || 0) + 1;
+      q.opKg = q.opKg || {}; q.opKg[x.op] = (q.opKg[x.op] || 0) + x.kg;
     });
     return o;
   }
