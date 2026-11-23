@@ -18642,6 +18642,8 @@ function _flotaPorOperacion(){
     porOp[op].viajes++;
     porOp[op].kg += getPesoNeto(r) || 0;
     porOp[op].placas[pl] = (porOp[op].placas[pl] || 0) + 1;
+    porOp[op].kgPl = porOp[op].kgPl || {};
+    porOp[op].kgPl[pl] = (porOp[op].kgPl[pl] || 0) + (getPesoNeto(r) || 0);
   });
   return Object.keys(porOp).map(function(k){ return porOp[k]; })
     .sort(function(a, b){ return b.viajes - a.viajes; });
@@ -62619,7 +62621,7 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
 #panel-vehiculos .op-n{font-weight:700;font-size:15px;margin-right:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #panel-vehiculos .op-v{white-space:nowrap;color:#3f4642}
 #panel-vehiculos .op-v b{font-weight:700;color:var(--ink)}
-#panel-vehiculos .op-t{white-space:nowrap;min-width:62px;text-align:right}
+#panel-vehiculos .op-t{white-space:nowrap;min-width:120px;text-align:right;color:#3f4642}
 #panel-vehiculos .op-p{white-space:nowrap;min-width:38px;text-align:right;color:#4a514d;font-size:13px}
 #panel-vehiculos .op-b{display:flex;gap:2px;height:13px;margin-bottom:5px}
 #panel-vehiculos .op-b i{display:block;height:100%;border-radius:2px;min-width:2px}
@@ -63798,6 +63800,7 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
         if(x.iso.slice(0, 7) !== key) return;
         var o = por[x.op] || (por[x.op] = { op:x.op, viajes:0, kg:0, placas:{} });
         o.viajes++; o.kg += x.kg; o.placas[pl] = (o.placas[pl] || 0) + 1;
+        o.kgPl = o.kgPl || {}; o.kgPl[pl] = (o.kgPl[pl] || 0) + x.kg;
       });
     });
     return Object.keys(por).map(function(k){ return por[k]; }).sort(function(a, b){ return b.viajes - a.viajes; });
@@ -63806,7 +63809,7 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
     var ops = opDatos(), tot = ops.reduce(function(a, o){ return a + o.viajes; }, 0), totKg = ops.reduce(function(a, o){ return a + o.kg; }, 0);
     var hoy = new Date(), ant = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
     var cab = '<div class="hx-cab"><div><div class="hx-tit">Distribución de viajes por operación</div>' +
-      (tot ? '<div class="hx-sub"><b>' + n0(tot) + '</b> viajes · <b>' + ton(totKg) + '</b> · ' + ops.length + (ops.length === 1 ? ' operación' : ' operaciones') + '</div>' : '') + '</div>' +
+      (tot ? '<div class="hx-sub"><b>' + n0(tot) + '</b> viajes · neto <b>' + n0(totKg) + ' kg</b> · ' + ops.length + (ops.length === 1 ? ' operación' : ' operaciones') + '</div>' : '') + '</div>' +
       seg('opPer', [['mes', MES[hoy.getMonth()]], ['ant', MES[ant.getMonth()]], ['filtro', _flEtiquetaPeriodo() || 'Periodo']], OPX.per) + '</div>';
     if(!ops.length) return '<div class="hx-card">' + cab + '<div class="hx-vacio">Sin viajes en este periodo.</div></div>';
     var mx = ops[0].viajes || 1;
@@ -63814,19 +63817,19 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
       var pls = Object.keys(o.placas).sort(function(p, q){ return o.placas[q] - o.placas[p]; });
       var color = getClientColor(o.op) || '#1c5636', tonos = _flTonosOp(color, pls.length), logo = getClientLogo(o.op);
       var segs = pls.map(function(pl, i){
-        return '<i style="width:' + (o.placas[pl] / o.viajes * 100).toFixed(1) + '%;background:' + tonos[i] + '"' + tip(pl + ' · ' + o.op, o.placas[pl] + (o.placas[pl] === 1 ? ' viaje' : ' viajes'), [Math.round(o.placas[pl] / o.viajes * 100) + '% de la operación']) + '></i>';
+        return '<i style="width:' + (o.placas[pl] / o.viajes * 100).toFixed(1) + '%;background:' + tonos[i] + '"' + tip(pl + ' · ' + o.op, o.placas[pl] + (o.placas[pl] === 1 ? ' viaje' : ' viajes'), ['Neto ' + n0((o.kgPl || {})[pl] || 0) + ' kg', Math.round(o.placas[pl] / o.viajes * 100) + '% de la operación']) + '></i>';
       }).join('');
       return '<div class="op-f">' +
         '<div class="op-c">' + (logo ? '<img class="op-logo" src="' + esc(logo) + '" alt="" onerror="this.style.display=\'none\'">' : '') + '<b class="op-n">' + esc(o.op) + '</b>' +
-          '<span class="op-v"><b>' + n0(o.viajes) + '</b> ' + (o.viajes === 1 ? 'viaje' : 'viajes') + '</span><span class="op-t">' + ton(o.kg) + '</span><span class="op-p">' + Math.round(o.viajes / tot * 100) + '%</span></div>' +
+          '<span class="op-v"><b>' + n0(o.viajes) + '</b> ' + (o.viajes === 1 ? 'viaje' : 'viajes') + '</span><span class="op-t"' + tip(o.op, n0(o.kg) + ' kg', ['Neto movido en el periodo'].concat(totKg ? [Math.round(o.kg / totKg * 100) + '% del neto'] : [])) + '>Neto <b>' + n0(o.kg) + ' kg</b></span><span class="op-p">' + Math.round(o.viajes / tot * 100) + '%</span></div>' +
         '<div class="op-b" style="width:' + Math.max(3, o.viajes / mx * 100).toFixed(1) + '%">' + segs + '</div>' +
-        '<div class="op-l">' + pls.slice(0, 5).map(function(pl){ return esc(pl) + ' <b>' + o.placas[pl] + '</b>'; }).join(' · ') + (pls.length > 5 ? ' · +' + (pls.length - 5) : '') + '</div>' +
+        '<div class="op-l">' + pls.slice(0, 5).map(function(pl){ return esc(pl) + ' <b>' + o.placas[pl] + '</b> (' + n0((o.kgPl || {})[pl] || 0) + ' kg)'; }).join(' · ') + (pls.length > 5 ? ' · +' + (pls.length - 5) : '') + '</div>' +
       '</div>';
     }).join('');
     var resto = ops.slice(8);
     if(resto.length){
       var rv = resto.reduce(function(a, o){ return a + o.viajes; }, 0);
-      filas += '<div class="hx-part"><span>Otras ' + resto.length + ' operaciones</span><span><b>' + n0(rv) + '</b> viajes · ' + Math.round(rv / tot * 100) + '%</span></div>';
+      filas += '<div class="hx-part"><span>Otras ' + resto.length + ' operaciones</span><span><b>' + n0(rv) + '</b> viajes · neto ' + n0(resto.reduce(function(a, o){ return a + o.kg; }, 0)) + ' kg · ' + Math.round(rv / tot * 100) + '%</span></div>';
     }
     return '<div class="hx-card">' + cab + filas + '</div>';
   }
