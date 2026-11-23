@@ -1584,6 +1584,19 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-vehiculos .fl-tabla th:nth-child(4){text-align:right}
 #panel-vehiculos .fl-num{text-align:right;font-weight:700;white-space:nowrap}
 #panel-vehiculos .fl-tabla th:nth-child(3){text-align:right}
+/* GPS Satrack */
+#panel-vehiculos .gps-barra{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+#panel-vehiculos .gps-btn{padding:9px 16px;font-size:13px;font-weight:700;background:var(--navy);color:#fff;border-radius:6px;cursor:pointer;font-family:'Source Sans 3',sans-serif}
+#panel-vehiculos .gps-btn.off{opacity:.6;cursor:wait}
+#panel-vehiculos .gps-sel{padding:8px 10px;font-size:13px;border:1px solid var(--rule);border-radius:6px;background:var(--white);color:var(--ink)}
+#panel-vehiculos .gps-msg{font-size:13px;color:var(--ink-m)}
+#panel-vehiculos .gps-msg.err{color:#a5281c;font-weight:700}
+#panel-vehiculos .gps-tabla{width:100%;border-collapse:collapse;font-size:13px}
+#panel-vehiculos .gps-tabla th{text-align:left;padding:7px 9px;font-size:13px;font-weight:700;color:#5b625e;border-bottom:1px solid #e5e7eb;white-space:nowrap}
+#panel-vehiculos .gps-tabla td{padding:8px 9px;border-bottom:1px solid #f1f2f0;color:#15201a;white-space:nowrap}
+#panel-vehiculos .gps-tabla .n{text-align:right;font-variant-numeric:tabular-nums}
+#panel-vehiculos .gps-pl{display:inline-flex;align-items:center;gap:8px;font-weight:700}
+#panel-vehiculos .gps-chip{display:inline-block;padding:2px 9px;margin:1px 4px 1px 0;border-radius:999px;font-size:13px;font-weight:700;background:#fdf1e3;color:#8a4b0f;border:1px solid #f0cfa3}
 #panel-vehiculos .fl-tabla tfoot td{font-weight:800;border-top:2px solid #e5e7eb;border-bottom:none;
   background:#fafbfa}
 
@@ -18035,6 +18048,7 @@ async function _cargarVehiculosImpl(forzar, silencioso) {
      vehículos. Si ese endpoint tarda o falla, la pestaña igual carga; cuando
      los datos lleguen, se refresca sola la ficha que esté abierta. */
   const viajesP = _cargarViajesInternosDatos(forzar);
+  if (forzar || !_gpsCargado) _cargarGps();
   const d = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
     body: JSON.stringify({ accion:'listarVehiculos' }) });
   if (d && Array.isArray(d.vehiculos)) {
@@ -19088,6 +19102,186 @@ function _cbConclusion(d){
   return f.join(' ');
 }
 
+/* ── GPS SATRACK ────────────────────────────────────────────────
+   Sin API: se sube el Excel "Detalle recorrido" que se descarga en
+   Satrack (Informes › Detalle recorrido). Aquí se resume por placa y
+   día (km, horas en movimiento / ralentí / apagado) y se guarda en la
+   pestaña GPS_DIARIO del Sheet de vehículos. El cuadro cruza ese día
+   con los viajes y kg que el sistema tiene registrados por placa. */
+var _gpsDias = [], _gpsCargado = false, _gpsFecha = '', _gpsMsg = '', _gpsMsgErr = false, _gpsSubiendo = false;
+
+async function _cargarGps(){
+  try {
+    const d = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ accion:'listarGps' }) });
+    if (d && Array.isArray(d.gps)) { _gpsDias = d.gps; _gpsCargado = true; }
+    else if (d && /no reconocida/i.test(d.error || '')) { _gpsMsg = 'Falta publicar el Apps Script de Vehículos con la parte de GPS.'; _gpsMsgErr = true; }
+  } catch (e) { console.warn('GPS Satrack:', e); }
+  _gpsPintar();
+}
+function _gpsPintar(){ var c = document.getElementById('veh-gps-caja'); if (c) c.innerHTML = _gpsCajaHTML(); }
+
+function _gpsNorm(s){ return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim(); }
+function _gpsFechaIso(v){
+  if (typeof v === 'number' && window.XLSX) { var o = XLSX.SSF.parse_date_code(v); return o ? o.y + '-' + String(o.m).padStart(2,'0') + '-' + String(o.d).padStart(2,'0') : ''; }
+  var m = String(v || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) return m[3] + '-' + m[2].padStart(2,'0') + '-' + m[1].padStart(2,'0');
+  m = String(v || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? m[1] + '-' + m[2] + '-' + m[3] : '';
+}
+function _gpsSeg(v){
+  if (typeof v === 'number') return Math.round((v % 1) * 86400);
+  var m = String(v || '').trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  return m ? (+m[1]) * 3600 + (+m[2]) * 60 + (+(m[3] || 0)) : -1;
+}
+function _gpsNum(v){ if (typeof v === 'number') return v; var n = parseFloat(String(v || '').replace(',', '.')); return isNaN(n) ? null : n; }
+function _gpsHora(s){ return String(Math.floor(s / 3600)).padStart(2,'0') + ':' + String(Math.floor(s % 3600 / 60)).padStart(2,'0'); }
+
+/* Filas del Excel -> un resumen por placa y día. Entre dos reportes se le
+   cuenta el tiempo al estado del primero; un hueco de más de 35 min no se
+   cuenta (el equipo apagado reporta cada 30 min). */
+function _gpsResumir(filas){
+  var hi = -1, col = {};
+  for (var i = 0; i < Math.min(filas.length, 15); i++) {
+    var h = (filas[i] || []).map(_gpsNorm);
+    if (h.indexOf('vehiculo') !== -1 && h.indexOf('hora gps') !== -1) { hi = i; h.forEach(function(x, j){ col[x] = j; }); break; }
+  }
+  if (hi < 0) return null;
+  var cV = col['vehiculo'], cE = col['estado'], cF = col['fecha gps'], cH = col['hora gps'],
+      cS = col['velocidad (km/h)'], cO = col['odometro'];
+  var grupos = {};
+  for (var k = hi + 1; k < filas.length; k++) {
+    var r = filas[k] || [];
+    var placa = _placaNorm(r[cV]), fecha = _gpsFechaIso(r[cF]), t = _gpsSeg(r[cH]);
+    if (!placa || !fecha || t < 0) continue;
+    var g = grupos[fecha + '|' + placa] || (grupos[fecha + '|' + placa] = { fecha: fecha, placa: placa, regs: [] });
+    g.regs.push({ t: t, e: _gpsNorm(r[cE]), v: _gpsNum(r[cS]) || 0, o: _gpsNum(r[cO]) });
+  }
+  var cls = function(e){ return /ralen/.test(e) ? 'ral' : /movim/.test(e) ? 'mov' : /apag/.test(e) ? 'apag' : /deten/.test(e) ? 'det' : ''; };
+  var h2 = function(s){ return Math.round(s / 36) / 100; };
+  return Object.keys(grupos).map(function(key){
+    var g = grupos[key], rs = g.regs.sort(function(a, b){ return a.t - b.t; });
+    var acc = { mov:0, ral:0, det:0, apag:0 };
+    for (var i = 0; i + 1 < rs.length; i++) {
+      var dt = rs[i + 1].t - rs[i].t, c = cls(rs[i].e);
+      if (c && dt > 0 && dt <= 2100) acc[c] += dt;
+    }
+    var odos = rs.map(function(x){ return x.o; }).filter(function(x){ return x != null && x > 0; });
+    var enc = rs.filter(function(x){ var c = cls(x.e); return c && c !== 'apag'; });
+    var oi = odos.length ? Math.min.apply(null, odos) : 0, of = odos.length ? Math.max.apply(null, odos) : 0;
+    return { fecha: g.fecha, placa: g.placa, km: Math.round((of - oi) * 100) / 100,
+             hMov: h2(acc.mov), hRal: h2(acc.ral), hDet: h2(acc.det), hApag: h2(acc.apag),
+             velMax: rs.reduce(function(m, x){ return Math.max(m, x.v); }, 0),
+             odoIni: oi, odoFin: of,
+             primer: enc.length ? _gpsHora(enc[0].t) : '', ultimo: enc.length ? _gpsHora(enc[enc.length - 1].t) : '',
+             registros: rs.length };
+  });
+}
+
+function _gpsLeerArchivo(inp){
+  var f = inp.files && inp.files[0];
+  if (!f) return;
+  var rd = new FileReader();
+  rd.onload = function(){
+    inp.value = '';
+    var res = null;
+    try {
+      var wb = XLSX.read(new Uint8Array(rd.result), { type:'array' });
+      res = _gpsResumir(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header:1, raw:true, defval:'' }));
+    } catch (e) { console.error('GPS Satrack:', e); }
+    if (!res) { _gpsMsg = 'Ese archivo no es el informe "Detalle recorrido" de Satrack.'; _gpsMsgErr = true; _gpsPintar(); return; }
+    if (!res.length) { _gpsMsg = 'El informe no trae registros.'; _gpsMsgErr = true; _gpsPintar(); return; }
+    _gpsGuardar(res, f.name);
+  };
+  rd.readAsArrayBuffer(f);
+}
+
+async function _gpsGuardar(filas, archivo){
+  _gpsSubiendo = true; _gpsMsg = 'Guardando ' + filas.length + ' placa(s)…'; _gpsMsgErr = false; _gpsPintar();
+  var d = null;
+  try {
+    d = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ accion:'guardarGpsDia', archivo: archivo, filas: filas }) }, 0);
+  } catch (e) { console.error('GPS Satrack:', e); }
+  _gpsSubiendo = false;
+  if (d && d.success) {
+    filas.forEach(function(x){
+      _gpsDias = _gpsDias.filter(function(y){ return !(y.fecha === x.fecha && _placaNorm(y.placa) === x.placa); });
+      _gpsDias.push(Object.assign({ archivo: archivo }, x));
+    });
+    _gpsCargado = true;
+    _gpsFecha = filas.map(function(x){ return x.fecha; }).sort().pop();
+    _gpsMsg = 'Guardado: ' + filas.length + ' placa(s) del ' + _fmtFechaVeh(_gpsFecha) + '.'; _gpsMsgErr = false;
+  } else {
+    _gpsMsg = (d && /no reconocida/i.test(d.error || ''))
+      ? 'No se guardó: falta publicar el Apps Script de Vehículos con la parte de GPS.'
+      : 'No se guardó: ' + ((d && d.error) || 'sin respuesta del servidor') + '. Intenta de nuevo.';
+    _gpsMsgErr = true;
+  }
+  _gpsPintar();
+}
+
+/* Viajes y kg que el sistema tiene por placa en una fecha. */
+function _gpsViajesDia(fecha){
+  var out = {};
+  ((typeof dataIngreso !== 'undefined' ? dataIngreso : []) || []).forEach(function(r){
+    if (fechaIsoDeRegistro(r) !== fecha) return;
+    var pl = _placaNorm(getPlacaReg(r));
+    if (!pl) return;
+    var o = out[pl] || (out[pl] = { viajes:0, kg:0 });
+    o.viajes++; o.kg += getPesoNeto(r) || 0;
+  });
+  return out;
+}
+
+function _gpsCajaHTML(){
+  var fechas = {};
+  _gpsDias.forEach(function(x){ fechas[x.fecha] = 1; });
+  var lista = Object.keys(fechas).sort().reverse();
+  if (!_gpsFecha || !fechas[_gpsFecha]) _gpsFecha = lista[0] || '';
+  var h1 = function(h){ return h ? String(Math.round(h * 10) / 10).replace('.', ',') + ' h' : '—'; };
+  var barra =
+    '<div class="gps-barra">' +
+      '<label class="gps-btn' + (_gpsSubiendo ? ' off' : '') + '">' + (_gpsSubiendo ? 'Guardando…' : 'Cargar informe Satrack') +
+        '<input type="file" accept=".xlsx,.xls" onchange="_gpsLeerArchivo(this)"' + (_gpsSubiendo ? ' disabled' : '') + ' hidden></label>' +
+      (lista.length ? '<select class="gps-sel" aria-label="Día del informe GPS" onchange="_gpsFecha=this.value;_gpsPintar()">' +
+        lista.map(function(f){ return '<option value="' + f + '"' + (f === _gpsFecha ? ' selected' : '') + '>' + _flEsc(_fmtFechaVeh(f)) + '</option>'; }).join('') +
+        '</select>' : '') +
+      (_gpsMsg ? '<span class="gps-msg' + (_gpsMsgErr ? ' err' : '') + '">' + _flEsc(_gpsMsg) + '</span>' : '') +
+    '</div>';
+  var cuerpo;
+  if (!_gpsFecha) {
+    cuerpo = '<div class="fl-vacio">' + (_gpsCargado || _gpsMsg ? 'Aún no hay informes guardados.' : '<span class="spinner"></span> Cargando…') +
+      ' En Satrack: Informes › Detalle recorrido › descargar Excel, y súbelo aquí.</div>';
+  } else {
+    var vd = _gpsViajesDia(_gpsFecha);
+    var filas = _gpsDias.filter(function(x){ return x.fecha === _gpsFecha; }).map(function(x){
+      var pl = _placaNorm(x.placa), maq = _uVeh(pl) === 'h', v = vd[pl] || { viajes:0, kg:0 }, al = [];
+      if (!maq && x.km >= 3 && !v.viajes) al.push('Se movió sin viajes');
+      if (x.hRal >= 1 && x.hRal > x.hMov) al.push('Más ralentí que andando');
+      return { x: x, pl: pl, v: v, al: al };
+    }).sort(function(a, b){ return (b.al.length - a.al.length) || (b.x.km - a.x.km); });
+    cuerpo = '<div class="fl-scroll"><table class="gps-tabla"><thead><tr>' +
+      '<th>Placa</th><th class="n">Km</th><th class="n">Movimiento</th><th class="n">Ralentí</th><th class="n">Apagado</th>' +
+      '<th class="n">Vel. máx.</th><th>Encendido</th><th class="n">Viajes</th><th class="n">Kg neto</th><th>Alerta</th>' +
+      '</tr></thead><tbody>' +
+      filas.map(function(f){
+        var x = f.x;
+        return '<tr><td><span class="gps-pl">' + _miniPlaca(f.pl) + _flEsc(f.pl) + '</span></td>' +
+          '<td class="n">' + fmt(Math.round(x.km)) + '</td>' +
+          '<td class="n">' + h1(x.hMov) + '</td><td class="n">' + h1(x.hRal) + '</td><td class="n">' + h1(x.hApag) + '</td>' +
+          '<td class="n">' + fmt(x.velMax) + ' km/h</td>' +
+          '<td>' + (x.primer ? _flEsc(x.primer) + ' – ' + _flEsc(x.ultimo) : '—') + '</td>' +
+          '<td class="n">' + (f.v.viajes ? fmt(f.v.viajes) : '—') + '</td>' +
+          '<td class="n">' + (f.v.kg ? fmt(Math.round(f.v.kg)) : '—') + '</td>' +
+          '<td>' + f.al.map(function(a){ return '<span class="gps-chip">' + a + '</span>'; }).join('') + '</td></tr>';
+      }).join('') +
+      '</tbody></table></div>';
+  }
+  return _flSeccion('GPS Satrack', 'recorrido del día cruzado con los viajes registrados') +
+    '<div class="fl-card">' + barra + cuerpo + '</div>';
+}
+
 function renderFlota(){
   var caja = document.getElementById('veh-flota');
   if(!caja) return;
@@ -19165,6 +19359,8 @@ function renderFlota(){
 
     /* Viajes y peso son operación: van aquí, no dentro de combustible. */
     _vehCmpHTML() +
+
+    '<div id="veh-gps-caja">' + _gpsCajaHTML() + '</div>' +
 
     '<div id="hx-flota"></div>' +
 
