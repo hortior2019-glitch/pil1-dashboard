@@ -1686,6 +1686,32 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-vehiculos .gps-blq span.mas{background:#f1f2f0;color:#5b625e}
 #panel-vehiculos .gps-dot{width:10px;height:10px;border-radius:50%;flex:none}
 @media (max-width:640px){#gps-prev{height:300px}}
+#panel-vehiculos .gps-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px}
+#panel-vehiculos .gps-card{border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;background:#fff}
+#panel-vehiculos .gps-card.al{border-color:#f0cfa3}
+#panel-vehiculos .gps-card header{display:flex;align-items:center;gap:8px}
+#panel-vehiculos .gps-card-t{flex:1;min-width:0;display:grid}
+#panel-vehiculos .gps-card-t b{font-size:16px;color:#15201a}
+#panel-vehiculos .gps-card-t em{font-style:normal;font-size:13px;color:#5b625e}
+#panel-vehiculos .gps-card-al{display:flex;flex-wrap:wrap;gap:4px}
+#panel-vehiculos .gps-card-mid{display:flex;align-items:center;gap:14px}
+#panel-vehiculos .gps-card-mid .gps-anillo{width:92px;height:92px}
+#panel-vehiculos .gps-card-mid ul{list-style:none;margin:0;padding:0;flex:1;display:grid;gap:4px;font-size:13px;color:#5b625e}
+#panel-vehiculos .gps-card-mid li{display:flex;align-items:center;gap:6px}
+#panel-vehiculos .gps-card-mid li i{width:10px;height:10px;border-radius:2px;flex:none}
+#panel-vehiculos .gps-card-mid li b{margin-left:auto;color:#15201a;font-variant-numeric:tabular-nums}
+#panel-vehiculos .gps-card-num{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;border-top:1px solid #f1f2f0;border-bottom:1px solid #f1f2f0;padding:8px 0}
+#panel-vehiculos .gps-card-num div{display:grid;text-align:center}
+#panel-vehiculos .gps-card-num b{font-size:16px;color:#15201a;font-variant-numeric:tabular-nums}
+#panel-vehiculos .gps-card-num span{font-size:13px;color:#5b625e}
+#panel-vehiculos .gps-card-blq>span{display:block;font-size:13px;font-weight:700;color:#5b625e;margin-bottom:4px}
+#panel-vehiculos .gps-card-blq .gps-blq{max-width:none}
+#gps-mapa-modal .gps-mm-lista .h{display:flex;align-items:center;gap:8px}
+#gps-mapa-modal .gps-mm-lista .h em{font-style:normal;font-size:12px;font-weight:700;color:#fff;padding:1px 7px;border-radius:999px}
+#gps-mapa-modal .gps-mm-lista li.par{background:#fafbfa}
+#gps-mapa-modal .gps-mm-lista .d,#gps-mapa-modal .gps-mm-res .d{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:13px;color:#5b625e}
+#gps-mapa-modal .gps-mm-lista .d i,#gps-mapa-modal .gps-mm-res .d i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px}
+#gps-mapa-modal .gps-mm-res{display:grid;gap:4px}
 #gps-mapa-modal .gps-linea{position:relative;height:16px;border-radius:4px;background:#fff;border:1px solid #e5e7eb;overflow:hidden}
 #gps-mapa-modal .gps-linea span{position:absolute;top:0;bottom:0}
 #panel-vehiculos .fl-tabla tfoot td{font-weight:800;border-top:2px solid #e5e7eb;border-bottom:none;
@@ -19309,7 +19335,7 @@ function _gpsLeerArchivo(inp){
     } catch (e) { console.error('GPS Satrack:', e); }
     if (!res) { _gpsMsg = 'Ese archivo no es el informe "Detalle recorrido" de Satrack.'; _gpsMsgErr = true; _gpsPintar(); return; }
     if (!res.length) { _gpsMsg = 'El informe no trae registros.'; _gpsMsgErr = true; _gpsPintar(); return; }
-    res.forEach(function(x){ x.recorridos = _gpsRecParaGuardar(_gpsRecorridos(x.ruta)); });
+    res.forEach(function(x){ x.recorridos = _gpsRecParaGuardar(_gpsRecorridos(x.ruta, x.segs)); });
     _gpsGuardar(res, f.name);
   };
   rd.readAsArrayBuffer(f);
@@ -19491,29 +19517,32 @@ function _gpsCajaHTML(){
       return '<span title="' + _flEsc((r[3] || 'sin nombre') + ' → ' + (r[4] || 'sin nombre')) + '">' + _flEsc(r[1]) + '–' + _flEsc(r[2]) + '</span>';
     }).join('') + (recs.length > max ? '<span class="mas">+' + (recs.length - max) + '</span>' : '') + '</div>';
   };
-  var tabla = activas.length ? '<div class="fl-scroll"><table class="gps-tabla"><thead><tr>' +
-      '<th>Placa</th><th>Recorridos (inicio – fin)</th>' +
-      '<th class="n">Km</th><th class="n">Movimiento</th><th class="n">Ralentí</th><th class="n">Vel. máx.</th>' +
-      '<th class="n">Viajes</th><th class="n">Kg neto</th><th>Alerta</th><th></th>' +
-      '</tr></thead><tbody>' +
-      activas.map(function(f){
-        var x = f.x, conRuta = x.conRuta || (_gpsRutas[x.fecha + '|' + f.pl] || []).length;
-        return '<tr><td><span class="gps-pl"><i class="gps-dot" style="background:' + _gpsColor(f.pl) + '"></i>' + _miniPlaca(f.pl) + _flEsc(f.pl) + '</span>' +
-            (x.primer ? '<em class="gps-hr">Encendido ' + _flEsc(x.primer) + ' – ' + _flEsc(x.ultimo) + '</em>' : '') + '</td>' +
-          '<td>' + bloques(x) + '</td>' +
-          '<td class="n">' + fmt(Math.round(x.km)) + '</td>' +
-          '<td class="n">' + _gpsDur(x.hMov) + '</td><td class="n">' + _gpsDur(x.hRal) + '</td>' +
-          '<td class="n">' + fmt(x.velMax) + ' km/h</td>' +
-          '<td class="n">' + (f.v.viajes ? fmt(f.v.viajes) : '—') + '</td>' +
-          '<td class="n">' + (f.v.kg ? fmt(Math.round(f.v.kg)) : '—') + '</td>' +
-          '<td>' + f.al.map(function(a){ return '<span class="gps-chip">' + a + '</span>'; }).join('') + '</td>' +
-          '<td>' + (conRuta ? '<button type="button" class="gps-ver" onclick="_gpsAbrirMapa(\'' + x.fecha + '\',\'' + f.pl + '\')">Ver detalle</button>'
-                            : '<span class="gps-sinruta" title="Vuelve a subir el informe de este día para guardar el recorrido">sin recorrido</span>') + '</td></tr>';
-      }).join('') +
-      '</tbody><tfoot><tr><td>Total</td><td></td><td class="n">' + fmt(Math.round(tot.km)) + '</td>' +
-        '<td class="n">' + _gpsDur(tot.mov) + '</td><td class="n">' + _gpsDur(tot.ral) + '</td><td></td>' +
-        '<td class="n">' + (tot.v ? fmt(tot.v) : '—') + '</td><td class="n">' + (tot.kg ? fmt(Math.round(tot.kg)) : '—') + '</td><td></td><td></td></tr></tfoot>' +
-      '</table></div>' : '<div class="fl-vacio">Ningún vehículo se movió este día.</div>';
+  /* ── Una tarjeta por vehículo, con sus propios indicadores ── */
+  var tabla = activas.length ? '<div class="gps-cards">' + activas.map(function(f){
+      var x = f.x, conRuta = x.conRuta || (_gpsRutas[x.fecha + '|' + f.pl] || []).length;
+      var nRec = (x.recs || []).filter(function(r){ return r[0] === 'Recorrido'; }).length;
+      var num = function(v, et){ return '<div><b>' + v + '</b><span>' + et + '</span></div>'; };
+      return '<article class="gps-card' + (f.al.length ? ' al' : '') + '">' +
+        '<header><i class="gps-dot" style="background:' + _gpsColor(f.pl) + '"></i>' + _miniPlaca(f.pl) +
+          '<span class="gps-card-t"><b>' + _flEsc(f.pl) + '</b><em>' + (x.primer ? 'Encendido ' + _flEsc(x.primer) + ' – ' + _flEsc(x.ultimo) : 'Sin encendido') + '</em></span>' +
+          (conRuta ? '<button type="button" class="gps-ver" onclick="_gpsAbrirMapa(\'' + x.fecha + '\',\'' + f.pl + '\')">Ver recorrido</button>'
+                   : '<span class="gps-sinruta" title="Vuelve a subir el informe de este día para guardar el recorrido">sin recorrido</span>') +
+        '</header>' +
+        (f.al.length ? '<div class="gps-card-al">' + f.al.map(function(a){ return '<span class="gps-chip">' + a + '</span>'; }).join('') + '</div>' : '') +
+        '<div class="gps-card-mid">' + _gpsAnillo(x.hMov, x.hRal, x.hDet || 0) +
+          '<ul>' +
+            '<li><i style="background:' + _GPS_EST.m.c + '"></i>Movimiento<b>' + _gpsDur(x.hMov) + '</b></li>' +
+            '<li><i style="background:' + _GPS_EST.r.c + '"></i>Ralentí<b>' + _gpsDur(x.hRal) + '</b></li>' +
+            '<li><i style="background:' + _GPS_EST.d.c + '"></i>Detenido<b>' + _gpsDur(x.hDet) + '</b></li>' +
+            '<li><i style="background:#5b625e"></i>Apagado<b>' + _gpsDur(x.hApag) + '</b></li>' +
+          '</ul></div>' +
+        '<div class="gps-card-num">' +
+          num(fmt(Math.round(x.km)), 'km') + num(nRec || '—', 'recorridos') + num(fmt(x.velMax), 'km/h máx.') +
+          num(f.v.viajes ? fmt(f.v.viajes) : '—', 'viajes') + num(f.v.kg ? fmt(Math.round(f.v.kg)) : '—', 'kg netos') +
+        '</div>' +
+        '<div class="gps-card-blq"><span>Recorridos</span>' + bloques(x) + '</div>' +
+      '</article>';
+    }).join('') + '</div>' : '<div class="fl-vacio">Ningún vehículo se movió este día.</div>';
   var quietos = quietas.length ? '<div class="gps-quietos"><b>Sin moverse todo el día:</b> ' +
       quietas.map(function(f){ return '<span class="gps-pl">' + _miniPlaca(f.pl) + _flEsc(f.pl) + '</span>'; }).join('') + '</div>' : '';
 
@@ -19601,8 +19630,22 @@ function _gpsLugarDe(lat, lon){
   });
   return mejor ? mejor.nombre : '';
 }
-function _gpsRecorridos(ruta){
+/* Cuántos minutos de cada estado caben entre a y b (minutos del día).
+   Lo que no cubre ningún tramo es tiempo sin reporte del GPS. */
+function _gpsDesglose(segs, a, b){
+  var o = { m:0, r:0, d:0, a:0 };
+  (segs || []).forEach(function(s){ var x = Math.max(a, s[0]), y = Math.min(b, s[1]); if (y > x) o[s[2]] += y - x; });
+  o.s = Math.max(0, (b - a) - (o.m + o.r + o.d + o.a));
+  return o;
+}
+/* El día completo, en orden: cada recorrido y, entre uno y otro, el tiempo
+   quieto con lo que pasó en él (apagado, ralentí, detenido, sin reporte).
+   Un recorrido va desde que arranca hasta que queda quieto 5 min o más;
+   las paradas más cortas quedan dentro (como Geotab) y no cuentan los de
+   menos de 3 min o 0,5 km (como Samsara). */
+function _gpsRecorridos(ruta, segs){
   ruta = Array.isArray(ruta) ? ruta : [];
+  segs = Array.isArray(segs) ? segs : [];
   var n = ruta.length, recs = [], i = 0;
   while (i < n) {
     if (ruta[i][3] !== 'm') { i++; continue; }
@@ -19624,23 +19667,46 @@ function _gpsRecorridos(ruta){
       km: Math.round(km * 10) / 10, velMax: vmax, lat0: ruta[a][0], lon0: ruta[a][1], lat1: ruta[fin][0], lon1: ruta[fin][1] });
     i = fin + 1;
   }
+  /* El día va del primer al último reporte (o tramo) del GPS. */
+  var t0 = Infinity, t1 = -Infinity;
+  if (n) { t0 = ruta[0][2]; t1 = ruta[n - 1][2]; }
+  if (segs.length) { t0 = Math.min(t0, segs[0][0]); t1 = Math.max(t1, segs[segs.length - 1][1]); }
+  if (!isFinite(t0)) return [];
+  var p0 = n ? ruta[0] : null, pN = n ? ruta[n - 1] : null;
+  var quieto = function(a, b, lat, lon){
+    return { tipo: 'parada', ini: a, fin: b, minutos: b - a, km: 0, velMax: 0, lat0: lat, lon0: lon, lat1: lat, lon1: lon };
+  };
   var out = [];
-  recs.forEach(function(r, x){
-    out.push(r);
-    var sig = recs[x + 1];
-    if (sig && sig.ini - r.fin >= 10) out.push({ tipo: 'parada', ini: r.fin, fin: sig.ini, minutos: sig.ini - r.fin,
-      km: 0, velMax: 0, lat0: r.lat1, lon0: r.lon1, lat1: r.lat1, lon1: r.lon1 });
-  });
+  if (!recs.length) {
+    if (t1 > t0) out.push(quieto(t0, t1, p0 ? p0[0] : null, p0 ? p0[1] : null));
+  } else {
+    if (recs[0].ini - t0 >= 1) out.push(quieto(t0, recs[0].ini, recs[0].lat0, recs[0].lon0));
+    recs.forEach(function(r, x){
+      out.push(r);
+      var sig = recs[x + 1];
+      if (sig && sig.ini - r.fin >= 1) out.push(quieto(r.fin, sig.ini, r.lat1, r.lon1));
+    });
+    var ul = recs[recs.length - 1];
+    if (t1 - ul.fin >= 1) out.push(quieto(ul.fin, t1, ul.lat1, ul.lon1));
+  }
+  var NOM = { a:'Apagado', r:'Ralentí', d:'Detenido', s:'Sin reporte' };
   out.forEach(function(r){
+    r.des = _gpsDesglose(segs, r.ini, r.fin);
+    if (r.tipo === 'parada') {
+      var dom = ['a','r','d','s'].sort(function(x, y){ return r.des[y] - r.des[x]; })[0];
+      r.estado = NOM[dom];
+    } else r.estado = 'Movimiento';
     r.inicio = _gpsHM(r.ini); r.fin_ = _gpsHM(r.fin);
-    r.desde = _gpsLugarDe(r.lat0, r.lon0); r.hasta = r.tipo === 'parada' ? r.desde : _gpsLugarDe(r.lat1, r.lon1);
+    r.desde = r.lat0 == null ? '' : _gpsLugarDe(r.lat0, r.lon0);
+    r.hasta = r.tipo === 'parada' ? r.desde : (r.lat1 == null ? '' : _gpsLugarDe(r.lat1, r.lon1));
   });
   return out;
 }
 /* Lo que se manda al Sheet (historial GPS_RECORRIDOS). */
 function _gpsRecParaGuardar(lista){
-  return lista.map(function(r){ return { tipo: r.tipo, inicio: r.inicio, fin: r.fin_, minutos: r.minutos, km: r.km, velMax: r.velMax,
-    desde: r.desde, hasta: r.hasta, lat0: r.lat0, lon0: r.lon0, lat1: r.lat1, lon1: r.lon1 }; });
+  return lista.map(function(r){ var d = r.des || {}; return { tipo: r.tipo, estado: r.estado, inicio: r.inicio, fin: r.fin_, minutos: r.minutos, km: r.km, velMax: r.velMax,
+    desde: r.desde, hasta: r.hasta, lat0: r.lat0, lon0: r.lon0, lat1: r.lat1, lon1: r.lon1,
+    mMov: d.m || 0, mRal: d.r || 0, mDet: d.d || 0, mApag: d.a || 0, mSin: d.s || 0 }; });
 }
 function _gpsGuardarRecs(fecha, placa, lista){
   return fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
@@ -19677,22 +19743,33 @@ function _gpsCerrarMapa(){
 function _gpsEscMapa(e){ if (e.key === 'Escape') _gpsCerrarMapa(); }
 
 function _gpsNomLugar(t){ return t ? _flEsc(t) : '<span class="gps-sinlug">sin nombre</span>'; }
+var _GPS_TONO = { 'Movimiento':'#1a73e8', 'Ralentí':'#d9922b', 'Detenido':'#8a948e', 'Apagado':'#5b625e', 'Sin reporte':'#cfd4d1' };
+function _gpsDesHTML(d){
+  if (!d) return '';
+  var p = [['m','Movimiento'],['r','Ralentí'],['d','Detenido'],['a','Apagado'],['s','Sin reporte']]
+    .filter(function(x){ return d[x[0]] >= 1; })
+    .map(function(x){ return '<span><i style="background:' + _GPS_TONO[x[1]] + '"></i>' + x[1] + ' ' + _gpsDur(d[x[0]] / 60) + '</span>'; });
+  return p.length ? '<span class="d">' + p.join('') + '</span>' : '';
+}
 function _gpsListaHTML(){
   var d = _gpsDet, recs = d.recs.filter(function(r){ return r.tipo === 'recorrido'; });
+  if (!d.recs.length) return '<div class="gps-mm-vacio">Este día no tiene reportes.</div>';
   var km = recs.reduce(function(a, r){ return a + r.km; }, 0);
-  var par = d.recs.length - recs.length;
-  if (!d.recs.length) return '<div class="gps-mm-vacio">No hubo recorridos este día.</div>';
-  return '<div class="gps-mm-res"><b>' + recs.length + '</b> recorrido' + (recs.length === 1 ? '' : 's') +
-      ' · <b>' + String(Math.round(km * 10) / 10).replace('.', ',') + '</b> km · <b>' + par + '</b> parada' + (par === 1 ? '' : 's') + '</div>' +
+  var tot = { m:0, r:0, d:0, a:0, s:0 };
+  d.recs.forEach(function(r){ Object.keys(tot).forEach(function(k){ tot[k] += (r.des && r.des[k]) || 0; }); });
+  return '<div class="gps-mm-res"><div><b>' + recs.length + '</b> recorrido' + (recs.length === 1 ? '' : 's') +
+      ' · <b>' + String(Math.round(km * 10) / 10).replace('.', ',') + '</b> km · ' + d.recs[0].inicio + ' a ' + d.recs[d.recs.length - 1].fin_ + '</div>' +
+      _gpsDesHTML(tot) + '</div>' +
     '<ol class="gps-mm-lista">' + d.recs.map(function(r, i){
-      var sel = d.sel === i ? ' sel' : '';
-      if (r.tipo === 'parada') return '<li class="par' + sel + '" onclick="_gpsVerTramo(' + i + ')">' +
-        '<span class="h">' + r.inicio + ' – ' + r.fin_ + '</span><span class="t">Parada · ' + _gpsDur(r.minutos / 60) + '</span>' +
-        '<span class="l">' + _gpsNomLugar(r.desde) + '</span></li>';
-      return '<li class="rec' + sel + '" onclick="_gpsVerTramo(' + i + ')">' +
-        '<span class="h">' + r.inicio + ' – ' + r.fin_ + '</span>' +
+      var sel = d.sel === i ? ' sel' : '', col = _GPS_TONO[r.estado] || '#8a948e';
+      var cab = '<span class="h">' + r.inicio + ' – ' + r.fin_ + '<em style="background:' + col + (r.estado === 'Sin reporte' ? ';color:#15201a' : '') + '">' +
+        (r.tipo === 'recorrido' ? 'Recorrido' : r.estado) + '</em></span>';
+      if (r.tipo === 'parada') return '<li class="par' + sel + '" style="border-left-color:' + col + '" onclick="_gpsVerTramo(' + i + ')">' + cab +
+        '<span class="t">' + _gpsDur(r.minutos / 60) + ' quieto</span>' +
+        (r.lat0 != null ? '<span class="l">' + _gpsNomLugar(r.desde) + '</span>' : '') + _gpsDesHTML(r.des) + '</li>';
+      return '<li class="rec' + sel + '" onclick="_gpsVerTramo(' + i + ')">' + cab +
         '<span class="t">' + _gpsDur(r.minutos / 60) + ' · ' + String(r.km).replace('.', ',') + ' km · máx ' + r.velMax + ' km/h</span>' +
-        '<span class="l">' + _gpsNomLugar(r.desde) + ' → ' + _gpsNomLugar(r.hasta) + '</span></li>';
+        '<span class="l">' + _gpsNomLugar(r.desde) + ' → ' + _gpsNomLugar(r.hasta) + '</span>' + _gpsDesHTML(r.des) + '</li>';
     }).join('') + '</ol>';
 }
 function _gpsPintarLista(){ var c = document.getElementById('gps-mm-lista'); if (c && _gpsDet) c.innerHTML = _gpsListaHTML(); }
@@ -19707,6 +19784,7 @@ function _gpsVerTramo(i){
   var r = d.recs[i];
   if (r.tipo === 'parada') {
     d.capaRuta.setStyle({ opacity: .95 });
+    if (r.lat0 == null) return;
     d.capaSel = L.circleMarker([r.lat0, r.lon0], { radius: 14, color: '#d9922b', weight: 4, fill: false }).addTo(_gpsMapa);
     _gpsMapa.setView([r.lat0, r.lon0], Math.max(_gpsMapa.getZoom(), 16));
     return;
@@ -19759,7 +19837,7 @@ async function _gpsCrearLugar(btn, lat, lon){
    recalculan y se guardan en el historial. */
 function _gpsRecalcularDet(guardar){
   var d = _gpsDet; if (!d) return;
-  d.recs = _gpsRecorridos(d.ruta); d.sel = -1;
+  d.recs = _gpsRecorridos(d.ruta, d.segs); d.sel = -1;
   if (d.capaSel && _gpsMapa) { _gpsMapa.removeLayer(d.capaSel); d.capaSel = null; }
   _gpsPintarLugares(); _gpsPintarParadas(); _gpsPintarLista();
   if (guardar) _gpsGuardarRecs(d.fecha, d.placa, d.recs);
@@ -19770,9 +19848,9 @@ function _gpsRecalcularDet(guardar){
 function _gpsPintarParadas(){
   var d = _gpsDet; if (!d || !_gpsMapa) return;
   if (d.capaPar) _gpsMapa.removeLayer(d.capaPar);
-  d.capaPar = L.layerGroup(d.recs.filter(function(r){ return r.tipo === 'parada'; }).map(function(r){
-    var mk = L.circleMarker([r.lat0, r.lon0], { radius: 7, color: '#fff', weight: 2, fillColor: '#d9922b', fillOpacity: 1 })
-      .bindTooltip('Parada ' + r.inicio + '–' + r.fin_ + ' · ' + _gpsDur(r.minutos / 60) + (r.desde ? ' · ' + _flEsc(r.desde) : ''));
+  d.capaPar = L.layerGroup(d.recs.filter(function(r){ return r.tipo === 'parada' && r.lat0 != null; }).map(function(r){
+    var mk = L.circleMarker([r.lat0, r.lon0], { radius: 7, color: '#fff', weight: 2, fillColor: _GPS_TONO[r.estado] || '#d9922b', fillOpacity: 1 })
+      .bindTooltip(r.estado + ' ' + r.inicio + '–' + r.fin_ + ' · ' + _gpsDur(r.minutos / 60) + (r.desde ? ' · ' + _flEsc(r.desde) : ''));
     if (!r.desde) mk.bindPopup(_gpsFormLugar(r.lat0, r.lon0));
     return mk;
   })).addTo(_gpsMapa);
@@ -19813,7 +19891,7 @@ async function _gpsAbrirMapa(fecha, placa){
     document.getElementById('gps-mm-lista').innerHTML = '<div class="gps-mm-vacio">Este día no tiene puntos de recorrido. Vuelve a subir el informe.</div>';
     return;
   }
-  _gpsDet = { fecha: fecha, placa: placa, ruta: ruta, recs: _gpsRecorridos(ruta), sel: -1 };
+  _gpsDet = { fecha: fecha, placa: placa, ruta: ruta, segs: x.segs || [], recs: _gpsRecorridos(ruta, x.segs), sel: -1 };
   /* Si los nombres guardados ya no coinciden (se creó o borró un lugar),
      el historial de este día se pone al día solo. */
   if (Array.isArray(guardados)) {
