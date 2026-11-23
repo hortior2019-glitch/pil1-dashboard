@@ -62460,6 +62460,18 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
 .hx-cel.dom{background:#e9e8e3}
 .hx-cel.fut{background:transparent}
 .hx-mapa .tot{text-align:right;color:#4f5652;font-size:11px}
+/* Placa con flecha: despliega las operaciones de la placa, una fila cada una */
+.hx-mapa .pl-c{display:flex;align-items:center;gap:2px;min-width:0}
+.hx-mapa .pl-fl{flex:none;width:22px;height:22px;border:0;border-radius:4px;background:none;color:#1c5636;cursor:pointer;font-size:16px;line-height:1;transition:transform .16s ease,background .16s}
+.hx-mapa .pl-fl:hover{background:#e6ece8}
+.hx-mapa .pl-fl:focus-visible{outline:2px solid var(--navy);outline-offset:1px}
+.hx-mapa .pl-fl.ab{transform:rotate(90deg)}
+.hx-mapa .op-n{display:flex;align-items:center;gap:6px;min-width:0;padding-left:24px;font-size:13px;color:#3f4642}
+.hx-mapa .op-n span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hx-mapa .op-f{flex:none;width:22px;height:22px;border-radius:50%;object-fit:cover;background:#e3efe7;border:1px solid #cfdcd3}
+.hx-mapa .op-i{flex:none;width:22px;height:22px;border-radius:50%;background:#e3efe7;color:#1c5636;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
+.hx-mapa .op-cel{height:20px;font-size:12px}
+.hx-mapa .op-fin{margin-bottom:6px}
 
 /* Frente a la flota */
 .hx-fr{display:grid;grid-template-columns:96px minmax(0,1fr) 110px;gap:9px;align-items:center;padding:8px 0;border-bottom:1px solid #f0f1ee;font-size:12.5px;font-variant-numeric:tabular-nums}
@@ -62807,7 +62819,7 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
 (function(){
   'use strict';
   var HX = { ref:'x50', ventana:'todo', cliRef:'x50', cliPer:'todo', cliAb:'',
-             cat:'', mapaMes:0 };
+             cat:'', mapaMes:0, mapaAb:{} };
   var MES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   var META_DIA = 300;
 
@@ -63278,12 +63290,18 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
     if(km < 100 && movio) return 'Sin km real';
     return '';
   }
-  function celdasMes(viajes, key, mx, hoy, n){
+  function celdasMes(viajes, key, mx, hoy, n, col){
+    /* col: color de la operación (ops-materiales.csv); sin él, el verde de siempre. */
+    var rgb = '26,92,53';
+    if(col && /^#[0-9a-f]{6}$/i.test(col)) rgb = [1, 3, 5].map(function(i){ return parseInt(col.slice(i, i + 2), 16); }).join(',');
     var cel = '';
     for(var d = 1; d <= n; d++){
       var iso = key + '-' + pad(d), dow = aFecha(iso).getDay(), x = viajes[iso], fut = iso > hoy;
       var alfa = x ? .22 + .78 * x.v / mx : 0;
-      var st = x ? ' style="background:rgba(26,92,53,' + alfa.toFixed(2) + ');color:' + (alfa < .55 ? '#10331f' : '#fff') + '"' : '';
+      /* Número blanco solo si el fondo, ya mezclado con el blanco, queda oscuro. */
+      var lum = 1;
+      if(x){ var cc = rgb.split(',').map(function(v){ return (+v * alfa + 255 * (1 - alfa)) / 255; }); lum = .2126 * cc[0] + .7152 * cc[1] + .0722 * cc[2]; }
+      var st = x ? ' style="background:rgba(' + rgb + ',' + alfa.toFixed(2) + ');color:' + (lum > .5 ? '#10331f' : '#fff') + '"' : '';
       /* Desglose del día: cada operación con sus viajes y su neto. */
       var top = x ? Object.keys(x.op).sort(function(a, b){ return x.op[b] - x.op[a] || (x.opKg[b] || 0) - (x.opKg[a] || 0); })
         .map(function(o){ return o + ' · ' + x.op[o] + (x.op[o] === 1 ? ' viaje' : ' viajes') + ' · ' + n0((x.opKg || {})[o] || 0) + ' kg'; }) : [];
@@ -63302,6 +63320,44 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
     });
     return o;
   }
+  /* Viajes del mes de una placa, separados por operación y por día. */
+  function viajesPorOpDia(pl, key){
+    var o = {};
+    (indice().via[pl] || []).forEach(function(x){
+      if(x.iso.slice(0, 7) !== key) return;
+      var g = o[x.op] || (o[x.op] = { op:x.op, v:0, kg:0, dias:{} });
+      g.v++; g.kg += x.kg;
+      var q = g.dias[x.iso] || (g.dias[x.iso] = { v:0, kg:0, op:{}, opKg:{} });
+      q.v++; q.kg += x.kg; q.op[x.op] = (q.op[x.op] || 0) + 1; q.opKg[x.op] = (q.opKg[x.op] || 0) + x.kg;
+    });
+    return Object.keys(o).map(function(k){ return o[k]; }).sort(function(a, b){ return b.v - a.v || b.kg - a.kg; });
+  }
+  /* Foto de la operación: la del catálogo de Vehículos; si no, el logo del cliente; si no, la inicial. */
+  function colorOp(op){
+    try { if(typeof _ccColor === 'function') return _ccColor(op, op); } catch(e){}
+    return '#1a5c35';
+  }
+  function fotoOp(op){
+    var u = '';
+    try { u = typeof _fotoCatPorId === 'function' ? _fotoCatPorId(_vehOperaciones || [], '', op) : ''; } catch(e){}
+    if(u && typeof urlFotoDrive === 'function') u = urlFotoDrive(u);
+    if(!u){ try { u = typeof getClientLogo === 'function' ? (getClientLogo(op) || '') : ''; } catch(e){} }
+    var c = colorOp(op);
+    var ini = '<span class="op-i" style="background:' + esc(c) + ';color:#fff">' + esc((String(op || '?').trim()[0] || '?').toUpperCase()) + '</span>';
+    return u ? '<img class="op-f" style="border:2px solid ' + esc(c) + '" src="' + esc(u) + '" alt="" loading="lazy" onerror="this.outerHTML=this.dataset.i" data-i="' + esc(ini) + '">' : ini;
+  }
+  function filasOp(pl, key, mx, hoy, n){
+    var ops = viajesPorOpDia(pl, key);
+    /* Los colores vienen de ops-materiales.csv; si aún no se ha leído, se pide y se repinta. */
+    if(typeof _ccOpsEstado !== 'undefined' && _ccOpsEstado === '' && typeof _ccCargarOps === 'function'){
+      _ccCargarOps().then(function(){ hxFlota(); }).catch(function(){});
+    }
+    return ops.map(function(g, i){
+      return '<div class="op-n' + (i === ops.length - 1 ? ' op-fin' : '') + '"' + tip(g.op, g.v + (g.v === 1 ? ' viaje' : ' viajes') + ' en el mes', ['Neto ' + n0(g.kg) + ' kg']) + '>' + fotoOp(g.op) + '<span>' + esc(g.op) + '</span></div>' +
+        celdasMes(g.dias, key, mx, hoy, n, colorOp(g.op)).replace(/class="hx-cel/g, 'class="hx-cel op-cel') +
+        '<div class="tot' + (i === ops.length - 1 ? ' op-fin' : '') + '">' + g.v + '</div>';
+    }).join('');
+  }
   function htmlMapa(){
     var key = mesesAtras(2)[HX.mapaMes === 0 ? 1 : 0];
     var a = +key.slice(0, 4), m = +key.slice(5) - 1, n = new Date(a, m + 1, 0).getDate(), hoy = hoyIso();
@@ -63314,13 +63370,16 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
       filas.push({ pl:pl, por:por, act:ks.length });
     });
     filas.sort(function(x, y){ return y.act - x.act; });
-    var plantilla = 'grid-template-columns:64px repeat(' + n + ',minmax(0,1fr)) 42px';
+    var plantilla = 'grid-template-columns:minmax(96px,150px) repeat(' + n + ',minmax(0,1fr)) 42px';
     var cab = '<div></div>';
     for(var d = 1; d <= n; d++) cab += '<div class="h' + (aFecha(key + '-' + pad(d)).getDay() === 0 ? ' dom' : '') + '">' + d + '</div>';
     cab += '<div class="h">días</div>';
     var cuerpo = filas.map(function(f){
-      return '<button type="button" class="pl" data-hx="abrir" data-v="' + esc(f.pl) + '">' + esc(f.pl) + '</button>' + celdasMes(f.por, key, mx, hoy, n) +
-        '<div class="tot"' + tip(f.pl, f.act + ' de ' + transc + ' días', ['con al menos un viaje']) + '>' + f.act + '/' + transc + '</div>';
+      var ab = !!HX.mapaAb[f.pl];
+      return '<div class="pl-c"><button type="button" class="pl-fl' + (ab ? ' ab' : '') + '" data-hx="mapaDesp" data-v="' + esc(f.pl) + '" aria-expanded="' + ab + '" aria-label="' + (ab ? 'Ocultar' : 'Ver') + ' operaciones de ' + esc(f.pl) + '" title="' + (ab ? 'Ocultar' : 'Ver') + ' operaciones por día">&#9656;</button>' +
+        '<button type="button" class="pl" data-hx="abrir" data-v="' + esc(f.pl) + '">' + esc(f.pl) + '</button></div>' + celdasMes(f.por, key, mx, hoy, n) +
+        '<div class="tot"' + tip(f.pl, f.act + ' de ' + transc + ' días', ['con al menos un viaje']) + '>' + f.act + '/' + transc + '</div>' +
+        (ab ? filasOp(f.pl, key, mx, hoy, n) : '');
     }).join('');
     return '<div class="hx-card" style="margin-bottom:12px"><div class="hx-cab"><div><div class="hx-tit">Actividad de la flota por día</div>' +
       '<div class="hx-sub">Viajes por día · ' + MES[m] + ' ' + a + (sin ? ' · ' + sin + (sin === 1 ? ' equipo' : ' equipos') + ' sin tiquetes no aparece' + (sin === 1 ? '' : 'n') : '') + '</div></div>' +
@@ -64474,6 +64533,7 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
     if(q === 'cxOrden'){ CX.orden = v; cxRepintar(); return; }
     if(q === 'cxPl'){ CX.ab = CX.ab === v ? '' : v; cxRepintar(); return; }
     if(q === 'mapaMes'){ HX.mapaMes = +v; hxFlota(); return; }
+    if(q === 'mapaDesp'){ ev.stopPropagation(); HX.mapaAb[v] = !HX.mapaAb[v]; hxFlota(); return; }
     if(q === 'abrir'){
       ev.stopPropagation();
       verVistaVeh('uno'); abrirFichaVehiculo(v);
