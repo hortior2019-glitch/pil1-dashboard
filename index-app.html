@@ -10699,6 +10699,7 @@ html[data-ventas] body{background:
       <button onclick="abrirFormVehiculo()" style="padding:9px 18px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">+ Agregar vehículo</button>
       <button onclick="abrirCatalogoVeh('conductores')" style="padding:9px 16px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--white);color:var(--navy);border:1px solid var(--navy);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Conductores</button>
       <button onclick="abrirCatalogoVeh('operaciones')" style="padding:9px 16px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--white);color:var(--navy);border:1px solid var(--navy);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Operaciones</button>
+      <button onclick="exportarViajesVehExcel()" title="Viajes de las placas de la flota en el periodo elegido" style="padding:9px 16px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--white);color:var(--navy);border:1px solid var(--navy);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Descargar Excel</button>
       <button onclick="cargarVehiculos(true)" style="padding:9px 16px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:var(--rule-l);color:var(--ink-m);border:1px solid var(--rule);border-radius:4px;cursor:pointer;font-family:'Source Sans 3',sans-serif">Actualizar</button>
     </div>
   </div>
@@ -18297,6 +18298,52 @@ function _flSoloFlota(){
     if(k) set[k] = true;
   });
   return set;
+}
+
+/* Excel de los viajes de las placas de la flota: día, hora, placa,
+   operación, conductor, lleno, vacío y neto. Usa el mismo periodo del
+   tablero (filtro de arriba o rango Desde/Hasta) y el buscador de placa. */
+function exportarViajesVehExcel(){
+  if (typeof XLSX === 'undefined') { alert('No cargó la librería de Excel. Recargue la página.'); return; }
+  var regs = (typeof dataIngreso !== 'undefined' ? dataIngreso : []) || [];
+  var dela = _flSoloFlota();
+  var q = ((document.getElementById('veh-buscar') || {}).value || '').trim().toUpperCase();
+  var num = function(v){ var n = precioNum(String(v == null ? '' : v).replace(/[^0-9.,]/g, '')); return (n === null || isNaN(n)) ? '' : n; };
+  var filas = [];
+  regs.forEach(function(r){
+    var mt = getMarcaTemporal(r);
+    if(!_flPeriodoOk(fechaIsoDeRegistro(r), mt)) return;
+    var pl = getPlacaReg(r);
+    if(!pl || !dela[pl]) return;
+    if(q && pl.indexOf(q) === -1) return;
+    var dt = parseDateTime(mt || '');
+    var ok = dt && !isNaN(dt);
+    var ll = num(r['PESO LLENO']||r['Peso Lleno']||r['peso lleno']||r['PESO ENTRADA  SEGÚN TICKET']||r['PESO ENTRADA  Según ticket']||r['PESO ENTRADA Según ticket']||r['PESO ENTRADA']||'');
+    var va = num(r['PESO VACIO']||r['PESO VACÍO']||r['Peso Vacio']||r['peso vacio']||r['PESO SALIDA  SEGÚN TICKET']||r['PESO SALIDA  Según ticket']||r['PESO SALIDA Según ticket']||r['PESO SALIDA']||'');
+    filas.push({
+      t: ok ? dt.getTime() : 0,
+      'Día': ok ? dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0') : '',
+      'Hora': ok ? String(dt.getHours()).padStart(2,'0') + ':' + String(dt.getMinutes()).padStart(2,'0') : '',
+      'Placa': pl,
+      'Operación': opDeRegistro(r) || '',
+      'Conductor': (r['CONDUCTOR - PRIMER NOMBRE Y PRIMER APELLIDO']||r['CONDUCTOR - PRIME NOMBRE Y PRIMER APELLIDO']||r['CONDUCTOR']||r['Conductor']||r['conductor']||'').toString().trim(),
+      'Lleno (kg)': ll,
+      'Vacío (kg)': va,
+      'Neto (kg)': getPesoNeto(r) || 0
+    });
+  });
+  if(!filas.length){ alert('No hay viajes de la flota en el periodo elegido (' + _flEtiquetaPeriodo() + ').'); return; }
+  filas.sort(function(a, b){ return a.t - b.t; });
+  var datos = filas.map(function(f){ var o = Object.assign({}, f); delete o.t; return o; });
+  var tot = filas.reduce(function(s, f){ return s + f['Neto (kg)']; }, 0);
+  datos.push({});
+  datos.push({ 'Día': 'TOTAL', 'Placa': filas.length + ' viajes', 'Neto (kg)': Math.round(tot * 100) / 100 });
+  var ws = XLSX.utils.json_to_sheet(datos);
+  ws['!cols'] = [{wch:11},{wch:7},{wch:10},{wch:26},{wch:26},{wch:11},{wch:11},{wch:11}];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Viajes');
+  var et = _flHayRango() ? ((VEH_RANGO.desde || 'inicio') + '_a_' + (VEH_RANGO.hasta || 'hoy')) : (currentFilter || 'periodo');
+  XLSX.writeFile(wb, 'viajes_flota_' + (q ? q + '_' : '') + et + '.xlsx');
 }
 
 /* Lo movido por cada placa en el periodo que esté elegido arriba. */
