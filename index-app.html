@@ -19504,7 +19504,20 @@ function _gpsCajaHTML(){
   }
 
   var vd = _gpsViajesDia(_gpsFecha);
-  var todas = _gpsDias.filter(function(x){ return x.fecha === _gpsFecha; }).map(function(x){
+  /* Solo los equipos de la subpestaña abierta: en Volquetas no salen
+     cargadores ni tractores. Las placas que no están registradas en la
+     flota no tienen categoría: se nombran aparte para registrarlas. */
+  var cat = window.hxCatActual ? window.hxCatActual() : null;
+  var deCat = cat ? _flPlacasCat(cat) : null, regis = {}, sinReg = [];
+  (_vehiculos || []).forEach(function(v){ var k = _placaNorm(v.placa || ''); if (k) regis[k] = 1; });
+  var catNom = cat ? ((VEH_CATEGORIAS.filter(function(c){ return c.k === cat; })[0] || {}).pl || 'Sin categoría') : '';
+  var todas = _gpsDias.filter(function(x){
+    if (x.fecha !== _gpsFecha) return false;
+    if (!deCat) return true;
+    var k = _placaNorm(x.placa);
+    if (!regis[k]) { sinReg.push(k); return false; }
+    return !!deCat[k];
+  }).map(function(x){
     var pl = _placaNorm(x.placa), maq = _uVeh(pl) === 'h', v = vd[pl] || { viajes:0, kg:0 }, al = [];
     if (!maq && x.km >= 3 && !v.viajes) al.push('Se movió sin viajes');
     if (x.hRal >= 1 && x.hRal > x.hMov) al.push('Más ralentí que andando');
@@ -19580,13 +19593,13 @@ function _gpsCajaHTML(){
         (_gpsVisitas[x.fecha + '|' + f.pl] ? '<div class="gps-card-vis"><span>Entradas y salidas</span>' + _gpsVisitasHTML(x.fecha, f.pl, 4) + '</div>' : '') +
         '<div class="gps-card-blq"><span>Recorridos</span>' + bloques(x) + '</div>' +
       '</article>';
-    }).join('') + '</div>' : '<div class="fl-vacio">El informe de este día no trae vehículos.</div>';
-  var quietos = quietas.length ? '<div class="gps-quietos"><b>Sin moverse todo el día:</b> ' +
-      quietas.map(function(f){ return '<span class="gps-pl">' + _miniPlaca(f.pl) + _flEsc(f.pl) + '</span>'; }).join('') + '</div>' : '';
+    }).join('') + '</div>' : '<div class="fl-vacio">' + (cat ? 'El informe de este día no trae ' + _flEsc(catNom.toLowerCase()) + '.' : 'El informe de este día no trae vehículos.') + '</div>';
+  var noReg = sinReg.length ? '<div class="gps-quietos"><b>En el informe pero sin registrar en la flota:</b> ' +
+      sinReg.map(function(p){ return '<button type="button" class="gps-pl" onclick="abrirFormVehiculo(\'' + _escAttrVeh(p) + '\')">' + _flEsc(p) + '</button>'; }).join('') + '</div>' : '';
 
   if (todas.length) setTimeout(_gpsMontarPreview, 0);
-  return _flSeccion('GPS Satrack', 'recorrido del día cruzado con los viajes registrados') +
-    '<div class="fl-card">' + barra + kpis + tabla + '</div>';
+  return _flSeccion('GPS Satrack' + (catNom ? ' · ' + catNom : ''), 'recorrido del día cruzado con los viajes registrados') +
+    '<div class="fl-card">' + barra + kpis + tabla + noReg + '</div>';
 }
 
 /* Punto de inicio y punto final del día: el primer y el último reporte con
@@ -20433,7 +20446,8 @@ function renderFlota(){
     /* Viajes y peso son operación: van aquí, no dentro de combustible. */
     _vehCmpHTML() +
 
-    '<div id="veh-gps-caja">' + _gpsCajaHTML() + '</div>' +
+    /* Con el tablero nuevo el GPS va dentro del cuadro de cada categoría. */
+    (window.hxCombHTML ? '' : '<div id="veh-gps-caja">' + _gpsCajaHTML() + '</div>') +
 
     '<div id="hx-flota"></div>' +
 
@@ -63867,6 +63881,24 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
 #panel-vehiculos .vf-doc.bien .vf-doc-est,#panel-vehiculos .vf-doc.bien .vf-doc-nota{color:#17633a}
 #panel-vehiculos .vf-aten-ir{color:#4a514d}
 #panel-vehiculos .cx{margin-top:4px}
+/* ── Cuadro principal: subpestañas con su imagen y letra legible ── */
+#panel-vehiculos .cx-tabs{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+#panel-vehiculos .cx-tab{display:flex;flex-direction:column;padding:12px 16px 13px}
+#panel-vehiculos .cx-tab-img{display:block;width:100%;max-width:150px;height:74px;object-fit:contain;object-position:left bottom;margin:0 0 8px;opacity:.9;transition:opacity .15s ease,transform .18s ease}
+#panel-vehiculos .cx-tab:hover .cx-tab-img,#panel-vehiculos .cx-tab.on .cx-tab-img{opacity:1;transform:translateY(-2px)}
+#panel-vehiculos .cx-tab span{font-size:15px}
+#panel-vehiculos .cx-tab-n{display:inline-block;min-width:20px;padding:0 6px;border-radius:9px;background:#e9ece8;color:#3f4642;font-size:13px;font-weight:700;text-align:center;vertical-align:1px}
+#panel-vehiculos .cx-tab.on .cx-tab-n{background:var(--navy);color:#fff}
+#panel-vehiculos .cx-tab b{font-size:21px}
+#panel-vehiculos .cx-h{font-size:22px}
+#panel-vehiculos .cx-hsub{font-size:14px;color:#4a514d}
+/* Barra de arriba: los botones venían en 11px mayúsculas */
+#veh-barra button,#veh-barra a{font-size:13px!important;letter-spacing:.3px!important}
+#veh-barra input,#veh-barra select{font-size:14px!important}
+#panel-vehiculos .veh-vt{font-size:14px}
+/* GPS: lo que quedaba por debajo de 13px */
+#panel-vehiculos .gps-mm-lista .h em{font-size:13px}
+@media (prefers-reduced-motion:reduce){#panel-vehiculos .cx-tab-img{transition:none;transform:none!important}}
 #panel-vehiculos .cx-enc{margin-bottom:14px;border-radius:13px;overflow:hidden;border:1px solid #1a5c35}
 #panel-vehiculos .cx-band{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;background:#1a5c35;color:#fff;padding:16px 20px}
 #panel-vehiculos .cx-h{margin:0;font-family:'Playfair Display',serif;font-size:27px;font-weight:700;line-height:1.15;color:#fff;letter-spacing:-.2px}
@@ -64682,6 +64714,8 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
      cifras salen de las mismas funciones de antes (_flCombMeses y
      _flAvanceMes) y comparan los dos meses hasta el mismo día. */
   var CX = { cat:null, orden:'gasto', ab:'' };
+  /* La subpestaña abierta (Volquetas, Cargadores…): el GPS la sigue. */
+  window.hxCatActual = function(){ return CX.cat; };
   function cxCats(){
     var cuenta = {}, sin = [];
     (_vehiculos || []).forEach(function(v){
@@ -64694,6 +64728,19 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
     });
     if(sin.length) out.push({ k:'__sin', nom:'Sin categoría', horas:false, n:sin.length, sin:sin });
     return out;
+  }
+  /* Imagen de cada categoría en su subpestaña. Los archivos van a la raíz
+     del repo pil1-dashboard con estos nombres (PNG con fondo transparente,
+     unos 480×300). Mientras no estén, la imagen no sale y la pestaña queda
+     como antes. */
+  var CX_IMG = 'https://raw.githubusercontent.com/hortior2019-glitch/pil1-dashboard/main/';
+  var CX_IMGS = { 'Volqueta':'cat-volqueta.png', 'Camión':'cat-camion.png', 'Tractocamión':'cat-tractocamion.png',
+    'Cargador':'cat-cargador.png', 'Retroexcavadora':'cat-retroexcavadora.png', 'Excavadora':'cat-excavadora.png',
+    'Minicargador':'cat-minicargador.png', 'Tractor':'cat-tractor.png', 'Montacargas':'cat-montacargas.png',
+    'Equipo de succión':'cat-succion.png', 'Otro':'cat-otro.png', '__sin':'cat-otro.png' };
+  function cxImgCat(k){
+    var f = CX_IMGS[k]; if(!f) return '';
+    return '<img class="cx-tab-img" src="' + CX_IMG + f + '" alt="" loading="lazy" onerror="this.remove()">';
   }
   function pctDe(a, b){ return b > 0 ? (a - b) / b * 100 : null; }
   function signo(p){ return (p > 0 ? '+' : p < 0 ? '−' : '') + Math.abs(p).toFixed(0) + '%'; }
@@ -64934,7 +64981,8 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
       var cm = _flCombMeses(_flPlacasCat(c.k)), p = pctDe(cm.gasto, cm.gastoAnt), on = c.k === CX.cat;
       var int_ = cxDatosPlacas(_flPlacasCat(c.k), cm.dia).reduce(function(t, r){ t.n += r.ia; t.p += r.pa; return t; }, { n:0, p:0 });
       return '<button type="button" role="tab" class="cx-tab' + (on ? ' on' : '') + '" aria-selected="' + on + '" data-hx="cxCat" data-v="' + esc(c.k) + '">' +
-        '<span>' + esc(c.nom) + '</span><b>' + pesos(cm.gasto) + '</b><em>' + (p === null ? 'sin gasto en esos días' : signo(p) + ' contra los mismos días') + '</em>' +
+        cxImgCat(c.k) +
+        '<span>' + esc(c.nom) + ' <small class="cx-tab-n">' + c.n + '</small></span><b>' + pesos(cm.gasto) + '</b><em>' + (p === null ? 'sin gasto en esos días' : signo(p) + ' contra los mismos días') + '</em>' +
         (int_.n ? '<em class="cx-tab-int">' + int_.n + (int_.n === 1 ? ' interno' : ' internos') + ' · ' + n0(int_.p) + ' pimpinas</em>' : '') + '</button>';
     }).join('');
     var dela = _flPlacasCat(sel.k), cm = _flCombMeses(dela), av = _flAvanceMes(dela), hoy = new Date();
@@ -64954,6 +65002,8 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
       '<div class="hx-card" style="margin-bottom:14px"><div class="hx-cab"><div><div class="hx-tit">Gasto y costo por placa</div><div class="cx-ley"><span><i style="background:#17201b"></i>' + esc(etA) + '</span><span><i style="background:#c3c9c4"></i>' + esc(etB) + '</span></div></div>' +
         seg('cxOrden', [['gasto','Mayor gasto'],['costo', sel.horas ? 'Mayor $ / tanqueo' : 'Mayor $ / T'],['cambio','Más subió'],['mant','Mayor mantenimiento']], CX.orden) + '</div>' +
         '<div class="hx-esc">' + cxPlacas(sel, cm.dia, sel.horas, etA, etB) + '</div></div>' +
+      /* GPS Satrack de esta misma categoría, debajo del costo por placa. */
+      (typeof _gpsCajaHTML === 'function' ? '<div id="veh-gps-caja">' + _gpsCajaHTML() + '</div>' : '') +
       '<div id="veh-comb" style="margin-bottom:14px"></div>' +
       '<div class="hx-g hx-g-11">' +
         '<div class="hx-card"><div class="hx-tit">Variación del periodo</div><div class="cx-ley"><span><i style="background:#17201b"></i>' + esc(etA) + '</span><span><i style="background:#c3c9c4"></i>' + esc(etB) + '</span></div>' + cxMetricas(cm, av, sel.horas, cxDatosPlacas(dela, cm.dia).reduce(function(t, r){ t.a += r.ma; t.b += r.mb; t.ia += r.ia; t.ib += r.ib; t.pa += r.pa; t.pb += r.pb; t.sa += r.sa; t.sb += r.sb; return t; }, { a:0, b:0, ia:0, ib:0, pa:0, pb:0, sa:0, sb:0 })) + '</div>' +
