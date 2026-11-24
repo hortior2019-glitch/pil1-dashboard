@@ -1612,6 +1612,8 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #gps-mapa-modal{position:fixed;inset:0;z-index:9000;background:rgba(15,25,20,.55);display:flex;align-items:center;justify-content:center;padding:16px}
 #gps-mapa-modal .gps-mm-caja{background:#fff;border-radius:10px;width:min(1100px,100%);height:min(760px,100%);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.3)}
 #gps-mapa-modal .gps-mm-cab{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid #e5e7eb;font-size:15px}
+#gps-mapa-modal .gps-lf-tam{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#3f4642}
+#gps-mapa-modal .gps-lf-tam input{width:90px;font-variant-numeric:tabular-nums}
 #gps-mapa-modal .gps-bus{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
 #gps-mapa-modal .gps-bus input{width:230px;max-width:52vw;padding:7px 10px;font-size:14px;border:1px solid #cfd5d0;border-radius:6px;font-family:inherit;font-variant-numeric:tabular-nums}
 #gps-mapa-modal .gps-bus input:focus{outline:none;border-color:#1c5636;box-shadow:0 0 0 3px rgba(28,86,54,.14)}
@@ -19811,6 +19813,16 @@ function _gpsCargarOpsCsv(){
     .catch(function(e){ console.warn('GPS: no se pudo leer ops-materiales.csv', e); _gpsOpsCsvP = null; return []; });
   return _gpsOpsCsvP;
 }
+/* Campo abierto: se escribe cualquier nombre y, al escribir, sugiere las
+   operaciones de ops-materiales.csv. */
+function _gpsCampoOps(cls){
+  var id = 'gops' + Math.random().toString(36).slice(2, 8), conZona = {};
+  _gpsPerims().forEach(function(o){ conZona[_gpsNorm(o.nombre)] = 1; });
+  return '<input' + (cls ? ' class="' + cls + '"' : '') + ' type="text" maxlength="60" list="' + id + '" autocomplete="off" placeholder="Operación (escribe o elige)" aria-label="Operación">' +
+    '<datalist id="' + id + '">' + (_gpsOpsCsv || []).map(function(n){
+      return '<option value="' + _flEsc(n) + '"' + (conZona[_gpsNorm(n)] ? ' label="reemplaza su zona"' : '') + '></option>';
+    }).join('') + '</datalist>';
+}
 function _gpsOpcionesOps(){
   var conZona = {};
   _gpsPerims().forEach(function(o){ conZona[_gpsNorm(o.nombre)] = 1; });
@@ -19893,6 +19905,7 @@ function _gpsPopupCierra(){
 function _gpsPrevForm(f){
   var m = _gpsFormMapa; if (!m || !f) return;
   var lat = +f.dataset.lat, lon = +f.dataset.lon, tam = +f.querySelector('.tam').value;
+  if (!(tam >= 10 && tam <= 5000)) { if (m._gpsPrevCapa) { m.removeLayer(m._gpsPrevCapa); m._gpsPrevCapa = null; } var a0 = f.querySelector('.gps-lf-area'); if (a0) a0.textContent = 'Radio de 10 a 5000 m'; return; }
   var per = f.querySelector('input[type=radio]:checked').value === 'per';
   if (m._gpsPrevCapa) m.removeLayer(m._gpsPrevCapa);
   var poly = _gpsCirculo(lat, lon, tam), col = per ? '#7048e8' : '#1c5636';
@@ -20006,17 +20019,16 @@ function _gpsDibTerminar(){
   var c = d.pts.reduce(function(a, p){ return [a[0] + p[0] / d.pts.length, a[1] + p[1] / d.pts.length]; }, [0, 0]);
   L.popup({ closeOnClick: false, autoClose: false }).setLatLng(c).setContent(
     '<div class="gps-lf"><b>Perímetro de la operación</b>' +
-    (hayCsv ? '<select aria-label="Operación">' + _gpsOpcionesOps() + '</select>'
-            : '<input type="text" maxlength="60" placeholder="Nombre de la operación" aria-label="Nombre">') +
+    _gpsCampoOps('') +
     '<button type="button" onclick="_gpsGuardarPerimetro(this)">Guardar perímetro</button>' +
     '<span class="gps-lf-msg"></span></div>').openOn(_gpsMapa);
 }
 async function _gpsGuardarPerimetro(btn){
   var d = _gpsDibujo; if (!d) return;
-  var caja = btn.parentNode, campo = caja.querySelector('select') || caja.querySelector('input');
+  var caja = btn.parentNode, campo = caja.querySelector('input[list]');
   var nombre = (campo.value || '').trim();
   var msg = caja.querySelector('.gps-lf-msg');
-  if (!nombre) { msg.textContent = 'Elige la operación.'; return; }
+  if (!nombre) { msg.textContent = 'Escribe o elige la operación.'; return; }
   btn.disabled = true; msg.textContent = 'Guardando y recalculando entradas y salidas…';
   var r = null;
   try {
@@ -20161,27 +20173,23 @@ function _gpsPintarLugares(){
    defecto crea el PERÍMETRO de una operación alrededor del punto, del
    tamaño elegido; también puede crear solo un punto (lugar). */
 function _gpsFormLugar(lat, lon){
-  var hayCsv = !!(_gpsOpsCsv && _gpsOpsCsv.length);
   var g = 'gt' + Math.random().toString(36).slice(2, 8);
   return '<div class="gps-lf" data-lat="' + lat.toFixed(6) + '" data-lon="' + lon.toFixed(6) + '"><b>Crear aquí</b>' +
     '<div class="gps-lf-tipo" role="radiogroup" aria-label="Qué crear">' +
       '<label><input type="radio" name="' + g + '" value="per" checked onchange="_gpsFormTipo(this)">Perímetro</label>' +
       '<label><input type="radio" name="' + g + '" value="lug" onchange="_gpsFormTipo(this)">Punto</label></div>' +
-    (hayCsv ? '<select class="op" aria-label="Operación">' + _gpsOpcionesOps() + '</select>' : '') +
-    '<input class="nom" type="text" maxlength="60" placeholder="' + (hayCsv ? 'Nombre del punto (ej. Planta)' : 'Nombre de la operación') + '" aria-label="Nombre"' + (hayCsv ? ' hidden' : '') + '>' +
-    '<select class="tam" aria-label="Tamaño" onchange="_gpsPrevForm(this.closest(\'.gps-lf\'))">' +
-      [50, 100, 150, 200, 300, 500, 1000].map(function(r){ return '<option value="' + r + '"' + (r === 200 ? ' selected' : '') + '>Radio ' + (r < 1000 ? r + ' m' : '1 km') + '</option>'; }).join('') +
-      '</select>' +
+    _gpsCampoOps('op') +
+    '<input class="nom" type="text" maxlength="60" placeholder="Nombre del punto (ej. Planta)" aria-label="Nombre" hidden>' +
+    '<label class="gps-lf-tam">Radio <input class="tam" type="number" min="10" max="5000" step="10" value="200" list="' + g + 'r" inputmode="numeric" aria-label="Radio en metros" oninput="_gpsPrevForm(this.closest(\'.gps-lf\'))"> m' +
+      '<datalist id="' + g + 'r">' + [50, 100, 150, 200, 300, 500, 1000].map(function(r){ return '<option value="' + r + '"></option>'; }).join('') + '</datalist></label>' +
     '<span class="gps-lf-area"></span>' +
     '<button type="button" onclick="_gpsCrearAqui(this)">Guardar</button>' +
     '<span class="gps-lf-msg"></span></div>';
 }
 function _gpsFormTipo(el){
   var c = el.closest('.gps-lf'), per = c.querySelector('input[type=radio]:checked').value === 'per';
-  var op = c.querySelector('.op'), nom = c.querySelector('.nom');
-  if (op) op.hidden = !per;
-  nom.hidden = per && !!op;
-  nom.placeholder = per ? 'Nombre de la operación' : 'Nombre del punto (ej. Planta)';
+  c.querySelector('.op').hidden = !per;
+  c.querySelector('.nom').hidden = per;
   _gpsPrevForm(c);
 }
 /* Un círculo de radio r metros como polígono de 24 esquinas. */
@@ -20196,10 +20204,11 @@ function _gpsCirculo(lat, lon, r){
 async function _gpsCrearAqui(btn){
   var c = btn.closest('.gps-lf'), lat = +c.dataset.lat, lon = +c.dataset.lon;
   var per = c.querySelector('input[type=radio]:checked').value === 'per';
-  var sel = c.querySelector('.op'), tam = +c.querySelector('.tam').value;
-  var nombre = per && sel ? sel.value : c.querySelector('.nom').value.trim();
+  var tam = Math.round(+c.querySelector('.tam').value);
+  var nombre = (per ? c.querySelector('.op') : c.querySelector('.nom')).value.trim();
   var msg = c.querySelector('.gps-lf-msg');
-  if (!nombre) { msg.textContent = per ? 'Elige la operación.' : 'Escribe un nombre.'; return; }
+  if (!nombre) { msg.textContent = per ? 'Escribe o elige la operación.' : 'Escribe un nombre.'; return; }
+  if (!(tam >= 10 && tam <= 5000)) { msg.textContent = 'El radio va de 10 a 5000 m.'; return; }
   btn.disabled = true; msg.textContent = per ? 'Guardando y recalculando entradas y salidas…' : 'Guardando…';
   var d = null;
   try {
