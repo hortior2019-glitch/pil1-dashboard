@@ -57283,7 +57283,7 @@ function bajarQuincena(boton){
       }
       return Promise.all([cargarExcelConColor(), fotosAreasQuincena(d)]).then(function(r){
         var conColor = r[0], fotos = r[1];
-        var conFotos = escribirExcelQuincena(d, fotos.fotos);
+        var conFotos = escribirExcelQuincena(d, fotos.fotos, fotos.gente);
         cerrarMover();
         if(!conColor) alert('El Excel se descargó sin colores: no se pudo cargar el complemento. Los datos están completos.');
         else if(fotos.habia && !conFotos) alert('El Excel se descargó sin las fotos de las áreas. Los datos están completos.');
@@ -57313,48 +57313,60 @@ function cargarZipQuincena(){
   });
 }
 function fotosAreasQuincena(d){
-  var nombres = [];
+  var nombres = [], personas = [];
   (d.turnos || []).forEach(function(t){
-    if(t.fecha < d.desde || t.fecha > d.hasta || nombres.indexOf(t.area) >= 0) return;
-    var a = (P.areas || []).filter(function(x){ return x.nombre === t.area; })[0];
-    if(a && a.foto) nombres.push(t.area);
+    if(t.fecha < d.desde || t.fecha > d.hasta) return;
+    if(nombres.indexOf(t.area) < 0){
+      var a = (P.areas || []).filter(function(x){ return x.nombre === t.area; })[0];
+      if(a && a.foto) nombres.push(t.area);
+    }
+    if(personas.indexOf(t.persona) < 0){
+      var g = window.personalPorClave && window.personalPorClave(t.persona);
+      if(g && g.foto) personas.push(t.persona);
+    }
   });
-  if(!nombres.length) return Promise.resolve({ habia: false, fotos: {} });
-  return Promise.all([cargarZipQuincena(), pedir({ accion:'perFotosArea', nombres: nombres }, 60)])
+  if(!nombres.length && !personas.length) return Promise.resolve({ habia: false, fotos: {}, gente: {} });
+  var convertir = function(lista){
+    lista = lista || {};
+    return Promise.all(Object.keys(lista).map(function(k){
+      return fotoParaExcel(lista[k]).then(function(f){ return [k, f]; }, function(){ return [k, null]; });
+    })).then(function(pares){
+      var o = {};
+      pares.forEach(function(x){ if(x[1]) o[x[0]] = x[1]; });
+      return o;
+    });
+  };
+  return Promise.all([cargarZipQuincena(), pedir({ accion:'perFotosArea', nombres: nombres, personas: personas }, 90)])
     .then(function(r){
-      if(!r[0]) return {};
-      var lista = (r[1] && r[1].fotos) || {};
-      return Promise.all(Object.keys(lista).map(function(nom){
-        return fotoParaExcel(lista[nom]).then(function(f){ return [nom, f]; }, function(){ return [nom, null]; });
-      })).then(function(pares){
-        var fotos = {};
-        pares.forEach(function(x){ if(x[1]) fotos[x[0]] = x[1]; });
-        return fotos;
-      });
+      if(!r[0]) return [{}, {}];
+      return Promise.all([convertir(r[1] && r[1].fotos), convertir(r[1] && r[1].gente)]);
     })
-    .catch(function(){ return {}; })
-    .then(function(fotos){ return { habia: true, fotos: fotos }; });
+    .catch(function(){ return [{}, {}]; })
+    .then(function(x){ return { habia: true, fotos: x[0], gente: x[1] }; });
 }
-/* De "data:image/jpeg;base64,…" a bytes, con el tamaño en que se ve:
-   160 px de alto, sin pasar de 480 de ancho. */
+/* Ancho y alto en que se ve una foto, sin deformarla. */
+function medidaFotoExcel(f, altoMax, anchoMax){
+  var alto = altoMax, ancho = Math.round(alto * f.w / f.h);
+  if(ancho > anchoMax){ ancho = anchoMax; alto = Math.round(ancho * f.h / f.w); }
+  return { ancho: ancho, alto: alto };
+}
+/* De "data:image/jpeg;base64,…" a bytes, con su tamaño original. */
 function fotoParaExcel(dataUrl){
   return new Promise(function(listo, fallar){
     var m = String(dataUrl || '').match(/^data:image\/(jpeg|jpg|png);base64,(.+)$/);
     if(!m) return fallar(new Error('formato'));
     var img = new Image();
     img.onload = function(){
-      var alto = 160, ancho = Math.round(alto * img.naturalWidth / img.naturalHeight);
-      if(ancho > 480){ ancho = 480; alto = Math.round(ancho * img.naturalHeight / img.naturalWidth); }
       var bin = atob(m[2]), bytes = new Uint8Array(bin.length);
       for(var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      listo({ bytes: bytes, ext: m[1] === 'png' ? 'png' : 'jpeg', ancho: ancho, alto: alto });
+      listo({ bytes: bytes, ext: m[1] === 'png' ? 'png' : 'jpeg', w: img.naturalWidth, h: img.naturalHeight });
     };
     img.onerror = function(){ fallar(new Error('imagen')); };
     img.src = dataUrl;
   });
 }
 /* Mete las fotos en la primera hoja del .xlsx. Cada una queda anclada a
-   la fila que se dejó libre para ella, en la columna A. */
+   la fila y columna que se dejó libre para ella. */
 function xlsxConFotos(datos, imagenes){
   var fz = FFLATE_QC, txt = new TextDecoder(), cod = new TextEncoder();
   var z = fz.unzipSync(new Uint8Array(datos));
@@ -57365,8 +57377,8 @@ function xlsxConFotos(datos, imagenes){
     var n = i + 1, arch = 'fotoarea' + n + '.' + im.f.ext;
     z['xl/media/' + arch] = im.f.bytes;
     relsDib += '<Relationship Id="rId' + n + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/' + arch + '"/>';
-    var cx = im.f.ancho * EMU, cy = im.f.alto * EMU;
-    anclas += '<xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff>' +
+    var cx = im.ancho * EMU, cy = im.alto * EMU;
+    anclas += '<xdr:oneCellAnchor><xdr:from><xdr:col>' + (im.c || 0) + '</xdr:col><xdr:colOff>' + Math.round((im.off || 0) * EMU) + '</xdr:colOff>' +
       '<xdr:row>' + im.r + '</xdr:row><xdr:rowOff>' + (3 * EMU) + '</xdr:rowOff></xdr:from>' +
       '<xdr:ext cx="' + cx + '" cy="' + cy + '"/>' +
       '<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="' + (n + 1) + '" name="Foto ' + n + '"/>' +
@@ -57609,9 +57621,10 @@ function liqTextoDia(lista){
   return lin.join('\n');
 }
 
-function escribirExcelQuincena(d, fotos){
+function escribirExcelQuincena(d, fotos, caras){
   fotos = fotos || {};
-  var imagenes = [];   /* { r, f }: la fila libre y la foto que va en ella */
+  caras = caras || {};
+  var imagenes = [];   /* { r, c, off, ancho, alto, f }: dónde va cada foto */
   /* Sin el poder de documentación, el archivo sale sin cédula ni cargo. */
   var conDocs = perPoder('docs');
   /* Las 42 h se miran por semana completa: por eso se piden lunes a
@@ -57821,11 +57834,42 @@ function escribirExcelQuincena(d, fotos){
     var colorTurno = {};
     claves.forEach(function(kk, i){ colorTurno[kk] = COLORES_TURNO[i % COLORES_TURNO.length]; });
 
-    /* La foto del área, arriba de su planilla. */
-    if(fotos[nombreArea]){
-      var rFoto = poner(['']);
-      alto[rFoto] = Math.round(fotos[nombreArea].alto * 0.75) + 6;
-      imagenes.push({ r: rFoto, f: fotos[nombreArea] });
+    /* Arriba de la planilla: la foto del área en la columna A y, a su
+       derecha, la de cada colaborador del área, una por columna de día
+       (C a I), con su nombre debajo. Más de siete pasan a otra fila. */
+    var fA = fotos[nombreArea];
+    var conCara = Object.keys(A.gente).filter(function(k){ return caras[k]; }).sort(function(x, y){
+      return String(A.gente[x].nombre).localeCompare(String(A.gente[y].nombre), 'es');
+    });
+    if(fA || conCara.length){
+      var mA = fA ? medidaFotoExcel(fA, 160, 350) : null;
+      var COL_PX = 159, CARA_ALTO = 100, CARA_ANCHO = 145;
+      var rFila0 = filas.length;
+      if(mA) imagenes.push({ r: rFila0, c: 0, off: 0, ancho: mA.ancho, alto: mA.alto, f: fA });
+      for(var g0 = 0; g0 < Math.max(1, conCara.length); g0 += 7){
+        var grupo = conCara.slice(g0, g0 + 7);
+        var rCaras = poner(['']);
+        alto[rCaras] = Math.round((g0 === 0 && mA && !grupo.length ? mA.alto : CARA_ALTO) * 0.75) + 8;
+        if(!grupo.length) break;
+        var nombresFila = ['', ''];
+        grupo.forEach(function(k, j){
+          var m = medidaFotoExcel(caras[k], CARA_ALTO, CARA_ANCHO);
+          imagenes.push({ r: rCaras, c: 2 + j, off: Math.max(0, (COL_PX - m.ancho) / 2), ancho: m.ancho, alto: m.alto, f: caras[k] });
+          nombresFila[2 + j] = A.gente[k].nombre;
+        });
+        var rNom = poner(nombresFila);
+        alto[rNom] = 26;
+        grupo.forEach(function(k, j){
+          pintar.push({ r: rNom, c: 2 + j, e: { font:{ sz:9, bold:true, name:'Calibri' },
+            alignment:{ horizontal:'center', vertical:'top', wrapText:true } } });
+        });
+      }
+      /* La foto del área no puede tapar el título del área. */
+      if(mA){
+        var ocupado = 0;
+        for(var rr = rFila0; rr < filas.length; rr++) ocupado += (alto[rr] || 15) / 0.75;
+        if(ocupado < mA.alto + 6) alto[filas.length - 1] = (alto[filas.length - 1] || 15) + Math.ceil((mA.alto + 6 - ocupado) * 0.75);
+      }
     }
     var rA = poner([nombreArea.toUpperCase()]);
     for(var c = 0; c < COLS; c++) pintar.push({ r: rA, c: c, e: relleno(colorArea, 'FFFFFF', true) });
