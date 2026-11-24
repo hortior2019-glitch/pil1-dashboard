@@ -19636,9 +19636,19 @@ function _gpsExtremosHTML(ex){
 /* ── El mapa pequeño de cada tarjeta ──
    Solo la ruta de ese vehículo, quieta (sin arrastrar ni zoom) para que
    acompañe sin robarse la tarjeta. Un clic abre el recorrido completo. */
-var _gpsMinis = [];
+var _gpsMinis = [], _gpsMiniObs = null;
 async function _gpsMontarPreview(){
-  var conts = Array.prototype.slice.call(document.querySelectorAll('.gps-card-mapa:not([data-listo])'));
+  /* Un mapa sin tamaño (la pestaña estaba oculta al dibujarse) no se puede
+     encuadrar: esos esperan a verse y se montan entonces. */
+  var todos = Array.prototype.slice.call(document.querySelectorAll('.gps-card-mapa:not([data-listo])'));
+  var conts = todos.filter(function(c){ return c.offsetWidth > 0 && c.offsetHeight > 0; });
+  var ocultos = todos.filter(function(c){ return conts.indexOf(c) < 0; });
+  if (ocultos.length && window.ResizeObserver) {
+    if (!_gpsMiniObs) _gpsMiniObs = new ResizeObserver(function(ents){
+      if (ents.some(function(e){ return e.contentRect.width > 0; })) { _gpsMiniObs.disconnect(); setTimeout(_gpsMontarPreview, 0); }
+    });
+    ocultos.forEach(function(c){ _gpsMiniObs.observe(c); });
+  }
   if (!conts.length) return;
   conts.forEach(function(c){ c.dataset.listo = '1'; });
   _gpsMinis = _gpsMinis.filter(function(m){
@@ -19657,7 +19667,13 @@ async function _gpsMontarPreview(){
     conts.forEach(function(c){ c.innerHTML = '<div class="gps-card-mapa-v">No se pudo cargar el mapa</div>'; });
     return;
   }
-  conts.forEach(function(c){
+  conts.forEach(function(c){ try { _gpsMontarUno(c, fecha); } catch (e) {
+    /* Un mapa que falla no deja a los demás cargando. */
+    console.warn('GPS: mapa de ' + c.dataset.pl, e);
+    c.innerHTML = '<div class="gps-card-mapa-v">No se pudo dibujar el mapa</div>';
+  } });
+}
+function _gpsMontarUno(c, fecha){
     if (!document.body.contains(c)) return;
     var pl = c.dataset.pl, ruta = _gpsRutas[fecha + '|' + pl] || [];
     if (!ruta.length) { c.innerHTML = '<div class="gps-card-mapa-v">Sin recorrido guardado</div>'; return; }
@@ -19684,7 +19700,6 @@ async function _gpsMontarPreview(){
     m.on('click', function(){ _gpsAbrirMapa(fecha, pl); });
     _gpsMinis.push(m);
     setTimeout(function(){ try { m.invalidateSize(); encuadre(); } catch (e) {} }, 80);
-  });
 }
 
 /* ── Lugares conocidos y recorridos ──
@@ -65546,10 +65561,11 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
     var dela = PX.todos ? null : cxPlacasSel(), eqsCat = dela ? eqs.filter(function(e){ return dela[e.pl]; }) : eqs;
     var catNom = CX.cat ? ((cxCats().filter(function(c){ return c.k === CX.cat; })[0] || {}).nom || '') : '';
     return '<div class="cx" id="px-caja"><div class="cx-enc"><div class="cx-band"><div><h3 class="cx-h">Preoperacional · Análisis operacional</h3><div class="cx-hsub">' + tn + ' revisiones en ' + PX.ven + ' días</div></div>' +
-        '<div class="px-ctrl">' + seg('pxClase', [['','Toda la flota'],['carga','Carga'],['maq','Maquinaria']], PX.clase) + seg('pxVen', [['7','7 d'],['30','30 d'],['90','90 d']], String(PX.ven)) + '</div></div>' +
+        '<div class="px-ctrl">' + seg('pxClase', [['','Toda la flota'],['carga','Carga'],['maq','Maquinaria']], PX.clase) + seg('pxVen', [['7','7 d'],['30','30 d'],['90','90 d']], String(PX.ven)) +
+          /* La disección por equipo: solo la subpestaña o todas las referencias. */
+          (catNom ? seg('pxTodos', [['', 'Solo ' + catNom.toLowerCase()], ['1', 'Todas las referencias']], PX.todos ? '1' : '') : '') + '</div></div>' +
       pxIndicadores(eqs) + '</div>' +
-      (catNom ? '<div class="px-gtit px-cat">Por equipo · ' + esc(PX.todos ? 'toda la flota' : catNom) + ' <span>' + eqsCat.length + (eqsCat.length === 1 ? ' equipo' : ' equipos') + '</span>' +
-        '<button type="button" class="px-todos" data-hx="pxTodos" aria-pressed="' + !!PX.todos + '">' + (PX.todos ? 'Solo ' + esc(catNom.toLowerCase()) : 'Ver todos') + '</button></div>' : '') +
+      (catNom ? '<div class="px-gtit px-cat">Por equipo · ' + esc(PX.todos ? 'toda la flota' : catNom) + ' <span>' + eqsCat.length + (eqsCat.length === 1 ? ' equipo' : ' equipos') + '</span></div>' : '') +
       pxNovedadesHTML(eqsCat) +
       '<div class="hx-g hx-g-11">' + pxCumplHTML(eqsCat) + pxFallasHTML(eqs) + '</div>' +
       '<div class="hx-g hx-g-11">' + pxMapaHTML(eqsCat) +
@@ -65959,7 +65975,7 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
     if(q === 'pxClase'){ PX.clase = v; PX.ab = ''; pxRepintar(); return; }
     if(q === 'pxSecc'){ PX.secc = v; pxRepintar(); return; }
     if(q === 'pxAb'){ PX.ab = PX.ab === v ? '' : v; pxRepintar(); return; }
-    if(q === 'pxTodos'){ PX.todos = !PX.todos; PX.ab = ''; pxRepintar(); return; }
+    if(q === 'pxTodos'){ PX.todos = v === '1'; PX.ab = ''; pxRepintar(); return; }
     /* Cambiar de subpestaña repinta toda la flota: operación y
        preoperacional por equipo también siguen la categoría. */
     if(q === 'cxCat'){ CX.cat = v; CX.ab = ''; PX.ab = ''; if(typeof renderFlota === 'function') renderFlota(); else cxRepintar(); return; }
