@@ -1680,6 +1680,8 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-vehiculos .gps-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px}
 #panel-vehiculos .gps-card{border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;background:#fff}
 #panel-vehiculos .gps-card.al{border-color:#f0cfa3}
+#panel-vehiculos .gps-card.quieto{background:#fafbfa}
+#panel-vehiculos .gps-chip.gps-chip-q{background:#eef1ef;color:#3d4541;border-color:#cfd4d1}
 #panel-vehiculos .gps-card header{display:flex;align-items:center;gap:8px}
 #panel-vehiculos .gps-card-t{flex:1;min-width:0;display:grid}
 #panel-vehiculos .gps-card-t b{font-size:16px;color:#15201a}
@@ -19548,17 +19550,20 @@ function _gpsCajaHTML(){
     }).join('') + (recs.length > max ? '<span class="mas">+' + (recs.length - max) + '</span>' : '') + '</div>';
   };
   /* ── Una tarjeta por vehículo, con sus propios indicadores ── */
-  var tabla = activas.length ? '<div class="gps-cards">' + activas.map(function(f){
+  /* Todos los vehículos del informe: primero los que se movieron, después
+     los que pasaron el día quietos (también cuentan: ocupan planta). */
+  var tabla = todas.length ? '<div class="gps-cards">' + activas.concat(quietas).map(function(f){
       var x = f.x, conRuta = x.conRuta || (_gpsRutas[x.fecha + '|' + f.pl] || []).length;
       var nRec = (x.recs || []).filter(function(r){ return r[0] === 'Recorrido'; }).length;
       var num = function(v, et){ return '<div><b>' + v + '</b><span>' + et + '</span></div>'; };
-      return '<article class="gps-card' + (f.al.length ? ' al' : '') + '">' +
+      return '<article class="gps-card' + (f.al.length ? ' al' : '') + (f.quieto ? ' quieto' : '') + '">' +
         '<header><i class="gps-dot" style="background:' + _gpsColor(f.pl) + '"></i>' + _miniPlaca(f.pl) +
           '<span class="gps-card-t"><b>' + _flEsc(f.pl) + '</b><em>' + (x.primer ? 'Encendido ' + _flEsc(x.primer) + ' – ' + _flEsc(x.ultimo) : 'Sin encendido') + '</em></span>' +
           (conRuta ? '<button type="button" class="gps-ver" onclick="_gpsAbrirMapa(\'' + x.fecha + '\',\'' + f.pl + '\')">Ver recorrido</button>'
                    : '<span class="gps-sinruta" title="Vuelve a subir el informe de este día para guardar el recorrido">sin recorrido</span>') +
         '</header>' +
-        (f.al.length ? '<div class="gps-card-al">' + f.al.map(function(a){ return '<span class="gps-chip">' + a + '</span>'; }).join('') + '</div>' : '') +
+        (f.al.length || f.quieto ? '<div class="gps-card-al">' + (f.quieto ? '<span class="gps-chip gps-chip-q">Sin movimiento todo el día</span>' : '') +
+          f.al.map(function(a){ return '<span class="gps-chip">' + a + '</span>'; }).join('') + '</div>' : '') +
         (conRuta ? '<div class="gps-card-mapa" data-pl="' + f.pl + '" title="Ver el recorrido completo"><div class="gps-card-mapa-v"><span class="spinner"></span> Cargando mapa…</div></div>' +
                    '<div class="gps-card-ext" data-h0="' + _flEsc(x.primer || '') + '" data-h1="' + _flEsc(x.ultimo || '') + '"></div>' : '') +
         '<div class="gps-card-mid">' + _gpsAnillo(x.hMov, x.hRal, x.hDet || 0) +
@@ -19575,13 +19580,13 @@ function _gpsCajaHTML(){
         (_gpsVisitas[x.fecha + '|' + f.pl] ? '<div class="gps-card-vis"><span>Entradas y salidas</span>' + _gpsVisitasHTML(x.fecha, f.pl, 4) + '</div>' : '') +
         '<div class="gps-card-blq"><span>Recorridos</span>' + bloques(x) + '</div>' +
       '</article>';
-    }).join('') + '</div>' : '<div class="fl-vacio">Ningún vehículo se movió este día.</div>';
+    }).join('') + '</div>' : '<div class="fl-vacio">El informe de este día no trae vehículos.</div>';
   var quietos = quietas.length ? '<div class="gps-quietos"><b>Sin moverse todo el día:</b> ' +
       quietas.map(function(f){ return '<span class="gps-pl">' + _miniPlaca(f.pl) + _flEsc(f.pl) + '</span>'; }).join('') + '</div>' : '';
 
-  if (activas.length) setTimeout(_gpsMontarPreview, 0);
+  if (todas.length) setTimeout(_gpsMontarPreview, 0);
   return _flSeccion('GPS Satrack', 'recorrido del día cruzado con los viajes registrados') +
-    '<div class="fl-card">' + barra + kpis + tabla + quietos + '</div>';
+    '<div class="fl-card">' + barra + kpis + tabla + '</div>';
 }
 
 /* Punto de inicio y punto final del día: el primer y el último reporte con
@@ -19649,10 +19654,14 @@ async function _gpsMontarPreview(){
     var tarj = c.closest('.gps-card'), caja = tarj && tarj.querySelector('.gps-card-ext');
     /* La hora exacta del informe (la ruta va redondeada al minuto). */
     if (caja) { if (caja.dataset.h0) ex.ini.h = caja.dataset.h0; if (caja.dataset.h1) ex.fin.h = caja.dataset.h1; caja.innerHTML = _gpsExtremosHTML(ex); }
-    m.fitBounds(L.latLngBounds(pts).pad(0.12));
+    var encuadre = function(){
+      var b = L.latLngBounds(pts);
+      if (b.getNorthEast().distanceTo(b.getSouthWest()) < 60) m.setView(b.getCenter(), 16); else m.fitBounds(b.pad(0.12));
+    };
+    encuadre();
     m.on('click', function(){ _gpsAbrirMapa(fecha, pl); });
     _gpsMinis.push(m);
-    setTimeout(function(){ try { m.invalidateSize(); m.fitBounds(L.latLngBounds(pts).pad(0.12)); } catch (e) {} }, 80);
+    setTimeout(function(){ try { m.invalidateSize(); encuadre(); } catch (e) {} }, 80);
   });
 }
 
