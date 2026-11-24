@@ -1612,6 +1612,13 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #gps-mapa-modal{position:fixed;inset:0;z-index:9000;background:rgba(15,25,20,.55);display:flex;align-items:center;justify-content:center;padding:16px}
 #gps-mapa-modal .gps-mm-caja{background:#fff;border-radius:10px;width:min(1100px,100%);height:min(760px,100%);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.3)}
 #gps-mapa-modal .gps-mm-cab{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid #e5e7eb;font-size:15px}
+#gps-mapa-modal .gps-bus{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+#gps-mapa-modal .gps-bus input{width:230px;max-width:52vw;padding:7px 10px;font-size:14px;border:1px solid #cfd5d0;border-radius:6px;font-family:inherit;font-variant-numeric:tabular-nums}
+#gps-mapa-modal .gps-bus input:focus{outline:none;border-color:#1c5636;box-shadow:0 0 0 3px rgba(28,86,54,.14)}
+#gps-mapa-modal .gps-bus button{padding:7px 12px;font-size:13px;font-weight:700;border:1px solid #1c5636;background:#1c5636;color:#fff;border-radius:6px;cursor:pointer}
+#gps-mapa-modal .gps-bus-msg{font-size:13px;color:#4a514d;flex-basis:100%}
+#gps-mapa-modal .gps-bus-msg:empty{display:none}
+#gps-mapa-modal .gps-bus-msg.err{color:#a5281c;font-weight:700}
 #gps-mapa-modal .gps-mm-cab em{display:block;font-style:normal;font-size:13px;color:#5b625e;margin-top:2px}
 #gps-mapa-modal .gps-mm-x{border:none;background:none;font-size:28px;line-height:1;cursor:pointer;color:#5b625e;padding:0 4px}
 #gps-mm-mapa{flex:1;min-height:0;position:relative}
@@ -19894,6 +19901,62 @@ function _gpsPrevForm(f){
   if (a) a.textContent = 'Área: ' + _gpsAreaTxt(_gpsMedir(poly).area);
 }
 
+/* ── Buscador de coordenadas ──
+   Para ubicar un punto exacto sin buscarlo a ojo. Acepta:
+   5.0404, -73.9507 · 5,0404 -73,9507 · 5°02'25"N 73°57'02"W ·
+   un enlace de Google Maps (…@5.0404,-73.9507… o …q=5.0404,-73.9507).
+   Si se está dibujando un perímetro, el punto entra como esquina; si no,
+   se marca y abre el formulario para crear ahí un perímetro o un punto. */
+function _gpsBuscadorHTML(){
+  return '<form class="gps-bus" onsubmit="event.preventDefault();_gpsBuscarCoord(this)">' +
+    '<input type="text" autocomplete="off" spellcheck="false" placeholder="Coordenadas: 5.0404, -73.9507" aria-label="Buscar coordenadas">' +
+    '<button type="submit">Ir</button><span class="gps-bus-msg" role="status"></span></form>';
+}
+function _gpsLeerCoord(txt){
+  var t = String(txt || '').trim(); if (!t) return null;
+  var dms = [], re = /(\d{1,3})\s*[°º]\s*(\d{1,2})\s*['′]\s*(?:(\d{1,2}(?:[.,]\d+)?)\s*(?:["″]|'')?)?\s*([NSEWO])/gi, m;
+  while ((m = re.exec(t))) {
+    var v = +m[1] + (+m[2]) / 60 + (m[3] ? parseFloat(m[3].replace(',', '.')) / 3600 : 0), h = m[4].toUpperCase();
+    dms.push({ v: (h === 'S' || h === 'W' || h === 'O') ? -v : v, lat: h === 'N' || h === 'S' });
+  }
+  var lat, lon;
+  if (dms.length === 2) {
+    var a = dms[0], b = dms[1];
+    if (a.lat === b.lat) return null;
+    lat = a.lat ? a.v : b.v; lon = a.lat ? b.v : a.v;
+  } else {
+    var u = t.match(/@(-?\d+\.\d+),\s*(-?\d+\.\d+)/) || t.match(/[?&](?:q|query|ll)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
+    if (u) { lat = +u[1]; lon = +u[2]; }
+    else {
+      if (t.indexOf('.') < 0) t = t.replace(/(\d),(\d)/g, '$1.$2');   // coma decimal
+      var n = t.match(/-?\d+(?:\.\d+)?/g);
+      if (!n || n.length !== 2) return null;
+      lat = +n[0]; lon = +n[1];
+      if (Math.abs(lat) > 90 && Math.abs(lon) <= 90) { var z = lat; lat = lon; lon = z; }   // venían al revés
+    }
+  }
+  if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  return [Math.round(lat * 1e6) / 1e6, Math.round(lon * 1e6) / 1e6];
+}
+function _gpsBuscarCoord(f){
+  var msg = f.querySelector('.gps-bus-msg'), c = _gpsLeerCoord(f.querySelector('input').value);
+  var mapa = (_gpsLug && _gpsLug.mapa) || _gpsMapa;
+  msg.classList.remove('err');
+  if (!mapa) { msg.textContent = 'El mapa aún está cargando.'; return; }
+  if (!c) { msg.textContent = 'No entendí las coordenadas. Ej.: 5.0404, -73.9507'; msg.classList.add('err'); return; }
+  var ll = L.latLng(c[0], c[1]);
+  if (mapa._gpsBusca) mapa.removeLayer(mapa._gpsBusca);
+  mapa._gpsBusca = L.circleMarker(ll, { radius: 8, color: '#fff', weight: 3, fillColor: '#d9480f', fillOpacity: 1, interactive: false }).addTo(mapa);
+  mapa.setView(ll, Math.max(mapa.getZoom() || 0, 17));
+  if (mapa === _gpsMapa && _gpsDibujo && !_gpsDibujo.listo) {
+    _gpsDibujo.pts.push(c); _gpsDibPintar();
+    msg.textContent = 'Esquina ' + _gpsDibujo.pts.length + ' agregada en ' + c[0] + ', ' + c[1] + '.';
+    return;
+  }
+  msg.textContent = c[0] + ', ' + c[1];
+  L.popup().setLatLng(ll).setContent(_gpsFormLugar(c[0], c[1])).openOn(mapa);
+}
+
 /* ── Dibujar un perímetro en el mapa del detalle ── */
 function _gpsDibujar(){
   if (!_gpsMapa) return;
@@ -20187,7 +20250,7 @@ async function _gpsAbrirMapa(fecha, placa){
   m.innerHTML = '<div class="gps-mm-caja" role="dialog" aria-label="Recorridos de ' + _flEsc(placa) + '">' +
     '<div class="gps-mm-cab"><div><b>' + _flEsc(placa) + '</b> · ' + _flEsc(_fmtFechaVeh(fecha)) +
       '<em>' + fmt(Math.round(x.km || 0)) + ' km · ' + _gpsDur(x.hMov) + ' en movimiento · ' + _gpsDur(x.hRal) + ' en ralentí</em></div>' +
-      '<span class="gps-mm-acc"><button type="button" class="gps-mm-dib" onclick="_gpsDibujar()">Dibujar perímetro</button>' +
+      '<span class="gps-mm-acc">' + _gpsBuscadorHTML() + '<button type="button" class="gps-mm-dib" onclick="_gpsDibujar()">Dibujar perímetro</button>' +
       '<button type="button" class="gps-mm-x" aria-label="Cerrar" onclick="_gpsCerrarMapa()">×</button></span></div>' +
     '<div class="gps-mm-pie">' + _gpsLineaHTML(x.segs) + '<div id="gps-mm-ext" class="gps-card-ext"></div>' +
       '<div id="gps-mm-vis" class="gps-mm-vis"></div></div>' +
@@ -20272,7 +20335,7 @@ async function _gpsAbrirLugares(){
   m.id = 'gps-mapa-modal';
   m.innerHTML = '<div class="gps-mm-caja" role="dialog" aria-label="Lugares y perímetros">' +
     '<div class="gps-mm-cab"><div><b>Lugares y perímetros</b><em>Haz clic en el mapa para crear un perímetro de operación o un punto.</em></div>' +
-      '<button type="button" class="gps-mm-x" aria-label="Cerrar" onclick="_gpsCerrarMapa()">×</button></div>' +
+      '<span class="gps-mm-acc">' + _gpsBuscadorHTML() + '<button type="button" class="gps-mm-x" aria-label="Cerrar" onclick="_gpsCerrarMapa()">×</button></span></div>' +
     '<div class="gps-mm-cuerpo"><div id="gps-lug-lista" class="gps-mm-lado"></div><div id="gps-lug-mapa"><div class="gps-mm-vacio"><span class="spinner"></span> Cargando mapa…</div></div></div></div>';
   m.addEventListener('click', function(e){ if (e.target === m) _gpsCerrarMapa(); });
   document.body.appendChild(m);
@@ -63885,7 +63948,10 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
 #panel-vehiculos .vf-doc.bien .vf-doc-est,#panel-vehiculos .vf-doc.bien .vf-doc-nota{color:#17633a}
 #panel-vehiculos .vf-aten-ir{color:#4a514d}
 #panel-vehiculos .cx{margin-top:4px}
-#panel-vehiculos .px-gtit.px-cat{font-size:18px;margin:4px 0 10px;min-width:0}
+#panel-vehiculos .px-gtit.px-cat{font-size:18px;margin:4px 0 10px;min-width:0;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#panel-vehiculos .px-todos{font:600 13px 'Source Sans 3',sans-serif;padding:4px 11px;border:1px solid #cfe0d5;background:#fff;color:var(--navy);border-radius:999px;cursor:pointer;min-height:28px}
+#panel-vehiculos .px-todos:hover{background:#eef5f0}
+#panel-vehiculos .px-todos[aria-pressed=true]{background:var(--navy);color:#fff;border-color:var(--navy)}
 /* ── Cuadro principal: subpestañas con su imagen y letra legible ── */
 #panel-vehiculos .cx-tabs{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
 #panel-vehiculos .cx-tab{display:flex;flex-direction:column;padding:12px 16px 13px}
@@ -65468,12 +65534,13 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
     var eqs = pxEquipos(), lim = pxLim(PX.ven), tn = pxTasa(eqs, lim).n;
     /* El informe general es de toda la flota; la disección por equipo, solo
        de la subpestaña abierta (Volquetas, Cargadores…). */
-    var dela = cxPlacasSel(), eqsCat = dela ? eqs.filter(function(e){ return dela[e.pl]; }) : eqs;
-    var catNom = dela ? ((cxCats().filter(function(c){ return c.k === CX.cat; })[0] || {}).nom || '') : '';
+    var dela = PX.todos ? null : cxPlacasSel(), eqsCat = dela ? eqs.filter(function(e){ return dela[e.pl]; }) : eqs;
+    var catNom = CX.cat ? ((cxCats().filter(function(c){ return c.k === CX.cat; })[0] || {}).nom || '') : '';
     return '<div class="cx" id="px-caja"><div class="cx-enc"><div class="cx-band"><div><h3 class="cx-h">Preoperacional · Análisis operacional</h3><div class="cx-hsub">' + tn + ' revisiones en ' + PX.ven + ' días</div></div>' +
         '<div class="px-ctrl">' + seg('pxClase', [['','Toda la flota'],['carga','Carga'],['maq','Maquinaria']], PX.clase) + seg('pxVen', [['7','7 d'],['30','30 d'],['90','90 d']], String(PX.ven)) + '</div></div>' +
       pxIndicadores(eqs) + '</div>' +
-      (catNom ? '<div class="px-gtit px-cat">Por equipo · ' + esc(catNom) + ' <span>' + eqsCat.length + (eqsCat.length === 1 ? ' equipo' : ' equipos') + '</span></div>' : '') +
+      (catNom ? '<div class="px-gtit px-cat">Por equipo · ' + esc(PX.todos ? 'toda la flota' : catNom) + ' <span>' + eqsCat.length + (eqsCat.length === 1 ? ' equipo' : ' equipos') + '</span>' +
+        '<button type="button" class="px-todos" data-hx="pxTodos" aria-pressed="' + !!PX.todos + '">' + (PX.todos ? 'Solo ' + esc(catNom.toLowerCase()) : 'Ver todos') + '</button></div>' : '') +
       pxNovedadesHTML(eqsCat) +
       '<div class="hx-g hx-g-11">' + pxCumplHTML(eqsCat) + pxFallasHTML(eqs) + '</div>' +
       '<div class="hx-g hx-g-11">' + pxMapaHTML(eqsCat) +
@@ -65883,6 +65950,7 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
     if(q === 'pxClase'){ PX.clase = v; PX.ab = ''; pxRepintar(); return; }
     if(q === 'pxSecc'){ PX.secc = v; pxRepintar(); return; }
     if(q === 'pxAb'){ PX.ab = PX.ab === v ? '' : v; pxRepintar(); return; }
+    if(q === 'pxTodos'){ PX.todos = !PX.todos; PX.ab = ''; pxRepintar(); return; }
     /* Cambiar de subpestaña repinta toda la flota: operación y
        preoperacional por equipo también siguen la categoría. */
     if(q === 'cxCat'){ CX.cat = v; CX.ab = ''; PX.ab = ''; if(typeof renderFlota === 'function') renderFlota(); else cxRepintar(); return; }
