@@ -125,6 +125,8 @@ self.addEventListener('fetch',e=>{
 .mf-ficha-foto small{display:block;font-size:13px;font-weight:600;color:var(--ink-m);margin-top:5px;text-align:center}
 .mf-ficha-d{min-width:0}
 .mf-num{font-size:32px;font-weight:700;color:var(--ink);line-height:1.1;word-break:break-all;font-variant-numeric:tabular-nums}
+.mf-neto-reg{margin-top:10px;font-size:32px;font-weight:700;color:var(--navy);line-height:1.1;font-variant-numeric:tabular-nums}
+.mf-neto-reg small{display:block;font-size:13px;font-weight:700;color:var(--ink-m);margin-bottom:2px}
 .mf-num small{display:block;font-size:13px;font-weight:700;color:var(--ink-m);margin-bottom:2px}
 .mf-sinnum{font-size:16px;font-weight:700;color:var(--orange);line-height:1.4}
 .mf-dl{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin-top:12px;font-size:17px}
@@ -185,6 +187,9 @@ self.addEventListener('fetch',e=>{
 .mf-nov-d{font-size:15px;line-height:1.45;color:var(--ink)}
 .mf-nov-caja img{width:100%;max-height:38vh;object-fit:contain;border:2px solid var(--rule);border-radius:8px;background:#fff}
 .mf-nov-caja .mf-btn{width:100%;min-height:54px;font-size:17px}
+.mf-nov-netos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.mf-nov-netos span{border:2px solid var(--rule);border-radius:8px;padding:6px 8px;font-size:13px;color:var(--ink-m)}
+.mf-nov-netos b{display:block;font-size:18px;color:var(--ink);font-variant-numeric:tabular-nums}
 .mf-nov-wa{background:#1f8f4e;border-color:#1f8f4e}
 /* ── TELÉFONO: es la vista que más se usa ──
    Pestañas a lo ancho con texto corto; contadores en 3 columnas; el
@@ -6442,6 +6447,10 @@ function mfPintarLead() {
           : '<div class="mf-sinnum">Sin consecutivo' +
             (mfTiquete(r) ? ' (en el sistema: «' + mfEsc(mfTiquete(r)) + '»)' : '') +
             '<br>Ubicalo por la hora: ' + mfEsc(mfHora(r) || '—') + '</div>') +
+        /* El neto que quedó en el registro (báscula), grande, para
+           compararlo con el del papel. */
+        '<div class="mf-neto-reg"><small>Peso neto en el registro</small>' +
+          (neto ? mfEsc(Math.round(neto).toLocaleString('es-CO')) + ' kg' : 'sin neto') + '</div>' +
         '<dl class="mf-dl">' +
           '<dt>Placa</dt><dd>' + mfEsc(mfPlaca(r) || '—') + '</dd>' +
           '<dt>Material</dt><dd>' + mfEsc(mfResiduo(r) || '—') + '</dd>' +
@@ -6657,12 +6666,20 @@ function mfTextoNovedad(d) {
   var que = d.campos.map(function (c) { return c === 'neto' ? 'el peso neto' : 'el consecutivo'; }).join(' y ');
   return 'Hola! Encontré una novedad en el manifiesto N° ' + d.consecutivo + ': no coincide ' + que + ' con el registro.\n' +
     'Consecutivo (papel): ' + d.consecutivo + '\n' +
-    'Peso neto (papel): ' + d.neto + ' kg\n' +
+    'Peso neto (papel): ' + mfKgTxt(d.neto) + ' kg\n' +
+    (d.netoRegistro ? 'Peso neto (registro): ' + mfKgTxt(d.netoRegistro) + ' kg\n' +
+      'Diferencia: ' + mfKgTxt(mfKg(d.neto) - d.netoRegistro, true) + ' kg\n' : '') +
     'Placa: ' + (d.placa || '—') + ' · Entrada: ' + (d.fecha || '—') + ' ' + (d.hora || '') + '\n' +
     'Operación: ' + (d.operacion || '—') +
     (d.nota ? '\nObservación: ' + d.nota : '') +
     (d.url ? '\nFoto: ' + d.url : '') +
     (d.operario ? '\n— ' + d.operario : '');
+}
+/* 15020 -> "15.020"; con signo, para la diferencia: "+10" / "-10". */
+function mfKgTxt(x, conSigno) {
+  var n = mfKg(x);
+  if (n === null) return String(x);
+  return (conSigno && n > 0 ? '+' : '') + n.toLocaleString('es-CO');
 }
 function mfArchivoFoto(dataUrl, nombre) {
   try {
@@ -6704,6 +6721,9 @@ function mfVentanaNovedad() {
     '<div class="mf-nov-t">Novedad registrada</div>' +
     '<div class="mf-nov-d">No coincide ' + mfEsc(d.campos.map(function (c) { return c === 'neto' ? 'el peso neto' : 'el consecutivo'; }).join(' y ')) +
       ' del manifiesto N° <b>' + mfEsc(d.consecutivo) + '</b>. Mandá la novedad por WhatsApp con la foto.</div>' +
+    '<div class="mf-nov-netos"><span>Neto papel<b>' + mfEsc(mfKgTxt(d.neto)) + ' kg</b></span>' +
+      (d.netoRegistro ? '<span>Neto registro<b>' + mfEsc(mfKgTxt(d.netoRegistro)) + ' kg</b></span>' +
+        '<span>Diferencia<b>' + mfEsc(mfKgTxt(mfKg(d.neto) - d.netoRegistro, true)) + ' kg</b></span>' : '') + '</div>' +
     (d.foto ? '<img src="' + d.foto + '" alt="Manifiesto">' : '') +
     '<button type="button" class="mf-btn mf-nov-wa" onclick="mfNovedadBoton()">Abrir WhatsApp</button>' +
     '<button type="button" class="mf-btn mf-btn-ghost mf-nov-x" onclick="mfCerrarNovedad()">Ahora no</button>' +
@@ -7014,7 +7034,7 @@ async function mfGuardar(comoNoCoincide) {
     /* Los datos de la novedad se toman ANTES de soltar la foto. */
     var novedad = json.estado === MF_MARCA_NC ? {
       campos: (json.campos && json.campos.length) ? json.campos : campos,
-      consecutivo: baucher, neto: neto, foto: MF.foto, url: json.url || '',
+      consecutivo: baucher, neto: neto, netoRegistro: Math.round(mfNeto(r)) || null, foto: MF.foto, url: json.url || '',
       placa: mfPlaca(r), fecha: mfFecha(r), hora: mfHora(r), operacion: mfOperacion(r),
       nota: ((mfEl('mf-nota') || {}).value || '').trim(), operario: cuerpo.operario
     } : null;
