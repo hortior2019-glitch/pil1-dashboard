@@ -19682,8 +19682,15 @@ function _gpsMontarUno(c, fecha){
       boxZoom: false, keyboard: false, touchZoom: false, tap: false,
       layers: [L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 })] });
     L.control.attribution({ prefix: false }).addAttribution('&copy; Esri').addTo(m);
-    _gpsPintarPerims(m, false);
     var pts = ruta.map(function(q){ return [q[0], q[1]]; }), col = _gpsColor(pl);
+    var encuadre = function(){
+      var b = L.latLngBounds(pts);
+      if (b.getNorthEast().distanceTo(b.getSouthWest()) < 60) m.setView(b.getCenter(), 16); else m.fitBounds(b.pad(0.12));
+    };
+    /* El encuadre va antes de pintar: un polígono agregado a un mapa sin
+       vista rompe Leaflet (por eso fallaba al haber perímetros guardados). */
+    encuadre();
+    _gpsPintarPerims(m, false);
     L.polyline(pts, { color: '#fff', weight: 6, opacity: .9, interactive: false }).addTo(m);
     L.polyline(pts, { color: col, weight: 3.5, opacity: .95, interactive: false }).addTo(m);
     var ex = _gpsExtremos(ruta);
@@ -19692,11 +19699,6 @@ function _gpsMontarUno(c, fecha){
     var tarj = c.closest('.gps-card'), caja = tarj && tarj.querySelector('.gps-card-ext');
     /* La hora exacta del informe (la ruta va redondeada al minuto). */
     if (caja) { if (caja.dataset.h0) ex.ini.h = caja.dataset.h0; if (caja.dataset.h1) ex.fin.h = caja.dataset.h1; caja.innerHTML = _gpsExtremosHTML(ex); }
-    var encuadre = function(){
-      var b = L.latLngBounds(pts);
-      if (b.getNorthEast().distanceTo(b.getSouthWest()) < 60) m.setView(b.getCenter(), 16); else m.fitBounds(b.pad(0.12));
-    };
-    encuadre();
     m.on('click', function(){ _gpsAbrirMapa(fecha, pl); });
     _gpsMinis.push(m);
     setTimeout(function(){ try { m.invalidateSize(); encuadre(); } catch (e) {} }, 80);
