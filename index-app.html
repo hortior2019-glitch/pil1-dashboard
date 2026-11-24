@@ -20438,20 +20438,24 @@ function renderFlota(){
   var sinHoy = Math.max(0, (_vehiculos || []).length - conHoy);
   var estPre = _flEstadoPreopResumen();
 
+  var cbHTML = _flCombCajaHTML();
+  /* En una subpestaña de maquinaria (cargadores, tractores…) no hay
+     viajes ni toneladas: el bloque de operación no se muestra. */
+  var sinViajes = !!(window.hxCatHoras && window.hxCatHoras());
   caja.innerHTML =
-    '<div id="veh-cb-caja">' + _flCombCajaHTML() + '</div>' +
+    '<div id="veh-cb-caja">' + cbHTML + '</div>' +
 
-    _flSeccion('Operación', 'toneladas, viajes y actividad · ' + (lbl || 'el periodo elegido')) +
+    (sinViajes ? '' : _flSeccion('Operación', 'toneladas, viajes y actividad · ' + (lbl || 'el periodo elegido')) +
 
     /* Viajes y peso son operación: van aquí, no dentro de combustible. */
-    _vehCmpHTML() +
+    _vehCmpHTML()) +
 
     /* Con el tablero nuevo el GPS va dentro del cuadro de cada categoría. */
     (window.hxCombHTML ? '' : '<div id="veh-gps-caja">' + _gpsCajaHTML() + '</div>') +
 
     '<div id="hx-flota"></div>' +
 
-    '<div class="fl-g2">' +
+    (sinViajes ? '' : '<div class="fl-g2">' +
       '<div class="fl-card">' +
         '<div class="fl-tit">Toneladas movidas por vehículo</div>' +
         _flBarrasCli(topTon, maxTon, '#1c5636', tonsF) +
@@ -20460,7 +20464,7 @@ function renderFlota(){
         '<div class="fl-tit">Viajes por vehículo</div>' +
         _flBarrasCli(topViajes, maxViajes, 'var(--blue)', viajesF) +
       '</div>' +
-    '</div>' +
+    '</div>') +
 
     (window.hxOperacionHTML ? window.hxOperacionHTML() : '') +
 
@@ -20487,7 +20491,7 @@ function renderFlota(){
     '</details>';
 
   /* El lienzo ya está en el documento: ahora sí se puede dibujar. */
-  try { renderVehCmpChart(); } catch(e){ console.error('Comparativo de la flota:', e); }
+  if (!sinViajes) { try { renderVehCmpChart(); } catch(e){ console.error('Comparativo de la flota:', e); } }
   try { if (window.hxFlota) window.hxFlota(); } catch(e){ console.error('Análisis flota:', e); }
 }
 
@@ -63881,6 +63885,7 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
 #panel-vehiculos .vf-doc.bien .vf-doc-est,#panel-vehiculos .vf-doc.bien .vf-doc-nota{color:#17633a}
 #panel-vehiculos .vf-aten-ir{color:#4a514d}
 #panel-vehiculos .cx{margin-top:4px}
+#panel-vehiculos .px-gtit.px-cat{font-size:18px;margin:4px 0 10px;min-width:0}
 /* ── Cuadro principal: subpestañas con su imagen y letra legible ── */
 #panel-vehiculos .cx-tabs{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
 #panel-vehiculos .cx-tab{display:flex;flex-direction:column;padding:12px 16px 13px}
@@ -64702,7 +64707,8 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
 
   function hxFlota(){
     var caja = document.getElementById('hx-flota'); if(!caja) return;
-    caja.innerHTML = htmlMapa();
+    /* La maquinaria no hace viajes: sin mapa de operaciones. */
+    caja.innerHTML = window.hxCatHoras() ? '' : htmlMapa();
     hxCombDibujar();
     hxCmpDibujar();
     pxDibujar();
@@ -64716,6 +64722,13 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
   var CX = { cat:null, orden:'gasto', ab:'' };
   /* La subpestaña abierta (Volquetas, Cargadores…): el GPS la sigue. */
   window.hxCatActual = function(){ return CX.cat; };
+  /* ¿La subpestaña es de maquinaria (se mide por horas, no hace viajes)? */
+  window.hxCatHoras = function(){
+    var c = cxCats().filter(function(x){ return x.k === CX.cat; })[0];
+    return !!(c && c.horas);
+  };
+  /* Las placas de la subpestaña abierta, o null si aún no hay ninguna. */
+  function cxPlacasSel(){ return CX.cat ? _flPlacasCat(CX.cat) : null; }
   function cxCats(){
     var cuenta = {}, sin = [];
     (_vehiculos || []).forEach(function(v){
@@ -65165,7 +65178,8 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
   function htmlDisponibilidad(){
     var hoy = hoyIso(), carga = {};
     _flotaOperacionesHoy().forEach(function(x){ carga[x.placa] = x; });
-    var filas = (_vehiculos || []).filter(placaDe).map(function(v){
+    var delaCat = cxPlacasSel();
+    var filas = (_vehiculos || []).filter(function(v){ var p = placaDe(v); return p && (!delaCat || delaCat[p]); }).map(function(v){
       var pl = placaDe(v), d = pxEquipo(pl), u = d.lista[d.lista.length - 1] || null, c = carga[pl] || null;
       return { pl:pl, v:v, c:c, preopHoy:!!(u && u.iso === hoy), ult:u ? u.iso : '', m:u ? u.malos : 0, r:u ? u.regulares : 0, cond:u ? u.conductor : '' };
     });
@@ -65185,6 +65199,7 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
   }
   function opRepintar(){ var c = document.getElementById('op-dist'); if(c) c.innerHTML = htmlDistribucion(); }
   function hxOperacionHTML(){
+    if(window.hxCatHoras()) return '<div id="op-caja">' + htmlDisponibilidad() + '</div>';
     return '<div class="hx-g hx-g-11" id="op-caja"><div id="op-dist">' + htmlDistribucion() + '</div><div>' + htmlDisponibilidad() + '</div></div>';
   }
   window.hxOperacionHTML = hxOperacionHTML;
@@ -65229,10 +65244,12 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
   /* Lo que reporta la última revisión, y desde cuándo viene sin cerrarse. */
   function pxAbiertas(e){
     var l = e.lista, u = l[l.length - 1]; if(!u) return [];
-    var hoy = hoyIso();
+    var hoy = hoyIso(), lim30 = pxLim(30);
     return u.detMalos.map(function(t){ return { t:t, est:'malo' }; }).concat(u.detReg.map(function(t){ return { t:t, est:'reg' }; })).map(function(o){
+      /* "Desde" busca en todo el historial; las revisiones seguidas cuentan
+         solo las de los últimos 30 días. */
       var i = l.length - 1, desde = u.iso, n = 0;
-      while(i >= 0 && pxTieneItem(l[i], o.t)){ desde = l[i].iso; n++; i--; }
+      while(i >= 0 && pxTieneItem(l[i], o.t)){ desde = l[i].iso; if(l[i].iso >= lim30) n++; i--; }
       o.desde = desde; o.dias = difDias(desde, hoy); o.n = n; o.pl = e.pl;
       return o;
     });
@@ -65345,7 +65362,7 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
       var det = '';
       if(ab){
         var fotos = (f.u.fotos || []).slice(), norm = function(t){ return (t || '').toString().toLowerCase().replace(/\s+/g, ' ').trim(); };
-        det = '<div class="px-det"><div class="hx-esc"><table class="px-tb"><thead><tr><th>Ítem</th><th>Estado</th><th>Abierta desde</th><th>Revisiones seguidas</th><th>Foto</th></tr></thead><tbody>' +
+        det = '<div class="px-det"><div class="hx-esc"><table class="px-tb"><thead><tr><th>Ítem</th><th>Estado</th><th>Abierta desde</th><th>Revisiones seguidas (30 d)</th><th>Foto</th></tr></thead><tbody>' +
           f.a.slice().sort(function(x, y){ return (x.est === 'malo' ? 0 : 1) - (y.est === 'malo' ? 0 : 1) || y.dias - x.dias; }).map(function(o){
             var i = fotos.findIndex(function(fo){ return norm(fo.item) === norm(o.t); }), fo = i > -1 ? fotos.splice(i, 1)[0] : null;
             return '<tr><td>' + esc(o.t) + '</td><td><span class="px-chip ' + (o.est === 'malo' ? 'malo' : 'reg') + '">' + (o.est === 'malo' ? 'Malo' : 'Regular') + '</span></td><td>' + esc(fCorta(o.desde)) + ' · ' + o.dias + ' d</td><td>' + o.n + '</td><td>' + (fo ? htmlFotosPreop([fo], 64) : '<em>sin foto</em>') + '</td></tr>';
@@ -65449,12 +65466,17 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
   }
   function hxPreopHTML(){
     var eqs = pxEquipos(), lim = pxLim(PX.ven), tn = pxTasa(eqs, lim).n;
+    /* El informe general es de toda la flota; la disección por equipo, solo
+       de la subpestaña abierta (Volquetas, Cargadores…). */
+    var dela = cxPlacasSel(), eqsCat = dela ? eqs.filter(function(e){ return dela[e.pl]; }) : eqs;
+    var catNom = dela ? ((cxCats().filter(function(c){ return c.k === CX.cat; })[0] || {}).nom || '') : '';
     return '<div class="cx" id="px-caja"><div class="cx-enc"><div class="cx-band"><div><h3 class="cx-h">Preoperacional · Análisis operacional</h3><div class="cx-hsub">' + tn + ' revisiones en ' + PX.ven + ' días</div></div>' +
         '<div class="px-ctrl">' + seg('pxClase', [['','Toda la flota'],['carga','Carga'],['maq','Maquinaria']], PX.clase) + seg('pxVen', [['7','7 d'],['30','30 d'],['90','90 d']], String(PX.ven)) + '</div></div>' +
       pxIndicadores(eqs) + '</div>' +
-      pxNovedadesHTML(eqs) +
-      '<div class="hx-g hx-g-11">' + pxCumplHTML(eqs) + pxFallasHTML(eqs) + '</div>' +
-      '<div class="hx-g hx-g-11">' + pxMapaHTML(eqs) +
+      (catNom ? '<div class="px-gtit px-cat">Por equipo · ' + esc(catNom) + ' <span>' + eqsCat.length + (eqsCat.length === 1 ? ' equipo' : ' equipos') + '</span></div>' : '') +
+      pxNovedadesHTML(eqsCat) +
+      '<div class="hx-g hx-g-11">' + pxCumplHTML(eqsCat) + pxFallasHTML(eqs) + '</div>' +
+      '<div class="hx-g hx-g-11">' + pxMapaHTML(eqsCat) +
         '<div class="hx-card"><div class="hx-tit">Tendencia semanal de inspección</div><div class="cx-ley"><span><i style="background:#c2553f"></i>hallazgos por 100 ítems</span><span><i style="background:#1a5c35"></i>revisiones</span></div><div data-px="tend"></div></div>' +
       '</div>' +
       '<div class="hx-g hx-g-11">' + pxConductorHTML(eqs) + '<div class="hx-card px-nota"><div class="hx-tit">Cómo se calcula</div><div class="hx-dl px-dl">' +
@@ -65861,7 +65883,9 @@ button.hx-dia:focus-visible{outline:2px solid #17201b;outline-offset:1px}
     if(q === 'pxClase'){ PX.clase = v; PX.ab = ''; pxRepintar(); return; }
     if(q === 'pxSecc'){ PX.secc = v; pxRepintar(); return; }
     if(q === 'pxAb'){ PX.ab = PX.ab === v ? '' : v; pxRepintar(); return; }
-    if(q === 'cxCat'){ CX.cat = v; CX.ab = ''; cxRepintar(); return; }
+    /* Cambiar de subpestaña repinta toda la flota: operación y
+       preoperacional por equipo también siguen la categoría. */
+    if(q === 'cxCat'){ CX.cat = v; CX.ab = ''; PX.ab = ''; if(typeof renderFlota === 'function') renderFlota(); else cxRepintar(); return; }
     if(q === 'cxOrden'){ CX.orden = v; cxRepintar(); return; }
     if(q === 'cxPl'){ CX.ab = CX.ab === v ? '' : v; cxRepintar(); return; }
     if(q === 'mapaMes'){ HX.mapaMes = +v; hxFlota(); return; }
