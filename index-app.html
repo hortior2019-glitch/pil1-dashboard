@@ -12544,6 +12544,17 @@ html[data-ventas] body{background:
   color:var(--ink);background:none;border:none;cursor:pointer;font-family:'Source Sans 3',sans-serif}
 #per-mover-modal .rt-persona:hover{background:#f2f8f4;color:#1c5636}
 #per-mover-modal .rt-td{padding:3px !important;text-align:center;vertical-align:middle;min-width:104px}
+#per-mover-modal .rt-th-tot{cursor:default !important;min-width:110px;border-left:1px solid var(--rule)}
+#per-mover-modal .rt-tabla thead th.rt-th-tot:hover{background:#f6f7f5}
+#per-mover-modal .rt-tot{padding:6px 8px !important;text-align:center;vertical-align:middle;min-width:110px;
+  border-left:1px solid var(--rule);background:#fafaf8}
+#per-mover-modal .rt-tot.pasa{background:#fdf3ef}
+.rt-just-info{font-size:13px;color:var(--ink-m);line-height:1.45;margin:2px 0 8px}
+#per-mover-modal .rt-tot b{display:block;font-size:16px;color:var(--ink);font-variant-numeric:tabular-nums}
+#per-mover-modal .rt-tot-antes{display:block;font-size:13px;color:var(--ink-l);text-decoration:line-through}
+#per-mover-modal .rt-tot-sobre{display:block;font-size:13px;font-weight:700;color:#b4442f;margin-top:2px}
+#per-mover-modal .rt-tot-falta{display:block;font-size:13px;color:#8a5a00;margin-top:1px}
+#per-mover-modal .rt-tot-ok{display:block;font-size:13px;color:#1c5636;font-weight:700;margin-top:1px}
 #per-mover-modal .rt-nada{display:block;font-size:12px;color:#c3c8c4;padding:10px 0}
 #per-mover-modal .rt-nov{display:block;font-size:11px;color:var(--ink-l);padding:9px 4px;background:#f3f4f2;
   border-radius:7px;font-style:italic}
@@ -55730,7 +55741,7 @@ function abrirAjusteSemana(semana){
       '<button type="button" class="cancelar" id="aj-cerrar">Cerrar</button>' +
     '</div>';
   $p('per-mover-modal').classList.add('open');
-  $p('aj-cerrar').onclick = function(){ cerrarMover(); };
+  $p('aj-cerrar').onclick = function(){ salirEdicionTurnos(); };
   montarRotador(a, semana);
 }
 
@@ -55857,7 +55868,14 @@ function montarRotador(a, semana){
   /* 'grupo' son las celdas marcadas con los atajos (nombre, día, toda la
      semana): solo a esas les toca la acción de la lista. Lo elegido en el
      menú de una celda va aparte, en 'propio', y la lista no lo pisa. */
-  ROT = { area: a.nombre, semana: semana, turnos: turnos, gente: gente, celdas: porCelda,
+  /* Los bloques sueltos de hora extra no son celda, pero son horas de la
+     semana: se suman aparte al total de cada persona. */
+  var aparteH = {};
+  dela.forEach(function(t){
+    if(t.turno !== 'Hora extra' || !t.inicio || !t.fin) return;
+    aparteH[t.persona] = (aparteH[t.persona] || 0) + horasTurno(t.inicio, t.fin, Number(t.almuerzo) || 0);
+  });
+  ROT = { area: a.nombre, semana: semana, turnos: turnos, gente: gente, celdas: porCelda, aparteH: aparteH,
           sel: {}, propio: {}, grupo: {}, destino: '1', accion: 'rotar-sig', param: {},
           general: a.modo === 'general' ? a : null };
 
@@ -55869,7 +55887,7 @@ function montarRotador(a, semana){
     return '<th data-rtcol="' + i + '" title="Marcar o desmarcar todo el ' + DIAS_NOMBRE[DIAS_LETRA[i]] + '">' +
       '<span class="rt-d">' + DIAS_NOMBRE[DIAS_LETRA[i]].slice(0, 3) + '</span>' +
       '<span class="rt-f">' + esc(fechaCorta(f)) + '</span></th>';
-  }).join('') + '</tr>';
+  }).join('') + '<th class="rt-th-tot"><span class="rt-d">Semana</span><span class="rt-f">tope ' + HEX_TOPE_SEMANAL + ' h</span></th></tr>';
 
   var cuerpo = gente.map(function(p){
     var celdas = fechas.map(function(f){
@@ -55905,7 +55923,7 @@ function montarRotador(a, semana){
         ' title="Elegir a dónde va este día"></button></td>';
     }).join('');
     return '<tr><th class="rt-th-p"><button type="button" class="rt-persona" data-rtfila="' + esc(p.clave) + '">' +
-      esc(p.nombre) + '</button></th>' + celdas + '</tr>';
+      esc(p.nombre) + '</button></th>' + celdas + '<td class="rt-tot" data-rttot="' + esc(p.clave) + '"></td></tr>';
   }).join('');
 
   /* UN SOLO MENÚ: a la izquierda el cuadro de la semana; a la derecha la
@@ -56576,6 +56594,16 @@ function rotMenuPrincipal(m, id){
       '<button type="button" class="rt-menu-it' + (propio.tipo === 'descanso' ? ' on' : '') + '" data-mdesc="1">' +
       'Descanso<span>ese día no trabaja</span></button>') +
     '<div class="rt-menu-rot">Hora extra</div>' +
+    (function(){
+      /* Si la semana ya pasa de 42 h, las horas extra están dentro de los
+         turnos: aquí se dice en qué franja de este día fueron y por qué. */
+      if(esVacia || t.fijo || !t.inicio || !t.fin) return '';
+      var sx = rotSemanaDe(t.persona);
+      if(sx.sobre <= 0.05) return '';
+      return '<button type="button" class="rt-menu-it" data-mjust="1">Justificar horas extra' +
+        '<span>' + (sx.sinJustificar > 0.05 ? esc(numeroHoras(sx.sinJustificar)) + ' sin justificar en la semana'
+                                           : 'la semana ya está justificada; puede corregir este día') + '</span></button>';
+    })() +
     '<button type="button" class="rt-menu-it" data-mextra="1">Agregar hora extra…' +
       '<span>' + (esVacia || t.fijo ? 'un bloque aparte, con su horario' : 'antes, después o un bloque aparte') + '</span></button>' +
     (!esVacia && !t.fijo ? (otros.length
@@ -56636,6 +56664,9 @@ function rotMenuPrincipal(m, id){
   });
   m.querySelectorAll('[data-mextra]').forEach(function(b){
     b.onclick = function(){ rotMenuExtra(m, id); };
+  });
+  m.querySelectorAll('[data-mjust]').forEach(function(b){
+    b.onclick = function(){ rotMenuJustificar(m, id); };
   });
   m.querySelectorAll('[data-mswap]').forEach(function(b){
     b.onclick = function(){
@@ -56761,8 +56792,7 @@ function rotMenuExtra(m, id){
     '<div class="rt-menu-tit">Hora extra · ' + esc(t.nombre) + ' · ' + esc(fechaCorta(t.fecha)) + '</div>' +
     '<label class="rt-f2">Cuándo' +
       '<select id="rx-lado">' +
-        (esVacia ? '' : '<option value="despues">Después del turno</option><option value="antes">Antes del turno</option>' +
-          '<option value="dentro">Ya está dentro del turno (no lo alarga)</option>') +
+        (esVacia ? '' : '<option value="despues">Después del turno</option><option value="antes">Antes del turno</option>') +
         '<option value="aparte"' + (esVacia ? ' selected' : '') + '>Bloque aparte (con su horario)</option>' +
       '</select></label>' +
     '<div id="rx-min-caja" class="rt-f2"' + (esVacia ? ' style="display:none"' : '') + '>Cuántos minutos' +
@@ -56797,6 +56827,82 @@ function rotMenuExtra(m, id){
       .catch(function(e){ document.getElementById('rx-err').textContent = e.message || 'No se pudo leer la foto.'; });
   };
   m.querySelector('[data-rxok]').onclick = function(b){ rotGuardarExtra(m, id, this); };
+}
+
+/* ── JUSTIFICAR HORAS EXTRA ────────────────────────────────────────
+   Para un turno que ya está programado (horario personalizado o
+   rotativo) y una semana que pasa de 42 h: se dice en qué franja del
+   turno fue la hora extra y por qué. No cambia el horario: se guarda
+   como hora extra 'dentro' del turno, con la franja en la nota. */
+function rotMenuJustificar(m, id){
+  var t = ROT.celdas[id];
+  var sx = rotSemanaDe(t.persona);
+  var dur = rotDifMin(t.inicio, t.fin) || 1440;
+  var ya = (EXTRAS[ROT.area] || []).filter(function(e){
+    return e.persona === t.persona && e.fecha === t.fecha && e.lado === 'dentro' && e.estado !== 'ANULADA';
+  })[0];
+  var pn = ya ? String(ya.nota || '').split(' a ') : [];
+  var minProp = Math.min(dur, Math.round(Math.max(sx.sinJustificar, 0.5) * 60));
+  var desde = pn.length === 2 ? pn[0] : rotSumarMin(t.fin, -minProp);
+  var hasta = pn.length === 2 ? pn[1] : t.fin;
+  m.innerHTML =
+    '<div class="rt-menu-tit">Justificar horas extra · ' + esc(t.nombre) + ' · ' + esc(fechaCorta(t.fecha)) + '</div>' +
+    '<div class="rt-just-info">Turno ' + esc(t.inicio) + '–' + esc(t.fin) + '<br>' +
+      'Semana: ' + esc(numeroHoras(sx.antes)) + ' · ' + esc(numeroHoras(sx.sobre)) + ' sobre ' + HEX_TOPE_SEMANAL +
+      ' · ' + esc(numeroHoras(sx.sinJustificar)) + ' sin justificar</div>' +
+    '<div class="rt-f2row">' +
+      '<label class="rt-f2">Desde<input type="time" id="rj-ini" value="' + esc(desde) + '"></label>' +
+      '<label class="rt-f2">Hasta<input type="time" id="rj-fin" value="' + esc(hasta) + '"></label>' +
+    '</div>' +
+    '<label class="rt-f2">Motivo (obligatorio)' +
+      '<input type="text" id="rj-motivo" maxlength="200" placeholder="Motivo de la hora extra" value="' + esc(ya ? ya.motivo || '' : '') + '"></label>' +
+    '<label class="rt-f2">Evidencia (foto opcional)' +
+      '<input type="file" id="rj-foto" accept="image/*" capture="environment"></label>' +
+    '<div class="rt-f2err" id="rj-err"></div>' +
+    '<div class="rt-f2acc">' +
+      '<button type="button" class="rt-f2cancel" data-rjcancel="1">Volver</button>' +
+      '<button type="button" class="rt-f2ok" data-rjok="1">Guardar justificación</button>' +
+    '</div>';
+  rotMenuNoCerrar(m); rotMenuPos(m);
+  m._foto = '';
+  document.getElementById('rj-foto').onchange = function(){
+    var f = this.files && this.files[0];
+    if(!f) return;
+    reducirFoto(f).then(function(u){ m._foto = u; })
+      .catch(function(e){ document.getElementById('rj-err').textContent = e.message || 'No se pudo leer la foto.'; });
+  };
+  m.querySelector('[data-rjcancel]').onclick = function(){ rotMenuPrincipal(m, id); };
+  m.querySelector('[data-rjok]').onclick = function(){
+    var err = document.getElementById('rj-err');
+    var ini = document.getElementById('rj-ini').value, fin = document.getElementById('rj-fin').value;
+    var motivo = (document.getElementById('rj-motivo').value || '').trim();
+    if(!ini || !fin){ err.textContent = 'Indique desde y hasta.'; return; }
+    /* La franja tiene que caer dentro del turno. */
+    var oa = rotDifMin(t.inicio, ini), ob = rotDifMin(t.inicio, fin);
+    if(ob === 0 && fin === t.fin) ob = dur;
+    if(oa >= dur || ob > dur || ob <= oa){ err.textContent = 'La franja debe estar dentro del turno ' + t.inicio + '–' + t.fin + '.'; return; }
+    if(!motivo){ err.textContent = 'Escriba el motivo.'; return; }
+    err.textContent = '';
+    var cuerpo = { accion:'perExtraGuardar', area: ROT.area, fecha: t.fecha, persona: t.persona,
+                   turno: t.turno || '', lado: 'dentro', minutos: ob - oa, nota: ini + ' a ' + fin,
+                   motivo: motivo, quien: quienSoy() };
+    if(m._foto) cuerpo.foto = m._foto;
+    var area = ROT.area, semana = ROT.semana;
+    rotCerrarMenu();
+    rotConfirmar('¿Guardar la justificación?', 'El horario del turno no cambia.',
+      [{ quien: t.nombre, dia: t.fecha, antes: rotTxtTurno(t),
+         queda: 'hora extra ' + ini + '–' + fin + ' (' + textoHoras((ob - oa) / 60) + ') · motivo: ' + motivo +
+                (cuerpo.foto ? ' · con foto' : ' · sin foto') }],
+      '', 'Guardar justificación')
+      .then(function(si){
+        if(!si) return;
+        rotAvisoGuardando('Guardando la justificación…');
+        return pedir(cuerpo, 120).then(function(d){
+          rotTrasGuardar(area, semana, d, 'Hora extra justificada: ' + t.nombre + ', ' + fechaCorta(t.fecha) + '.');
+        });
+      })
+      .catch(function(e){ rotAvisoGuardando(''); alert(e.message || 'No se pudo guardar la justificación.'); });
+  };
 }
 
 /* Manda la hora extra al backend (perExtraGuardar) y refresca el cuadro.
@@ -57020,6 +57126,61 @@ function rotPintar(){
   if(split) split.classList.toggle('sin-acciones', !ng);
   var tit = $p('rt-acc-tit');
   if(tit) tit.textContent = 'Qué hacer con ' + (ng === 1 ? 'la celda marcada' : 'las ' + ng + ' celdas marcadas');
+  rotPintarTotales();
+}
+
+/* ── LA SUMA DE LA SEMANA DE CADA PERSONA ─────────────────────────
+   Lo guardado y, si hay cambios marcados, cómo queda. Debajo, lo que
+   pasa de 42 h y cuánto de eso falta justificar. */
+function rotHsCelda(x){
+  if(!x || x.descanso || x.fijo) return 0;
+  if(x.bloques && x.bloques.length > 1) return rotHorasBloques(x.bloques);
+  return x.inicio && x.fin ? horasTurno(x.inicio, x.fin, Number(x.almuerzo) || 0) : 0;
+}
+/* Las horas extra ya anotadas de esa persona en la semana (cualquier
+   lado), en horas. Son las que ya tienen motivo. */
+function rotJustificadas(clave){
+  var hasta = sumarDias(ROT.semana, 6);
+  return (EXTRAS[ROT.area] || []).filter(function(e){
+    return e.persona === clave && e.fecha >= ROT.semana && e.fecha <= hasta &&
+           e.estado !== 'ANULADA' && e.lado !== 'jornada';
+  }).reduce(function(a, e){ return a + (Number(e.minutos) || 0) / 60; }, 0);
+}
+function rotSemanaDe(clave){
+  var antes = (ROT.aparteH && ROT.aparteH[clave]) || 0, despues = antes;
+  for(var i = 0; i < 7; i++){
+    var id = clave + '|' + sumarDias(ROT.semana, i), t = ROT.celdas[id];
+    if(!t) continue;
+    var h = rotHsCelda(t);
+    antes += h;
+    if(ROT.sel[id]){
+      var d = rotDestinoDe(t, id);
+      despues += rotEsCambio(t, d) ? rotHsCelda(d) : h;
+    } else despues += h;
+  }
+  var just = rotJustificadas(clave);
+  var sobre = Math.max(0, antes - HEX_TOPE_SEMANAL);
+  return { antes: antes, despues: despues, justificadas: just,
+           sobre: sobre, sinJustificar: Math.max(0, sobre - just) };
+}
+function rotPintarTotales(){
+  document.querySelectorAll('#rt-panel [data-rttot]').forEach(function(td){
+    var x = rotSemanaDe(td.dataset.rttot);
+    var r1 = function(v){ return Math.round(v * 10) / 10; };
+    var cambia = r1(x.antes) !== r1(x.despues);
+    var sobreQ = Math.max(0, x.despues - HEX_TOPE_SEMANAL);
+    var html = cambia
+      ? '<span class="rt-tot-antes">' + esc(numeroHoras(x.antes)) + '</span><b>' + esc(numeroHoras(x.despues)) + '</b>'
+      : '<b>' + esc(numeroHoras(x.antes)) + '</b>';
+    if(sobreQ > 0.05){
+      html += '<span class="rt-tot-sobre">' + esc(numeroHoras(sobreQ)) + ' sobre ' + HEX_TOPE_SEMANAL + '</span>';
+      if(!cambia) html += x.sinJustificar > 0.05
+        ? '<span class="rt-tot-falta">' + esc(numeroHoras(x.sinJustificar)) + ' sin justificar</span>'
+        : '<span class="rt-tot-ok">Justificadas</span>';
+    }
+    td.innerHTML = html;
+    td.classList.toggle('pasa', sobreQ > 0.05);
+  });
 }
 
 function aplicarRotacion(boton){
@@ -57562,6 +57723,18 @@ function liquidarSemanas(turnos, extras, novDia){
       else t._despues = e;
     });
   };
+  /* La franja justificada dentro del turno ("06:00 a 08:00" en la nota),
+     en los minutos de la semana. Sin franja, son los últimos minutos. */
+  var rangoDentro = function(t){
+    var mm = t._dentro && String(t._dentro.nota || '').match(/^(\d{1,2}):(\d{2}) a (\d{1,2}):(\d{2})$/);
+    if(!mm) return null;
+    var dia0 = t._ini - (((t._ini % 1440) + 1440) % 1440);
+    var a = dia0 + Number(mm[1]) * 60 + Number(mm[2]);
+    if(a < t._ini) a += 1440;
+    var b = dia0 + Number(mm[3]) * 60 + Number(mm[4]);
+    while(b <= a) b += 1440;
+    return { a: a, b: b };
+  };
   Object.keys(semanas).forEach(function(k){
     var sem = semanas[k];
     anotPorTurno(sem);
@@ -57579,9 +57752,11 @@ function liquidarSemanas(turnos, extras, novDia){
       var nAntes = t._antes ? Number(t._antes.minutos) || 0 : 0;
       var nDespues = t._despues ? Number(t._despues.minutos) || 0 : 0;
       var nDentro = t._dentro ? Number(t._dentro.minutos) || 0 : 0;
+      var rd = rangoDentro(t);
       for(var m = t._ini; m < t._fin; m++){
         if(m >= almDesde && m < almHasta) continue;
-        var an = t._aparte || pos < nAntes || pos >= trabajo - nDespues - nDentro;
+        var enD = rd ? (m >= rd.a && m < rd.b) : (pos >= trabajo - nDespues - nDentro);
+        var an = t._aparte || pos < nAntes || pos >= trabajo - nDespues || enD;
         if(!an) ord.push({ k:ti + ':' + m, noche:liqEsNoche(m) });
         pos++;
       }
@@ -57596,12 +57771,14 @@ function liquidarSemanas(turnos, extras, novDia){
       var nAntes = t._antes ? Number(t._antes.minutos) || 0 : 0;
       var nDespues = t._despues ? Number(t._despues.minutos) || 0 : 0;
       var nDentro = t._dentro ? Number(t._dentro.minutos) || 0 : 0;
+      var rd2 = rangoDentro(t);
       for(var m = t._ini; m < t._fin; m++){
         if(m >= almDesde && m < almHasta) continue;
+        var enD2 = rd2 ? (m >= rd2.a && m < rd2.b) : (pos >= trabajo - nDespues - nDentro);
         var anot = t._aparte ? t._aparte
                  : pos < nAntes ? t._antes
                  : pos >= trabajo - nDespues ? t._despues
-                 : pos >= trabajo - nDespues - nDentro ? t._dentro : null;
+                 : enD2 ? t._dentro : null;
         var noche = liqEsNoche(m), esExtra = !!anot;
         if(!anot) esExtra = !!extraSem[ti + ':' + m];
         var q = esExtra ? (noche ? 'en' : 'ed') : (noche ? 'n' : 'd');
@@ -58163,6 +58340,13 @@ function escribirExcelQuincena(d, fotos, caras){
 }
 
 /* El recorrido de una persona por las áreas, para su ficha. */
+/* Salir de la edición de turnos solo con confirmación: un toque fuera
+   del cuadro perdía lo marcado sin aviso. */
+function salirEdicionTurnos(){
+  var n = (typeof ROT !== 'undefined' && ROT && ROT.sel) ? Object.keys(ROT.sel).length : 0;
+  if(!confirm('¿Salir de la edición de turnos?' + (n ? ' Lo marcado sin guardar se pierde.' : ''))) return;
+  cerrarMover();
+}
 function cerrarMover(){
   var m = $p('per-mover-modal');
   if(m) m.classList.remove('open');
@@ -62064,6 +62248,13 @@ function heaTramos(e){
     if(pj.length === 2) r = rango(pj[0], pj[1]);
   }
   if(!r) return { extra: null, turno: null };
+  if(e.lado === 'dentro'){
+    var pd = String(e.nota || '').split(' a '), xd = pd.length === 2 ? rango(pd[0], pd[1]) : null;
+    if(xd){
+      if(xd.a < r.a){ xd.a += 1440; xd.b += 1440; }
+      return { extra: xd, turno: r };
+    }
+  }
   if(e.lado === 'antes') return { extra: { a: r.a, b: r.a + mins }, turno: { a: r.a + mins, b: r.b } };
   return { extra: { a: r.b - mins, b: r.b }, turno: { a: r.a, b: r.b - mins } };
 }
@@ -63132,7 +63323,12 @@ function engancharPantalla(){
   $p('pn-cerrar').onclick = cerrarNovedades;
   $p('pn-guardar').onclick = guardarNovedad;
   $p('per-nov-modal').addEventListener('click', function(ev){ if(ev.target === $p('per-nov-modal')) cerrarNovedades(); });
-  if($p('per-mover-modal')) $p('per-mover-modal').addEventListener('click', function(ev){ if(ev.target === $p('per-mover-modal')) cerrarMover(); });
+  if($p('per-mover-modal')) $p('per-mover-modal').addEventListener('click', function(ev){
+    if(ev.target !== $p('per-mover-modal')) return;
+    /* En la edición de turnos, tocar afuera no cierra: pide confirmación. */
+    if($p('rt-panel') && $p('mv-caja').classList.contains('ancha')) salirEdicionTurnos();
+    else cerrarMover();
+  });
   document.addEventListener('keydown', function(ev){
     if(ev.key === 'Escape' && $p('per-turno-modal').classList.contains('open')) cerrarMenuTurno();
   });
