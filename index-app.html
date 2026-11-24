@@ -1687,6 +1687,17 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #panel-vehiculos .gps-card-al{display:flex;flex-wrap:wrap;gap:4px}
 #panel-vehiculos .gps-card-mapa{height:150px;border-radius:8px;overflow:hidden;border:1px solid #e5e7eb;cursor:pointer;position:relative;z-index:0}
 #panel-vehiculos .gps-card-mapa:hover{border-color:#1a73e8}
+.gps-card-ext{display:grid;gap:4px;font-size:13px}
+.gps-card-ext:empty{display:none}
+.gps-card-ext div{display:grid;grid-template-columns:12px 44px 44px 1fr;align-items:center;gap:6px;color:#5b625e}
+.gps-card-ext i{width:10px;height:10px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px #cfd4d1}
+.gps-card-ext i.ini{background:#1c5636}
+.gps-card-ext i.fin{background:#b23b3b}
+.gps-card-ext .et{font-weight:700}
+.gps-card-ext .hh{font-weight:800;color:#15201a;font-variant-numeric:tabular-nums}
+.gps-card-ext .si{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#15201a}
+.gps-card-ext a{color:#1a73e8}
+#gps-mapa-modal .gps-mm-pie .gps-card-ext{margin-top:8px;grid-template-columns:1fr 1fr}
 #panel-vehiculos .gps-card-mapa .leaflet-container{cursor:pointer}
 #panel-vehiculos .gps-card-mapa-v{display:flex;align-items:center;justify-content:center;gap:6px;height:100%;font-size:13px;color:#5b625e;background:#fafbfa}
 #panel-vehiculos .gps-card-mapa .leaflet-control-attribution{font-size:10px}
@@ -19518,7 +19529,8 @@ function _gpsCajaHTML(){
                    : '<span class="gps-sinruta" title="Vuelve a subir el informe de este día para guardar el recorrido">sin recorrido</span>') +
         '</header>' +
         (f.al.length ? '<div class="gps-card-al">' + f.al.map(function(a){ return '<span class="gps-chip">' + a + '</span>'; }).join('') + '</div>' : '') +
-        (conRuta ? '<div class="gps-card-mapa" data-pl="' + f.pl + '" title="Ver el recorrido completo"><div class="gps-card-mapa-v"><span class="spinner"></span> Cargando mapa…</div></div>' : '') +
+        (conRuta ? '<div class="gps-card-mapa" data-pl="' + f.pl + '" title="Ver el recorrido completo"><div class="gps-card-mapa-v"><span class="spinner"></span> Cargando mapa…</div></div>' +
+                   '<div class="gps-card-ext" data-h0="' + _flEsc(x.primer || '') + '" data-h1="' + _flEsc(x.ultimo || '') + '"></div>' : '') +
         '<div class="gps-card-mid">' + _gpsAnillo(x.hMov, x.hRal, x.hDet || 0) +
           '<ul>' +
             '<li><i style="background:' + _GPS_EST.m.c + '"></i>Movimiento<b>' + _gpsDur(x.hMov) + '</b></li>' +
@@ -19539,6 +19551,28 @@ function _gpsCajaHTML(){
   if (activas.length) setTimeout(_gpsMontarPreview, 0);
   return _flSeccion('GPS Satrack', 'recorrido del día cruzado con los viajes registrados') +
     '<div class="fl-card">' + barra + kpis + tabla + quietos + '</div>';
+}
+
+/* Punto de inicio y punto final del día: el primer y el último reporte con
+   el motor encendido (lo apagado de la noche no cuenta como trabajo). Si
+   no hubo encendido, el primer y el último reporte. */
+function _gpsExtremos(ruta){
+  if (!ruta || !ruta.length) return null;
+  var i0 = -1, i1 = -1;
+  for (var i = 0; i < ruta.length; i++) if (ruta[i][3] !== 'a') { if (i0 < 0) i0 = i; i1 = i; }
+  if (i0 < 0) { i0 = 0; i1 = ruta.length - 1; }
+  var pt = function(p){ return { h: _gpsHM(p[2]), lat: p[0], lon: p[1], lugar: _gpsLugarDe(p[0], p[1]) }; };
+  return { ini: pt(ruta[i0]), fin: pt(ruta[i1]) };
+}
+function _gpsSitioHTML(e){
+  return e.lugar ? '<b>' + _flEsc(e.lugar) + '</b>'
+    : '<a href="https://www.google.com/maps?q=' + e.lat + ',' + e.lon + '" target="_blank" rel="noopener" title="Abrir en Google Maps">' +
+      e.lat.toFixed(5) + ', ' + e.lon.toFixed(5) + '</a>';
+}
+function _gpsExtremosHTML(ex){
+  if (!ex) return '';
+  return '<div><i class="ini"></i><span class="et">Inicio</span><span class="hh">' + ex.ini.h + '</span><span class="si">' + _gpsSitioHTML(ex.ini) + '</span></div>' +
+         '<div><i class="fin"></i><span class="et">Fin</span><span class="hh">' + ex.fin.h + '</span><span class="si">' + _gpsSitioHTML(ex.fin) + '</span></div>';
 }
 
 /* ── El mapa pequeño de cada tarjeta ──
@@ -19577,8 +19611,12 @@ async function _gpsMontarPreview(){
     var pts = ruta.map(function(q){ return [q[0], q[1]]; }), col = _gpsColor(pl);
     L.polyline(pts, { color: '#fff', weight: 6, opacity: .9, interactive: false }).addTo(m);
     L.polyline(pts, { color: col, weight: 3.5, opacity: .95, interactive: false }).addTo(m);
-    L.circleMarker(pts[0], { radius: 5, color: '#fff', weight: 2, fillColor: '#1c5636', fillOpacity: 1, interactive: false }).addTo(m);
-    L.circleMarker(pts[pts.length - 1], { radius: 5, color: '#fff', weight: 2, fillColor: '#b23b3b', fillOpacity: 1, interactive: false }).addTo(m);
+    var ex = _gpsExtremos(ruta);
+    L.circleMarker([ex.ini.lat, ex.ini.lon], { radius: 6, color: '#fff', weight: 2, fillColor: '#1c5636', fillOpacity: 1, interactive: false }).addTo(m);
+    L.circleMarker([ex.fin.lat, ex.fin.lon], { radius: 6, color: '#fff', weight: 2, fillColor: '#b23b3b', fillOpacity: 1, interactive: false }).addTo(m);
+    var tarj = c.closest('.gps-card'), caja = tarj && tarj.querySelector('.gps-card-ext');
+    /* La hora exacta del informe (la ruta va redondeada al minuto). */
+    if (caja) { if (caja.dataset.h0) ex.ini.h = caja.dataset.h0; if (caja.dataset.h1) ex.fin.h = caja.dataset.h1; caja.innerHTML = _gpsExtremosHTML(ex); }
     m.fitBounds(L.latLngBounds(pts).pad(0.12));
     m.on('click', function(){ _gpsAbrirMapa(fecha, pl); });
     _gpsMinis.push(m);
@@ -19835,7 +19873,7 @@ async function _gpsAbrirMapa(fecha, placa){
     '<div class="gps-mm-cab"><div><b>' + _flEsc(placa) + '</b> · ' + _flEsc(_fmtFechaVeh(fecha)) +
       '<em>' + fmt(Math.round(x.km || 0)) + ' km · ' + _gpsDur(x.hMov) + ' en movimiento · ' + _gpsDur(x.hRal) + ' en ralentí</em></div>' +
       '<button type="button" class="gps-mm-x" aria-label="Cerrar" onclick="_gpsCerrarMapa()">×</button></div>' +
-    '<div class="gps-mm-pie">' + _gpsLineaHTML(x.segs) + '</div>' +
+    '<div class="gps-mm-pie">' + _gpsLineaHTML(x.segs) + '<div id="gps-mm-ext" class="gps-card-ext"></div></div>' +
     '<div class="gps-mm-cuerpo"><div id="gps-mm-lista" class="gps-mm-lado"><div class="gps-mm-vacio"><span class="spinner"></span> Cargando…</div></div>' +
     '<div id="gps-mm-mapa"></div></div>' +
     '<div class="gps-mm-ayuda">Haz clic en el mapa o en una parada sin nombre para crear un lugar.</div></div>';
@@ -19879,11 +19917,15 @@ async function _gpsAbrirMapa(fecha, placa){
   _gpsDet.capaRuta = L.polyline(pts, { color: '#1a73e8', weight: 5, opacity: .95 });
   L.polyline(pts, { color: '#ffffff', weight: 8, opacity: .9 }).addTo(_gpsMapa);
   _gpsDet.capaRuta.addTo(_gpsMapa);
-  var ini = ruta[0], fin = ruta[ruta.length - 1];
-  L.circleMarker([ini[0], ini[1]], { radius: 9, color: '#fff', weight: 3, fillColor: '#1c5636', fillOpacity: 1 })
-    .bindTooltip('Inicio ' + _gpsHM(ini[2]), { permanent: true, direction: 'bottom', offset: [0, 8] }).addTo(_gpsMapa);
-  L.circleMarker([fin[0], fin[1]], { radius: 9, color: '#fff', weight: 3, fillColor: '#b23b3b', fillOpacity: 1 })
-    .bindTooltip('Fin ' + _gpsHM(fin[2]), { permanent: true, direction: 'top', offset: [0, -8] }).addTo(_gpsMapa);
+  var ex = _gpsExtremos(ruta);
+  if (x.primer) ex.ini.h = x.primer;
+  if (x.ultimo) ex.fin.h = x.ultimo;
+  L.circleMarker([ex.ini.lat, ex.ini.lon], { radius: 9, color: '#fff', weight: 3, fillColor: '#1c5636', fillOpacity: 1 })
+    .bindTooltip('Inicio ' + ex.ini.h + (ex.ini.lugar ? ' · ' + _flEsc(ex.ini.lugar) : ''), { permanent: true, direction: 'bottom', offset: [0, 8] }).addTo(_gpsMapa);
+  L.circleMarker([ex.fin.lat, ex.fin.lon], { radius: 9, color: '#fff', weight: 3, fillColor: '#b23b3b', fillOpacity: 1 })
+    .bindTooltip('Fin ' + ex.fin.h + (ex.fin.lugar ? ' · ' + _flEsc(ex.fin.lugar) : ''), { permanent: true, direction: 'top', offset: [0, -8] }).addTo(_gpsMapa);
+  var cajaEx = document.getElementById('gps-mm-ext');
+  if (cajaEx) cajaEx.innerHTML = _gpsExtremosHTML(ex);
   _gpsPintarLugares(); _gpsPintarParadas(); _gpsPintarLista();
   _gpsMapa.on('click', function(e){
     L.popup().setLatLng(e.latlng).setContent(_gpsFormLugar(e.latlng.lat, e.latlng.lng)).openOn(_gpsMapa);
