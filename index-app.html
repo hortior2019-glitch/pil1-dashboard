@@ -57313,19 +57313,30 @@ function cargarZipQuincena(){
   });
 }
 function fotosAreasQuincena(d){
-  var nombres = [], personas = [];
+  var nombres = [], personas = [], todos = {};
   (d.turnos || []).forEach(function(t){
     if(t.fecha < d.desde || t.fecha > d.hasta) return;
     if(nombres.indexOf(t.area) < 0){
       var a = (P.areas || []).filter(function(x){ return x.nombre === t.area; })[0];
       if(a && a.foto) nombres.push(t.area);
     }
-    if(personas.indexOf(t.persona) < 0){
+    if(!todos[t.persona]){
+      todos[t.persona] = t.nombre;
       var g = window.personalPorClave && window.personalPorClave(t.persona);
       if(g && g.foto) personas.push(t.persona);
     }
   });
-  if(!nombres.length && !personas.length) return Promise.resolve({ habia: false, fotos: {}, gente: {} });
+  /* Quien no tiene foto (o no se pudo traer) lleva un cuadro con sus
+     iniciales: así se ve cuánta gente hay de verdad. */
+  var completar = function(gente){
+    Object.keys(todos).forEach(function(k){ if(!gente[k]) gente[k] = cuadroSinFoto(todos[k]); });
+    return gente;
+  };
+  if(!nombres.length && !personas.length){
+    return cargarZipQuincena().then(function(z){
+      return { habia: false, fotos: {}, gente: z ? completar({}) : {} };
+    });
+  }
   var convertir = function(lista){
     lista = lista || {};
     return Promise.all(Object.keys(lista).map(function(k){
@@ -57339,10 +57350,24 @@ function fotosAreasQuincena(d){
   return Promise.all([cargarZipQuincena(), pedir({ accion:'perFotosArea', nombres: nombres, personas: personas }, 90)])
     .then(function(r){
       if(!r[0]) return [{}, {}];
-      return Promise.all([convertir(r[1] && r[1].fotos), convertir(r[1] && r[1].gente)]);
+      return Promise.all([convertir(r[1] && r[1].fotos), convertir(r[1] && r[1].gente).then(completar)]);
     })
     .catch(function(){ return [{}, {}]; })
     .then(function(x){ return { habia: true, fotos: x[0], gente: x[1] }; });
+}
+/* El cuadro de quien no tiene foto: gris claro con sus iniciales, del
+   mismo tamaño que una foto de persona. */
+function cuadroSinFoto(nombre){
+  var cv = document.createElement('canvas'); cv.width = 300; cv.height = 400;
+  var cx = cv.getContext('2d');
+  cx.fillStyle = '#E7EFE9'; cx.fillRect(0, 0, 300, 400);
+  cx.strokeStyle = '#B9CCBF'; cx.lineWidth = 6; cx.strokeRect(3, 3, 294, 394);
+  cx.fillStyle = '#1C5636'; cx.font = 'bold 110px Calibri, Arial, sans-serif';
+  cx.textAlign = 'center'; cx.textBaseline = 'middle';
+  cx.fillText(iniciales(nombre || '') || '·', 150, 205);
+  var bin = atob(cv.toDataURL('image/png').split(',')[1]), bytes = new Uint8Array(bin.length);
+  for(var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return { bytes: bytes, ext: 'png', w: 300, h: 400 };
 }
 /* Ancho y alto en que se ve una foto, sin deformarla. */
 function medidaFotoExcel(f, altoMax, anchoMax){
