@@ -54539,9 +54539,17 @@ function calcHorasExtra(d){
     if(!porSemana[k]) porSemana[k] = { persona: t.persona, area: t.area, semana: t.semana || lunesDe(t.fecha), horas: 0 };
     porSemana[k].horas += h;
   });
+  /* Lo anotado DENTRO del turno ya está en esas horas y ya se contó
+     como anotada: se descuenta del exceso para no contarlo dos veces. */
+  var dentroSem = {};
+  extras.forEach(function(e){
+    if(e.lado !== 'dentro' || !e.persona || !e.fecha) return;
+    var k = e.persona + '|' + lunesDe(e.fecha);
+    dentroSem[k] = (dentroSem[k] || 0) + (Number(e.minutos) || 0) / 60;
+  });
   Object.keys(porSemana).forEach(function(k){
     var x = porSemana[k];
-    var sobra = x.horas - HEX_TOPE_SEMANAL;
+    var sobra = x.horas - HEX_TOPE_SEMANAL - (dentroSem[k] || 0);
     if(sobra <= 0.05) return;
     var ar = x.area || areaDe[x.persona] || 'Sin área';
     var p = dameP(x.persona, nombreDe[x.persona], ar);
@@ -56753,7 +56761,8 @@ function rotMenuExtra(m, id){
     '<div class="rt-menu-tit">Hora extra · ' + esc(t.nombre) + ' · ' + esc(fechaCorta(t.fecha)) + '</div>' +
     '<label class="rt-f2">Cuándo' +
       '<select id="rx-lado">' +
-        (esVacia ? '' : '<option value="despues">Después del turno</option><option value="antes">Antes del turno</option>') +
+        (esVacia ? '' : '<option value="despues">Después del turno</option><option value="antes">Antes del turno</option>' +
+          '<option value="dentro">Ya está dentro del turno (no lo alarga)</option>') +
         '<option value="aparte"' + (esVacia ? ' selected' : '') + '>Bloque aparte (con su horario)</option>' +
       '</select></label>' +
     '<div id="rx-min-caja" class="rt-f2"' + (esVacia ? ' style="display:none"' : '') + '>Cuántos minutos' +
@@ -56807,6 +56816,13 @@ function rotGuardarExtra(m, id, boton){
   } else {
     cuerpo.minutos = Math.max(0, Math.min(720, Number(document.getElementById('rx-min').value) || 0));
     if(!cuerpo.minutos){ err.textContent = 'Ponga cuántos minutos de hora extra.'; return; }
+    /* Dentro del turno: no puede ser más de lo que dura el turno. */
+    if(lado === 'dentro' && t.inicio && t.fin){
+      var durT = rotDifMin(t.inicio, t.fin);
+      if(durT <= 0) durT += 1440;
+      durT -= almuerzoQueDescuenta(t.almuerzo);
+      if(cuerpo.minutos > durT){ err.textContent = 'Son más minutos de los que dura el turno (' + durT + ' min).'; return; }
+    }
   }
   err.textContent = '';
   if(m._foto) cuerpo.foto = m._foto;
@@ -56868,6 +56884,8 @@ function rotTxtTurno(t){
 }
 function rotTxtExtra(t, lado, minutos, ini, fin){
   if(lado === 'aparte') return 'hora extra aparte ' + ini + '–' + fin;
+  if(lado === 'dentro') return 'hora extra ' + textoHoras((Number(minutos) || 0) / 60) + ' dentro del turno' +
+    (t.inicio ? ' (sigue ' + t.inicio + '–' + t.fin + ')' : '');
   return 'hora extra ' + textoHoras((Number(minutos) || 0) / 60) + (lado === 'antes' ? ' antes' : ' después') +
     (t.inicio ? ' (' + (lado === 'antes' ? rotSumarMin(t.inicio, -minutos) + '–' + t.fin
                                          : t.inicio + '–' + rotSumarMin(t.fin, minutos)) + ')' : '');
@@ -57539,7 +57557,9 @@ function liquidarSemanas(turnos, extras, novDia){
       var t = lista.filter(function(y){ return y.turno === e.turno; })[0] ||
               lista.filter(function(y){ return y.turno !== 'Hora extra'; })[0];
       if(!t) return;
-      if(e.lado === 'antes') t._antes = e; else t._despues = e;
+      if(e.lado === 'antes') t._antes = e;
+      else if(e.lado === 'dentro') t._dentro = e;
+      else t._despues = e;
     });
   };
   Object.keys(semanas).forEach(function(k){
@@ -57558,9 +57578,10 @@ function liquidarSemanas(turnos, extras, novDia){
       var trabajo = largo - alm, pos = 0;
       var nAntes = t._antes ? Number(t._antes.minutos) || 0 : 0;
       var nDespues = t._despues ? Number(t._despues.minutos) || 0 : 0;
+      var nDentro = t._dentro ? Number(t._dentro.minutos) || 0 : 0;
       for(var m = t._ini; m < t._fin; m++){
         if(m >= almDesde && m < almHasta) continue;
-        var an = t._aparte || pos < nAntes || pos >= trabajo - nDespues;
+        var an = t._aparte || pos < nAntes || pos >= trabajo - nDespues - nDentro;
         if(!an) ord.push({ k:ti + ':' + m, noche:liqEsNoche(m) });
         pos++;
       }
@@ -57574,11 +57595,13 @@ function liquidarSemanas(turnos, extras, novDia){
       var trabajo = largo - alm, pos = 0;
       var nAntes = t._antes ? Number(t._antes.minutos) || 0 : 0;
       var nDespues = t._despues ? Number(t._despues.minutos) || 0 : 0;
+      var nDentro = t._dentro ? Number(t._dentro.minutos) || 0 : 0;
       for(var m = t._ini; m < t._fin; m++){
         if(m >= almDesde && m < almHasta) continue;
         var anot = t._aparte ? t._aparte
                  : pos < nAntes ? t._antes
-                 : pos >= trabajo - nDespues ? t._despues : null;
+                 : pos >= trabajo - nDespues ? t._despues
+                 : pos >= trabajo - nDespues - nDentro ? t._dentro : null;
         var noche = liqEsNoche(m), esExtra = !!anot;
         if(!anot) esExtra = !!extraSem[ti + ':' + m];
         var q = esExtra ? (noche ? 'en' : 'ed') : (noche ? 'n' : 'd');
@@ -57610,7 +57633,8 @@ function liqJustifica(x){
   };
   if(x.anot){
     var e = x.anot;
-    r.origen = 'Anotada en el turno: ' + (e.lado === 'antes' ? 'entró antes' : e.lado === 'aparte' ? 'bloque aparte' : 'salió más tarde');
+    r.origen = 'Anotada en el turno: ' + (e.lado === 'antes' ? 'entró antes' : e.lado === 'aparte' ? 'bloque aparte'
+             : e.lado === 'dentro' ? 'dentro del horario programado' : 'salió más tarde');
     r.motivo = e.motivo || 'Sin motivo registrado';
     r.estado = (e.estado === 'APROBADA'
       ? 'Aprobada' + (e.aprobo ? ' por ' + e.aprobo : '')
