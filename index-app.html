@@ -19262,6 +19262,7 @@ var _gpsDias = [], _gpsCargado = false, _gpsFecha = '', _gpsMsg = '', _gpsMsgErr
 var _gpsRutas = {};   // 'fecha|placa' -> puntos del recorrido (se piden al abrir el mapa)
 
 async function _cargarGps(){
+  _gpsCargarOpsCsv();   // la lista de operaciones para los perímetros
   try {
     const d = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
       body: JSON.stringify({ accion:'listarGps' }) });
@@ -19757,6 +19758,37 @@ function _gpsAutor(){
   return (typeof _usuarioActual !== 'undefined' && _usuarioActual && (_usuarioActual.nombre || _usuarioActual.usuario)) || '';
 }
 
+/* Las operaciones para nombrar un perímetro: las de ops-materiales.csv,
+   la misma lista que usa la app de ingreso de material v28. */
+var _GPS_OPS_CSV = 'https://raw.githubusercontent.com/hortior2019-glitch/pil1-dashboard/main/ops-materiales.csv';
+var _gpsOpsCsv = null, _gpsOpsCsvP = null;
+function _gpsCargarOpsCsv(){
+  if (_gpsOpsCsv) return Promise.resolve(_gpsOpsCsv);
+  if (_gpsOpsCsvP) return _gpsOpsCsvP;
+  _gpsOpsCsvP = fetch(_GPS_OPS_CSV + '?t=' + Date.now(), { cache: 'no-store' })
+    .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+    .then(function(txt){
+      var lin = txt.replace(/^\uFEFF/, '').trim().split(/\r?\n/);
+      var sep = lin[0].indexOf(';') !== -1 ? ';' : ',';
+      var cab = lin[0].split(sep).map(function(h){ return h.trim().toUpperCase(); });
+      var iOp = cab.indexOf('OPERACION'); if (iOp < 0) iOp = 0;
+      var vistos = {};
+      _gpsOpsCsv = lin.slice(1).map(function(l){ return (l.split(sep)[iOp] || '').replace(/^"|"$/g, '').trim(); })
+        .filter(function(n){ var k = _gpsNorm(n); if (!n || k === 'otro' || vistos[k]) return false; vistos[k] = 1; return true; })
+        .sort(function(a, b){ return a.localeCompare(b, 'es'); });
+      return _gpsOpsCsv;
+    })
+    .catch(function(e){ console.warn('GPS: no se pudo leer ops-materiales.csv', e); _gpsOpsCsvP = null; return []; });
+  return _gpsOpsCsvP;
+}
+function _gpsOpcionesOps(){
+  var conZona = {};
+  _gpsPerims().forEach(function(o){ conZona[_gpsNorm(o.nombre)] = 1; });
+  return '<option value="">Elige la operación…</option>' + (_gpsOpsCsv || []).map(function(n){
+    return '<option value="' + _flEsc(n) + '">' + _flEsc(n) + (conZona[_gpsNorm(n)] ? ' (reemplazar zona)' : '') + '</option>';
+  }).join('');
+}
+
 /* ── PERÍMETROS DE OPERACIÓN ──
    Una zona dibujada en el mapa y guardada en la operación (Sheet
    OPERACIONES_VEH, columna PERIMETRO). El servidor calcula con ella las
@@ -19824,29 +19856,26 @@ function _gpsCancelarDibujo(){
 }
 function _gpsDibTerminar(){
   var d = _gpsDibujo; if (!d || d.pts.length < 3) return;
-  var ops = (typeof _vehOperaciones !== 'undefined' ? _vehOperaciones : []).filter(function(o){ return o.activo !== false; })
-    .slice().sort(function(a, b){ return a.nombre.localeCompare(b.nombre); });
+  var hayCsv = !!(_gpsOpsCsv && _gpsOpsCsv.length);
   var c = d.pts.reduce(function(a, p){ return [a[0] + p[0] / d.pts.length, a[1] + p[1] / d.pts.length]; }, [0, 0]);
   L.popup({ closeOnClick: false, autoClose: false }).setLatLng(c).setContent(
     '<div class="gps-lf"><b>Perímetro de la operación</b>' +
-    '<select aria-label="Operación" onchange="this.parentNode.querySelector(\'input\').hidden = this.value !== \'\'">' +
-      '<option value="">+ Operación nueva</option>' +
-      ops.map(function(o){ return '<option value="' + _flEsc(o.id) + '">' + _flEsc(o.nombre) + (o.perimetro && o.perimetro.length >= 3 ? ' (reemplazar zona)' : '') + '</option>'; }).join('') +
-    '</select>' +
-    '<input type="text" maxlength="60" placeholder="Nombre de la operación nueva" aria-label="Nombre">' +
+    (hayCsv ? '<select aria-label="Operación">' + _gpsOpcionesOps() + '</select>'
+            : '<input type="text" maxlength="60" placeholder="Nombre de la operación" aria-label="Nombre">') +
     '<button type="button" onclick="_gpsGuardarPerimetro(this)">Guardar perímetro</button>' +
     '<span class="gps-lf-msg"></span></div>').openOn(_gpsMapa);
 }
 async function _gpsGuardarPerimetro(btn){
   var d = _gpsDibujo; if (!d) return;
-  var caja = btn.parentNode, id = caja.querySelector('select').value, nombre = caja.querySelector('input').value.trim();
+  var caja = btn.parentNode, campo = caja.querySelector('select') || caja.querySelector('input');
+  var nombre = (campo.value || '').trim();
   var msg = caja.querySelector('.gps-lf-msg');
-  if (!id && !nombre) { msg.textContent = 'Elige una operación o escribe el nombre.'; return; }
+  if (!nombre) { msg.textContent = 'Elige la operación.'; return; }
   btn.disabled = true; msg.textContent = 'Guardando y recalculando entradas y salidas…';
   var r = null;
   try {
     r = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({ accion:'guardarPerimetroOp', id: id, nombre: nombre, perimetro: d.pts, autor: _gpsAutor() }), timeoutMs: 90000 }, 0);
+      body: JSON.stringify({ accion:'guardarPerimetroOp', nombre: nombre, perimetro: d.pts, autor: _gpsAutor() }), timeoutMs: 90000 }, 0);
   } catch (e) {}
   if (!r || !r.success) { btn.disabled = false; msg.textContent = 'No se guardó: ' + ((r && r.error) || 'sin respuesta') + '.'; return; }
   _gpsActualizarOp(r);
@@ -19986,17 +20015,14 @@ function _gpsPintarLugares(){
    defecto crea el PERÍMETRO de una operación alrededor del punto, del
    tamaño elegido; también puede crear solo un punto (lugar). */
 function _gpsFormLugar(lat, lon){
-  var ops = (typeof _vehOperaciones !== 'undefined' ? _vehOperaciones : []).filter(function(o){ return o.activo !== false; })
-    .slice().sort(function(a, b){ return a.nombre.localeCompare(b.nombre); });
+  var hayCsv = !!(_gpsOpsCsv && _gpsOpsCsv.length);
   var g = 'gt' + Math.random().toString(36).slice(2, 8);
   return '<div class="gps-lf" data-lat="' + lat.toFixed(6) + '" data-lon="' + lon.toFixed(6) + '"><b>Crear aquí</b>' +
     '<div class="gps-lf-tipo" role="radiogroup" aria-label="Qué crear">' +
       '<label><input type="radio" name="' + g + '" value="per" checked onchange="_gpsFormTipo(this)">Perímetro</label>' +
       '<label><input type="radio" name="' + g + '" value="lug" onchange="_gpsFormTipo(this)">Punto</label></div>' +
-    '<select class="op" aria-label="Operación" onchange="_gpsFormTipo(this)"><option value="">+ Operación nueva</option>' +
-      ops.map(function(o){ return '<option value="' + _flEsc(o.id) + '">' + _flEsc(o.nombre) + (o.perimetro && o.perimetro.length >= 3 ? ' (reemplazar zona)' : '') + '</option>'; }).join('') +
-    '</select>' +
-    '<input class="nom" type="text" maxlength="60" placeholder="Nombre de la operación nueva" aria-label="Nombre">' +
+    (hayCsv ? '<select class="op" aria-label="Operación">' + _gpsOpcionesOps() + '</select>' : '') +
+    '<input class="nom" type="text" maxlength="60" placeholder="' + (hayCsv ? 'Nombre del punto (ej. Planta)' : 'Nombre de la operación') + '" aria-label="Nombre"' + (hayCsv ? ' hidden' : '') + '>' +
     '<select class="tam" aria-label="Tamaño"><option value="100">Radio 100 m</option><option value="200" selected>Radio 200 m</option>' +
       '<option value="500">Radio 500 m</option><option value="1000">Radio 1 km</option></select>' +
     '<button type="button" onclick="_gpsCrearAqui(this)">Guardar</button>' +
@@ -20005,9 +20031,9 @@ function _gpsFormLugar(lat, lon){
 function _gpsFormTipo(el){
   var c = el.closest('.gps-lf'), per = c.querySelector('input[type=radio]:checked').value === 'per';
   var op = c.querySelector('.op'), nom = c.querySelector('.nom');
-  op.hidden = !per;
-  nom.hidden = per && op.value !== '';
-  nom.placeholder = per ? 'Nombre de la operación nueva' : 'Nombre del punto (ej. Planta)';
+  if (op) op.hidden = !per;
+  nom.hidden = per && !!op;
+  nom.placeholder = per ? 'Nombre de la operación' : 'Nombre del punto (ej. Planta)';
 }
 /* Un círculo de radio r metros como polígono de 24 esquinas. */
 function _gpsCirculo(lat, lon, r){
@@ -20021,15 +20047,16 @@ function _gpsCirculo(lat, lon, r){
 async function _gpsCrearAqui(btn){
   var c = btn.closest('.gps-lf'), lat = +c.dataset.lat, lon = +c.dataset.lon;
   var per = c.querySelector('input[type=radio]:checked').value === 'per';
-  var nombre = c.querySelector('.nom').value.trim(), tam = +c.querySelector('.tam').value, opId = per ? c.querySelector('.op').value : '';
+  var sel = c.querySelector('.op'), tam = +c.querySelector('.tam').value;
+  var nombre = per && sel ? sel.value : c.querySelector('.nom').value.trim();
   var msg = c.querySelector('.gps-lf-msg');
-  if (!opId && !nombre) { msg.textContent = per ? 'Elige una operación o escribe el nombre.' : 'Escribe un nombre.'; return; }
+  if (!nombre) { msg.textContent = per ? 'Elige la operación.' : 'Escribe un nombre.'; return; }
   btn.disabled = true; msg.textContent = per ? 'Guardando y recalculando entradas y salidas…' : 'Guardando…';
   var d = null;
   try {
     d = await fetchJSONTolerante(VEHICULOS_API, { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'},
       body: JSON.stringify(per
-        ? { accion:'guardarPerimetroOp', id: opId, nombre: nombre, perimetro: _gpsCirculo(lat, lon, tam), autor: _gpsAutor() }
+        ? { accion:'guardarPerimetroOp', nombre: nombre, perimetro: _gpsCirculo(lat, lon, tam), autor: _gpsAutor() }
         : { accion:'guardarLugar', nombre: nombre, lat: lat, lon: lon, radio: tam, autor: _gpsAutor() }), timeoutMs: 90000 }, 0);
   } catch (e) {}
   if (!d || !d.success) { btn.disabled = false; msg.textContent = 'No se guardó: ' + ((d && d.error) || 'sin respuesta') + '.'; return; }
