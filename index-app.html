@@ -1718,6 +1718,7 @@ tr.voz-foco{box-shadow:none;background:var(--gold-l);outline:2px solid var(--gol
 #gps-mapa-modal .gps-dib button:disabled{opacity:.45;cursor:default}
 #gps-mm-mapa.dibujando .leaflet-container{cursor:crosshair}
 #gps-lug-mapa{min-height:0;position:relative}
+#gps-mapa-modal .gps-lf-area{font-weight:700;color:#5f3dc4;font-variant-numeric:tabular-nums}
 #gps-mapa-modal .gps-lf-tipo{display:flex;gap:4px;background:#f1f2f0;border-radius:6px;padding:3px}
 #gps-mapa-modal .gps-lf-tipo label{flex:1;display:flex;align-items:center;justify-content:center;gap:4px;padding:5px 6px;border-radius:4px;cursor:pointer;font-weight:700}
 #gps-mapa-modal .gps-lf-tipo label:has(input:checked){background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.12)}
@@ -19826,6 +19827,51 @@ function _gpsVisitasHTML(fecha, pl, max){
   }).join('') + (max && v.length > max ? '<li class="mas">+' + (v.length - max) + ' más en el recorrido</li>' : '') + '</ul>';
 }
 
+/* Área (m²) y contorno (m) de un polígono [[lat, lon]...]: se proyecta a
+   metros alrededor de su centro; para zonas de una planta o una finca el
+   error es despreciable. */
+function _gpsMedir(pts){
+  if (!pts || pts.length < 2) return { area: 0, borde: 0 };
+  var la0 = pts.reduce(function(a, p){ return a + p[0]; }, 0) / pts.length;
+  var kx = 111320 * Math.cos(la0 * Math.PI / 180), ky = 110540;
+  var xy = pts.map(function(p){ return [p[1] * kx, p[0] * ky]; }), area = 0, borde = 0;
+  for (var i = 0; i < xy.length; i++) {
+    var a = xy[i], b = xy[(i + 1) % xy.length];
+    area += a[0] * b[1] - b[0] * a[1];
+    if (i < xy.length - 1 || xy.length > 2) borde += Math.hypot(b[0] - a[0], b[1] - a[1]);
+  }
+  return { area: xy.length > 2 ? Math.abs(area) / 2 : 0, borde: borde };
+}
+function _gpsAreaTxt(m2){
+  if (!m2) return '—';
+  return m2 < 10000 ? fmt(Math.round(m2)) + ' m²'
+    : String(Math.round(m2 / 100) / 100).replace('.', ',') + ' ha (' + fmt(Math.round(m2)) + ' m²)';
+}
+
+/* Vista previa de lo que se va a crear con un clic: el círculo del tamaño
+   elegido, con su área, cambia en vivo al cambiar el tamaño. */
+var _gpsFormMapa = null;
+function _gpsPopupAbre(e){
+  var el = e.popup.getElement && e.popup.getElement(), f = el && el.querySelector('.gps-lf[data-lat]');
+  if (!f) return;
+  _gpsFormMapa = this;
+  _gpsPrevForm(f);
+}
+function _gpsPopupCierra(){
+  if (_gpsDibujo && this === _gpsMapa) _gpsDibujo.listo = false;   // cerró el formulario: puede seguir marcando
+  if (this._gpsPrevCapa) { this.removeLayer(this._gpsPrevCapa); this._gpsPrevCapa = null; }
+}
+function _gpsPrevForm(f){
+  var m = _gpsFormMapa; if (!m || !f) return;
+  var lat = +f.dataset.lat, lon = +f.dataset.lon, tam = +f.querySelector('.tam').value;
+  var per = f.querySelector('input[type=radio]:checked').value === 'per';
+  if (m._gpsPrevCapa) m.removeLayer(m._gpsPrevCapa);
+  var poly = _gpsCirculo(lat, lon, tam), col = per ? '#7048e8' : '#1c5636';
+  m._gpsPrevCapa = L.polygon(poly, { color: col, weight: 2, dashArray: '6 4', fillColor: col, fillOpacity: .15, interactive: false }).addTo(m);
+  var a = f.querySelector('.gps-lf-area');
+  if (a) a.textContent = 'Área: ' + _gpsAreaTxt(_gpsMedir(poly).area);
+}
+
 /* ── Dibujar un perímetro en el mapa del detalle ── */
 function _gpsDibujar(){
   if (!_gpsMapa) return;
@@ -19840,14 +19886,28 @@ function _gpsDibujar(){
 function _gpsDibPintar(){
   var d = _gpsDibujo; if (!d) return;
   d.capa.clearLayers();
-  if (d.pts.length >= 2) L.polygon(d.pts, { color: '#7048e8', weight: 2, dashArray: '6 4', fillOpacity: .12 }).addTo(d.capa);
-  d.pts.forEach(function(p, i){ L.circleMarker(p, { radius: i ? 5 : 7, color: '#fff', weight: 2, fillColor: '#7048e8', fillOpacity: 1 }).addTo(d.capa); });
+  /* Con el cursor como esquina provisional se ve la zona antes de marcarla. */
+  var vivo = d.cursor ? d.pts.concat([d.cursor]) : d.pts;
+  if (vivo.length >= 3) L.polygon(vivo, { color: '#7048e8', weight: 2, dashArray: '6 4', fillColor: '#7048e8', fillOpacity: .15, interactive: false }).addTo(d.capa);
+  else if (vivo.length === 2) L.polyline(vivo, { color: '#7048e8', weight: 2, dashArray: '6 4', interactive: false }).addTo(d.capa);
+  d.pts.forEach(function(p, i){ L.circleMarker(p, { radius: i ? 5 : 7, color: '#fff', weight: 2, fillColor: '#7048e8', fillOpacity: 1, interactive: false }).addTo(d.capa); });
   var t = document.getElementById('gps-dib-n');
-  if (t) t.textContent = d.pts.length < 3 ? 'Haz clic en el mapa para marcar las esquinas (' + d.pts.length + ' de mínimo 3)' : d.pts.length + ' esquinas';
+  if (t) {
+    var med = _gpsMedir(vivo);
+    t.textContent = (d.pts.length < 3 ? 'Haz clic para marcar las esquinas (' + d.pts.length + ' de mínimo 3)' : d.pts.length + ' esquinas') +
+      (vivo.length >= 3 ? ' · Área ' + _gpsAreaTxt(med.area) + ' · Contorno ' + fmt(Math.round(med.borde)) + ' m' :
+       vivo.length === 2 ? ' · Lado ' + fmt(Math.round(med.borde)) + ' m' : '');
+  }
   var ok = document.getElementById('gps-dib-ok');
   if (ok) ok.disabled = d.pts.length < 3;
 }
-function _gpsDibDeshacer(){ if (_gpsDibujo) { _gpsDibujo.pts.pop(); _gpsDibPintar(); } }
+function _gpsDibDeshacer(){ if (_gpsDibujo) { _gpsDibujo.listo = false; if (_gpsMapa) _gpsMapa.closePopup(); _gpsDibujo.pts.pop(); _gpsDibPintar(); } }
+function _gpsDibMover(e){
+  if (!_gpsDibujo || !_gpsDibujo.pts.length || _gpsDibujo.listo) return;
+  _gpsDibujo.cursor = [e.latlng.lat, e.latlng.lng];
+  _gpsDibPintar();
+}
+function _gpsDibSalir(){ if (_gpsDibujo && _gpsDibujo.cursor) { _gpsDibujo.cursor = null; _gpsDibPintar(); } }
 function _gpsCancelarDibujo(){
   if (_gpsDibujo && _gpsMapa) _gpsMapa.removeLayer(_gpsDibujo.capa);
   _gpsDibujo = null;
@@ -19856,6 +19916,7 @@ function _gpsCancelarDibujo(){
 }
 function _gpsDibTerminar(){
   var d = _gpsDibujo; if (!d || d.pts.length < 3) return;
+  d.cursor = null; d.listo = true; _gpsDibPintar();
   var hayCsv = !!(_gpsOpsCsv && _gpsOpsCsv.length);
   var c = d.pts.reduce(function(a, p){ return [a[0] + p[0] / d.pts.length, a[1] + p[1] / d.pts.length]; }, [0, 0]);
   L.popup({ closeOnClick: false, autoClose: false }).setLatLng(c).setContent(
@@ -20023,8 +20084,10 @@ function _gpsFormLugar(lat, lon){
       '<label><input type="radio" name="' + g + '" value="lug" onchange="_gpsFormTipo(this)">Punto</label></div>' +
     (hayCsv ? '<select class="op" aria-label="Operación">' + _gpsOpcionesOps() + '</select>' : '') +
     '<input class="nom" type="text" maxlength="60" placeholder="' + (hayCsv ? 'Nombre del punto (ej. Planta)' : 'Nombre de la operación') + '" aria-label="Nombre"' + (hayCsv ? ' hidden' : '') + '>' +
-    '<select class="tam" aria-label="Tamaño"><option value="100">Radio 100 m</option><option value="200" selected>Radio 200 m</option>' +
-      '<option value="500">Radio 500 m</option><option value="1000">Radio 1 km</option></select>' +
+    '<select class="tam" aria-label="Tamaño" onchange="_gpsPrevForm(this.closest(\'.gps-lf\'))">' +
+      [50, 100, 150, 200, 300, 500, 1000].map(function(r){ return '<option value="' + r + '"' + (r === 200 ? ' selected' : '') + '>Radio ' + (r < 1000 ? r + ' m' : '1 km') + '</option>'; }).join('') +
+      '</select>' +
+    '<span class="gps-lf-area"></span>' +
     '<button type="button" onclick="_gpsCrearAqui(this)">Guardar</button>' +
     '<span class="gps-lf-msg"></span></div>';
 }
@@ -20034,6 +20097,7 @@ function _gpsFormTipo(el){
   if (op) op.hidden = !per;
   nom.hidden = per && !!op;
   nom.placeholder = per ? 'Nombre de la operación' : 'Nombre del punto (ej. Planta)';
+  _gpsPrevForm(c);
 }
 /* Un círculo de radio r metros como polígono de 24 esquinas. */
 function _gpsCirculo(lat, lon, r){
@@ -20166,9 +20230,13 @@ async function _gpsAbrirMapa(fecha, placa){
   var cajaVis = document.getElementById('gps-mm-vis');
   if (cajaVis) cajaVis.innerHTML = _gpsVisitasHTML(fecha, placa) || '<span class="gps-sinruta">Sin entradas a perímetros este día.</span>';
   _gpsMapa.on('click', function(e){
-    if (_gpsDibujo) { _gpsDibujo.pts.push([Math.round(e.latlng.lat * 1e6) / 1e6, Math.round(e.latlng.lng * 1e6) / 1e6]); _gpsDibPintar(); return; }
+    if (_gpsDibujo) { if (!_gpsDibujo.listo) { _gpsDibujo.pts.push([Math.round(e.latlng.lat * 1e6) / 1e6, Math.round(e.latlng.lng * 1e6) / 1e6]); _gpsDibPintar(); } return; }
     L.popup().setLatLng(e.latlng).setContent(_gpsFormLugar(e.latlng.lat, e.latlng.lng)).openOn(_gpsMapa);
   });
+  _gpsMapa.on('mousemove', _gpsDibMover);
+  _gpsMapa.on('mouseout', _gpsDibSalir);
+  _gpsMapa.on('popupopen', _gpsPopupAbre);
+  _gpsMapa.on('popupclose', _gpsPopupCierra);
   _gpsDet.limites = L.latLngBounds(pts).pad(0.15);
   _gpsMapa.fitBounds(_gpsDet.limites);
   setTimeout(function(){ if (_gpsMapa) _gpsMapa.invalidateSize(); }, 60);
@@ -20208,6 +20276,8 @@ async function _gpsAbrirLugares(){
     if (pts.length > 1) { L.polyline(pts, { color: '#1a73e8', weight: 2, opacity: .35, interactive: false }).addTo(mapa); pts.forEach(function(q){ fondo.extend(q); }); }
   });
   mapa.on('click', function(e){ L.popup().setLatLng(e.latlng).setContent(_gpsFormLugar(e.latlng.lat, e.latlng.lng)).openOn(mapa); });
+  mapa.on('popupopen', _gpsPopupAbre);
+  mapa.on('popupclose', _gpsPopupCierra);
   _gpsLugRefrescar(fondo);
   setTimeout(function(){ try { mapa.invalidateSize(); } catch (e) {} }, 60);
 }
@@ -20241,7 +20311,7 @@ function _gpsLugLista(){
     '<div class="gps-mm-res"><div><b>Perímetros de operación</b> (' + pers.length + ')</div></div>' +
     (pers.length ? '<ul class="gps-lug-lista">' + pers.map(function(o){
         var ce = centro(o.perimetro);
-        return '<li><span onclick="_gpsLugIr(' + ce[0] + ',' + ce[1] + ')"><b>' + _flEsc(o.nombre) + '</b><em>zona de ' + o.perimetro.length + ' esquinas</em></span>' +
+        return '<li><span onclick="_gpsLugIr(' + ce[0] + ',' + ce[1] + ')"><b>' + _flEsc(o.nombre) + '</b><em>' + _gpsAreaTxt(_gpsMedir(o.perimetro).area) + ' · ' + o.perimetro.length + ' esquinas</em></span>' +
           '<button type="button" onclick="_gpsQuitarPerimetro(\'' + _flEsc(o.id) + '\', this)">Quitar</button></li>';
       }).join('') + '</ul>' : '<div class="gps-mm-vacio">Aún no hay perímetros.</div>') +
     '<div class="gps-mm-res"><div><b>Puntos</b> (' + _gpsLugares.length + ')</div></div>' +
