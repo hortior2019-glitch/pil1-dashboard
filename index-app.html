@@ -57281,14 +57281,131 @@ function bajarQuincena(boton){
         err.textContent = 'No hay turnos guardados en ese periodo.';
         return;
       }
-      return cargarExcelConColor().then(function(conColor){
-        escribirExcelQuincena(d);
+      return Promise.all([cargarExcelConColor(), fotosAreasQuincena(d)]).then(function(r){
+        var conColor = r[0], fotos = r[1];
+        var conFotos = escribirExcelQuincena(d, fotos.fotos);
         cerrarMover();
         if(!conColor) alert('El Excel se descargó sin colores: no se pudo cargar el complemento. Los datos están completos.');
+        else if(fotos.habia && !conFotos) alert('El Excel se descargó sin las fotos de las áreas. Los datos están completos.');
       });
     })
     .catch(function(e){ err.textContent = e.message || 'No se pudo armar la quincena.'; })
     .then(function(){ boton.disabled = false; boton.textContent = 'Descargar'; });
+}
+
+/* ── LAS FOTOS DE LAS ÁREAS EN EL EXCEL ────────────────────────────
+   Arriba de la planilla de cada área va su foto, la misma de su tarjeta
+   en "Áreas y turnos". Drive no deja que el navegador lea los bytes de
+   sus fotos, así que las manda el servicio de Personal (perFotosArea).
+   SheetJS no escribe imágenes: el archivo se arma igual y después se le
+   agregan las fotos dentro del .xlsx (que es un zip) con fflate.
+   Si algo falla, el Excel sale completo, sin fotos, y se avisa. */
+var FFLATE_QC = null;
+function cargarZipQuincena(){
+  if(FFLATE_QC) return Promise.resolve(FFLATE_QC);
+  return new Promise(function(listo){
+    var sc = document.createElement('script');
+    sc.src = 'https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js';
+    sc.onload = function(){ FFLATE_QC = window.fflate || null; listo(FFLATE_QC); };
+    sc.onerror = function(){ listo(null); };
+    document.head.appendChild(sc);
+    setTimeout(function(){ if(!FFLATE_QC) listo(null); }, 8000);
+  });
+}
+function fotosAreasQuincena(d){
+  var nombres = [];
+  (d.turnos || []).forEach(function(t){
+    if(t.fecha < d.desde || t.fecha > d.hasta || nombres.indexOf(t.area) >= 0) return;
+    var a = (P.areas || []).filter(function(x){ return x.nombre === t.area; })[0];
+    if(a && a.foto) nombres.push(t.area);
+  });
+  if(!nombres.length) return Promise.resolve({ habia: false, fotos: {} });
+  return Promise.all([cargarZipQuincena(), pedir({ accion:'perFotosArea', nombres: nombres }, 60)])
+    .then(function(r){
+      if(!r[0]) return {};
+      var lista = (r[1] && r[1].fotos) || {};
+      return Promise.all(Object.keys(lista).map(function(nom){
+        return fotoParaExcel(lista[nom]).then(function(f){ return [nom, f]; }, function(){ return [nom, null]; });
+      })).then(function(pares){
+        var fotos = {};
+        pares.forEach(function(x){ if(x[1]) fotos[x[0]] = x[1]; });
+        return fotos;
+      });
+    })
+    .catch(function(){ return {}; })
+    .then(function(fotos){ return { habia: true, fotos: fotos }; });
+}
+/* De "data:image/jpeg;base64,…" a bytes, con el tamaño en que se ve:
+   160 px de alto, sin pasar de 480 de ancho. */
+function fotoParaExcel(dataUrl){
+  return new Promise(function(listo, fallar){
+    var m = String(dataUrl || '').match(/^data:image\/(jpeg|jpg|png);base64,(.+)$/);
+    if(!m) return fallar(new Error('formato'));
+    var img = new Image();
+    img.onload = function(){
+      var alto = 160, ancho = Math.round(alto * img.naturalWidth / img.naturalHeight);
+      if(ancho > 480){ ancho = 480; alto = Math.round(ancho * img.naturalHeight / img.naturalWidth); }
+      var bin = atob(m[2]), bytes = new Uint8Array(bin.length);
+      for(var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      listo({ bytes: bytes, ext: m[1] === 'png' ? 'png' : 'jpeg', ancho: ancho, alto: alto });
+    };
+    img.onerror = function(){ fallar(new Error('imagen')); };
+    img.src = dataUrl;
+  });
+}
+/* Mete las fotos en la primera hoja del .xlsx. Cada una queda anclada a
+   la fila que se dejó libre para ella, en la columna A. */
+function xlsxConFotos(datos, imagenes){
+  var fz = FFLATE_QC, txt = new TextDecoder(), cod = new TextEncoder();
+  var z = fz.unzipSync(new Uint8Array(datos));
+  var leer = function(k){ return z[k] ? txt.decode(z[k]) : ''; };
+  var EMU = 9525;
+  var anclas = '', relsDib = '';
+  imagenes.forEach(function(im, i){
+    var n = i + 1, arch = 'fotoarea' + n + '.' + im.f.ext;
+    z['xl/media/' + arch] = im.f.bytes;
+    relsDib += '<Relationship Id="rId' + n + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/' + arch + '"/>';
+    var cx = im.f.ancho * EMU, cy = im.f.alto * EMU;
+    anclas += '<xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff>' +
+      '<xdr:row>' + im.r + '</xdr:row><xdr:rowOff>' + (3 * EMU) + '</xdr:rowOff></xdr:from>' +
+      '<xdr:ext cx="' + cx + '" cy="' + cy + '"/>' +
+      '<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="' + (n + 1) + '" name="Foto ' + n + '"/>' +
+      '<xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr>' +
+      '<xdr:blipFill><a:blip r:embed="rId' + n + '"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>' +
+      '<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + cx + '" cy="' + cy + '"/></a:xfrm>' +
+      '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>';
+  });
+  z['xl/drawings/drawingfotos.xml'] = cod.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" ' +
+    'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' +
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' + anclas + '</xdr:wsDr>');
+  z['xl/drawings/_rels/drawingfotos.xml.rels'] = cod.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + relsDib + '</Relationships>');
+
+  var relDib = '<Relationship Id="rIdFotosArea" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawingfotos.xml"/>';
+  var kRels = 'xl/worksheets/_rels/sheet1.xml.rels', rels = leer(kRels);
+  rels = rels ? rels.replace('</Relationships>', relDib + '</Relationships>')
+              : '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + relDib + '</Relationships>';
+  z[kRels] = cod.encode(rels);
+
+  var hoja = leer('xl/worksheets/sheet1.xml');
+  if(!/<worksheet[^>]*xmlns:r=/.test(hoja)){
+    hoja = hoja.replace('<worksheet ', '<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ');
+  }
+  var tag = '<drawing r:id="rIdFotosArea"/>';
+  var antes = hoja.search(/<(legacyDrawing|legacyDrawingHF|picture|oleObjects|controls|webPublishItems|tableParts|extLst)[\s>\/]/);
+  hoja = antes >= 0 ? hoja.slice(0, antes) + tag + hoja.slice(antes) : hoja.replace('</worksheet>', tag + '</worksheet>');
+  z['xl/worksheets/sheet1.xml'] = cod.encode(hoja);
+
+  var tipos = leer('[Content_Types].xml');
+  ['jpeg', 'png'].forEach(function(ext){
+    if(imagenes.some(function(im){ return im.f.ext === ext; }) && tipos.indexOf('Extension="' + ext + '"') < 0){
+      tipos = tipos.replace('<Override', '<Default Extension="' + ext + '" ContentType="image/' + ext + '"/><Override');
+    }
+  });
+  tipos = tipos.replace('</Types>', '<Override PartName="/xl/drawings/drawingfotos.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>');
+  z['[Content_Types].xml'] = cod.encode(tipos);
+  return fz.zipSync(z);
 }
 
 /* ── LOS COLORES EN EL EXCEL ───────────────────────────────────────
@@ -57492,7 +57609,9 @@ function liqTextoDia(lista){
   return lin.join('\n');
 }
 
-function escribirExcelQuincena(d){
+function escribirExcelQuincena(d, fotos){
+  fotos = fotos || {};
+  var imagenes = [];   /* { r, f }: la fila libre y la foto que va en ella */
   /* Sin el poder de documentación, el archivo sale sin cédula ni cargo. */
   var conDocs = perPoder('docs');
   /* Las 42 h se miran por semana completa: por eso se piden lunes a
@@ -57702,6 +57821,12 @@ function escribirExcelQuincena(d){
     var colorTurno = {};
     claves.forEach(function(kk, i){ colorTurno[kk] = COLORES_TURNO[i % COLORES_TURNO.length]; });
 
+    /* La foto del área, arriba de su planilla. */
+    if(fotos[nombreArea]){
+      var rFoto = poner(['']);
+      alto[rFoto] = Math.round(fotos[nombreArea].alto * 0.75) + 6;
+      imagenes.push({ r: rFoto, f: fotos[nombreArea] });
+    }
     var rA = poner([nombreArea.toUpperCase()]);
     for(var c = 0; c < COLS; c++) pintar.push({ r: rA, c: c, e: relleno(colorArea, 'FFFFFF', true) });
 
@@ -57928,7 +58053,20 @@ function escribirExcelQuincena(d){
                   {wch:13},{wch:8},{wch:9},{wch:10},{wch:11},{wch:13},{wch:9},{wch:10},{wch:44},{wch:13},{wch:26},{wch:14},{wch:8},{wch:22}];
   XLSX.utils.book_append_sheet(wb, wsD, 'Detalle');
 
-  XLSX.writeFile(wb, 'quincena_' + d.desde + '_a_' + d.hasta + '.xlsx');
+  var nombreArchivo = 'quincena_' + d.desde + '_a_' + d.hasta + '.xlsx';
+  if(imagenes.length && FFLATE_QC){
+    try {
+      var bytes = xlsxConFotos(XLSX.write(wb, { bookType:'xlsx', type:'array' }), imagenes);
+      var url = URL.createObjectURL(new Blob([bytes], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+      var a = document.createElement('a');
+      a.href = url; a.download = nombreArchivo;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+      return true;
+    } catch(e){ /* sigue abajo: sin fotos */ }
+  }
+  XLSX.writeFile(wb, nombreArchivo);
+  return false;
 }
 
 /* El recorrido de una persona por las áreas, para su ficha. */
